@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Logo } from "@/components/brand/logo";
+import { Logo } from "@/components/dentai/Logo";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 
 export default function HomePage(): React.JSX.Element {
@@ -12,19 +12,19 @@ export default function HomePage(): React.JSX.Element {
       >
         {/* Logo branca centralizada */}
         <div className="flex-1 flex flex-col items-center justify-center gap-10 text-center">
-          <Logo size="lg" variant="white" showTagline />
+          <Logo size="lg" variant="teal" showTagline />
 
           {/* Frase de impacto */}
           <blockquote className="max-w-md">
             <p className="font-serif italic text-white/95 text-3xl leading-snug">
-              &ldquo;Do atendimento ao orçamento em segundos.&rdquo;
+              &ldquo;Do atendimento ao orçamento, em segundos.&rdquo;
             </p>
           </blockquote>
         </div>
 
         {/* Rodapé */}
         <p className="font-mono text-white/40 text-xs">
-          DentAI v0.1.0 — Beta
+          Dent <em>IA</em> v0.1.0 — Beta
         </p>
       </div>
 
@@ -40,7 +40,7 @@ export default function HomePage(): React.JSX.Element {
 
         {/* Logo mobile — exibida apenas em telas pequenas */}
         <div className="flex lg:hidden justify-center px-8 pb-6">
-          <Logo size="sm" />
+          <Logo size="sm" variant="default" />
         </div>
 
         {/* Conteúdo centralizado */}
@@ -48,7 +48,7 @@ export default function HomePage(): React.JSX.Element {
           <div className="w-full max-w-sm">
             {/* Logo desktop (coluna direita) */}
             <div className="hidden lg:flex justify-center mb-8">
-              <Logo size="md" />
+              <Logo size="md" variant="default" />
             </div>
 
             {/* Título principal */}

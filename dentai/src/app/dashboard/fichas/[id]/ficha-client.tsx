@@ -14,20 +14,29 @@ import {
   ChevronLeft,
   ChevronRight,
   Presentation,
-  Trash2,
   Plus,
   Check,
   Loader2,
   ZoomIn,
+  Phone,
+  MessageCircle,
+  Sparkles,
+  Receipt,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Button,
+  Badge,
+  Card,
+  CardHeader,
+  CardContent,
+  SectionLabel,
+  Waveform,
+} from "@/components/dentai";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import type { Ficha, Paciente, Dentista, FichaArquivo } from "@/types/database";
 import Link from "next/link";
@@ -45,13 +54,23 @@ function separador(fonte: string): string {
   return `\n\n--- [${fonte}] ---\n`;
 }
 
+// Gera iniciais do nome para o avatar
+function iniciais(nome: string): string {
+  return nome
+    .split(" ")
+    .slice(0, 2)
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase();
+}
+
 export function FichaClient({
   ficha: fichaInicial,
   paciente,
   dentista,
   clinicaId,
   arquivosIniciais,
-}: FichaClientProps) {
+}: FichaClientProps): React.JSX.Element {
   const supabase = createClient();
   const docInputId = useId();
   const rxInputId = useId();
@@ -62,8 +81,9 @@ export function FichaClient({
   const [transcricao, setTranscricao] = useState(fichaInicial.transcricao ?? "");
   const [anotacoes, setAnotacoes] = useState(fichaInicial.anotacoes ?? "");
   const [arquivos, setArquivos] = useState<FichaArquivo[]>(arquivosIniciais);
+  const [activeTab, setActiveTab] = useState("ficha");
 
-  // Signed URLs para exibição de imagens: id do arquivo → URL
+  // Signed URLs para exibição de imagens
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
 
   // ── Estado de UI ──────────────────────────────────────────────────
@@ -75,10 +95,9 @@ export function FichaClient({
   const [uploadandoRx, setUploadandoRx] = useState(false);
   const [concluindoFicha, setConcluindoFicha] = useState(false);
   const [dragOverDoc, setDragOverDoc] = useState(false);
-  // Extração em andamento por arquivo: id → boolean
   const [extraindo, setExtraindo] = useState<Record<string, boolean>>({});
 
-  // Lightbox e apresentação de radiografias
+  // Lightbox e apresentação
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [apresentacaoOpen, setApresentacaoOpen] = useState(false);
@@ -97,7 +116,6 @@ export function FichaClient({
   const radiografias = arquivos.filter((a) => a.tipo === "radiografia");
 
   // ── Signed URLs ───────────────────────────────────────────────────
-  // Gera signed URL para um arquivo e armazena no mapa de estado
   const carregarSignedUrl = useCallback(
     async (arquivo: FichaArquivo): Promise<string | null> => {
       const bucket =
@@ -112,21 +130,17 @@ export function FichaClient({
         .createSignedUrl(arquivo.storage_url, 3600);
 
       if (error || !data?.signedUrl) return null;
-
       setSignedUrls((prev) => ({ ...prev, [arquivo.id]: data.signedUrl }));
       return data.signedUrl;
     },
     [supabase]
   );
 
-  // Carrega signed URLs de imagens ao montar o componente
+  // Carrega signed URLs ao montar
   useEffect(() => {
-    const imagensParaCarregar = arquivos.filter(
-      (a) => a.tipo === "foto_ficha" || a.tipo === "radiografia"
-    );
-    imagensParaCarregar.forEach((a) => {
-      carregarSignedUrl(a);
-    });
+    arquivos
+      .filter((a) => a.tipo === "foto_ficha" || a.tipo === "radiografia")
+      .forEach((a) => carregarSignedUrl(a));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Formatação ────────────────────────────────────────────────────
@@ -143,42 +157,34 @@ export function FichaClient({
   );
 
   const estaGravando = recorderStatus === "recording";
-  const estaProcessandoAudio =
-    recorderStatus === "processing" || processandoTranscricao;
+  const estaProcessandoAudio = recorderStatus === "processing" || processandoTranscricao;
 
-  // ── Auto-save transcrição ─────────────────────────────────────────
+  // ── Auto-save transcrição (debounce 2s) ───────────────────────────
   function handleTranscricaoChange(valor: string): void {
     setTranscricao(valor);
     if (transcricaoTimerRef.current) clearTimeout(transcricaoTimerRef.current);
     transcricaoTimerRef.current = setTimeout(async () => {
       setSalvandoTranscricao(true);
-      await supabase
-        .from("fichas")
-        .update({ transcricao: valor })
-        .eq("id", ficha.id);
+      await supabase.from("fichas").update({ transcricao: valor }).eq("id", ficha.id);
       setSalvandoTranscricao(false);
     }, 2000);
   }
 
-  // Inclui texto de uma fonte na transcrição consolidada
   function incluirNaFicha(texto: string, fonte: string): void {
     const novoTexto = transcricao
       ? transcricao + separador(fonte) + texto
       : `--- [${fonte}] ---\n` + texto;
     handleTranscricaoChange(novoTexto);
-    toast.success(`Texto de "${fonte}" incluído na ficha.`);
+    toast.success(`"${fonte}" incluído na ficha.`);
   }
 
-  // ── Auto-save anotações ───────────────────────────────────────────
+  // ── Auto-save anotações (debounce 2s) ─────────────────────────────
   function handleAnotacoesChange(valor: string): void {
     setAnotacoes(valor);
     if (anotacoesTimerRef.current) clearTimeout(anotacoesTimerRef.current);
     anotacoesTimerRef.current = setTimeout(async () => {
       setSalvandoAnotacoes(true);
-      await supabase
-        .from("fichas")
-        .update({ anotacoes: valor })
-        .eq("id", ficha.id);
+      await supabase.from("fichas").update({ anotacoes: valor }).eq("id", ficha.id);
       setSalvandoAnotacoes(false);
     }, 2000);
   }
@@ -193,11 +199,7 @@ export function FichaClient({
         .update({ status: "concluida" })
         .eq("id", ficha.id);
 
-      if (error) {
-        toast.error("Erro ao concluir ficha.");
-        return;
-      }
-
+      if (error) { toast.error("Erro ao concluir ficha."); return; }
       setFicha((f) => ({ ...f, status: "concluida" }));
       toast.success("Ficha concluída!");
     } catch {
@@ -210,10 +212,7 @@ export function FichaClient({
   // ── Gravação de voz ───────────────────────────────────────────────
   const handlePararGravacao = useCallback(async (): Promise<void> => {
     const blob = await stopRecording();
-    if (!blob) {
-      toast.error("Nenhum áudio gravado.");
-      return;
-    }
+    if (!blob) { toast.error("Nenhum áudio gravado."); return; }
 
     setProcessandoTranscricao(true);
     try {
@@ -224,15 +223,9 @@ export function FichaClient({
         .from("audios")
         .upload(audioPath, blob, { contentType: "audio/webm" });
 
-      if (uploadError) {
-        toast.error("Erro ao fazer upload do áudio.");
-        return;
-      }
+      if (uploadError) { toast.error("Erro ao fazer upload do áudio."); return; }
 
-      await supabase
-        .from("fichas")
-        .update({ audio_url: audioPath })
-        .eq("id", ficha.id);
+      await supabase.from("fichas").update({ audio_url: audioPath }).eq("id", ficha.id);
 
       const resp = await fetch("/api/transcricao", {
         method: "POST",
@@ -240,16 +233,9 @@ export function FichaClient({
         body: JSON.stringify({ ficha_id: ficha.id, audio_url: audioPath }),
       });
 
-      if (!resp.ok) {
-        toast.error("Erro ao transcrever áudio.");
-        return;
-      }
+      if (!resp.ok) { toast.error("Erro ao transcrever áudio."); return; }
 
-      const { transcricao: texto } = (await resp.json()) as {
-        transcricao: string;
-      };
-
-      // Adiciona o texto transcrito à seção 4 com separador
+      const { transcricao: texto } = (await resp.json()) as { transcricao: string };
       incluirNaFicha(texto, "Gravação de voz");
       setFicha((f) => ({ ...f, audio_url: audioPath }));
       toast.success("Áudio transcrito e incluído na ficha!");
@@ -261,24 +247,15 @@ export function FichaClient({
   }, [stopRecording, supabase, ficha.id, clinicaId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Upload de documentos ──────────────────────────────────────────
-  async function processarArquivosDocumento(
-    files: FileList | File[]
-  ): Promise<void> {
+  async function processarArquivosDocumento(files: FileList | File[]): Promise<void> {
     const lista = Array.from(files);
     if (lista.length === 0) return;
 
-    // Valida cada arquivo
     const tiposPermitidos = ["doc", "docx", "pdf", "txt"];
     for (const file of lista) {
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-      if (!tiposPermitidos.includes(ext)) {
-        toast.error(`Tipo não suportado: ${file.name}`);
-        return;
-      }
-      if (file.size > 20 * 1024 * 1024) {
-        toast.error(`Arquivo muito grande (máx 20MB): ${file.name}`);
-        return;
-      }
+      if (!tiposPermitidos.includes(ext)) { toast.error(`Tipo não suportado: ${file.name}`); return; }
+      if (file.size > 20 * 1024 * 1024) { toast.error(`Muito grande (máx 20MB): ${file.name}`); return; }
     }
 
     setUploadandoDoc(true);
@@ -287,38 +264,21 @@ export function FichaClient({
         const timestamp = Date.now();
         const storagePath = `${clinicaId}/${ficha.id}/docs/${timestamp}_${file.name}`;
 
-        // Upload para o bucket documentos
         const { error: uploadError } = await supabase.storage
-          .from("documentos")
-          .upload(storagePath, file);
+          .from("documentos").upload(storagePath, file);
+        if (uploadError) { toast.error(`Erro ao enviar ${file.name}`); continue; }
 
-        if (uploadError) {
-          toast.error(`Erro ao enviar ${file.name}`);
-          continue;
-        }
-
-        // Chama API para extrair texto e criar registro em ficha_arquivos
         const resp = await fetch("/api/processar-documento", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            ficha_id: ficha.id,
-            clinica_id: clinicaId,
-            nome_original: file.name,
-            storage_url: storagePath,
+            ficha_id: ficha.id, clinica_id: clinicaId,
+            nome_original: file.name, storage_url: storagePath,
           }),
         });
 
-        if (!resp.ok) {
-          toast.error(`Erro ao processar ${file.name}`);
-          continue;
-        }
-
-        const { ficha_arquivo } = (await resp.json()) as {
-          ficha_arquivo: FichaArquivo;
-          texto: string;
-        };
-
+        if (!resp.ok) { toast.error(`Erro ao processar ${file.name}`); continue; }
+        const { ficha_arquivo } = (await resp.json()) as { ficha_arquivo: FichaArquivo; texto: string };
         setArquivos((prev) => [...prev, ficha_arquivo]);
         toast.success(`${file.name} processado!`);
       }
@@ -342,40 +302,24 @@ export function FichaClient({
 
   async function handleRemoverDocumento(arquivo: FichaArquivo): Promise<void> {
     try {
-      await supabase.storage
-        .from("documentos")
-        .remove([arquivo.storage_url]);
-
-      await supabase
-        .from("ficha_arquivos")
-        .delete()
-        .eq("id", arquivo.id);
-
+      await supabase.storage.from("documentos").remove([arquivo.storage_url]);
+      await supabase.from("ficha_arquivos").delete().eq("id", arquivo.id);
       setArquivos((prev) => prev.filter((a) => a.id !== arquivo.id));
       toast.success("Documento removido.");
-    } catch {
-      toast.error("Erro ao remover documento.");
-    }
+    } catch { toast.error("Erro ao remover documento."); }
   }
 
   // ── Upload de foto da ficha ───────────────────────────────────────
-  async function handleUploadFoto(
-    e: React.ChangeEvent<HTMLInputElement>
-  ): Promise<void> {
+  async function handleUploadFoto(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
 
-    const tiposPermitidos = ["jpg", "jpeg", "png", "webp"];
     const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-    if (!tiposPermitidos.includes(ext)) {
-      toast.error("Tipo não suportado. Use jpg, png ou webp.");
-      return;
+    if (!["jpg", "jpeg", "png", "webp"].includes(ext)) {
+      toast.error("Use jpg, png ou webp."); return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("Arquivo muito grande (máx 10MB).");
-      return;
-    }
+    if (file.size > 10 * 1024 * 1024) { toast.error("Máx 10MB."); return; }
 
     setUploadandoFoto(true);
     try {
@@ -383,78 +327,45 @@ export function FichaClient({
       const storagePath = `${clinicaId}/${ficha.id}/foto_${timestamp}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
-        .from("fichas")
-        .upload(storagePath, file);
+        .from("fichas").upload(storagePath, file);
+      if (uploadError) { toast.error("Erro ao enviar foto."); return; }
 
-      if (uploadError) {
-        toast.error("Erro ao enviar foto.");
-        return;
-      }
-
-      // Insere registro em ficha_arquivos
       const { data: fichaArquivo, error: insertError } = await supabase
         .from("ficha_arquivos")
         .insert({
-          ficha_id: ficha.id,
-          clinica_id: clinicaId,
-          tipo: "foto_ficha",
-          nome_original: file.name,
-          storage_url: storagePath,
-          texto_extraido: null,
-          processado: false,
+          ficha_id: ficha.id, clinica_id: clinicaId,
+          tipo: "foto_ficha", nome_original: file.name,
+          storage_url: storagePath, texto_extraido: null, processado: false,
         })
-        .select()
-        .single();
+        .select().single();
 
-      if (insertError || !fichaArquivo) {
-        toast.error("Erro ao registrar foto.");
-        return;
-      }
+      if (insertError || !fichaArquivo) { toast.error("Erro ao registrar foto."); return; }
 
       const novaFoto = fichaArquivo as FichaArquivo;
       setArquivos((prev) => [...prev, novaFoto]);
+      await carregarSignedUrl(novaFoto);
 
-      // Carrega signed URL para preview
-      const url = await carregarSignedUrl(novaFoto);
-      if (!url) toast.warning("Foto enviada, mas não foi possível gerar preview.");
-
-      // Inicia extração de texto via GPT-4o Vision
       setExtraindo((prev) => ({ ...prev, [novaFoto.id]: true }));
       toast.info("Foto enviada! Extraindo texto com IA...");
 
       const resp = await fetch("/api/extrair-imagem", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ficha_arquivo_id: novaFoto.id,
-          tipo: "foto_ficha",
-        }),
+        body: JSON.stringify({ ficha_arquivo_id: novaFoto.id, tipo: "foto_ficha" }),
       });
 
-      if (!resp.ok) {
-        toast.error("Erro ao extrair texto da foto.");
-        return;
-      }
-
+      if (!resp.ok) { toast.error("Erro ao extrair texto."); return; }
       const { texto } = (await resp.json()) as { texto: string };
 
       setArquivos((prev) =>
-        prev.map((a) =>
-          a.id === novaFoto.id
-            ? { ...a, texto_extraido: texto, processado: true }
-            : a
-        )
+        prev.map((a) => a.id === novaFoto.id ? { ...a, texto_extraido: texto, processado: true } : a)
       );
+      setExtraindo((prev) => { const next = { ...prev }; delete next[novaFoto.id]; return next; });
       toast.success("Texto da ficha extraído!");
     } catch {
       toast.error("Erro ao processar foto.");
     } finally {
       setUploadandoFoto(false);
-      setExtraindo((prev) => {
-        const next = { ...prev };
-        // Remove entrada quando terminar (não temos o id aqui, será limpo pelo setState acima)
-        return next;
-      });
     }
   }
 
@@ -462,23 +373,14 @@ export function FichaClient({
     try {
       await supabase.storage.from("fichas").remove([arquivo.storage_url]);
       await supabase.from("ficha_arquivos").delete().eq("id", arquivo.id);
-
       setArquivos((prev) => prev.filter((a) => a.id !== arquivo.id));
-      setSignedUrls((prev) => {
-        const next = { ...prev };
-        delete next[arquivo.id];
-        return next;
-      });
+      setSignedUrls((prev) => { const next = { ...prev }; delete next[arquivo.id]; return next; });
       toast.success("Foto removida.");
-    } catch {
-      toast.error("Erro ao remover foto.");
-    }
+    } catch { toast.error("Erro ao remover foto."); }
   }
 
   // ── Upload de radiografias ────────────────────────────────────────
-  async function handleUploadRx(
-    e: React.ChangeEvent<HTMLInputElement>
-  ): Promise<void> {
+  async function handleUploadRx(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
     e.target.value = "";
@@ -486,14 +388,8 @@ export function FichaClient({
     const tiposPermitidos = ["jpg", "jpeg", "png", "webp", "pdf"];
     for (const file of files) {
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-      if (!tiposPermitidos.includes(ext)) {
-        toast.error(`Tipo não suportado: ${file.name}`);
-        return;
-      }
-      if (file.size > 20 * 1024 * 1024) {
-        toast.error(`Arquivo muito grande (máx 20MB): ${file.name}`);
-        return;
-      }
+      if (!tiposPermitidos.includes(ext)) { toast.error(`Tipo não suportado: ${file.name}`); return; }
+      if (file.size > 20 * 1024 * 1024) { toast.error(`Muito grande (máx 20MB): ${file.name}`); return; }
     }
 
     setUploadandoRx(true);
@@ -504,41 +400,23 @@ export function FichaClient({
         const storagePath = `${clinicaId}/${ficha.id}/rx_${timestamp}_${file.name}`;
 
         const { error: uploadError } = await supabase.storage
-          .from("radiografias")
-          .upload(storagePath, file);
-
-        if (uploadError) {
-          toast.error(`Erro ao enviar ${file.name}`);
-          continue;
-        }
+          .from("radiografias").upload(storagePath, file);
+        if (uploadError) { toast.error(`Erro ao enviar ${file.name}`); continue; }
 
         const { data: fichaArquivo, error: insertError } = await supabase
           .from("ficha_arquivos")
           .insert({
-            ficha_id: ficha.id,
-            clinica_id: clinicaId,
-            tipo: "radiografia",
-            nome_original: file.name,
-            storage_url: storagePath,
-            texto_extraido: null,
-            processado: true,
+            ficha_id: ficha.id, clinica_id: clinicaId,
+            tipo: "radiografia", nome_original: file.name,
+            storage_url: storagePath, texto_extraido: null, processado: true,
           })
-          .select()
-          .single();
+          .select().single();
 
-        if (insertError || !fichaArquivo) {
-          toast.error(`Erro ao registrar ${file.name}`);
-          continue;
-        }
+        if (insertError || !fichaArquivo) { toast.error(`Erro ao registrar ${file.name}`); continue; }
 
         const novaRx = fichaArquivo as FichaArquivo;
         setArquivos((prev) => [...prev, novaRx]);
-
-        // Só gera signed URL para imagens (não PDF)
-        if (ext !== "pdf") {
-          await carregarSignedUrl(novaRx);
-        }
-
+        if (ext !== "pdf") await carregarSignedUrl(novaRx);
         toast.success(`${file.name} enviada!`);
       }
     } catch {
@@ -550,43 +428,28 @@ export function FichaClient({
 
   async function handleRemoverRx(arquivo: FichaArquivo): Promise<void> {
     try {
-      await supabase.storage
-        .from("radiografias")
-        .remove([arquivo.storage_url]);
+      await supabase.storage.from("radiografias").remove([arquivo.storage_url]);
       await supabase.from("ficha_arquivos").delete().eq("id", arquivo.id);
-
       setArquivos((prev) => prev.filter((a) => a.id !== arquivo.id));
-      setSignedUrls((prev) => {
-        const next = { ...prev };
-        delete next[arquivo.id];
-        return next;
-      });
+      setSignedUrls((prev) => { const next = { ...prev }; delete next[arquivo.id]; return next; });
       toast.success("Radiografia removida.");
-    } catch {
-      toast.error("Erro ao remover radiografia.");
-    }
+    } catch { toast.error("Erro ao remover radiografia."); }
   }
 
-  // ── Navegação lightbox ────────────────────────────────────────────
+  // ── Navegação lightbox / apresentação ─────────────────────────────
   function lightboxAnterior(): void {
     setLightboxIndex((i) => (i > 0 ? i - 1 : radiografias.length - 1));
   }
-
   function lightboxProximo(): void {
     setLightboxIndex((i) => (i < radiografias.length - 1 ? i + 1 : 0));
   }
-
   function apresentacaoAnterior(): void {
     setApresentacaoIndex((i) => (i > 0 ? i - 1 : radiografias.length - 1));
   }
-
   function apresentacaoProximo(): void {
-    setApresentacaoIndex((i) =>
-      i < radiografias.length - 1 ? i + 1 : 0
-    );
+    setApresentacaoIndex((i) => (i < radiografias.length - 1 ? i + 1 : 0));
   }
 
-  // Fecha apresentação com ESC
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
       if (e.key === "Escape") {
@@ -602,142 +465,112 @@ export function FichaClient({
         if (e.key === "ArrowRight") lightboxProximo();
       }
     }
-
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [apresentacaoOpen, lightboxOpen, radiografias.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Ícone por extensão de documento
-  function iconeDocumento(nome: string): React.ReactNode {
-    const ext = nome.split(".").pop()?.toLowerCase() ?? "";
-    if (ext === "pdf") return <FileText className="size-4 text-red-500" />;
-    if (ext === "docx" || ext === "doc")
-      return <FileText className="size-4 text-blue-500" />;
-    return <FileText className="size-4 text-slate-400" />;
-  }
-
   // ── JSX ───────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-6 p-6">
+
+      {/* ── Header ── */}
       <div className="flex items-center gap-4">
         <Link href="/dashboard/pacientes">
           <Button variant="ghost" size="sm">
-            <ArrowLeft className="size-4" />
+            <ArrowLeft size={15} />
             Pacientes
           </Button>
         </Link>
         <div className="flex-1">
-          <h1 className="text-2xl font-semibold text-slate-900">
+          <h1 className="font-serif text-2xl text-brand-black">
             Ficha de {paciente.nome}
           </h1>
-          <p className="text-sm text-slate-500">{dataFormatada}</p>
+          <p className="font-mono text-xs text-brand-muted mt-0.5">{dataFormatada}</p>
         </div>
-        <Badge
-          className={
-            ficha.status === "aberta"
-              ? "bg-amber-100 text-amber-700 border-amber-200"
-              : "bg-green-100 text-green-700 border-green-200"
-          }
-        >
+        <Badge variant={ficha.status === "aberta" ? "warning" : "success"}>
           {ficha.status === "aberta" ? "Aberta" : "Concluída"}
         </Badge>
       </div>
 
-      {/* Layout duas colunas */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* ── Coluna esquerda ── */}
-        <div className="space-y-4 lg:col-span-1">
+      {/* ── Layout duas colunas: 280px | 1fr ── */}
+      <div className="grid gap-6" style={{ gridTemplateColumns: "280px 1fr" }}>
+
+        {/* ════════════════════════
+            COLUNA ESQUERDA — sticky
+        ════════════════════════ */}
+        <div className="space-y-4 sticky top-6 self-start">
+
           {/* Card Paciente */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Paciente</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div>
-                <span className="text-slate-500">Nome</span>
-                <p className="font-medium text-slate-900">{paciente.nome}</p>
+            <CardContent className="pt-5 space-y-4">
+              {/* Avatar + nome */}
+              <div className="flex items-center gap-3">
+                <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-teal/10 font-mono text-sm font-medium text-teal select-none">
+                  {iniciais(paciente.nome)}
+                </div>
+                <p className="font-serif text-[1.05rem] leading-tight text-brand-black truncate">
+                  {paciente.nome}
+                </p>
               </div>
+
               {paciente.telefone && (
-                <div>
-                  <span className="text-slate-500">Telefone</span>
-                  <p className="font-medium text-slate-900">
-                    {paciente.telefone}
-                  </p>
+                <div className="flex items-center gap-2">
+                  <Phone size={13} className="text-brand-muted shrink-0" />
+                  <span className="font-mono text-sm text-brand-muted">{paciente.telefone}</span>
                 </div>
               )}
+
               {paciente.whatsapp && (
-                <div>
-                  <span className="text-slate-500">WhatsApp</span>
-                  <p className="font-medium text-slate-900">
+                <div className="flex items-center gap-2">
+                  <MessageCircle size={13} className="text-teal shrink-0" />
+                  <a
+                    href={`https://wa.me/55${paciente.whatsapp.replace(/\D/g, "")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-sm text-teal hover:underline"
+                  >
                     {paciente.whatsapp}
-                  </p>
+                  </a>
                 </div>
               )}
-              {paciente.data_nascimento && (
-                <div>
-                  <span className="text-slate-500">Nascimento</span>
-                  <p className="font-medium text-slate-900">
-                    {format(
-                      new Date(paciente.data_nascimento + "T00:00:00"),
-                      "dd/MM/yyyy"
-                    )}
-                  </p>
-                </div>
-              )}
+
+              <Link href={`/dashboard/pacientes/${paciente.id}`}>
+                <Button variant="ghost" size="sm" className="w-full text-xs">
+                  Ver perfil completo
+                </Button>
+              </Link>
             </CardContent>
           </Card>
 
           {/* Card Ficha */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Ficha</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
+            <CardContent className="pt-5 space-y-3">
+              <SectionLabel>Ficha</SectionLabel>
+
               <div>
-                <span className="text-slate-500">Dentista</span>
-                <p className="font-medium text-slate-900">{dentista.nome}</p>
+                <p className="font-sans text-sm text-brand-black">{dentista.nome}</p>
+                {dentista.especialidade && (
+                  <p className="font-mono text-xs text-brand-muted">{dentista.especialidade}</p>
+                )}
               </div>
-              {dentista.especialidade && (
-                <div>
-                  <span className="text-slate-500">Especialidade</span>
-                  <p className="font-medium text-slate-900">
-                    {dentista.especialidade}
-                  </p>
-                </div>
-              )}
+
+              <p className="font-mono text-xs text-brand-muted">{dataFormatada}</p>
+
               <div>
-                <span className="text-slate-500">Data</span>
-                <p className="font-medium text-slate-900">{dataFormatada}</p>
-              </div>
-              <div>
-                <span className="text-slate-500">Status</span>
-                <p className="mt-0.5">
-                  <Badge
-                    variant="outline"
-                    className={
-                      ficha.status === "aberta"
-                        ? "border-amber-200 bg-amber-50 text-amber-700"
-                        : "border-green-200 bg-green-50 text-green-700"
-                    }
-                  >
-                    {ficha.status === "aberta" ? "Aberta" : "Concluída"}
-                  </Badge>
-                </p>
+                <Badge variant={ficha.status === "aberta" ? "warning" : "success"}>
+                  {ficha.status === "aberta" ? "Aberta" : "Concluída"}
+                </Badge>
               </div>
 
               {ficha.status === "aberta" && (
                 <Button
+                  variant="outline"
                   size="sm"
-                  className="mt-2 w-full bg-green-600 hover:bg-green-700 text-white"
+                  className="w-full"
                   onClick={handleConcluirFicha}
-                  disabled={concluindoFicha}
+                  loading={concluindoFicha}
                 >
-                  {concluindoFicha ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Check className="size-4" />
-                  )}
+                  {!concluindoFicha && <Check size={13} />}
                   Concluir Ficha
                 </Button>
               )}
@@ -745,112 +578,95 @@ export function FichaClient({
           </Card>
         </div>
 
-        {/* ── Coluna direita — Tabs ── */}
-        <div className="lg:col-span-2">
-          <Tabs defaultValue="ficha">
-            <TabsList>
-              <TabsTrigger value="ficha">Ficha</TabsTrigger>
-              <TabsTrigger value="anotacoes">Anotações</TabsTrigger>
-              <TabsTrigger value="orcamento">Orçamento</TabsTrigger>
+        {/* ════════════════════════
+            COLUNA DIREITA — Tabs
+        ════════════════════════ */}
+        <div>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="bg-transparent border-b border-brand-border rounded-none w-full justify-start gap-0 h-auto p-0 mb-4">
+              {(["ficha", "anotacoes", "orcamento"] as const).map((tab) => (
+                <TabsTrigger
+                  key={tab}
+                  value={tab}
+                  className="font-sans text-sm rounded-none border-b-2 border-transparent data-[state=active]:border-teal data-[state=active]:text-teal data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 text-brand-muted hover:text-brand-black transition-colors"
+                >
+                  {tab === "ficha" ? "Ficha" : tab === "anotacoes" ? "Anotações" : "Orçamento"}
+                </TabsTrigger>
+              ))}
             </TabsList>
 
-            {/* ═══════════════════════════════════════
+            {/* ══════════════════════════════
                 TAB: FICHA
-            ════════════════════════════════════════ */}
-            <TabsContent value="ficha" className="space-y-4 mt-4">
+            ══════════════════════════════ */}
+            <TabsContent value="ficha" className="space-y-4 mt-0">
 
-              {/* ── SEÇÃO 1: Gravação de Voz ── */}
+              {/* SEÇÃO 1 — Gravação de Voz */}
               <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-slate-700 uppercase tracking-wide">
-                    1 · Gravação de Voz
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-col items-center gap-3 py-2">
+                <CardContent className="pt-5 space-y-4">
+                  <SectionLabel>Gravação de Voz</SectionLabel>
+
+                  <div className="flex flex-col items-center gap-4 py-2">
                     {estaProcessandoAudio ? (
-                      <div className="flex flex-col items-center gap-3">
-                        <div className="flex size-16 items-center justify-center rounded-full bg-slate-100">
-                          <Loader2 className="size-7 animate-spin text-slate-400" />
-                        </div>
-                        <div className="space-y-1">
-                          <Skeleton className="h-3 w-40" />
-                          <Skeleton className="h-3 w-32" />
-                        </div>
-                        <p className="text-sm text-slate-500">
-                          Transcrevendo áudio...
-                        </p>
+                      <div className="flex items-center gap-3">
+                        <Waveform />
+                        <span className="font-mono text-sm text-brand-muted">
+                          Transcrevendo com IA...
+                        </span>
                       </div>
                     ) : estaGravando ? (
                       <div className="flex flex-col items-center gap-3">
-                        <button
+                        <Button
+                          variant="destructive"
+                          size="lg"
+                          className="gap-2 animate-record-pulse"
                           onClick={handlePararGravacao}
-                          className="flex size-16 animate-pulse items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition hover:bg-red-600"
                         >
-                          <Square className="size-7 fill-white" />
-                        </button>
-                        <span className="font-mono text-lg font-medium text-red-600">
-                          {formatarTimer(timer)}
-                        </span>
-                        <p className="text-sm text-slate-500">
+                          <Square size={16} />
+                          Parar
+                          <span className="font-mono ml-1">{formatarTimer(timer)}</span>
+                        </Button>
+                        <p className="font-sans text-xs text-brand-muted">
                           Gravando… clique para parar
                         </p>
                       </div>
                     ) : (
-                      <div className="flex flex-col items-center gap-2">
-                        <button
-                          onClick={startRecording}
-                          className="flex size-16 items-center justify-center rounded-full bg-slate-700 text-white shadow-lg transition hover:bg-slate-900"
-                        >
-                          <Mic className="size-7" />
-                        </button>
-                        <p className="text-sm text-slate-500">
-                          Clique para iniciar a gravação
-                        </p>
-                      </div>
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        className="gap-2"
+                        onClick={startRecording}
+                      >
+                        <Mic size={18} />
+                        Iniciar Gravação
+                      </Button>
                     )}
                   </div>
                 </CardContent>
               </Card>
 
-              {/* ── SEÇÃO 2: Documentos ── */}
+              {/* SEÇÃO 2 — Documentos */}
               <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-slate-700 uppercase tracking-wide">
-                    2 · Documentos (Word / PDF / TXT)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {/* Área drag & drop */}
+                <CardContent className="pt-5 space-y-4">
+                  <SectionLabel>Documentos</SectionLabel>
+
                   <div
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setDragOverDoc(true);
-                    }}
+                    onDragOver={(e) => { e.preventDefault(); setDragOverDoc(true); }}
                     onDragLeave={() => setDragOverDoc(false)}
                     onDrop={handleDocDrop}
-                    className={`flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed p-5 text-sm transition ${
-                      dragOverDoc
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-slate-200 text-slate-500 hover:border-slate-400 hover:text-slate-700"
+                    onClick={() => document.getElementById(docInputId)?.click()}
+                    className={`flex cursor-pointer flex-col items-center gap-2 rounded border-2 border-dashed p-5 text-center transition-colors ${
+                      dragOverDoc ? "border-teal bg-teal/5" : "border-brand-border hover:border-teal/40"
                     }`}
-                    onClick={() =>
-                      document.getElementById(docInputId)?.click()
-                    }
                   >
-                    {uploadandoDoc ? (
-                      <Loader2 className="size-6 animate-spin" />
-                    ) : (
-                      <Upload className="size-6" />
-                    )}
-                    <span>
-                      {uploadandoDoc
-                        ? "Processando arquivos..."
-                        : "Arraste arquivos aqui ou clique para selecionar"}
-                    </span>
-                    <span className="text-xs text-slate-400">
-                      .doc, .docx, .pdf, .txt · máx 20 MB por arquivo
-                    </span>
+                    {uploadandoDoc
+                      ? <Loader2 className="size-5 animate-spin text-brand-muted" />
+                      : <Upload className="size-5 text-brand-muted" />}
+                    <p className="font-sans text-sm text-brand-muted">
+                      {uploadandoDoc ? "Processando arquivos..." : "Arraste ou clique para enviar"}
+                    </p>
+                    <p className="font-mono text-xs text-brand-muted">
+                      .doc .docx .pdf .txt — máx. 20MB
+                    </p>
                     <input
                       id={docInputId}
                       type="file"
@@ -862,51 +678,40 @@ export function FichaClient({
                     />
                   </div>
 
-                  {/* Lista de documentos enviados */}
                   {documentos.length > 0 && (
                     <div className="space-y-2">
                       {documentos.map((doc) => (
                         <div
                           key={doc.id}
-                          className="flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
+                          className="flex items-center gap-3 rounded border border-brand-border bg-brand-bg px-3 py-2.5"
                         >
-                          {iconeDocumento(doc.nome_original)}
+                          <FileText className="size-4 text-brand-muted shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="truncate text-sm font-medium text-slate-800">
+                            <p className="font-mono text-sm text-brand-black truncate">
                               {doc.nome_original}
                             </p>
                             {doc.processado && doc.texto_extraido && (
-                              <span className="inline-flex items-center gap-1 text-xs text-green-600">
-                                <Check className="size-3" />
-                                Texto extraído
-                              </span>
+                              <Badge variant="success" className="mt-1">✓ Extraído</Badge>
                             )}
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
                             {doc.texto_extraido && (
                               <Button
                                 size="sm"
-                                variant="outline"
-                                className="h-7 text-xs"
-                                onClick={() =>
-                                  incluirNaFicha(
-                                    doc.texto_extraido!,
-                                    `Documento: ${doc.nome_original}`
-                                  )
-                                }
+                                variant="ghost"
+                                className="text-teal text-xs h-7"
+                                onClick={() => incluirNaFicha(doc.texto_extraido!, `Documento: ${doc.nome_original}`)}
                               >
-                                <Plus className="size-3" />
+                                <Plus size={11} />
                                 Incluir na ficha
                               </Button>
                             )}
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 w-7 p-0 text-slate-400 hover:text-red-500"
+                            <button
+                              className="flex size-7 items-center justify-center rounded text-brand-muted hover:text-red-500 transition-colors"
                               onClick={() => handleRemoverDocumento(doc)}
                             >
-                              <Trash2 className="size-3.5" />
-                            </Button>
+                              <X size={14} />
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -915,32 +720,25 @@ export function FichaClient({
                 </CardContent>
               </Card>
 
-              {/* ── SEÇÃO 3: Foto de Ficha Física ── */}
+              {/* SEÇÃO 3 — Foto da Ficha Física */}
               <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-slate-700 uppercase tracking-wide">
-                    3 · Foto de Ficha Física
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="pt-5 space-y-4">
+                  <SectionLabel>Foto da Ficha Física</SectionLabel>
+
                   {fotosficha.length === 0 ? (
                     <label
                       htmlFor={fotoInputId}
-                      className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-slate-200 p-5 text-sm text-slate-500 transition hover:border-slate-400 hover:text-slate-700"
+                      className="flex cursor-pointer flex-col items-center gap-2 rounded border-2 border-dashed border-brand-border p-5 text-center transition-colors hover:border-teal/40"
                     >
-                      {uploadandoFoto ? (
-                        <Loader2 className="size-6 animate-spin" />
-                      ) : (
-                        <ImageIcon className="size-6" />
-                      )}
-                      <span>
-                        {uploadandoFoto
-                          ? "Enviando e extraindo texto..."
-                          : "Clique para enviar foto da ficha"}
-                      </span>
-                      <span className="text-xs text-slate-400">
-                        jpg, png, webp · máx 10 MB
-                      </span>
+                      {uploadandoFoto
+                        ? <Loader2 className="size-5 animate-spin text-brand-muted" />
+                        : <ImageIcon className="size-5 text-brand-muted" />}
+                      <p className="font-sans text-sm text-brand-muted">
+                        {uploadandoFoto ? "Enviando e extraindo texto..." : "Arraste ou clique para enviar"}
+                      </p>
+                      <p className="font-mono text-xs text-brand-muted">
+                        jpg, png, webp — máx. 10MB
+                      </p>
                       <input
                         id={fotoInputId}
                         type="file"
@@ -952,18 +750,17 @@ export function FichaClient({
                     </label>
                   ) : (
                     fotosficha.map((foto) => (
-                      <div key={foto.id} className="space-y-2">
-                        {/* Preview */}
-                        <div className="relative overflow-hidden rounded-lg border border-slate-200">
+                      <div key={foto.id} className="space-y-3">
+                        <div className="relative overflow-hidden rounded border border-brand-border">
                           {signedUrls[foto.id] ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
                               src={signedUrls[foto.id]}
                               alt="Foto da ficha"
-                              className="max-h-48 w-full object-contain bg-slate-50"
+                              className="w-full object-contain max-h-64 bg-brand-bg"
                             />
                           ) : (
-                            <div className="flex h-32 items-center justify-center bg-slate-50">
+                            <div className="flex h-32 items-center justify-center bg-brand-bg">
                               <Skeleton className="size-full" />
                             </div>
                           )}
@@ -971,41 +768,29 @@ export function FichaClient({
                             className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-white/90 text-red-500 shadow hover:bg-red-50"
                             onClick={() => handleRemoverFoto(foto)}
                           >
-                            <X className="size-3.5" />
+                            <X size={12} />
                           </button>
                         </div>
 
-                        {/* Status e ações */}
                         <div className="flex items-center justify-between">
                           {extraindo[foto.id] ? (
-                            <span className="flex items-center gap-1 text-xs text-slate-500">
-                              <Loader2 className="size-3 animate-spin" />
-                              Extraindo texto com IA...
+                            <span className="flex items-center gap-1 font-mono text-xs text-brand-muted">
+                              <Loader2 size={11} className="animate-spin" />
+                              Analisando imagem...
                             </span>
                           ) : foto.processado && foto.texto_extraido ? (
-                            <span className="flex items-center gap-1 text-xs text-green-600">
-                              <Check className="size-3" />
-                              Texto extraído
-                            </span>
+                            <Badge variant="success">✓ Extraído</Badge>
                           ) : (
-                            <span className="text-xs text-slate-400">
-                              Sem texto extraído
-                            </span>
+                            <span className="font-mono text-xs text-brand-muted">Sem texto extraído</span>
                           )}
-
                           {foto.texto_extraido && (
                             <Button
                               size="sm"
-                              variant="outline"
-                              className="h-7 text-xs"
-                              onClick={() =>
-                                incluirNaFicha(
-                                  foto.texto_extraido!,
-                                  "Foto da ficha"
-                                )
-                              }
+                              variant="ghost"
+                              className="text-teal text-xs h-7"
+                              onClick={() => incluirNaFicha(foto.texto_extraido!, "Foto da ficha")}
                             >
-                              <Plus className="size-3" />
+                              <Plus size={11} />
                               Incluir na ficha
                             </Button>
                           )}
@@ -1016,78 +801,78 @@ export function FichaClient({
                 </CardContent>
               </Card>
 
-              {/* ── SEÇÃO 4: Transcrição Consolidada ── */}
+              {/* SEÇÃO 4 — Transcrição Consolidada */}
               <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-slate-700 uppercase tracking-wide flex items-center justify-between">
-                    4 · Transcrição Consolidada
+                <CardContent className="pt-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <SectionLabel>Transcrição Consolidada</SectionLabel>
                     {salvandoTranscricao && (
-                      <span className="text-xs font-normal text-slate-400 normal-case tracking-normal">
-                        Salvando...
-                      </span>
+                      <span className="font-mono text-xs text-brand-muted">✓ Salvo</span>
                     )}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
+                  </div>
                   <Textarea
                     value={transcricao}
                     onChange={(e) => handleTranscricaoChange(e.target.value)}
-                    placeholder="As informações de voz, documentos e fotos aparecerão aqui automaticamente. Você também pode digitar diretamente."
-                    rows={10}
-                    className="resize-none"
+                    placeholder="As informações de voz, documentos e fotos aparecerão aqui. Você também pode digitar diretamente."
+                    className="font-sans text-sm resize-none min-h-[220px] border-brand-border bg-brand-bg focus:border-teal rounded p-3.5"
                   />
                   <Button
+                    variant="primary"
+                    size="lg"
+                    className="w-full gap-2"
                     disabled={!transcricao.trim()}
-                    className="w-full"
-                    onClick={() =>
-                      toast.info("Módulo de orçamento em breve!")
-                    }
+                    onClick={() => toast.info("Funcionalidade disponível na próxima versão")}
                   >
-                    <FileText className="size-4" />
-                    Gerar Orçamento
+                    <Sparkles size={16} />
+                    Gerar Orçamento com IA
                   </Button>
                 </CardContent>
               </Card>
             </TabsContent>
 
-            {/* ═══════════════════════════════════════
+            {/* ══════════════════════════════
                 TAB: ANOTAÇÕES
-            ════════════════════════════════════════ */}
-            <TabsContent value="anotacoes">
+            ══════════════════════════════ */}
+            <TabsContent value="anotacoes" className="mt-0">
               <Card>
-                <CardContent className="space-y-4 pt-6">
+                <CardContent className="pt-5 space-y-3">
                   <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-slate-700">
-                      Anotações do dentista
-                    </label>
+                    <SectionLabel>Anotações Clínicas</SectionLabel>
                     {salvandoAnotacoes && (
-                      <span className="text-xs text-slate-400">
-                        Salvando...
-                      </span>
+                      <span className="font-mono text-xs text-brand-muted">✓ Salvo</span>
                     )}
                   </div>
                   <Textarea
                     value={anotacoes}
                     onChange={(e) => handleAnotacoesChange(e.target.value)}
-                    placeholder="Observações clínicas, plano de tratamento, notas relevantes..."
-                    rows={14}
-                    className="resize-none"
+                    placeholder="Anotações clínicas, observações do dentista..."
+                    className="font-sans text-sm resize-none min-h-[320px] border-brand-border bg-brand-bg focus:border-teal rounded p-3.5"
                   />
                 </CardContent>
               </Card>
             </TabsContent>
 
-            {/* ═══════════════════════════════════════
-                TAB: ORÇAMENTO (placeholder)
-            ════════════════════════════════════════ */}
-            <TabsContent value="orcamento">
+            {/* ══════════════════════════════
+                TAB: ORÇAMENTO
+            ══════════════════════════════ */}
+            <TabsContent value="orcamento" className="mt-0">
               <Card>
-                <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-                  <FileText className="mb-4 size-12 text-slate-300" />
-                  <p className="text-slate-500">
-                    Grave ou digite os procedimentos e clique em{" "}
-                    <strong>Gerar Orçamento</strong> na aba Ficha.
+                <CardContent className="flex flex-col items-center justify-center py-16 text-center gap-3">
+                  <Receipt size={40} className="text-brand-muted/30" />
+                  <p className="font-serif text-lg text-brand-black">
+                    Nenhum orçamento gerado
                   </p>
+                  <p className="font-sans text-sm text-brand-muted max-w-xs">
+                    Grave ou digite os procedimentos na aba Ficha
+                    e clique em Gerar Orçamento
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="mt-2"
+                    onClick={() => setActiveTab("ficha")}
+                  >
+                    Ir para Ficha
+                  </Button>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1095,132 +880,120 @@ export function FichaClient({
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════
-          RADIOGRAFIAS — fora das tabs, abaixo das duas colunas
-      ══════════════════════════════════════════════════════════════ */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">
-            Radiografias
-          </h2>
-          <label
-            htmlFor={rxInputId}
-            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-          >
-            {uploadandoRx ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Plus className="size-4" />
-            )}
-            Adicionar
-            <input
-              id={rxInputId}
-              type="file"
-              multiple
-              accept="image/jpeg,image/png,image/webp,.pdf"
-              className="hidden"
-              onChange={handleUploadRx}
-              disabled={uploadandoRx}
-            />
-          </label>
-        </div>
-
-        {radiografias.length === 0 ? (
-          <div className="flex h-32 items-center justify-center rounded-lg border-2 border-dashed border-slate-200 text-sm text-slate-400">
-            Nenhuma radiografia adicionada ainda
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {radiografias.map((rx, idx) => (
-              <div
-                key={rx.id}
-                className="group relative overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
+      {/* ════════════════════════════════════════════════════════════
+          RADIOGRAFIAS — fora das tabs, largura total
+      ════════════════════════════════════════════════════════════ */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <SectionLabel>Radiografias</SectionLabel>
+            <div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => document.getElementById(rxInputId)?.click()}
               >
-                {/* Thumbnail */}
-                {signedUrls[rx.id] ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={signedUrls[rx.id]}
-                    alt={rx.nome_original}
-                    className="h-36 w-full object-cover cursor-pointer"
-                    onClick={() => {
-                      setLightboxIndex(idx);
-                      setLightboxOpen(true);
-                    }}
-                  />
+                {uploadandoRx ? (
+                  <Loader2 size={13} className="animate-spin" />
                 ) : (
-                  <div
-                    className="flex h-36 cursor-pointer items-center justify-center bg-slate-100"
-                    onClick={() => {
-                      setLightboxIndex(idx);
-                      setLightboxOpen(true);
-                    }}
-                  >
-                    <ImageIcon className="size-8 text-slate-300" />
-                  </div>
+                  <Plus size={13} />
                 )}
-
-                {/* Overlay de ações */}
-                <div className="absolute inset-0 flex flex-col justify-between bg-black/0 p-2 opacity-0 transition-all group-hover:bg-black/40 group-hover:opacity-100">
-                  <div className="flex justify-end">
-                    <button
-                      className="flex size-6 items-center justify-center rounded-full bg-white/90 text-red-500 hover:bg-red-50"
-                      onClick={() => handleRemoverRx(rx)}
-                    >
-                      <X className="size-3.5" />
-                    </button>
-                  </div>
-                  <div className="flex gap-1">
-                    <button
-                      className="flex flex-1 items-center justify-center gap-1 rounded bg-white/90 px-1 py-1 text-xs font-medium text-slate-700 hover:bg-white"
-                      onClick={() => {
-                        setLightboxIndex(idx);
-                        setLightboxOpen(true);
-                      }}
-                    >
-                      <ZoomIn className="size-3" />
-                      Ver
-                    </button>
-                    <button
-                      className="flex flex-1 items-center justify-center gap-1 rounded bg-white/90 px-1 py-1 text-xs font-medium text-slate-700 hover:bg-white"
-                      onClick={() => {
-                        setApresentacaoIndex(idx);
-                        setApresentacaoOpen(true);
-                      }}
-                    >
-                      <Presentation className="size-3" />
-                      Apresentar
-                    </button>
-                  </div>
-                </div>
-
-                {/* Nome do arquivo */}
-                <p className="truncate px-2 py-1 text-xs text-slate-500">
-                  {rx.nome_original}
-                </p>
-              </div>
-            ))}
+                Adicionar
+              </Button>
+              <input
+                id={rxInputId}
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/webp,.pdf"
+                className="hidden"
+                onChange={handleUploadRx}
+                disabled={uploadandoRx}
+              />
+            </div>
           </div>
-        )}
-      </div>
+        </CardHeader>
+        <CardContent>
+          {radiografias.length === 0 ? (
+            <div className="flex h-28 items-center justify-center rounded border-2 border-dashed border-brand-border font-sans text-sm text-brand-muted">
+              Nenhuma radiografia adicionada ainda
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-3">
+              {radiografias.map((rx, idx) => (
+                <div
+                  key={rx.id}
+                  className="group relative overflow-hidden rounded border border-brand-border bg-brand-bg"
+                >
+                  {signedUrls[rx.id] ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={signedUrls[rx.id]}
+                      alt={rx.nome_original}
+                      className="h-36 w-full object-cover cursor-pointer"
+                      onClick={() => { setLightboxIndex(idx); setLightboxOpen(true); }}
+                    />
+                  ) : (
+                    <div
+                      className="flex h-36 cursor-pointer items-center justify-center bg-brand-surface"
+                      onClick={() => { setLightboxIndex(idx); setLightboxOpen(true); }}
+                    >
+                      <ImageIcon className="size-8 text-brand-muted/30" />
+                    </div>
+                  )}
 
-      {/* ══════════════════════════════════════════════════════════════
+                  {/* Overlay hover */}
+                  <div className="absolute inset-0 flex flex-col justify-between bg-black/0 p-2 opacity-0 transition-all group-hover:bg-black/50 group-hover:opacity-100">
+                    <div className="flex justify-end">
+                      <button
+                        className="flex size-6 items-center justify-center rounded-full bg-white/90 text-red-500 hover:bg-red-50"
+                        onClick={() => handleRemoverRx(rx)}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        className="flex flex-1 items-center justify-center gap-1 rounded bg-white/90 px-1 py-1.5 text-xs font-medium text-brand-black hover:bg-white"
+                        onClick={() => { setLightboxIndex(idx); setLightboxOpen(true); }}
+                      >
+                        <ZoomIn size={11} /> Ampliar
+                      </button>
+                      <button
+                        className="flex flex-1 items-center justify-center gap-1 rounded bg-white/90 px-1 py-1.5 text-xs font-medium text-brand-black hover:bg-white"
+                        onClick={() => { setApresentacaoIndex(idx); setApresentacaoOpen(true); }}
+                      >
+                        <Presentation size={11} /> Apresentar
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="truncate px-2 py-1.5 font-mono text-xs text-brand-muted">
+                    {rx.nome_original}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ════════════════════════════════════════════════════════════
           LIGHTBOX
-      ══════════════════════════════════════════════════════════════ */}
+      ════════════════════════════════════════════════════════════ */}
       {lightboxOpen && radiografias[lightboxIndex] && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
           onClick={() => setLightboxOpen(false)}
         >
           <div
-            className="relative max-h-full max-w-4xl"
+            className="relative max-h-full max-w-5xl"
             onClick={(e) => e.stopPropagation()}
           >
             <button
-              className="absolute -right-3 -top-3 z-10 flex size-7 items-center justify-center rounded-full bg-white text-slate-700 shadow"
+              className="absolute -right-3 -top-3 z-10 flex size-7 items-center justify-center rounded-full bg-white text-brand-black shadow"
               onClick={() => setLightboxOpen(false)}
             >
-              <X className="size-4" />
+              <X size={14} />
             </button>
 
             {signedUrls[radiografias[lightboxIndex].id] ? (
@@ -1228,31 +1001,31 @@ export function FichaClient({
               <img
                 src={signedUrls[radiografias[lightboxIndex].id]}
                 alt={radiografias[lightboxIndex].nome_original}
-                className="max-h-[80vh] max-w-full rounded object-contain"
+                className="max-h-[90vh] max-w-full rounded object-contain"
               />
             ) : (
-              <div className="flex h-64 w-96 items-center justify-center rounded bg-slate-800">
-                <ImageIcon className="size-12 text-slate-500" />
+              <div className="flex h-64 w-96 items-center justify-center rounded bg-zinc-800">
+                <ImageIcon className="size-12 text-zinc-500" />
               </div>
             )}
 
-            <p className="mt-2 text-center text-sm text-white/80">
+            <p className="mt-2 text-center font-mono text-xs text-white/50">
               {radiografias[lightboxIndex].nome_original}
             </p>
 
             {radiografias.length > 1 && (
               <>
                 <button
-                  className="absolute -left-10 top-1/2 -translate-y-1/2 flex size-8 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/40"
+                  className="absolute -left-12 top-1/2 -translate-y-1/2 flex size-9 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/40"
                   onClick={lightboxAnterior}
                 >
-                  <ChevronLeft className="size-5" />
+                  <ChevronLeft size={20} />
                 </button>
                 <button
-                  className="absolute -right-10 top-1/2 -translate-y-1/2 flex size-8 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/40"
+                  className="absolute -right-12 top-1/2 -translate-y-1/2 flex size-9 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/40"
                   onClick={lightboxProximo}
                 >
-                  <ChevronRight className="size-5" />
+                  <ChevronRight size={20} />
                 </button>
               </>
             )}
@@ -1260,25 +1033,23 @@ export function FichaClient({
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════
-          MODO APRESENTAÇÃO
-      ══════════════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════════════════════════
+          MODO APRESENTAÇÃO — z-[9999] fullscreen
+      ════════════════════════════════════════════════════════════ */}
       {apresentacaoOpen && radiografias[apresentacaoIndex] && (
-        <div className="fixed inset-0 z-[100] flex flex-col bg-black">
-          {/* Nome discreto no topo */}
+        <div className="fixed inset-0 z-[9999] flex flex-col bg-black">
           <div className="flex items-center justify-between px-6 py-3">
-            <p className="text-sm text-white/40">
+            <p className="font-mono text-xs text-white/40">
               {radiografias[apresentacaoIndex].nome_original}
             </p>
             <button
-              className="flex size-8 items-center justify-center rounded text-white/60 hover:text-white"
+              className="flex size-8 items-center justify-center rounded text-white/60 hover:text-white transition-colors"
               onClick={() => setApresentacaoOpen(false)}
             >
-              <X className="size-5" />
+              <X size={18} />
             </button>
           </div>
 
-          {/* Imagem centralizada e maximizada */}
           <div className="flex flex-1 items-center justify-center px-16">
             {signedUrls[radiografias[apresentacaoIndex].id] ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -1294,20 +1065,19 @@ export function FichaClient({
             )}
           </div>
 
-          {/* Navegação por setas */}
           {radiografias.length > 1 && (
             <>
               <button
-                className="absolute left-4 top-1/2 -translate-y-1/2 flex size-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+                className="absolute left-4 top-1/2 -translate-y-1/2 flex size-11 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
                 onClick={apresentacaoAnterior}
               >
-                <ChevronLeft className="size-6" />
+                <ChevronLeft size={24} />
               </button>
               <button
-                className="absolute right-4 top-1/2 -translate-y-1/2 flex size-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+                className="absolute right-4 top-1/2 -translate-y-1/2 flex size-11 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
                 onClick={apresentacaoProximo}
               >
-                <ChevronRight className="size-6" />
+                <ChevronRight size={24} />
               </button>
             </>
           )}

@@ -5,21 +5,21 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
 import {
+  Button,
   Card,
-  CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { toast } from "sonner";
+  CardContent,
+  Input,
+} from "@/components/dentai";
+import { Textarea } from "@/components/ui/textarea";
 import { createPaciente } from "./actions";
 
-// Máscara de CPF: 000.000.000-00
+// ── Máscaras ──────────────────────────────────────────────────────
 function mascaraCPF(valor: string): string {
   return valor
     .replace(/\D/g, "")
@@ -29,7 +29,6 @@ function mascaraCPF(valor: string): string {
     .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
 }
 
-// Máscara de telefone: (00) 00000-0000
 function mascaraTelefone(valor: string): string {
   const digits = valor.replace(/\D/g, "").slice(0, 11);
   if (digits.length <= 10) {
@@ -42,6 +41,7 @@ function mascaraTelefone(valor: string): string {
     .replace(/(\d{5})(\d)/, "$1-$2");
 }
 
+// ── Schema Zod ────────────────────────────────────────────────────
 const pacienteSchema = z.object({
   nome: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
   cpf: z.string().optional(),
@@ -63,7 +63,7 @@ const pacienteSchema = z.object({
 
 type PacienteFormData = z.infer<typeof pacienteSchema>;
 
-export default function NovoPacientePage() {
+export default function NovoPacientePage(): React.JSX.Element {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [whatsappIgualTelefone, setWhatsappIgualTelefone] = useState(false);
@@ -100,13 +100,13 @@ export default function NovoPacientePage() {
     }
   }, [whatsappIgualTelefone, telefoneValue, setValue]);
 
-  function handleCPFChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleCPFChange(e: React.ChangeEvent<HTMLInputElement>): void {
     const masked = mascaraCPF(e.target.value);
     setCpfValue(masked);
     setValue("cpf", masked);
   }
 
-  function handleTelefoneChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleTelefoneChange(e: React.ChangeEvent<HTMLInputElement>): void {
     const masked = mascaraTelefone(e.target.value);
     setTelefoneValue(masked);
     setValue("telefone", masked);
@@ -116,26 +116,26 @@ export default function NovoPacientePage() {
     }
   }
 
-  function handleWhatsappChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleWhatsappChange(e: React.ChangeEvent<HTMLInputElement>): void {
     const masked = mascaraTelefone(e.target.value);
     setWhatsappValue(masked);
     setValue("whatsapp", masked);
   }
 
-  async function onSubmit(data: PacienteFormData) {
+  async function onSubmit(data: PacienteFormData): Promise<void> {
     setIsSubmitting(true);
     try {
       const result = await createPaciente({
         nome: data.nome,
-        cpf: data.cpf || null,
-        email: data.email || null,
-        telefone: data.telefone || null,
-        data_nascimento: data.data_nascimento || null,
-        endereco: data.endereco || null,
-        cidade: data.cidade || null,
-        estado: data.estado || null,
-        whatsapp: data.whatsapp || null,
-        observacoes: data.observacoes || null,
+        cpf: data.cpf ?? null,
+        email: data.email ?? null,
+        telefone: data.telefone ?? null,
+        data_nascimento: data.data_nascimento ?? null,
+        endereco: data.endereco ?? null,
+        cidade: data.cidade ?? null,
+        estado: data.estado ?? null,
+        whatsapp: data.whatsapp ?? null,
+        observacoes: data.observacoes ?? null,
       });
 
       if (result.success) {
@@ -154,172 +154,150 @@ export default function NovoPacientePage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">
-          Novo Paciente
-        </h1>
-        <p className="text-slate-600">
-          Preencha os dados para cadastrar um novo paciente
-        </p>
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <Link href="/dashboard/pacientes">
+          <Button variant="ghost" size="sm">
+            <ArrowLeft size={15} />
+            Voltar
+          </Button>
+        </Link>
+        <h1 className="font-serif text-3xl text-brand-black">Novo Paciente</h1>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        {/* Dados Pessoais */}
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+        {/* ── Dados Pessoais ── */}
         <Card>
           <CardHeader>
             <CardTitle>Dados Pessoais</CardTitle>
-            <CardDescription>Informações de identificação do paciente</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="nome">Nome completo *</Label>
-              <Input
-                id="nome"
-                {...register("nome")}
-                placeholder="Ex: Maria da Silva"
-              />
-              {errors.nome && (
-                <p className="text-sm text-destructive">{errors.nome.message}</p>
-              )}
-            </div>
+            {/* Nome */}
+            <Input
+              label="Nome completo *"
+              placeholder="Ex: Maria da Silva"
+              error={errors.nome?.message}
+              {...register("nome")}
+            />
 
+            {/* CPF + Data de nascimento */}
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="cpf">CPF</Label>
-                <Input
-                  id="cpf"
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-zinc-700">CPF</label>
+                <input
                   value={cpfValue}
                   onChange={handleCPFChange}
                   placeholder="000.000.000-00"
                   inputMode="numeric"
+                  className="w-full font-mono text-sm px-3 py-2.5 rounded-[3px] border border-brand-border bg-brand-bg text-brand-black focus:outline-none focus:ring-2 focus:ring-teal/30 focus:border-teal placeholder:text-brand-muted/60 transition-colors"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="data_nascimento">Data de Nascimento</Label>
-                <Input
-                  id="data_nascimento"
-                  type="date"
-                  {...register("data_nascimento")}
-                />
-              </div>
+              <Input
+                label="Data de nascimento"
+                type="date"
+                {...register("data_nascimento")}
+              />
             </div>
 
+            {/* Email + Telefone */}
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  {...register("email")}
-                  placeholder="email@exemplo.com"
-                />
-                {errors.email && (
-                  <p className="text-sm text-destructive">
-                    {errors.email.message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="telefone">Telefone</Label>
-                <Input
-                  id="telefone"
+              <Input
+                label="Email"
+                type="email"
+                placeholder="email@exemplo.com"
+                error={errors.email?.message}
+                {...register("email")}
+              />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-zinc-700">Telefone</label>
+                <input
                   value={telefoneValue}
                   onChange={handleTelefoneChange}
                   placeholder="(00) 00000-0000"
                   inputMode="numeric"
+                  className="w-full font-mono text-sm px-3 py-2.5 rounded-[3px] border border-brand-border bg-brand-bg text-brand-black focus:outline-none focus:ring-2 focus:ring-teal/30 focus:border-teal placeholder:text-brand-muted/60 transition-colors"
                 />
               </div>
             </div>
 
-            <div className="space-y-2">
+            {/* WhatsApp */}
+            <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
-                <Label htmlFor="whatsapp">WhatsApp</Label>
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                <label className="text-xs font-semibold text-zinc-700">WhatsApp</label>
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-brand-muted">
                   <input
                     type="checkbox"
                     checked={whatsappIgualTelefone}
                     onChange={(e) => setWhatsappIgualTelefone(e.target.checked)}
-                    className="size-4 rounded border-slate-300"
+                    className="size-3.5 rounded border-brand-border accent-teal"
                   />
                   Mesmo que telefone
                 </label>
               </div>
-              <Input
-                id="whatsapp"
+              <input
                 value={whatsappValue}
                 onChange={handleWhatsappChange}
                 placeholder="(00) 00000-0000"
                 inputMode="numeric"
                 disabled={whatsappIgualTelefone}
+                className="w-full font-mono text-sm px-3 py-2.5 rounded-[3px] border border-brand-border bg-brand-bg text-brand-black focus:outline-none focus:ring-2 focus:ring-teal/30 focus:border-teal placeholder:text-brand-muted/60 transition-colors disabled:opacity-50"
               />
             </div>
           </CardContent>
         </Card>
 
-        {/* Endereço */}
+        {/* ── Endereço ── */}
         <Card>
           <CardHeader>
             <CardTitle>Endereço</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="endereco">Endereço</Label>
-              <Input
-                id="endereco"
-                {...register("endereco")}
-                placeholder="Rua, número, complemento"
-              />
-            </div>
+            <Input
+              label="Endereço"
+              placeholder="Rua, número, complemento"
+              {...register("endereco")}
+            />
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="cidade">Cidade</Label>
-                <Input
-                  id="cidade"
-                  {...register("cidade")}
-                  placeholder="Cidade"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="estado">Estado</Label>
-                <Input
-                  id="estado"
-                  {...register("estado")}
-                  placeholder="UF"
-                  maxLength={2}
-                />
-              </div>
+              <Input
+                label="Cidade"
+                placeholder="Cidade"
+                {...register("cidade")}
+              />
+              <Input
+                label="Estado"
+                placeholder="UF"
+                maxLength={2}
+                {...register("estado")}
+              />
             </div>
           </CardContent>
         </Card>
 
-        {/* Observações */}
+        {/* ── Observações ── */}
         <Card>
           <CardHeader>
             <CardTitle>Observações</CardTitle>
           </CardHeader>
           <CardContent>
             <Textarea
-              id="observacoes"
               {...register("observacoes")}
-              placeholder="Alergias, condições especiais, histórico relevante..."
+              placeholder="Alergias, condições especiais, observações..."
               rows={4}
+              className="font-sans text-sm border-brand-border bg-brand-bg focus:border-teal focus:ring-teal/30 resize-none"
             />
           </CardContent>
         </Card>
 
-        <div className="flex gap-3">
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Salvando..." : "Salvar paciente"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => router.back()}
-            disabled={isSubmitting}
-          >
-            Cancelar
-          </Button>
-        </div>
+        {/* Submit */}
+        <Button
+          type="submit"
+          variant="primary"
+          size="lg"
+          className="w-full"
+          loading={isSubmitting}
+        >
+          Salvar Paciente
+        </Button>
       </form>
     </div>
   );

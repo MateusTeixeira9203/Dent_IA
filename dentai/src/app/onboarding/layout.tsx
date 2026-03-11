@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { hasDentistaRegistro } from "@/lib/auth";
-import { Logo } from "@/components/brand/logo";
+import { LogoMark } from "@/components/dentai/Logo";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 
 export default async function OnboardingLayout({
@@ -30,7 +30,7 @@ export default async function OnboardingLayout({
     >
       {/* Barra superior */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-        <Logo size="sm" />
+        <LogoMark />
         <ThemeToggle />
       </div>
 

@@ -24,7 +24,7 @@ const dmSerifDisplay = DM_Serif_Display({
 });
 
 export const metadata: Metadata = {
-  title: "DentAI - Gestão Odontológica",
+  title: "Dent IA — Inteligência Odontológica",
   description: "Micro-SaaS odontológico com inteligência artificial",
 };
 

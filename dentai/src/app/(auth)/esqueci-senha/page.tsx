@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Logo } from "@/components/brand/logo";
+import { Logo } from "@/components/dentai/Logo";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
@@ -76,7 +76,7 @@ export default function EsqueciSenhaPage(): React.JSX.Element {
       <div className="flex flex-1 flex-col items-center justify-center px-4 pb-8">
         {/* Logo acima do card */}
         <div className="mb-6">
-          <Logo size="sm" />
+          <Logo size="sm" variant="default" showTagline={false} />
         </div>
 
         {/* Card */}

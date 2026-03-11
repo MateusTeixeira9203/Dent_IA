@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
-import { Logo } from "@/components/brand/logo";
+import { LogoMark } from "@/components/dentai/Logo";
 
 const navItems = [
   { href: "/dashboard", label: "Início", icon: LayoutDashboard },
@@ -52,7 +52,7 @@ export function Sidebar({ nome, clinicaNome }: SidebarProps): React.JSX.Element 
     >
       {/* Logo */}
       <div className="flex items-center h-[52px] px-5 border-b border-border shrink-0">
-        <Logo size="sm" />
+        <LogoMark />
       </div>
 
       {/* Navegação */}
