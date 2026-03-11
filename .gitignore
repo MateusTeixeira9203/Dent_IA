@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+/.pnp
+.pnp.*
+
+# Next.js
+.next/
+out/
+build/
+
+# env files - NUNCA commitar credenciais
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# misc
+.DS_Store
+*.pem
+Thumbs.db
+
+# debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# typescript
+*.tsbuildinfo
+
+# vercel
+.vercel
+
+# supabase local
+supabase/.branches
+supabase/.temp
+
+# IDE / ferramentas locais (podem ter credenciais)
+.cursor/
+.claude/

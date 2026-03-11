@@ -1,0 +1,119 @@
+import { NextRequest, NextResponse } from "next/server";
+import OpenAI from "openai";
+import { createClient } from "@/lib/supabase/server";
+
+const openaiApiKey = process.env.OPENAI_API_KEY;
+if (!openaiApiKey) {
+  throw new Error("OPENAI_API_KEY não configurada.");
+}
+
+const openai = new OpenAI({ apiKey: openaiApiKey });
+
+interface ExtrairImagemBody {
+  ficha_arquivo_id: string;
+  tipo: "foto_ficha" | "radiografia";
+}
+
+export async function POST(req: NextRequest): Promise<NextResponse> {
+  let body: ExtrairImagemBody;
+
+  try {
+    body = (await req.json()) as ExtrairImagemBody;
+  } catch {
+    return NextResponse.json({ error: "Body inválido." }, { status: 400 });
+  }
+
+  const { ficha_arquivo_id, tipo } = body;
+
+  if (!ficha_arquivo_id) {
+    return NextResponse.json(
+      { error: "ficha_arquivo_id é obrigatório." },
+      { status: 400 }
+    );
+  }
+
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  }
+
+  // Busca o registro do arquivo
+  const { data: arquivo, error: arquivoError } = await supabase
+    .from("ficha_arquivos")
+    .select("*")
+    .eq("id", ficha_arquivo_id)
+    .maybeSingle();
+
+  if (arquivoError || !arquivo) {
+    return NextResponse.json(
+      { error: "Arquivo não encontrado." },
+      { status: 404 }
+    );
+  }
+
+  // Gera URL assinada no bucket correto
+  const bucketName = tipo === "foto_ficha" ? "fichas" : "radiografias";
+  const { data: signedData, error: signedError } = await supabase.storage
+    .from(bucketName)
+    .createSignedUrl(arquivo.storage_url, 120);
+
+  if (signedError || !signedData?.signedUrl) {
+    console.error("Erro ao gerar URL assinada:", signedError);
+    return NextResponse.json(
+      { error: "Erro ao acessar o arquivo." },
+      { status: 500 }
+    );
+  }
+
+  // Monta o prompt conforme o tipo do arquivo
+  const prompt =
+    tipo === "foto_ficha"
+      ? "Esta é uma foto de uma ficha odontológica física. Extraia todas as informações visíveis: procedimentos anotados, observações, datas e qualquer dado clínico relevante. Retorne em texto limpo e organizado."
+      : "Extraia todas as informações clínicas visíveis nesta imagem odontológica.";
+
+  let textoExtraido: string;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            {
+              type: "image_url",
+              image_url: { url: signedData.signedUrl },
+            },
+          ],
+        },
+      ],
+      max_tokens: 2000,
+    });
+
+    textoExtraido = response.choices[0]?.message?.content ?? "";
+  } catch (err) {
+    console.error("Erro no GPT-4o Vision:", err);
+    return NextResponse.json(
+      { error: "Erro ao processar imagem com IA." },
+      { status: 500 }
+    );
+  }
+
+  // Atualiza o registro com o texto extraído
+  const { error: updateError } = await supabase
+    .from("ficha_arquivos")
+    .update({ texto_extraido: textoExtraido, processado: true })
+    .eq("id", ficha_arquivo_id);
+
+  if (updateError) {
+    console.error("Erro ao salvar texto extraído:", updateError);
+  }
+
+  return NextResponse.json({ texto: textoExtraido });
+}
