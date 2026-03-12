@@ -50,15 +50,15 @@
   --color-surface: var(--surface);
   --color-bg-brand: var(--bg);
 
-  /* Tokens adicionais da marca */
+  /* Tokens adicionais da marca — referenciam CSS vars para suporte a dark mode */
   --color-teal-light:    #5dbeb0;
   --color-teal-pale:     #e4f4f1;
   --color-teal-dark:     #1e7060;
-  --color-brand-black:   #0d0d0d;
-  --color-brand-bg:      #f5f3ef;
-  --color-brand-surface: #eceae4;
-  --color-brand-border:  #d4d1ca;
-  --color-brand-muted:   #8a8a8a;
+  --color-brand-black:   var(--brand-text);
+  --color-brand-bg:      var(--brand-input-bg);
+  --color-brand-surface: var(--brand-surface-color);
+  --color-brand-border:  var(--brand-border-color);
+  --color-brand-muted:   var(--brand-muted-color);
 
   /* Sombras */
   --shadow-card:  0 1px 4px rgba(0,0,0,0.07);
@@ -92,6 +92,18 @@
   --card-bg: #ffffff;
   --border-brand: #d0cdc6;
   --sidebar-bg: #ffffff;
+
+  /* Custom — hover e badges (HSL triplet para uso com hsl()) */
+  --primary-hover: 171 45% 51%;
+  --badge-amber-bg: 38 92% 50%;
+  --badge-amber-text: 25 95% 35%;
+
+  /* Tokens de brand adaptáveis ao tema — override em .dark */
+  --brand-text:           #0d0d0d;
+  --brand-input-bg:       #f5f3ef;
+  --brand-surface-color:  #eceae4;
+  --brand-border-color:   #d4d1ca;
+  --brand-muted-color:    #8a8a8a;
 
   /* shadcn — modo claro com cores da marca */
   --background: oklch(0.97 0.004 76);
@@ -138,37 +150,49 @@
   --gray-mid: #5a5a5a;
   --gray: #222222;
 
-  /* shadcn — modo escuro */
-  --background: oklch(0.08 0 0);
-  --foreground: oklch(0.95 0.004 76);
-  --card: oklch(0.11 0 0);
-  --card-foreground: oklch(0.95 0.004 76);
+  /* Tokens de brand — dark mode */
+  --brand-text:           oklch(0.93 0.004 76);
+  --brand-input-bg:       oklch(0.15 0 0);
+  --brand-surface-color:  oklch(0.13 0 0);
+  --brand-border-color:   oklch(0.25 0 0);
+  --brand-muted-color:    oklch(0.45 0 0);
+
+  /* Custom dark — hover e badges */
+  --primary-hover: 171 45% 51%;
+  --badge-amber-bg: 38 92% 50%;
+  --badge-amber-text: 30 80% 55%;
+
+  /* shadcn — modo escuro com contraste corrigido */
+  --background: oklch(0.07 0 0);
+  --foreground: oklch(0.93 0.004 76);
+  --card: oklch(0.10 0 0);
+  --card-foreground: oklch(0.93 0.004 76);
   --popover: oklch(0.13 0 0);
-  --popover-foreground: oklch(0.95 0.004 76);
+  --popover-foreground: oklch(0.93 0.004 76);
   --primary: oklch(0.665 0.100 186);
   --primary-foreground: oklch(0.10 0 0);
-  --secondary: oklch(0.16 0 0);
-  --secondary-foreground: oklch(0.95 0.004 76);
-  --muted: oklch(0.16 0 0);
-  --muted-foreground: oklch(0.46 0 0);
-  --accent: oklch(0.16 0 0);
-  --accent-foreground: oklch(0.95 0.004 76);
+  --secondary: oklch(0.14 0 0);
+  --secondary-foreground: oklch(0.93 0.004 76);
+  --muted: oklch(0.14 0 0);
+  --muted-foreground: oklch(0.55 0 0);
+  --accent: oklch(0.14 0 0);
+  --accent-foreground: oklch(0.93 0.004 76);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(0.20 0 0);
-  --input: oklch(0.22 0 0);
+  --border: oklch(0.18 0 0);
+  --input: oklch(0.15 0 0);
   --ring: oklch(0.665 0.100 186);
   --chart-1: oklch(0.617 0.099 188);
   --chart-2: oklch(0.665 0.100 186);
   --chart-3: oklch(0.514 0.087 190);
   --chart-4: oklch(0.809 0.105 251.813);
   --chart-5: oklch(0.424 0.199 265.638);
-  --sidebar: oklch(0.09 0 0);
-  --sidebar-foreground: oklch(0.95 0.004 76);
+  --sidebar: oklch(0.08 0 0);
+  --sidebar-foreground: oklch(0.93 0.004 76);
   --sidebar-primary: oklch(0.617 0.099 188);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.16 0 0);
-  --sidebar-accent-foreground: oklch(0.95 0.004 76);
-  --sidebar-border: oklch(0.20 0 0);
+  --sidebar-accent: oklch(0.14 0 0);
+  --sidebar-accent-foreground: oklch(0.93 0.004 76);
+  --sidebar-border: oklch(0.16 0 0);
   --sidebar-ring: oklch(0.665 0.100 186);
 }
 
@@ -177,8 +201,11 @@
   50%       { transform: scaleY(1); }
 }
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out forwards;
 }
 @keyframes record-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(47,156,133,0.4); }
@@ -188,9 +215,12 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "tnum";
   }
   html {
     @apply font-sans;

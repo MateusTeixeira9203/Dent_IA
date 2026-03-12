@@ -1,31 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  Users,
-  FileText,
-  Receipt,
-  Settings,
-  LogOut,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import { usePathname, useRouter } from "next/navigation";
+import { motion } from "framer-motion";
+import { LayoutDashboard, Users, FileText, Receipt, Settings, LogOut } from "lucide-react";
+import { LogoIcon } from "@/components/brand/logo";
 import { createClient } from "@/lib/supabase/client";
-import { LogoMark } from "@/components/dentai/Logo";
+import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/dashboard", label: "Início", icon: LayoutDashboard },
-  { href: "/dashboard/pacientes", label: "Pacientes", icon: Users },
-  { href: "/dashboard/fichas", label: "Fichas", icon: FileText },
-  { href: "/dashboard/orcamentos", label: "Orçamentos", icon: Receipt },
-  { href: "/dashboard/configuracoes", label: "Configurações", icon: Settings },
+  { href: "/dashboard",               label: "Início",        icon: LayoutDashboard },
+  { href: "/dashboard/pacientes",     label: "Pacientes",     icon: Users           },
+  { href: "/dashboard/fichas",        label: "Fichas",        icon: FileText        },
+  { href: "/dashboard/orcamentos",    label: "Orçamentos",    icon: Receipt         },
+  { href: "/dashboard/configuracoes", label: "Configurações", icon: Settings        },
 ] as const;
 
-interface SidebarProps {
-  nome: string;
-  clinicaNome: string;
-}
+const spring = { type: "spring", duration: 0.3, bounce: 0 };
 
 function getIniciais(nome: string): string {
   const partes = nome.trim().split(/\s+/).filter(Boolean);
@@ -34,7 +25,14 @@ function getIniciais(nome: string): string {
   return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
 }
 
-export function Sidebar({ nome, clinicaNome }: SidebarProps): React.JSX.Element {
+interface SidebarProps {
+  nome: string;
+  clinicaNome: string;
+  collapsed: boolean;
+  onToggle: () => void;
+}
+
+export function Sidebar({ nome }: SidebarProps): React.JSX.Element {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -46,92 +44,68 @@ export function Sidebar({ nome, clinicaNome }: SidebarProps): React.JSX.Element 
   }
 
   return (
-    <aside
-      className="fixed left-0 top-0 z-40 h-screen w-60 flex flex-col border-r border-border"
-      style={{ backgroundColor: "var(--sidebar-bg)" }}
-    >
-      {/* Logo */}
-      <div className="flex items-center h-[52px] px-5 border-b border-border shrink-0">
-        <LogoMark />
-      </div>
+    <aside className="fixed left-0 top-0 z-40 h-screen w-16 flex flex-col items-center py-4 bg-sidebar border-r border-sidebar-border">
+      {/* Logo — só o dente, sem texto */}
+      <Link href="/dashboard" className="mb-8">
+        <LogoIcon size={28} />
+      </Link>
 
       {/* Navegação */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
+      <nav className="flex flex-col items-center gap-1 flex-1">
         {navItems.map((item) => {
-          const Icon = item.icon;
           const isActive =
-            item.href === "/dashboard"
-              ? pathname === "/dashboard"
-              : pathname.startsWith(item.href);
+            pathname === item.href ||
+            (item.href !== "/dashboard" && pathname.startsWith(item.href));
+          const Icon = item.icon;
 
           return (
             <Link
               key={item.href}
               href={item.href}
+              title={item.label}
+              aria-label={item.label}
               className={cn(
-                "flex items-center gap-3 rounded px-3 py-2.5 text-sm font-medium transition-colors relative border-l-2",
+                "relative w-12 h-12 flex items-center justify-center rounded-lg transition-colors group",
                 isActive
-                  ? "text-teal border-teal"
-                  : "text-muted-foreground hover:text-foreground border-transparent"
+                  ? "text-primary"
+                  : "text-muted-foreground hover:text-foreground"
               )}
-              style={
-                isActive
-                  ? { backgroundColor: "color-mix(in srgb, var(--teal) 8%, transparent)" }
-                  : undefined
-              }
             >
-              <Icon
-                className="size-4 shrink-0"
-                style={isActive ? { color: "var(--teal)" } : undefined}
-              />
-              {item.label}
+              {isActive && (
+                <motion.div
+                  layoutId="sidebar-active"
+                  className="absolute inset-0 bg-primary/[0.08] rounded-lg border-l-2 border-primary"
+                  transition={spring}
+                />
+              )}
+              <Icon className="relative z-10 w-5 h-5" />
             </Link>
           );
         })}
       </nav>
 
-      {/* Rodapé com info do dentista */}
-      <div className="shrink-0 border-t border-border p-3">
-        <div className="flex items-center gap-3 px-2 py-2">
-          {/* Avatar com iniciais — teal translúcido */}
-          <div
-            className="flex size-8 items-center justify-center rounded-full shrink-0 font-mono text-xs font-medium"
-            style={{
-              backgroundColor: "color-mix(in srgb, var(--teal) 15%, transparent)",
-              color: "var(--teal)",
-            }}
-          >
+      {/* Rodapé — avatar + logout */}
+      <div className="flex flex-col items-center gap-3 mt-auto">
+        <div className="w-px h-6 bg-border" />
+
+        <div
+          className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center"
+          title={nome}
+        >
+          <span className="font-mono text-xs text-primary font-medium">
             {getIniciais(nome)}
-          </div>
-
-          {/* Nome e consultório */}
-          <div className="flex-1 min-w-0">
-            <p className="font-sans font-medium text-sm text-foreground truncate leading-none mb-0.5">
-              {nome}
-            </p>
-            {clinicaNome && (
-              <p
-                className="font-mono text-[0.65rem] truncate leading-none"
-                style={{ color: "var(--gray-mid)" }}
-              >
-                {clinicaNome}
-              </p>
-            )}
-          </div>
-
-          {/* Botão de logout */}
-          <button
-            type="button"
-            onClick={handleLogout}
-            aria-label="Sair"
-            className="shrink-0 flex size-7 items-center justify-center rounded transition-colors"
-            style={{ color: "var(--gray-mid)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--foreground)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--gray-mid)")}
-          >
-            <LogOut className="size-3.5" />
-          </button>
+          </span>
         </div>
+
+        <button
+          type="button"
+          onClick={handleLogout}
+          title="Sair"
+          aria-label="Sair"
+          className="flex items-center justify-center w-8 h-8 rounded-md transition-colors text-muted-foreground hover:text-foreground hover:bg-card"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
       </div>
     </aside>
   );

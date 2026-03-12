@@ -2,16 +2,15 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
-import { ChevronDown, User, Settings, LogOut } from "lucide-react";
+import { User, Settings, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
-import { cn } from "@/lib/utils";
 
 const PAGE_TITLES: Record<string, string> = {
-  "/dashboard": "Início",
-  "/dashboard/pacientes": "Pacientes",
-  "/dashboard/fichas": "Fichas",
-  "/dashboard/orcamentos": "Orçamentos",
+  "/dashboard":               "Visão Geral",
+  "/dashboard/pacientes":     "Pacientes",
+  "/dashboard/fichas":        "Fichas Clínicas",
+  "/dashboard/orcamentos":    "Orçamentos",
   "/dashboard/configuracoes": "Configurações",
 };
 
@@ -29,7 +28,6 @@ function getIniciais(nome: string): string {
 
 function resolvePageTitle(pathname: string): string {
   if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname];
-  // Resolve rotas dinâmicas (ex: /dashboard/pacientes/[id])
   for (const [route, title] of Object.entries(PAGE_TITLES)) {
     if (route !== "/dashboard" && pathname.startsWith(route)) return title;
   }
@@ -64,57 +62,41 @@ export function Header({ nome, primeiroNome }: HeaderProps): React.JSX.Element {
   }
 
   return (
-    <header
-      className="flex h-[52px] items-center justify-between border-b border-border px-6"
-      style={{ backgroundColor: "var(--sidebar-bg)" }}
-    >
-      {/* Título da página atual */}
-      <h2 className="font-sans font-semibold text-[0.95rem] text-foreground leading-none">
+    <header className="h-[52px] flex items-center justify-between pl-6 pr-10">
+      {/* Título dinâmico baseado na rota */}
+      <h1 className="font-sans font-semibold text-sm text-foreground">
         {pageTitle}
-      </h2>
+      </h1>
 
-      {/* Área direita */}
-      <div className="flex items-center gap-1">
-        <ThemeToggle />
+      <div className="flex items-center gap-5 mr-2">
+        {/* Theme Toggle */}
+        <div className="w-9 h-9 flex items-center justify-center rounded-md hover:bg-card transition-colors">
+          <ThemeToggle />
+        </div>
 
         {/* Avatar + dropdown */}
         <div className="relative" ref={dropdownRef}>
           <button
             type="button"
             onClick={() => setDropdownOpen((v) => !v)}
-            className={cn(
-              "flex items-center gap-2 rounded px-2 py-1.5 transition-colors",
-              "hover:bg-secondary text-foreground"
-            )}
+            className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center hover:bg-primary/20 transition-colors"
             aria-label="Menu do usuário"
             aria-expanded={dropdownOpen}
           >
-            {/* Avatar — teal translúcido */}
-            <div
-              className="flex size-7 items-center justify-center rounded-full font-mono text-xs font-medium shrink-0"
-              style={{
-                backgroundColor: "color-mix(in srgb, var(--teal) 15%, transparent)",
-                color: "var(--teal)",
-              }}
-            >
+            <span className="font-mono text-xs text-primary font-medium">
               {getIniciais(nome)}
-            </div>
-            <span className="hidden sm:block font-sans text-sm font-medium">
-              Dr. {primeiroNome}
             </span>
-            <ChevronDown
-              className={cn(
-                "size-3.5 text-muted-foreground transition-transform duration-200",
-                dropdownOpen && "rotate-180"
-              )}
-            />
           </button>
 
           {/* Dropdown menu */}
           {dropdownOpen && (
-            <div
-              className="absolute right-0 top-full mt-1.5 w-48 rounded-lg border border-border bg-card shadow-md overflow-hidden z-50"
-            >
+            <div className="absolute right-0 top-full mt-1.5 w-56 rounded-lg border border-border bg-card overflow-hidden z-50 shadow-float">
+              {/* Label com nome e email placeholder */}
+              <div className="px-3 py-2.5 border-b border-border">
+                <p className="font-sans font-medium text-sm text-foreground">
+                  Dr. {primeiroNome}
+                </p>
+              </div>
               <div className="py-1">
                 <button
                   type="button"
@@ -122,10 +104,10 @@ export function Header({ nome, primeiroNome }: HeaderProps): React.JSX.Element {
                     setDropdownOpen(false);
                     router.push("/dashboard/configuracoes");
                   }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm font-sans text-foreground hover:bg-secondary transition-colors"
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm font-sans text-foreground hover:bg-background/60 transition-colors"
                 >
-                  <User className="size-4 text-muted-foreground" />
-                  Meu perfil
+                  <User className="w-4 h-4 text-muted-foreground" />
+                  Meu Perfil
                 </button>
                 <button
                   type="button"
@@ -133,9 +115,9 @@ export function Header({ nome, primeiroNome }: HeaderProps): React.JSX.Element {
                     setDropdownOpen(false);
                     router.push("/dashboard/configuracoes");
                   }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm font-sans text-foreground hover:bg-secondary transition-colors"
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm font-sans text-foreground hover:bg-background/60 transition-colors"
                 >
-                  <Settings className="size-4 text-muted-foreground" />
+                  <Settings className="w-4 h-4 text-muted-foreground" />
                   Configurações
                 </button>
 
@@ -144,9 +126,9 @@ export function Header({ nome, primeiroNome }: HeaderProps): React.JSX.Element {
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm font-sans text-destructive hover:bg-secondary transition-colors"
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm font-sans text-destructive hover:bg-background/60 transition-colors"
                 >
-                  <LogOut className="size-4" />
+                  <LogOut className="w-4 h-4" />
                   Sair
                 </button>
               </div>

@@ -1,20 +1,23 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { UserPlus } from "lucide-react";
-import { Button } from "@/components/dentai";
+import { Plus } from "lucide-react";
 import { PacientesList } from "./_components/pacientes-list";
 import { PacientesListSkeleton } from "./_components/pacientes-list-skeleton";
 
 export default function PacientesPage(): React.JSX.Element {
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="font-serif text-3xl text-brand-black">Pacientes</h1>
-        <Link href="/dashboard/pacientes/novo">
-          <Button variant="primary">
-            <UserPlus size={16} />
-            Novo Paciente
-          </Button>
+    <div className="animate-fade-in">
+      {/* Cabeçalho da página */}
+      <div className="flex items-center justify-between mb-8">
+        <p className="font-mono text-sm text-muted-foreground">
+          Gerencie seus pacientes
+        </p>
+        <Link
+          href="/dashboard/pacientes/novo"
+          className="inline-flex items-center gap-2 h-10 px-4 bg-primary text-primary-foreground font-sans font-medium text-sm rounded-md hover:bg-[hsl(var(--primary-hover))] active:scale-[0.98] transition-all"
+        >
+          <Plus className="w-4 h-4" />
+          Novo paciente
         </Link>
       </div>
 
