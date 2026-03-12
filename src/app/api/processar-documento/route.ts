@@ -1,3 +1,5 @@
+export const runtime = "nodejs";
+
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -73,7 +75,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       textoExtraido = result.value;
     } else if (ext === "pdf") {
       // Extrai texto de PDFs com pdf-parse
-      const pdfParse = (await import("pdf-parse/lib/pdf-parse.js")).default as (
+      const pdfParse = (await import("pdf-parse")).default as (
         dataBuffer: Buffer
       ) => Promise<{ text: string }>;
       const result = await pdfParse(Buffer.from(fileBuffer));
