@@ -2,13 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 
-// Valida variável de ambiente obrigatória
-const openaiApiKey = process.env.OPENAI_API_KEY;
-if (!openaiApiKey) {
-  throw new Error("OPENAI_API_KEY não configurada.");
-}
-
-const openai = new OpenAI({ apiKey: openaiApiKey });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY ?? "" });
 
 interface TranscricaoBody {
   ficha_id: string;
@@ -31,6 +25,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { error: "ficha_id e audio_url são obrigatórios." },
       { status: 400 }
     );
+  }
+
+  if (!process.env.OPENAI_API_KEY) {
+    return NextResponse.json({ error: "OPENAI_API_KEY não configurada." }, { status: 500 });
   }
 
   const supabase = await createClient();
