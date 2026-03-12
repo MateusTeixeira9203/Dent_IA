@@ -16,7 +16,7 @@ const navItems = [
   { href: "/dashboard/configuracoes", label: "Configurações", icon: Settings        },
 ] as const;
 
-const spring = { type: "spring", duration: 0.3, bounce: 0 };
+const spring = { type: "spring", duration: 0.3, bounce: 0 } as const;
 
 function getIniciais(nome: string): string {
   const partes = nome.trim().split(/\s+/).filter(Boolean);

@@ -12,7 +12,7 @@ interface MetricCardProps {
   className?: string;
 }
 
-const spring = { type: "spring", duration: 0.3, bounce: 0 };
+const spring = { type: "spring", duration: 0.3, bounce: 0 } as const;
 
 export function MetricCard({ label, value, subtitle, icon: Icon, className }: MetricCardProps): React.JSX.Element {
   return (
