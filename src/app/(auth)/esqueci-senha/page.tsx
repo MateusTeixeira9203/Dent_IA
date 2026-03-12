@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -105,13 +105,12 @@ export default function EsqueciSenhaPage(): React.JSX.Element {
                   Verifique seu email. O link expira em 1 hora.
                 </p>
               </div>
-              <Button
-                asChild
-                variant="outline"
-                className="mt-2 w-full h-11 font-sans font-semibold text-sm"
+              <Link
+                href="/login"
+                className={buttonVariants({ variant: "outline", className: "mt-2 w-full h-11 font-sans font-semibold text-sm" })}
               >
-                <Link href="/login">Voltar para o login</Link>
-              </Button>
+                Voltar para o login
+              </Link>
             </div>
           ) : (
             /* Formulário */
