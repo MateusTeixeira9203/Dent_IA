@@ -81,6 +81,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     } else if (ext === "txt") {
       // Lê arquivo de texto diretamente
       textoExtraido = new TextDecoder("utf-8").decode(fileBuffer);
+    } else if (ext === "pptx") {
+      // Extrai texto de apresentações PowerPoint com officeparser
+      const officeParser = (await import("officeparser")).default;
+      const resultado = await officeParser.parseOffice(Buffer.from(fileBuffer), {
+        outputErrorToConsole: true,
+        newlineDelimiter: "\n",
+        ignoreNotes: false,
+      });
+      textoExtraido = String(resultado);
     }
   } catch (err) {
     console.error("Erro ao extrair texto do arquivo:", err);

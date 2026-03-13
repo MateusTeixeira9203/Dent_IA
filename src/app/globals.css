@@ -79,6 +79,10 @@
 }
 
 :root {
+  /* Painéis de autenticação */
+  --auth-left-bg:  #3a9e90;
+  --auth-right-bg: #f4f2ee;
+
   /* Variáveis da marca */
   --teal: #3a9e90;
   --teal-lt: #4db8a8;
@@ -86,11 +90,11 @@
   --black: #0d0d0d;
   --white: #ffffff;
   --gray: #d9d9d9;
-  --gray-mid: #8a8a8a;
+  --gray-mid: #555555;
   --bg: #f4f2ee;
   --surface: #ece9e3;
   --card-bg: #ffffff;
-  --border-brand: #d0cdc6;
+  --border-brand: #b8b4ac;
   --sidebar-bg: #ffffff;
 
   /* Custom — hover e badges (HSL triplet para uso com hsl()) */
@@ -99,30 +103,30 @@
   --badge-amber-text: 25 95% 35%;
 
   /* Tokens de brand adaptáveis ao tema — override em .dark */
-  --brand-text:           #0d0d0d;
-  --brand-input-bg:       #f5f3ef;
-  --brand-surface-color:  #eceae4;
-  --brand-border-color:   #d4d1ca;
-  --brand-muted-color:    #8a8a8a;
+  --brand-text:           #0a0a0a;
+  --brand-input-bg:       #f0ede8;
+  --brand-surface-color:  #e8e4dd;
+  --brand-border-color:   #b8b4ac;
+  --brand-muted-color:    #5a5a5a;
 
   /* shadcn — modo claro com cores da marca */
-  --background: oklch(0.97 0.004 76);
-  --foreground: oklch(0.10 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.10 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.10 0 0);
+  --background: oklch(0.95 0.006 76);
+  --foreground: oklch(0.08 0 0);
+  --card: oklch(0.99 0 0);
+  --card-foreground: oklch(0.08 0 0);
+  --popover: oklch(0.99 0 0);
+  --popover-foreground: oklch(0.08 0 0);
   --primary: oklch(0.617 0.099 188);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.94 0.008 76);
   --secondary-foreground: oklch(0.10 0 0);
   --muted: oklch(0.94 0.008 76);
-  --muted-foreground: oklch(0.56 0 0);
+  --muted-foreground: oklch(0.40 0 0);
   --accent: oklch(0.94 0.008 76);
   --accent-foreground: oklch(0.10 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.86 0.006 76);
-  --input: oklch(0.86 0.006 76);
+  --border: oklch(0.78 0.008 76);
+  --input: oklch(0.78 0.008 76);
   --ring: oklch(0.617 0.099 188);
   --chart-1: oklch(0.617 0.099 188);
   --chart-2: oklch(0.514 0.087 190);
@@ -136,63 +140,67 @@
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.94 0.008 76);
   --sidebar-accent-foreground: oklch(0.10 0 0);
-  --sidebar-border: oklch(0.86 0.006 76);
+  --sidebar-border: oklch(0.78 0.008 76);
   --sidebar-ring: oklch(0.617 0.099 188);
 }
 
 .dark {
+  /* Painéis de autenticação — modo escuro */
+  --auth-left-bg:  #1e2a2a;
+  --auth-right-bg: #1e2020;
+
   /* Variáveis da marca — modo escuro */
-  --bg: #0a0a0a;
-  --surface: #111111;
-  --card-bg: #141414;
-  --border-brand: #1f1f1f;
-  --sidebar-bg: #0d0d0d;
-  --gray-mid: #5a5a5a;
-  --gray: #222222;
+  --bg: #171b1b;
+  --surface: #1e2424;
+  --card-bg: #232b2b;
+  --border-brand: #2e3838;
+  --sidebar-bg: #1a2020;
+  --gray-mid: #8a9090;
+  --gray: #2e3838;
 
   /* Tokens de brand — dark mode */
-  --brand-text:           oklch(0.93 0.004 76);
-  --brand-input-bg:       oklch(0.15 0 0);
-  --brand-surface-color:  oklch(0.13 0 0);
-  --brand-border-color:   oklch(0.25 0 0);
-  --brand-muted-color:    oklch(0.45 0 0);
+  --brand-text:           oklch(0.95 0.006 188);
+  --brand-input-bg:       oklch(0.22 0.010 188);
+  --brand-surface-color:  oklch(0.20 0.010 188);
+  --brand-border-color:   oklch(0.32 0.015 188);
+  --brand-muted-color:    oklch(0.60 0.010 188);
 
   /* Custom dark — hover e badges */
   --primary-hover: 171 45% 51%;
   --badge-amber-bg: 38 92% 50%;
-  --badge-amber-text: 30 80% 55%;
+  --badge-amber-text: 30 80% 60%;
 
-  /* shadcn — modo escuro com contraste corrigido */
-  --background: oklch(0.07 0 0);
-  --foreground: oklch(0.93 0.004 76);
-  --card: oklch(0.10 0 0);
-  --card-foreground: oklch(0.93 0.004 76);
-  --popover: oklch(0.13 0 0);
-  --popover-foreground: oklch(0.93 0.004 76);
+  /* shadcn — modo escuro com fundo slate-teal para melhor leitura com luz ambiente */
+  --background: oklch(0.20 0.010 188);
+  --foreground: oklch(0.97 0.003 188);
+  --card: oklch(0.23 0.010 188);
+  --card-foreground: oklch(0.97 0.003 188);
+  --popover: oklch(0.25 0.010 188);
+  --popover-foreground: oklch(0.97 0.003 188);
   --primary: oklch(0.665 0.100 186);
-  --primary-foreground: oklch(0.10 0 0);
-  --secondary: oklch(0.14 0 0);
-  --secondary-foreground: oklch(0.93 0.004 76);
-  --muted: oklch(0.14 0 0);
-  --muted-foreground: oklch(0.55 0 0);
-  --accent: oklch(0.14 0 0);
-  --accent-foreground: oklch(0.93 0.004 76);
+  --primary-foreground: oklch(0.08 0 0);
+  --secondary: oklch(0.27 0.010 188);
+  --secondary-foreground: oklch(0.97 0.003 188);
+  --muted: oklch(0.27 0.010 188);
+  --muted-foreground: oklch(0.75 0.010 188);
+  --accent: oklch(0.29 0.012 188);
+  --accent-foreground: oklch(0.97 0.003 188);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(0.18 0 0);
-  --input: oklch(0.15 0 0);
+  --border: oklch(0.33 0.015 188);
+  --input: oklch(0.25 0.010 188);
   --ring: oklch(0.665 0.100 186);
   --chart-1: oklch(0.617 0.099 188);
   --chart-2: oklch(0.665 0.100 186);
   --chart-3: oklch(0.514 0.087 190);
   --chart-4: oklch(0.809 0.105 251.813);
   --chart-5: oklch(0.424 0.199 265.638);
-  --sidebar: oklch(0.08 0 0);
-  --sidebar-foreground: oklch(0.93 0.004 76);
-  --sidebar-primary: oklch(0.617 0.099 188);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.14 0 0);
-  --sidebar-accent-foreground: oklch(0.93 0.004 76);
-  --sidebar-border: oklch(0.16 0 0);
+  --sidebar: oklch(0.18 0.010 188);
+  --sidebar-foreground: oklch(0.97 0.003 188);
+  --sidebar-primary: oklch(0.665 0.100 186);
+  --sidebar-primary-foreground: oklch(0.08 0 0);
+  --sidebar-accent: oklch(0.27 0.010 188);
+  --sidebar-accent-foreground: oklch(0.97 0.003 188);
+  --sidebar-border: oklch(0.26 0.012 188);
   --sidebar-ring: oklch(0.665 0.100 186);
 }
 
@@ -225,8 +233,14 @@
   html {
     @apply font-sans;
   }
-  /* Garante Outfit em todos os campos de formulário */
-  input, textarea, select, button {
+  /* Garante Outfit em todos os campos de formulário e portais de dropdown */
+  input, textarea, select, button,
+  [data-slot="select-content"],
+  [data-slot="select-item"] {
     font-family: var(--font-outfit), 'Outfit', sans-serif;
+  }
+  [data-slot="select-item"] {
+    font-size: 14px;
+    font-weight: 400;
   }
 }

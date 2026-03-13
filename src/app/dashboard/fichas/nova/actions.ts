@@ -2,7 +2,6 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
 
 /**
  * Cria uma nova ficha para o paciente e retorna o ID criado.
@@ -58,7 +57,5 @@ export async function createFicha(
     return { error: error?.message ?? "Erro ao criar ficha" };
   }
 
-  revalidatePath("/dashboard/fichas");
-  revalidatePath("/dashboard/pacientes");
   return { fichaId: ficha.id };
 }

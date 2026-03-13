@@ -102,19 +102,19 @@ export default async function DashboardPage(): Promise<React.JSX.Element> {
           label="Pacientes"
           value={totalPacientes ?? 0}
           subtitle="Total cadastrados"
-          icon={Users}
+          icon={<Users className="w-4 h-4 text-muted-foreground" />}
         />
         <MetricCard
           label="Fichas Abertas"
           value={fichasAbertas ?? 0}
           subtitle="Aguardando conclusão"
-          icon={FileText}
+          icon={<FileText className="w-4 h-4 text-muted-foreground" />}
         />
         <MetricCard
           label="Orçamentos Pendentes"
           value={orcamentosPendentes ?? 0}
           subtitle="Aguardando aprovação"
-          icon={Receipt}
+          icon={<Receipt className="w-4 h-4 text-muted-foreground" />}
         />
       </div>
 

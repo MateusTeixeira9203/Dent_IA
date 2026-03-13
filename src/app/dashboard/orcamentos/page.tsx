@@ -1,40 +1,79 @@
-import Link from "next/link";
-import { Plus, Receipt } from "lucide-react";
+import { redirect } from "next/navigation";
+import { getDentistaCached } from "@/lib/get-dentista";
+import { createClient } from "@/lib/supabase/server";
+import { OrcamentosClient } from "./_components/orcamentos-client";
+import type { OrcamentoEnriquecido, MetricasMes } from "./_components/types";
 
-export default function OrcamentosPage(): React.JSX.Element {
+export default async function OrcamentosPage(): Promise<React.JSX.Element> {
+  const dentista = await getDentistaCached();
+  if (!dentista) redirect("/login");
+
+  const supabase = await createClient();
+  const clinicaId = dentista.clinica_id;
+
+  // Busca orçamentos com joins de paciente e dentista
+  const { data: orcamentosRaw } = await supabase
+    .from("orcamentos")
+    .select("*, paciente:pacientes(id, nome), dentista:dentistas(id, nome)")
+    .eq("clinica_id", clinicaId)
+    .order("created_at", { ascending: false });
+
+  // Busca itens e pagamentos da clínica em paralelo
+  const [{ data: itens }, { data: pagamentos }] = await Promise.all([
+    supabase.from("orcamento_itens").select("*").eq("clinica_id", clinicaId),
+    supabase.from("pagamentos").select("*").eq("clinica_id", clinicaId),
+  ]);
+
+  // Enriquece cada orçamento com seus itens e pagamentos
+  const orcamentos: OrcamentoEnriquecido[] = (orcamentosRaw ?? []).map((o) => ({
+    ...o,
+    paciente: (o.paciente as { id: string; nome: string } | null) ?? { id: "", nome: "—" },
+    dentista: (o.dentista as { id: string; nome: string } | null) ?? { id: "", nome: "—" },
+    itens: (itens ?? []).filter((i) => i.orcamento_id === o.id),
+    pagamentos: (pagamentos ?? []).filter((p) => p.orcamento_id === o.id),
+  }));
+
+  // Métricas do mês atual
+  const agora = new Date();
+  const mesAtual = agora.getMonth();
+  const anoAtual = agora.getFullYear();
+
+  const orcsMes = orcamentos.filter((o) => {
+    const d = new Date(o.created_at);
+    return d.getMonth() === mesAtual && d.getFullYear() === anoAtual;
+  });
+
+  const metricas: MetricasMes = {
+    totalMes: orcsMes.reduce((acc, o) => acc + (o.total ?? 0), 0),
+    recebido: (pagamentos ?? [])
+      .filter((p) => {
+        const d = new Date(p.created_at);
+        return (
+          p.status === "pago" &&
+          d.getMonth() === mesAtual &&
+          d.getFullYear() === anoAtual
+        );
+      })
+      .reduce((acc, p) => acc + Number(p.valor ?? 0), 0),
+    pendente: (pagamentos ?? [])
+      .filter((p) => p.status === "pendente")
+      .reduce((acc, p) => acc + Number(p.valor ?? 0), 0),
+  };
+
   return (
     <div className="animate-fade-in">
-      {/* Cabeçalho da página */}
       <div className="flex items-center justify-between mb-8">
-        <p className="font-mono text-sm text-muted-foreground">
-          Orçamentos e propostas de tratamento
-        </p>
-        <Link
-          href="/dashboard/orcamentos/novo"
-          className="inline-flex items-center gap-2 h-10 px-4 bg-primary text-primary-foreground font-sans font-medium text-sm rounded-md hover:bg-[hsl(var(--primary-hover))] active:scale-[0.98] transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          Novo Orçamento
-        </Link>
+        <div>
+          <h1 className="font-sans text-[2rem] font-bold leading-tight text-foreground">
+            Orçamentos
+          </h1>
+          <p className="font-mono text-sm text-muted-foreground mt-0.5">
+            Controle financeiro da clínica
+          </p>
+        </div>
       </div>
 
-      {/* Estado vazio */}
-      <div className="flex flex-col items-center justify-center py-16">
-        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-          <Receipt className="w-8 h-8 text-muted-foreground/30" />
-        </div>
-        <h3 className="font-serif text-lg text-foreground mb-1">Nenhum orçamento ainda</h3>
-        <p className="font-sans text-sm text-muted-foreground mb-6 text-center max-w-sm">
-          Crie orçamentos detalhados e envie propostas de tratamento aos seus pacientes
-        </p>
-        <Link
-          href="/dashboard/orcamentos/novo"
-          className="inline-flex items-center gap-2 h-10 px-4 bg-primary text-primary-foreground font-sans font-medium text-sm rounded-md hover:bg-[hsl(var(--primary-hover))] active:scale-[0.98] transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          Novo Orçamento
-        </Link>
-      </div>
+      <OrcamentosClient orcamentos={orcamentos} metricas={metricas} />
     </div>
   );
 }

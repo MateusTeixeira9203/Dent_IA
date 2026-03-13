@@ -1,20 +1,19 @@
 "use client";
 
 import { motion } from "framer-motion";
-import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface MetricCardProps {
   label: string;
   value: number | string;
   subtitle?: string;
-  icon: LucideIcon;
+  icon: React.ReactNode;
   className?: string;
 }
 
 const spring = { type: "spring", duration: 0.3, bounce: 0 } as const;
 
-export function MetricCard({ label, value, subtitle, icon: Icon, className }: MetricCardProps): React.JSX.Element {
+export function MetricCard({ label, value, subtitle, icon, className }: MetricCardProps): React.JSX.Element {
   return (
     <motion.div
       whileHover={{ y: -2 }}
@@ -28,7 +27,7 @@ export function MetricCard({ label, value, subtitle, icon: Icon, className }: Me
         <span className="font-mono text-[0.65rem] uppercase tracking-widest text-muted-foreground">
           {label}
         </span>
-        <Icon className="w-4 h-4 text-muted-foreground" />
+        {icon}
       </div>
       <div className="font-mono text-[2rem] font-medium text-foreground leading-none">
         {value}

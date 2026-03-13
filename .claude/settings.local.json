@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(find \"c:/Users/mateu/OneDrive/Área de Trabalho/DentAi/dentai/src/app/\\(auth\\)/login\" -type f)"
+      "Bash(find \"c:/Users/mateu/OneDrive/Área de Trabalho/DentAi/dentai/src/app/\\(auth\\)/login\" -type f)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

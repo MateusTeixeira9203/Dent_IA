@@ -77,21 +77,21 @@ export function Badge({ className, variant, ...props }: BadgeProps): React.JSX.E
 // ── CARD ──────────────────────────────────────────
 export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn("bg-white rounded border border-brand-border shadow-card", className)} {...props} />
+    <div ref={ref} className={cn("bg-card rounded border border-border shadow-card dark:shadow-none", className)} {...props} />
   )
 )
 Card.displayName = "Card"
 
 export const CardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn("px-5 pt-5 pb-3 border-b border-brand-border", className)} {...props} />
+    <div ref={ref} className={cn("px-5 pt-5 pb-3 border-b border-border", className)} {...props} />
   )
 )
 CardHeader.displayName = "CardHeader"
 
 export const CardTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HTMLHeadingElement>>(
   ({ className, ...props }, ref) => (
-    <h3 ref={ref} className={cn("font-sans font-semibold text-base text-brand-black", className)} {...props} />
+    <h3 ref={ref} className={cn("font-sans font-semibold text-base text-foreground", className)} {...props} />
   )
 )
 CardTitle.displayName = "CardTitle"
@@ -103,7 +103,7 @@ CardContent.displayName = "CardContent"
 
 export const CardFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn("px-5 pb-5 pt-3 border-t border-brand-border flex items-center gap-2", className)} {...props} />
+    <div ref={ref} className={cn("px-5 pb-5 pt-3 border-t border-border flex items-center gap-2", className)} {...props} />
   )
 )
 CardFooter.displayName = "CardFooter"
@@ -120,7 +120,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     const inputId = id ?? label?.toLowerCase().replace(/\s+/g, "-")
     return (
       <div className="flex flex-col gap-1.5">
-        {label && <label htmlFor={inputId} className="text-xs font-semibold text-zinc-700">{label}</label>}
+        {label && <label htmlFor={inputId} className="text-sm font-medium text-foreground">{label}</label>}
         <input
           id={inputId} ref={ref}
           className={cn(
@@ -187,5 +187,5 @@ export function Waveform({ className }: { className?: string }): React.JSX.Eleme
 
 // ── SECTION LABEL ─────────────────────────────────
 export function SectionLabel({ children, className }: { children: React.ReactNode; className?: string }): React.JSX.Element {
-  return <p className={cn("font-mono text-[0.65rem] uppercase tracking-[0.2em] text-teal", className)}>{children}</p>
+  return <p className={cn("font-sans text-sm font-semibold text-brand-black", className)}>{children}</p>
 }

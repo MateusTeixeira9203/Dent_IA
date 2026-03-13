@@ -11,7 +11,7 @@ export default function AuthLayout({
       {/* Coluna esquerda — painel de marca (apenas desktop) */}
       <div
         className="hidden lg:flex lg:w-[60%] flex-col items-center justify-between p-12"
-        style={{ backgroundColor: "var(--teal)" }}
+        style={{ backgroundColor: "var(--auth-left-bg)" }}
       >
         {/* Logo branca centralizada */}
         <div className="flex-1 flex flex-col items-center justify-center gap-10 text-center">
@@ -34,7 +34,7 @@ export default function AuthLayout({
       {/* Coluna direita — formulário */}
       <div
         className="flex-1 flex flex-col min-h-screen"
-        style={{ backgroundColor: "var(--bg)" }}
+        style={{ backgroundColor: "var(--auth-right-bg)" }}
       >
         {/* Toggle de tema — canto superior direito */}
         <div className="flex justify-end p-4">

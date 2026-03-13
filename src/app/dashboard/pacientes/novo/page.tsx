@@ -6,15 +6,15 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Check } from "lucide-react";
 import { toast } from "sonner";
 import {
   Button,
   Card,
   CardHeader,
-  CardTitle,
   CardContent,
   Input,
+  SectionLabel,
 } from "@/components/dentai";
 import { Textarea } from "@/components/ui/textarea";
 import { createPaciente } from "./actions";
@@ -62,6 +62,10 @@ const pacienteSchema = z.object({
 });
 
 type PacienteFormData = z.infer<typeof pacienteSchema>;
+
+// Classe base para inputs manuais com máscara
+const inputMascaraClass =
+  "w-full font-mono text-sm px-3 py-2.5 rounded-[3px] border border-brand-border bg-brand-bg text-brand-black focus:outline-none focus:ring-2 focus:ring-teal/30 focus:border-teal placeholder:text-brand-muted/60 transition-colors";
 
 export default function NovoPacientePage(): React.JSX.Element {
   const router = useRouter();
@@ -153,23 +157,22 @@ export default function NovoPacientePage(): React.JSX.Element {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
+    <div className="mx-auto max-w-2xl space-y-5">
+      {/* Header: só o botão Voltar */}
+      <div>
         <Link href="/dashboard/pacientes">
           <Button variant="ghost" size="sm">
             <ArrowLeft size={15} />
             Voltar
           </Button>
         </Link>
-        <h1 className="font-serif text-3xl text-brand-black">Novo Paciente</h1>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         {/* ── Dados Pessoais ── */}
         <Card>
           <CardHeader>
-            <CardTitle>Dados Pessoais</CardTitle>
+            <SectionLabel className="text-muted-foreground">Dados Pessoais</SectionLabel>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Nome */}
@@ -183,13 +186,13 @@ export default function NovoPacientePage(): React.JSX.Element {
             {/* CPF + Data de nascimento */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-zinc-700">CPF</label>
+                <label className="text-sm font-medium text-foreground">CPF</label>
                 <input
                   value={cpfValue}
                   onChange={handleCPFChange}
                   placeholder="000.000.000-00"
                   inputMode="numeric"
-                  className="w-full font-mono text-sm px-3 py-2.5 rounded-[3px] border border-brand-border bg-brand-bg text-brand-black focus:outline-none focus:ring-2 focus:ring-teal/30 focus:border-teal placeholder:text-brand-muted/60 transition-colors"
+                  className={inputMascaraClass}
                 />
               </div>
               <Input
@@ -209,13 +212,13 @@ export default function NovoPacientePage(): React.JSX.Element {
                 {...register("email")}
               />
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-zinc-700">Telefone</label>
+                <label className="text-sm font-medium text-foreground">Telefone</label>
                 <input
                   value={telefoneValue}
                   onChange={handleTelefoneChange}
                   placeholder="(00) 00000-0000"
                   inputMode="numeric"
-                  className="w-full font-mono text-sm px-3 py-2.5 rounded-[3px] border border-brand-border bg-brand-bg text-brand-black focus:outline-none focus:ring-2 focus:ring-teal/30 focus:border-teal placeholder:text-brand-muted/60 transition-colors"
+                  className={inputMascaraClass}
                 />
               </div>
             </div>
@@ -223,8 +226,8 @@ export default function NovoPacientePage(): React.JSX.Element {
             {/* WhatsApp */}
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-zinc-700">WhatsApp</label>
-                <label className="flex cursor-pointer items-center gap-2 text-xs text-brand-muted">
+                <label className="text-sm font-medium text-foreground">WhatsApp</label>
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
                   <input
                     type="checkbox"
                     checked={whatsappIgualTelefone}
@@ -240,7 +243,7 @@ export default function NovoPacientePage(): React.JSX.Element {
                 placeholder="(00) 00000-0000"
                 inputMode="numeric"
                 disabled={whatsappIgualTelefone}
-                className="w-full font-mono text-sm px-3 py-2.5 rounded-[3px] border border-brand-border bg-brand-bg text-brand-black focus:outline-none focus:ring-2 focus:ring-teal/30 focus:border-teal placeholder:text-brand-muted/60 transition-colors disabled:opacity-50"
+                className={`${inputMascaraClass} disabled:opacity-50`}
               />
             </div>
           </CardContent>
@@ -249,7 +252,7 @@ export default function NovoPacientePage(): React.JSX.Element {
         {/* ── Endereço ── */}
         <Card>
           <CardHeader>
-            <CardTitle>Endereço</CardTitle>
+            <SectionLabel className="text-muted-foreground">Endereço</SectionLabel>
           </CardHeader>
           <CardContent className="space-y-4">
             <Input
@@ -257,7 +260,7 @@ export default function NovoPacientePage(): React.JSX.Element {
               placeholder="Rua, número, complemento"
               {...register("endereco")}
             />
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-[1fr_100px]">
               <Input
                 label="Cidade"
                 placeholder="Cidade"
@@ -276,14 +279,14 @@ export default function NovoPacientePage(): React.JSX.Element {
         {/* ── Observações ── */}
         <Card>
           <CardHeader>
-            <CardTitle>Observações</CardTitle>
+            <SectionLabel className="text-muted-foreground">Observações</SectionLabel>
           </CardHeader>
           <CardContent>
             <Textarea
               {...register("observacoes")}
               placeholder="Alergias, condições especiais, observações..."
               rows={4}
-              className="font-sans text-sm border-brand-border bg-brand-bg focus:border-teal focus:ring-teal/30 resize-none"
+              className="font-sans text-sm border-brand-border bg-brand-bg text-brand-black focus:border-teal focus:ring-teal/30 placeholder:text-brand-muted/60 resize-none"
             />
           </CardContent>
         </Card>
@@ -293,10 +296,39 @@ export default function NovoPacientePage(): React.JSX.Element {
           type="submit"
           variant="primary"
           size="lg"
-          className="w-full"
-          loading={isSubmitting}
+          className="w-full mt-6"
+          disabled={isSubmitting}
         >
-          Salvar Paciente
+          {isSubmitting ? (
+            <>
+              <svg
+                className="animate-spin size-4"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                />
+              </svg>
+              Salvando...
+            </>
+          ) : (
+            <>
+              <Check size={16} />
+              Salvar Paciente
+            </>
+          )}
         </Button>
       </form>
     </div>

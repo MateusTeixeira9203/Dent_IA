@@ -2,7 +2,16 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getDentistaCached } from "@/lib/get-dentista";
 import { FichaClient } from "./ficha-client";
-import type { Ficha, Paciente, Dentista, FichaArquivo } from "@/types/database";
+import type {
+  Ficha,
+  Paciente,
+  Dentista,
+  FichaArquivo,
+  Planejamento,
+  PlanejamentoEtapa,
+  Orcamento,
+  OrcamentoItem,
+} from "@/types/database";
 
 interface FichaPageProps {
   params: Promise<{ id: string }>;
@@ -26,11 +35,13 @@ export default async function FichaPage({ params }: FichaPageProps): Promise<Rea
 
   if (!ficha) notFound();
 
-  // Queries paralelas: paciente, dentista da ficha e arquivos
+  // Queries paralelas
   const [
     { data: paciente },
     { data: dentistaFicha },
     { data: arquivos },
+    { data: planejamento },
+    { data: orcamento },
   ] = await Promise.all([
     supabase
       .from("pacientes")
@@ -47,6 +58,43 @@ export default async function FichaPage({ params }: FichaPageProps): Promise<Rea
       .select("*")
       .eq("ficha_id", id)
       .order("created_at", { ascending: true }),
+    supabase
+      .from("planejamentos")
+      .select("*")
+      .eq("ficha_id", id)
+      .maybeSingle(),
+    supabase
+      .from("orcamentos")
+      .select("*")
+      .eq("ficha_id", id)
+      .maybeSingle(),
+  ]);
+
+  // Busca etapas e itens do orçamento em paralelo
+  const etapas: PlanejamentoEtapa[] = [];
+  const orcamentoItens: OrcamentoItem[] = [];
+
+  await Promise.all([
+    planejamento
+      ? supabase
+          .from("planejamento_etapas")
+          .select("*")
+          .eq("planejamento_id", planejamento.id)
+          .order("ordem", { ascending: true })
+          .then(({ data }) => {
+            if (data) etapas.push(...(data as PlanejamentoEtapa[]));
+          })
+      : Promise.resolve(),
+    orcamento
+      ? supabase
+          .from("orcamento_itens")
+          .select("*")
+          .eq("orcamento_id", orcamento.id)
+          .order("created_at", { ascending: true })
+          .then(({ data }) => {
+            if (data) orcamentoItens.push(...(data as OrcamentoItem[]));
+          })
+      : Promise.resolve(),
   ]);
 
   return (
@@ -56,6 +104,10 @@ export default async function FichaPage({ params }: FichaPageProps): Promise<Rea
       dentista={dentistaFicha as Dentista}
       clinicaId={dentista.clinica_id}
       arquivosIniciais={(arquivos as FichaArquivo[]) ?? []}
+      planejamentoInicial={(planejamento as Planejamento) ?? null}
+      etapasIniciais={etapas}
+      orcamentoInicial={(orcamento as Orcamento) ?? null}
+      orcamentoItensIniciais={orcamentoItens}
     />
   );
 }

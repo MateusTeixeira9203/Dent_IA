@@ -1,21 +1,23 @@
 "use client";
 
+import { useState } from "react";
+import { motion } from "framer-motion";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
 
 interface DashboardShellProps {
   nome: string;
   clinicaNome: string;
-  primeiroNome: string;
   children: React.ReactNode;
 }
 
 export function DashboardShell({
   nome,
   clinicaNome,
-  primeiroNome,
   children,
 }: DashboardShellProps): React.JSX.Element {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   return (
     <div className="min-h-screen bg-background">
       <Sidebar
@@ -23,11 +25,16 @@ export function DashboardShell({
         clinicaNome={clinicaNome}
         collapsed={false}
         onToggle={() => {}}
+        isExpanded={isExpanded}
+        onExpandedChange={setIsExpanded}
       />
-      <div className="pl-16">
-        <Header nome={nome} primeiroNome={primeiroNome} />
+      <motion.div
+        animate={{ paddingLeft: isExpanded ? 240 : 64 }}
+        transition={{ duration: 0.2, ease: "easeInOut" }}
+      >
+        <Header />
         <main className="p-6">{children}</main>
-      </div>
+      </motion.div>
     </div>
   );
 }
