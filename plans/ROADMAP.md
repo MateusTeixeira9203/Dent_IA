@@ -1,7 +1,9 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · **Odonto.IA** · atualizado 2026-07-23
-> **Ativo:** nenhum · **Fila:** 12 · **Concluídos:** 3 · **Congelados:** 0
+> **ROADMAP** · **Odonto.IA** · atualizado 2026-07-24
+> **Ativo:** R-20 (redesenho da ficha odontograma — spec em planejamento, aguardando aprovação) ·
+> **Fila:** 16 · **Concluídos:** 3 · **Congelados:** 0 · **Code-complete, aguardando commit:** R-16,
+> R-17, R-18, R-04 Fase 3, R-02 Fases 1/3, fix do pino (verificados ao vivo 24-25/07, exceto R-02 F3)
 
 > Reconstruído do zero em 2026-07-21 por decisão do Mateus. O histórico anterior está no
 > git (`git show 4a93234:plans/roadmap/roadmap-mestre-2026-07-21.md`) e na pasta
@@ -12,9 +14,13 @@
 
 ## Agora
 
-Nada ativo — R-01 fechou em 23/07. Próximo item: ver **Fila**.
-
-> Detalhe: `plans/ESTADO.md`
+**Verificação ao vivo (Mateus, 24-25/07, desktop + mobile):** R-16, R-17, R-18, R-04 Fase 3 e
+R-02 Fase 1 rodam certo nos dois dispositivos — Mateus autorizou marcar como 100%. Ficam ✅ na
+essência, mas **falta commit + deploy** (código local, não commitado): promoção formal a "no ar" +
+fechamento (mover spec/artefato pro _arquivo) acontece junto do deploy no fim da sessão. QA completo
+multi-dispositivo (desktop/mobile/tablet, claro/escuro) fica como passo futuro — há muita correção
+pela frente. **Ativo agora:** R-02 Fase 3 — o Mateus pediu ligar o auto-reaproveitamento de
+`grupo_id`, o que **reabre a Decisão 2 da spec** (que tinha deixado só a leitura). Ver `plans/ESTADO.md`.
 
 ## Fila
 
@@ -37,9 +43,14 @@ Peso: **P** (uma sessão) · **M** (2–3 sessões) · **G** (precisa quebrar).
 
 | ID | Item | Objetivo | Peso |
 |---|---|---|---|
+| R-20 | 🔵 Redesenho da ficha odontograma | **Só a ficha** (`/dashboard/pacientes/[id]`): layout responsivo lado-a-lado (odontograma sempre visível + detalhe do dente) com `@container`; tabela de especialidade expande; registros do dente aberto **destacam sem remover** da lista (Site B ganha o que o Site A já tem). 3 fases, spec-redesign. Modo consulta é item FUTURO que reusa este componente (a ficha é a base). Decisões fechadas no debate 25/07. [spec](specs/R-20-ficha-odontograma-redesign.md) | M |
+| R-17 | ✅ `EncaminharBar` colide com o dock de navegação (desktop) | Não era z-order, era **posição**: `EncaminharBar` e o dock miram o mesmo centro-inferior. Fix 24/07: `bottom-0 md:bottom-28` + `createPortal` pro body (escapa de ancestral com transform) + `z-[60]`. **Verificado ao vivo por Mateus 24-25/07 (desktop+mobile); falta commit+deploy.** Achado: [auditoria 24/07](auditorias/2026-07-24-ficha-odontograma.md) | P |
+| R-18 | ✅ Filtro por responsável trava em tela vazia após desfazer encaminhamento | Fix aplicado 24/07: `filtroAindaValido()` (nova, 4 testes) reseta o filtro pra "Todos" quando o responsável selecionado deixa de existir. **Verificado ao vivo por Mateus 24-25/07 (desktop+mobile); falta commit+deploy.** Achado: [auditoria 24/07](auditorias/2026-07-24-ficha-odontograma.md) | P |
+| R-19 | ⏳ Barras contextuais colidem com o dock inferior-central (sistêmico) | Mateus viu ao vivo (24/07): não é só a `EncaminharBar` (R-17). O dock (`floating-dock`, centro-inferior, só `/dashboard/*` desktop) é âncora fixa e qualquer barra que mire o mesmo lugar o atropela. Confirmado: `voice-ux` (gravação) tem a mesma causa — MAS ela aparece na ficha (com dock) E na consulta (sem dock), então o fix dela é contexto-dependente, não a mesma classe do R-17. Precisa de uma **convenção** (dock some quando há barra contextual, ou wrapper que sabe da zona do dock) pra não recriar o bug a cada barra nova. Design decision | M |
+| R-02 | 🔵 (parcial) Ficha viva + fidelidade ao artefato | Fase 0 (símbolos), Fase 1 (card único, I1/I2) e Fase 2 (abertos-primeiro): Fase 1 **verificada ao vivo 24-25/07**. Fase 3: só o alicerce de leitura (`buscarGruposAbertos`) — Mateus pediu **ligar o auto-reaproveitamento de `grupo_id`**, o que reabre a Decisão 2 (mecanismo de amarração — ver spec §4 e `ESTADO.md`) | M |
+| R-16 | ✅ Filtro por responsável na ficha | Chips Meus/Todos/[por dentista] sobre `encaminhado_para ?? dentista_id`, 14 testes. **Verificado ao vivo por Mateus 24-25/07 (desktop+mobile); falta commit+deploy.** [spec](specs/R-16-filtro-responsavel-ficha.md) | P |
 | R-03 | ⏳ Assinatura e data por procedimento | O paciente assina o que foi feito, registro a registro; registro assinado congela e o resto da ficha segue editável | M |
-| R-04 | ⏳ Encaminhar procedimento a outro dentista da clínica | O registro planejado ganha destino (`encaminhado_para`, já em prod), o destino é notificado e vê a fila dele | M |
-| R-02 | ⏳ Ficha viva + fidelidade ao artefato | Um card só na criação e na leitura, ordenação por estado, agrupamento por procedimento e símbolos do odontograma fiéis ao artefato. Incorpora `grupo_id` de dupla função (multi-dente + multi-consulta = "o trabalho") e etapa derivada, "ativo" = grupo aberto — ver R-15 | M |
+| R-04b | ⏳ Encaminhamento: destino edita detalhe clínico do endo/implante | Hoje (R-04) o destino só marca realizado; aqui ele também preenche a tabela de canais/implante do que recebeu — RPC própria + `EndoForm`/`ImplanteForm` editável fora do fluxo do autor | P |
 | R-05 | ⏳ Ortodontia: lançamento e edição manual | `OrtoForm` existe e **nunca é renderizado** — hoje só a voz cria manutenção e não há como corrigir. Registro de arcada, não de dente | P |
 | R-07 | ⏳ Procedimentos de rotina sem dono | `profilaxia`, `raspagem`, `clareamento`, `fluor`, `exame_periodontal` entraram no banco na migration 106 e não existem em plugin, chip nem enum da IA — "fiz profilaxia" não vira registro | M |
 | R-06 | ⏳ Prótese fixa e odontopediatria completas | `ponte` e `esfoliacao` estão barradas no enum da IA e ausentes dos chips; faltam os símbolos (colchete pilar-pôntico, seta do permanente) | M |
