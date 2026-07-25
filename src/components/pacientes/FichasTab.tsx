@@ -3,7 +3,7 @@
 import * as React from "react";
 import {
   Plus,
-  X,  Trash2,
+  Trash2,
   FileText,
   Download,
   Check,
@@ -12,6 +12,7 @@ import {
   Clock,
   Circle,
   ChevronRight,
+  Forward,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { DexLoader } from "@/components/ui/dex-loader";
@@ -52,7 +53,11 @@ import type {
   TipoRegistroOdontograma, StatusRegistro, OrigemRegistro, AncoraClinica,
   NivelAncora, Arcada, FaceDental,
 } from '@/types/odontograma';
-import { salvarEventosOdontograma, alternarStatusRegistro } from '@/app/consulta/[agendamentoId]/actions';
+import { salvarEventosOdontograma, alternarStatusRegistro, encaminharProcedimento, atualizarStatusEncaminhado } from '@/app/consulta/[agendamentoId]/actions';
+import { derivarResponsaveis, eventosVisiveis, fichaVisivel, filtroAindaValido, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
+import { EncaminharBar } from '@/components/fichas/encaminhar-bar';
+import { agruparRegistros } from '@/lib/odontograma/agrupar-registros';
+import { agregarGruposAbertos } from '@/lib/odontograma/grupos-abertos';
 import type { EvolucaoFormatada } from '@/app/api/dex/formatar-evolucao/route';
 const SignaturePad = dynamic(
   () => import('@/components/fichas/SignaturePad').then(m => m.SignaturePad),
@@ -95,6 +100,8 @@ interface EventoView {
   registradoEm: string;
   /** Dado clínico da especialidade (migration 106) — cru, ainda não validado. */
   detalhe: unknown | null;
+  /** Destino do encaminhamento (R-04) — null = não encaminhado. */
+  encaminhadoPara: { id: string; nome: string } | null;
 }
 
 /**
@@ -121,6 +128,9 @@ type EventoRow = {
   detalhe: unknown | null;
   realizado_em: string | null;
   registrado_em: string;
+  /** Destino do encaminhamento (R-04, migration 106/109) — null = não encaminhado. */
+  encaminhado_para: string | null;
+  encaminhado_dentista: { id: string; nome: string } | null;
 };
 
 interface Evolution {
@@ -249,36 +259,26 @@ function derivarV2DosEventos(eventos: OdontogramaEventoDraft[]): {
   };
 }
 
-/** Converte os eventos salvos (EventoView) pra o shape que Odontograma/ToothDetailPanel leem. */
 /**
  * Agrupa os eventos de uma ficha em cards §11 (camada 2): eventos com o MESMO grupo_id
  * viram UM card multi-dente ("Exodontia · dentes 31–41"); os isolados, um card cada.
  * Autor/CRO e estado de assinatura vêm da ficha (na ficha rápida, um autor por ficha).
+ * Agrupamento/ordenação delegados a agruparRegistros (R-02 I2 — antes duplicado aqui
+ * e em gruposDraft; agora uma função só, em src/lib/odontograma/agrupar-registros.ts).
  */
 function eventosParaCards(
   eventos: EventoView[], autorNome: string, autorCro: string | null, assinada: boolean,
 ): Array<{ key: string; ids: string[]; data: RegistroCardData }> {
-  const grupos = new Map<string, EventoView[]>();
-  for (const ev of eventos) {
-    // grupo_id une multi-dente; sem grupo, MESMO dente+tipo+status mescla (faces unidas) —
-    // 3 eventos de face do Dex viram 1 card "Restauração LMO · dente 45" (feedback 21/07).
-    const chave = ev.grupoId
-      ?? `m:${ev.ancora.dente ?? `${ev.ancora.nivel}:${ev.ancora.arcada ?? ev.ancora.quadrante ?? ''}`}|${ev.tipo}|${ev.status}`;
-    const arr = grupos.get(chave);
-    if (arr) arr.push(ev); else grupos.set(chave, [ev]);
-  }
-  return [...grupos.values()]
-    .sort((a, b) => (a[0].ancora.dente ?? 99) - (b[0].ancora.dente ?? 99))
-    .map((grupo) => {
-    const primeiro = grupo[0];
+  return agruparRegistros(eventos).map(({ itens }) => {
+    const primeiro = itens[0];
     return {
       key: primeiro.id,
-      ids: grupo.map((e) => e.id),   // alvo do toggle de status (todos do grupo juntos)
+      ids: itens.map((e) => e.id),   // alvo do toggle de status (todos do grupo juntos)
       data: {
         tipo: primeiro.tipo,
         status: primeiro.status,
         origem: primeiro.origem,
-        ancoras: grupo.map((e) => e.ancora),
+        ancoras: itens.map((e) => e.ancora),
         observacao: primeiro.observacao,
         detalhe: primeiro.detalhe,
         realizadoEm: primeiro.realizadoEm,
@@ -286,9 +286,67 @@ function eventosParaCards(
         autorNome,
         autorCro,
         assinada,
+        encaminhadoPara: primeiro.encaminhadoPara,
       },
     };
   });
+}
+
+/**
+ * Agrupa o RASCUNHO (OdontogramaEventoDraft[]) do mesmo jeito que a ficha salva — mesma
+ * função (agruparRegistros), mesmo card-fonte (RegistroCard, R-02 I1). Adapta grupo_id
+ * (snake_case no draft) pra grupoId antes de chamar; recupera os índices originais por id
+ * pra atualizarObsGrupo/removerGrupoDraft/atualizarDetalheDraft continuarem mutando o
+ * array certo. Autor/CRO: reaproveita de qualquer ficha já carregada deste dentista
+ * (fallback: query em dentistas — ver useEffect de destinosDisponiveis).
+ */
+function draftsParaCards(
+  eventosDraft: OdontogramaEventoDraft[], autorNome: string, autorCro: string | null,
+): Array<{ key: string; idxs: number[]; data: RegistroCardData }> {
+  const indicePorId = new Map(eventosDraft.map((ev, i) => [ev.id, i]));
+  const adaptados = eventosDraft.map((ev) => ({ ...ev, grupoId: ev.grupo_id }));
+  const agora = new Date().toISOString();
+  return agruparRegistros(adaptados).map(({ chave, itens }) => {
+    const primeiro = itens[0];
+    return {
+      key: chave,
+      idxs: itens.map((it) => indicePorId.get(it.id)!),
+      data: {
+        tipo: primeiro.tipo,
+        status: primeiro.status,
+        origem: primeiro.origem,
+        ancoras: itens.map((it) => it.ancora),
+        observacao: primeiro.observacao,
+        detalhe: primeiro.detalhe,
+        realizadoEm: primeiro.realizado_em,
+        // Draft ainda não foi "registrado" — timestamp de agora (spec R-02 Fase 1, ação 5).
+        registradoEm: agora,
+        autorNome,
+        autorCro,
+        assinada: false,
+        encaminhadoPara: null, // rascunho nunca foi encaminhado
+      },
+    };
+  });
+}
+
+/**
+ * Corpo de especialidade EDITÁVEL (rascunho) — espelha corpoEspecialidade (leitura), mas
+ * com EndoForm/ImplanteForm em vez de EndoCard/ImplanteCard. Mesmo cast direto que
+ * ToothDetailPanel já usa pra detalhe ainda-não-preenchido (`?? null`), não safeParse:
+ * um form em branco é um estado válido de edição, diferente da leitura (I3 não se aplica
+ * aqui — o card só aparece quando temDetalhe já é true no chamador).
+ */
+function corpoEspecialidadeEditavel(
+  tipo: TipoRegistroOdontograma, detalhe: unknown, onChange: (v: unknown) => void,
+): React.ReactNode {
+  if (tipo === 'endodontia') {
+    return <EndoForm valor={(detalhe ?? null) as EndoDetalhe | null} onChange={onChange} />;
+  }
+  if (tipo === 'implante') {
+    return <ImplanteForm valor={(detalhe ?? null) as ImplanteDetalhe | null} onChange={onChange} />;
+  }
+  return null;
 }
 
 /** EventoView (salvo) -> Draft: o shape que Odontograma/ToothDetailPanel consomem. */
@@ -379,6 +437,19 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   // ── Modo de visualização da ficha ─────────────────────────────────────────
   const [viewingEvo, setViewingEvo] = React.useState<Evolution | null>(null);
 
+  // ── R-16: filtro por responsável ──────────────────────────────────────────
+  // Display puro: esconde os cards cujo responsável (encaminhado_para ?? autor)
+  // não bate. Nunca escreve, nunca vaza pro PDF (server-side). null = Todos ·
+  // 'me' = Meus · senão um dentista.id.
+  const [filtroResponsavel, setFiltroResponsavel] = React.useState<string | null>(null);
+
+  // ── R-04 Fase 3: modo seleção (encaminhar em lote), escopado à CONSULTA aberta ──
+  // Só uma consulta em modo por vez. selecionados = chaves de card (grupo);
+  // destino = 1 dentista pro lote inteiro. Confirmar = 1 chamada batch.
+  const [modoSelecaoFichaId, setModoSelecaoFichaId] = React.useState<string | null>(null);
+  const [selecionados, setSelecionados] = React.useState<Set<string>>(new Set());
+  const [destinoEncaminhar, setDestinoEncaminhar] = React.useState<string | null>(null);
+
   const [formData, setFormData] = React.useState({
     dataAtendimento: hojeBRT(),
     type: "Evolução",
@@ -400,36 +471,41 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
 
   // Perfil do dente na ficha SALVA (readOnly) — um por vez, preso à ficha dona.
   const [denteSalvoAberto, setDenteSalvoAberto] = React.useState<{ fichaId: string; dente: number } | null>(null);
-  // Tabela de especialidade aberta direto no card do registro (rascunho) — um por vez,
-  // sem precisar reabrir o dente no odontograma (feedback 22/07).
-  const [grupoDetalheAberto, setGrupoDetalheAberto] = React.useState<string | null>(null);
   // G11 — tocar um dente rola até o card do registro correspondente e destaca (some sozinho).
   const registroCardRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
   const [grupoDestacado, setGrupoDestacado] = React.useState<string | null>(null);
   // Dente aberto na FICHA SALVA (leitura) — estado separado do de criação, sempre readOnly.
+  // (R-02 Fase 1: grupoDetalheAberto/setGrupoDetalheAberto removidos — o "aberto" agora é
+  // interno de cada RegistroCard; múltiplos cards podem abrir ao mesmo tempo, igual à leitura.)
+
+  // ── R-02 Fase 1: autor do card do RASCUNHO ──────────────────────────────────────
+  // Reaproveita nome/CRO de qualquer ficha já carregada deste dentistaId (barato, já
+  // está em memória); só cai pro fallback de query se este dentista ainda não tem
+  // nenhuma ficha lida nesta sessão (mesmo padrão da busca de destinosDisponiveis).
+  const autorDeEvolutions = React.useMemo(
+    () => evolutions.find((e) => e.dentistaId === dentistaId) ?? null,
+    [evolutions, dentistaId],
+  );
+  const [autorFallback, setAutorFallback] = React.useState<{ nome: string; cro: string | null } | null>(null);
+  React.useEffect(() => {
+    if (autorDeEvolutions || !dentistaId || patientId === 'demo') return;
+    const supabase = createClient();
+    supabase.from('dentistas').select('nome, cro').eq('id', dentistaId).maybeSingle()
+      .then(({ data }) => { if (data) setAutorFallback({ nome: data.nome as string, cro: (data.cro as string | null) ?? null }); });
+  }, [autorDeEvolutions, dentistaId, patientId]);
+  const autorNomeDraft = autorDeEvolutions?.professional ?? autorFallback?.nome ?? 'Você';
+  const autorCroDraft = autorDeEvolutions?.autorCro ?? autorFallback?.cro ?? null;
 
   /**
-   * ZONA 3 — agrupa o rascunho pra render (feedback 21/07: "Restauração M · 45" três
-   * vezes é poluição). Regras: mesmo grupo_id = 1 card multi-dente; sem grupo, MESMO
-   * dente+tipo+status mescla num card só com as faces unidas ("Restauração LMO · 45").
-   * Ordena por dente. Guarda os índices pra edição/remoção in-place.
+   * R-02 Fase 1: card do rascunho e card salvo vêm do MESMO componente-fonte (I1) — os
+   * dois passam por agruparRegistros (I2). draftsParaCards adapta OdontogramaEventoDraft[]
+   * pro mesmo formato { key, data: RegistroCardData } que eventosParaCards já produz pra
+   * ficha salva; idxs substitui ids (mutação é local, por índice, não por chamada ao banco).
    */
-  const gruposDraft = React.useMemo(() => {
-    const m = new Map<string, number[]>();
-    eventosDraft.forEach((ev, i) => {
-      const chave = ev.grupo_id
-        ?? `m:${ev.ancora.dente ?? `${ev.ancora.nivel}:${ev.ancora.arcada ?? ev.ancora.quadrante ?? ''}`}|${ev.tipo}|${ev.status}`;
-      const arr = m.get(chave);
-      if (arr) arr.push(i); else m.set(chave, [i]);
-    });
-    return [...m.entries()]
-      .map(([chave, idxs]) => ({
-        chave,
-        idxs,
-        faces: [...new Set(idxs.flatMap((i) => eventosDraft[i].ancora.faces ?? []))].join(''),
-      }))
-      .sort((a, b) => (eventosDraft[a.idxs[0]].ancora.dente ?? 99) - (eventosDraft[b.idxs[0]].ancora.dente ?? 99));
-  }, [eventosDraft]);
+  const cardsDraft = React.useMemo(
+    () => draftsParaCards(eventosDraft, autorNomeDraft, autorCroDraft),
+    [eventosDraft, autorNomeDraft, autorCroDraft],
+  );
 
   /**
    * G11 — abre o painel do dente (como sempre) E rola até o card do registro correspondente,
@@ -439,13 +515,13 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   const abrirDenteEDestacarRegistro = React.useCallback((dente: number | null) => {
     setDenteAberto(dente);
     if (dente == null) return;
-    const grupo = gruposDraft.find(({ idxs }) => idxs.some((i) => eventosDraft[i].ancora.dente === dente));
-    if (!grupo) return;
-    const el = registroCardRefs.current.get(grupo.chave);
+    const card = cardsDraft.find(({ idxs }) => idxs.some((i) => eventosDraft[i].ancora.dente === dente));
+    if (!card) return;
+    const el = registroCardRefs.current.get(card.key);
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setGrupoDestacado(grupo.chave);
-    window.setTimeout(() => setGrupoDestacado((cur) => (cur === grupo.chave ? null : cur)), 1600);
-  }, [gruposDraft, eventosDraft]);
+    setGrupoDestacado(card.key);
+    window.setTimeout(() => setGrupoDestacado((cur) => (cur === card.key ? null : cur)), 1600);
+  }, [cardsDraft, eventosDraft]);
 
   /** Observação por procedimento (§03 do definitivo) — aplica a todo o grupo. */
   const atualizarObsGrupo = (idxs: number[], obs: string) => {
@@ -460,6 +536,17 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   /** Atualiza o `detalhe` (tabela de especialidade) de UM evento do rascunho por índice. */
   const atualizarDetalheDraft = (idx: number, detalhe: unknown) => {
     setEventosDraft((prev) => prev.map((ev, i) => (i === idx ? { ...ev, detalhe } : ev)));
+  };
+
+  /**
+   * R-02 Fase 1: alterna planejado ⇄ realizado no RASCUNHO — flip local, sem chamada ao
+   * servidor (só grava no save). O card salvo usa toggleStatusRegistro (RPC); este é o
+   * equivalente pro card ainda não persistido.
+   */
+  const toggleStatusDraft = (idxs: number[]) => {
+    setEventosDraft((prev) => prev.map((ev, i) => (idxs.includes(i)
+      ? { ...ev, status: ev.status === 'realizado' ? 'indicado' : 'realizado' }
+      : ev)));
   };
 
   // Busca fichas do Supabase
@@ -488,7 +575,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       // antigas não têm eventos → recebem [] e seguem no display legado (fonte híbrida).
       const { data: evData, error: evError } = await supabase
         .from("odontograma_eventos")
-        .select("id, ficha_id, grupo_id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, observacao, detalhe, realizado_em, registrado_em")
+        .select("id, ficha_id, grupo_id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, observacao, detalhe, realizado_em, registrado_em, encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(id, nome)")
         .eq("paciente_id", patientId)
         .eq("clinica_id", clinicaId);
 
@@ -511,6 +598,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
           id: e.id, grupoId: e.grupo_id, tipo: e.tipo, status: e.status,
           origem: e.origem, ancora, observacao: e.observacao ?? null, realizadoEm: e.realizado_em, registradoEm: e.registrado_em,
           detalhe: e.detalhe ?? null,
+          encaminhadoPara: e.encaminhado_para ? (e.encaminhado_dentista ?? null) : null,
         };
         const arr = eventosPorFicha.get(e.ficha_id);
         if (arr) arr.push(view); else eventosPorFicha.set(e.ficha_id, [view]);
@@ -529,6 +617,100 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       void fetchFichas();
     }
   }, [patientId, clinicaId, fetchFichas]);
+
+  // Destinos elegíveis pra encaminhar (R-04): dentistas ativos da clínica, exceto
+  // secretária e o próprio autor. Mesmo filtro de agendamentos/page.tsx. Busca 1x —
+  // não muda durante a sessão da ficha.
+  const [destinosDisponiveis, setDestinosDisponiveis] = React.useState<{ id: string; nome: string }[]>([]);
+  React.useEffect(() => {
+    if (!clinicaId || patientId === 'demo') return;
+    const supabase = createClient();
+    supabase
+      .from('dentistas')
+      .select('id, nome')
+      .eq('clinica_id', clinicaId)
+      .neq('role', 'secretaria')
+      .eq('ativo', true)
+      .neq('id', dentistaId)
+      .order('nome', { ascending: true })
+      .then(({ data }) => setDestinosDisponiveis(data ?? []));
+  }, [clinicaId, dentistaId, patientId]);
+
+  // ── R-16: filtro por responsável (lógica pura em lib/fichas/filtro-responsavel) ──
+  // Responsável de um registro = encaminhado_para ?? autor da ficha. Todo evento de
+  // um grupo herda o mesmo destino (a action move o grupo inteiro), então filtrar
+  // evento a evento nunca parte um card. Ficha na ótica do filtro = { autor, eventos }.
+  const fichasResp = React.useMemo(
+    () => evolutions.map((evo) => ({ autorId: evo.dentistaId, autorNome: evo.professional, eventos: evo.eventos })),
+    [evolutions],
+  );
+
+  // Responsáveis distintos → chips. Solo (< 2) não renderiza a barra (sem chrome).
+  const responsaveis = React.useMemo(() => derivarResponsaveis(fichasResp), [fichasResp]);
+
+  // ── R-02 Fase 3: trabalhos abertos do paciente (deriva dos eventos JÁ salvos, sem fetch
+  // novo — a busca de fichas acima já traz grupo_id/tipo/dente/status). Alimenta a
+  // confirmação de amarração no ToothDetailPanel de criação.
+  const gruposAbertos = React.useMemo(
+    () =>
+      agregarGruposAbertos(
+        evolutions.flatMap((e) => e.eventos).map((ev) => ({
+          grupo_id: ev.grupoId,
+          tipo: ev.tipo,
+          dente: ev.ancora.dente ?? null,
+          status: ev.status,
+          registrado_em: ev.registradoEm,
+        })),
+      ),
+    [evolutions],
+  );
+
+  // R-18 (achado na auditoria 24/07): reseta pra "Todos" assim que o responsável
+  // selecionado deixa de existir — sem isto o filtro travava preso num id inválido
+  // e a tela ficava vazia sem nenhum controle pra voltar (ver filtroAindaValido).
+  React.useEffect(() => {
+    if (!filtroAindaValido(filtroResponsavel, responsaveis, dentistaId)) {
+      setFiltroResponsavel(null);
+    }
+  }, [responsaveis, filtroResponsavel, dentistaId]);
+
+  // Eventos de uma ficha que sobrevivem ao filtro — mantém contador, odontograma e
+  // cards no MESMO conjunto (senão o header mente numa ficha mista). A assinatura
+  // NÃO usa isto: cobre o estado real da ficha, não a visão filtrada.
+  const eventosFiltrados = React.useCallback(
+    (evo: Evolution) => eventosVisiveis(evo.eventos, evo.dentistaId, filtroResponsavel, dentistaId),
+    [filtroResponsavel, dentistaId],
+  );
+
+  // Fichas visíveis: some da timeline quando nenhum registro seu passa o filtro (#8).
+  const evolutionsVisiveis = React.useMemo(
+    () => evolutions.filter((evo) =>
+      fichaVisivel({ autorId: evo.dentistaId, autorNome: evo.professional, eventos: evo.eventos }, filtroResponsavel, dentistaId),
+    ),
+    [evolutions, filtroResponsavel, dentistaId],
+  );
+
+  // ── R-04 Fase 3: ficha em modo seleção + seus cards encamináveis VISÍVEIS ──────
+  // Encaminhável = indicado · autor = eu · ficha não assinada · não já encaminhado.
+  // Sobre os visíveis (compõe com o filtro do R-16: seleciona só o que se vê).
+  const fichaEmModo = React.useMemo(
+    () => evolutions.find((e) => e.id === modoSelecaoFichaId) ?? null,
+    [evolutions, modoSelecaoFichaId],
+  );
+  const cardsEncaminhaveis = React.useMemo(() => {
+    if (!fichaEmModo || !podeEditarFicha(fichaEmModo) || fichaEmModo.assinadoEm) return [];
+    return eventosParaCards(
+      eventosFiltrados(fichaEmModo), fichaEmModo.professional, fichaEmModo.autorCro, fichaEmModo.assinadoEm != null,
+    )
+      .filter((c) => c.data.status === 'indicado' && !c.data.encaminhadoPara)
+      .map((c) => ({ key: c.key, ids: c.ids }));
+  }, [fichaEmModo, podeEditarFicha, eventosFiltrados]);
+  // Selecionados que ainda são encamináveis válidos (uma key pode virar órfã se o
+  // filtro esconder o card) — é o que a barra conta e o confirmar envia.
+  const idsSelecionados = React.useMemo(
+    () => cardsEncaminhaveis.filter((c) => selecionados.has(c.key)),
+    [cardsEncaminhaveis, selecionados],
+  );
 
 
   // Dentes mencionados em fichas anteriores — usados pelo odontograma premium
@@ -623,6 +805,91 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     }));
 
     const res = await alternarStatusRegistro({ eventoIds: ids, novoStatus, dataClinica: evo.dataAtendimento });
+    if (!res.ok) {
+      setEvolutions(antes);
+      toast.error(res.error ?? 'Não foi possível atualizar o registro.');
+    }
+  };
+
+  /**
+   * Autor encaminha (ou remove o encaminhamento de) um registro planejado seu a outro
+   * dentista da clínica (R-04). Otimista com rollback — mesmo padrão de toggleStatusRegistro.
+   */
+  const encaminharRegistro = async (
+    evo: Evolution, ids: string[], dentistaDestinoId: string | null,
+  ) => {
+    const destino = dentistaDestinoId
+      ? destinosDisponiveis.find((d) => d.id === dentistaDestinoId) ?? null
+      : null;
+    const antes = evolutions;
+    setEvolutions((prev) => prev.map((e) => e.id !== evo.id ? e : {
+      ...e,
+      eventos: e.eventos.map((ev) => ids.includes(ev.id) ? { ...ev, encaminhadoPara: destino } : ev),
+    }));
+
+    const res = await encaminharProcedimento({ eventoIds: ids, dentistaDestinoId });
+    if (!res.ok) {
+      setEvolutions(antes);
+      toast.error(res.error ?? 'Não foi possível encaminhar o registro.');
+    }
+  };
+
+  // ── R-04 Fase 3: handlers do modo seleção (lote na consulta aberta) ──────────
+  const sairModoSelecao = React.useCallback(() => {
+    setModoSelecaoFichaId(null);
+    setSelecionados(new Set());
+    setDestinoEncaminhar(null);
+  }, []);
+  const ligarModoSelecao = (fichaId: string) => {
+    setSelecionados(new Set());
+    setDestinoEncaminhar(null);
+    setModoSelecaoFichaId(fichaId);
+  };
+  const toggleSelecao = (key: string) => {
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+  /** Confirma o lote: união dos ids selecionados → 1 destino → 1 chamada batch. */
+  const confirmarEncaminhamentoLote = async () => {
+    if (!fichaEmModo || destinoEncaminhar == null) return;
+    const ids = idsSelecionados.flatMap((c) => c.ids);
+    if (ids.length === 0) return;
+    const evo = fichaEmModo;
+    const destino = destinoEncaminhar;
+    sairModoSelecao();
+    await encaminharRegistro(evo, ids, destino);
+  };
+  /** Abre/fecha a consulta. Colapsar a que está em modo seleção sai do modo (a barra
+   *  não pode ficar órfã sem os cards na tela). */
+  const alternarExpansaoFicha = (evo: Evolution) => {
+    setDenteSalvoAberto(null);
+    const vaiColapsar = viewingEvo?.id === evo.id;
+    if (vaiColapsar && modoSelecaoFichaId === evo.id) sairModoSelecao();
+    setViewingEvo(vaiColapsar ? null : evo);
+  };
+
+  /**
+   * DESTINO alterna indicado ⇄ realizado de um registro encaminhado a ele (R-04, Fase 4).
+   * Mesmo padrão otimista de toggleStatusRegistro, mas via a RPC estreita do destino
+   * (concluir_evento_encaminhado) — nunca toca detalhe/tipo/âncora/autoria.
+   */
+  const concluirEncaminhado = async (
+    evo: Evolution, ids: string[], statusAtual: StatusRegistro,
+  ) => {
+    const novoStatus: StatusRegistro = statusAtual === 'realizado' ? 'indicado' : 'realizado';
+    const realizadoEm = novoStatus === 'realizado' ? evo.dataAtendimento : null;
+    const antes = evolutions;
+    setEvolutions((prev) => prev.map((e) => e.id !== evo.id ? e : {
+      ...e,
+      eventos: e.eventos.map((ev) => ids.includes(ev.id)
+        ? { ...ev, status: novoStatus, realizadoEm }
+        : ev),
+    }));
+
+    const res = await atualizarStatusEncaminhado({ eventoIds: ids, novoStatus, realizadoEm });
     if (!res.ok) {
       setEvolutions(antes);
       toast.error(res.error ?? 'Não foi possível atualizar o registro.');
@@ -900,6 +1167,40 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
         )}
       </div>
 
+      {/* R-16: filtro por responsável — só quando há ≥2 responsáveis distintos
+          no paciente (solo não vê chrome). Meus = o dentista logado; os demais
+          chips, cada outro responsável presente. */}
+      {responsaveis.length >= 2 && (() => {
+        const souResponsavel = responsaveis.some((r) => r.id === dentistaId);
+        const outros = responsaveis.filter((r) => r.id !== dentistaId);
+        const chipClass = (ativo: boolean) =>
+          `inline-flex items-center min-h-[40px] text-xs font-bold rounded-full px-3.5 border transition-colors ${
+            ativo
+              ? 'bg-teal border-teal text-white'
+              : 'bg-surface border-border text-text-secondary hover:border-teal hover:text-teal-ink'
+          }`;
+        return (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[9.5px] font-bold uppercase tracking-widest text-text-secondary mr-1">
+              Responsável
+            </span>
+            <button type="button" onClick={() => setFiltroResponsavel(null)} className={chipClass(filtroResponsavel === null)}>
+              Todos
+            </button>
+            {souResponsavel && (
+              <button type="button" onClick={() => setFiltroResponsavel(FILTRO_MEUS)} className={chipClass(filtroResponsavel === FILTRO_MEUS)}>
+                Meus
+              </button>
+            )}
+            {outros.map((r) => (
+              <button key={r.id} type="button" onClick={() => setFiltroResponsavel(r.id)} className={chipClass(filtroResponsavel === r.id)}>
+                {r.nome}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
+
       <AnimatePresence>
         {isPanelOpen && (
           <motion.div
@@ -1004,21 +1305,23 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                   onChange={setEventosDraft}
                   onClose={() => setDenteAberto(null)}
                   dataPadrao={formData.dataAtendimento}
+                  gruposAbertos={gruposAbertos}
                 />
               )}
 
               <div className="border-t border-border/60" />
 
-              {/* Registros — agrupados por dente/procedimento, obs por registro */}
+              {/* Registros — R-02 Fase 1: mesmo componente-fonte da ficha salva (RegistroCard,
+                  I1). agruparRegistros (I2) já entrega abertos-primeiro (Fase 2). */}
               <div className="flex flex-col gap-3">
                 <div className="flex items-baseline justify-between px-1">
                   <h3 className="font-heading text-lg text-text-primary">Registros da consulta</h3>
                   <span className="text-[11px] font-semibold text-text-secondary">
-                    {gruposDraft.length > 0 ? `${gruposDraft.length} registro${gruposDraft.length > 1 ? 's' : ''}` : 'nenhum ainda'}
+                    {cardsDraft.length > 0 ? `${cardsDraft.length} registro${cardsDraft.length > 1 ? 's' : ''}` : 'nenhum ainda'}
                   </span>
                 </div>
 
-                {gruposDraft.length === 0 ? (
+                {cardsDraft.length === 0 ? (
                   <div className="border border-dashed border-border rounded-2xl px-6 py-7 text-center">
                     <p className="font-heading text-base text-text-primary mb-1">Nenhum registro ainda</p>
                     <p className="text-xs text-text-secondary max-w-sm mx-auto">
@@ -1027,89 +1330,31 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                     </p>
                   </div>
                 ) : (
-                  gruposDraft.map(({ chave, idxs, faces }) => {
-                    const ev = eventosDraft[idxs[0]];
-                    const dentes = [...new Set(idxs.map((i) => eventosDraft[i].ancora.dente).filter((d): d is number => d != null))];
-                    const alvo = dentes.length === 0
-                      ? (ev.ancora.arcada ? `arcada ${ev.ancora.arcada}` : ev.ancora.quadrante ? `quadrante ${ev.ancora.quadrante}` : 'boca')
-                      : dentes.length === 1 ? `dente ${dentes[0]}` : `dentes ${dentes.join(' · ')}`;
-                    const feito = ev.status === 'realizado';
+                  cardsDraft.map(({ key, idxs, data }) => {
                     // Só registro de UM evento tem tabela de especialidade — grupo multi-dente
                     // não tem "o" detalhe pra editar (mesma regra do ToothDetailPanel).
-                    const temDetalhe = idxs.length === 1 && (ev.tipo === 'endodontia' || ev.tipo === 'implante');
-                    const detalheAberto = temDetalhe && grupoDetalheAberto === chave;
-                    const destacado = grupoDestacado === chave;
+                    const temDetalhe = idxs.length === 1 && (data.tipo === 'endodontia' || data.tipo === 'implante');
+                    const destacado = grupoDestacado === key;
                     return (
                       <div
-                        key={chave}
+                        key={key}
                         ref={(el) => {
-                          if (el) registroCardRefs.current.set(chave, el);
-                          else registroCardRefs.current.delete(chave);
+                          if (el) registroCardRefs.current.set(key, el);
+                          else registroCardRefs.current.delete(key);
                         }}
-                        className={`bg-surface border rounded-xl overflow-hidden transition-shadow duration-300 ${
-                          destacado ? 'border-teal ring-2 ring-teal/40' : 'border-dashed border-border'
-                        }`}
+                        className={destacado ? 'rounded-xl ring-2 ring-teal ring-offset-2 ring-offset-background transition-shadow duration-300' : ''}
                       >
-                        <div className="flex items-center gap-3 px-4 py-3 flex-wrap">
-                          <span className="shrink-0 min-w-[30px] h-[30px] px-2 rounded-lg bg-surface-alt border border-border flex items-center justify-center font-mono text-xs font-bold text-text-primary">
-                            {dentes.length === 1 ? dentes[0] : dentes.length > 1 ? `${dentes.length}×` : '—'}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="font-semibold text-sm text-text-primary">
-                              {TIPO_LABEL[ev.tipo]}{faces ? ` ${faces}` : ''} · {alvo}
-                            </p>
-                          </div>
-                          <span className={`inline-flex items-center gap-1.5 shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full ${
-                            feito ? 'bg-teal-pale text-teal-ink' : 'bg-coral-pale text-coral-ink'
-                          }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${feito ? 'bg-teal' : 'bg-coral'}`} />
-                            {feito ? 'Realizado' : 'Planejado'}
-                          </span>
-                          {temDetalhe && (
-                            <button
-                              type="button"
-                              onClick={() => setGrupoDetalheAberto(detalheAberto ? null : chave)}
-                              className="flex items-center gap-0.5 shrink-0 text-[10.5px] font-bold text-teal-ink outline-none focus-visible:ring-1 focus-visible:ring-teal rounded px-1"
-                            >
-                              Detalhes
-                              <ChevronRight className={`w-3 h-3 transition-transform ${detalheAberto ? 'rotate-90' : ''}`} />
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => removerGrupoDraft(idxs)}
-                            className="shrink-0 p-1 rounded-md text-text-secondary hover:text-coral-ink transition-colors"
-                            aria-label="Remover registro"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-2 px-4 pb-3">
-                          <span className="text-[9.5px] font-bold uppercase tracking-widest text-text-secondary shrink-0">Obs.</span>
-                          <input
-                            type="text"
-                            value={ev.observacao}
-                            onChange={(e) => atualizarObsGrupo(idxs, e.target.value)}
-                            placeholder="material, técnica, intercorrência…"
-                            className="flex-1 bg-surface-alt border border-dashed border-border rounded-lg px-3 py-1.5 text-xs italic text-text-primary outline-none focus:border-teal transition-colors"
-                          />
-                        </div>
-                        {detalheAberto && (
-                          <div className="px-4 pb-3 pt-1 border-t border-border/60 bg-surface-alt/40">
-                            {ev.tipo === 'endodontia' && (
-                              <EndoForm
-                                valor={(ev.detalhe ?? null) as EndoDetalhe | null}
-                                onChange={(v) => atualizarDetalheDraft(idxs[0], v)}
-                              />
-                            )}
-                            {ev.tipo === 'implante' && (
-                              <ImplanteForm
-                                valor={(ev.detalhe ?? null) as ImplanteDetalhe | null}
-                                onChange={(v) => atualizarDetalheDraft(idxs[0], v)}
-                              />
-                            )}
-                          </div>
-                        )}
+                        <RegistroCard
+                          data={data}
+                          editavel
+                          onObservacaoChange={(v) => atualizarObsGrupo(idxs, v)}
+                          onRemover={() => removerGrupoDraft(idxs)}
+                          onToggleStatus={() => toggleStatusDraft(idxs)}
+                        >
+                          {temDetalhe
+                            ? corpoEspecialidadeEditavel(data.tipo, data.detalhe, (v) => atualizarDetalheDraft(idxs[0], v))
+                            : undefined}
+                        </RegistroCard>
                       </div>
                     );
                   })
@@ -1178,10 +1423,14 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
 
       <div className="space-y-5">
         {/* Lista cronológica plana — todas as fichas (modelo 1 ficha = 1 tratamento) */}
-        {evolutions.length > 0 && (
+        {evolutionsVisiveis.length > 0 && (
           <div className="space-y-5">
-            {evolutions.map((evo, idx) => {
+            {evolutionsVisiveis.map((evo, idx) => {
               const isExpanded = viewingEvo?.id === evo.id;
+              // R-16: eventos que sobrevivem ao filtro — usados em contador/pills/
+              // odontograma/cards pra o header não mentir numa ficha mista. Sem filtro
+              // === evo.eventos.
+              const eventosVis = eventosFiltrados(evo);
               const validKeys = evo.teethNotes.flatMap((tn) =>
                 tn.notes.filter(Boolean).map((_, i) => `${tn.tooth}_${i}`)
               );
@@ -1203,8 +1452,8 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                   <div
                     role="button"
                     tabIndex={0}
-                    onClick={() => { setDenteSalvoAberto(null); setViewingEvo(isExpanded ? null : evo); }}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDenteSalvoAberto(null); setViewingEvo(isExpanded ? null : evo); } }}
+                    onClick={() => alternarExpansaoFicha(evo)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); alternarExpansaoFicha(evo); } }}
                     className="w-full flex items-center gap-3 px-5 py-4 cursor-pointer flex-wrap"
                   >
                     <div className="min-w-0 flex-1">
@@ -1215,17 +1464,17 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                         {evo.professional}
                         {evo.autorCro && <span className="font-mono"> — {evo.autorCro}</span>}
                         {' · '}
-                        {evo.eventos.length > 0
-                          ? `${evo.eventos.length} registro${evo.eventos.length > 1 ? 's' : ''}`
+                        {eventosVis.length > 0
+                          ? `${eventosVis.length} registro${eventosVis.length > 1 ? 's' : ''}`
                           : `${totalProcs} procedimento${totalProcs !== 1 ? 's' : ''}`}
                         {evo.assinadoEm && <span className="text-teal-ink font-semibold"> · ✓ assinada</span>}
                       </p>
                     </div>
 
-                    {evo.eventos.length > 0 ? (
+                    {eventosVis.length > 0 ? (
                       (() => {
-                        const feitos = evo.eventos.filter((e) => e.status === 'realizado').length;
-                        const plan = evo.eventos.length - feitos;
+                        const feitos = eventosVis.filter((e) => e.status === 'realizado').length;
+                        const plan = eventosVis.length - feitos;
                         return (
                           <span className="flex items-center gap-1.5 shrink-0">
                             {feitos > 0 && (
@@ -1293,10 +1542,10 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                   {!isExpanded && (
                     <div className="px-5 pb-4 flex items-center gap-2 flex-wrap text-[11px] font-semibold text-text-secondary">
                       {(() => {
-                        const dentes = evo.eventos.length > 0
-                          ? [...new Set(evo.eventos.map((e) => e.ancora.dente).filter((d): d is number => d != null))]
+                        const dentes = eventosVis.length > 0
+                          ? [...new Set(eventosVis.map((e) => e.ancora.dente).filter((d): d is number => d != null))]
                           : [...new Set(evo.teethNotes.map((tn) => tn.tooth).filter((t) => !(t in ARCH_LABELS)))];
-                        const regioes = evo.eventos.length === 0
+                        const regioes = eventosVis.length === 0
                           ? evo.teethNotes.map((tn) => tn.tooth).filter((t) => t in ARCH_LABELS).map((t) => ARCH_LABELS[t])
                           : [];
                         return (
@@ -1331,8 +1580,8 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                               <p className="text-[10.5px] text-text-secondary italic">toque um dente para ver o perfil</p>
                             </div>
                             <Odontograma
-                              eventos={evo.eventos.length > 0 ? evo.eventos.map(eventoViewParaDraft) : undefined}
-                              selectedTeeth={evo.eventos.length > 0 ? [] : evo.teethNotes.map((tn) => tn.tooth)}
+                              eventos={eventosVis.length > 0 ? eventosVis.map(eventoViewParaDraft) : undefined}
+                              selectedTeeth={eventosVis.length > 0 ? [] : evo.teethNotes.map((tn) => tn.tooth)}
                               onToothToggle={(d) => setDenteSalvoAberto((cur) => cur?.fichaId === evo.id && cur.dente === d ? null : { fichaId: evo.id, dente: d })}
                               compact
                               hideFilters
@@ -1342,7 +1591,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                           {denteSalvoAberto?.fichaId === evo.id && (
                             <ToothDetailPanel
                               dente={denteSalvoAberto.dente}
-                              eventos={evo.eventos.map(eventoViewParaDraft)}
+                              eventos={eventosVis.map(eventoViewParaDraft)}
                               onChange={() => {}}
                               onClose={() => setDenteSalvoAberto(null)}
                               dataPadrao={evo.dataAtendimento}
@@ -1350,24 +1599,67 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                             />
                           )}
 
-                          {/* Registros — eventos (novo modelo) OU derivação v2 no MESMO visual */}
-                          {evo.eventos.length > 0 ? (
+                          {/* Registros — eventos (novo modelo) OU derivação v2 no MESMO visual.
+                              R-16: eventosVis já aplicou o filtro por responsável.
+                              R-04 Fase 3: modo seleção (variante B) liga o botão "Encaminhar". */}
+                          {eventosVis.length > 0 ? (() => {
+                            const cards = eventosParaCards(eventosVis, evo.professional, evo.autorCro, evo.assinadoEm != null);
+                            const emModo = modoSelecaoFichaId === evo.id;
+                            const podeEncaminhar = podeEditarFicha(evo) && !evo.assinadoEm;
+                            const temEncaminhavel = cards.some((c) => c.data.status === 'indicado' && !c.data.encaminhadoPara);
+                            return (
                             <div className="flex flex-col gap-2">
-                              {eventosParaCards(evo.eventos, evo.professional, evo.autorCro, evo.assinadoEm != null).map(({ key, ids, data }) => (
-                                <RegistroCard
-                                  key={key}
-                                  data={data}
-                                  onToggleStatus={
-                                    podeEditarFicha(evo) && !evo.assinadoEm
-                                      ? () => void toggleStatusRegistro(evo, ids, data.status)
-                                      : undefined
-                                  }
-                                >
-                                  {corpoEspecialidade(data.tipo, data.detalhe)}
-                                </RegistroCard>
-                              ))}
+                              {/* Cabeçalho da consulta: liga o modo seleção NESTA consulta */}
+                              {podeEncaminhar && temEncaminhavel && !emModo && destinosDisponiveis.length > 0 && (
+                                <div className="flex justify-end -mb-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => ligarModoSelecao(evo.id)}
+                                    className="inline-flex items-center gap-1.5 text-[11px] font-bold text-teal-ink hover:bg-teal-pale px-2.5 py-1.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-teal transition-colors"
+                                  >
+                                    <Forward className="w-3.5 h-3.5" />
+                                    Encaminhar
+                                  </button>
+                                </div>
+                              )}
+                              {cards.map(({ key, ids, data }) => {
+                                const encaminhavel = podeEncaminhar && data.status === 'indicado' && !data.encaminhadoPara;
+                                const jaEncaminhado = podeEncaminhar && data.status === 'indicado' && !!data.encaminhadoPara;
+                                // No modo, o que não pode ser encaminhado apaga e fica inerte (#8).
+                                if (emModo && !encaminhavel) {
+                                  return (
+                                    <div key={key} className="opacity-40 pointer-events-none">
+                                      <RegistroCard data={data}>{corpoEspecialidade(data.tipo, data.detalhe)}</RegistroCard>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <RegistroCard
+                                    key={key}
+                                    data={data}
+                                    selecionavel={emModo && encaminhavel}
+                                    selecionado={selecionados.has(key)}
+                                    onToggleSelecao={emModo && encaminhavel ? () => toggleSelecao(key) : undefined}
+                                    onToggleStatus={
+                                      emModo
+                                        ? undefined
+                                        : podeEditarFicha(evo) && !evo.assinadoEm
+                                          ? () => void toggleStatusRegistro(evo, ids, data.status)
+                                          : data.encaminhadoPara?.id === dentistaId && !evo.assinadoEm
+                                            ? () => void concluirEncaminhado(evo, ids, data.status)
+                                            : undefined
+                                    }
+                                    onRemoverEncaminhamento={
+                                      !emModo && jaEncaminhado ? () => void encaminharRegistro(evo, ids, null) : undefined
+                                    }
+                                  >
+                                    {corpoEspecialidade(data.tipo, data.detalhe)}
+                                  </RegistroCard>
+                                );
+                              })}
                             </div>
-                          ) : evo.teethNotes.length > 0 && (
+                            );
+                          })() : evo.teethNotes.length > 0 && (
                             <div className="flex flex-col gap-2">
                               {evo.teethNotes.flatMap((tn) =>
                                 tn.notes.filter(Boolean).map((nota, i) => {
@@ -1461,6 +1753,23 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
         )}
 
       </div>
+
+      {/* R-04 Fase 3: barra de ação do modo seleção — fixa, escopada à consulta em modo */}
+      <AnimatePresence>
+        {modoSelecaoFichaId && (
+          <EncaminharBar
+            totalSelecionado={idsSelecionados.length}
+            totalEncaminhavel={cardsEncaminhaveis.length}
+            destinosDisponiveis={destinosDisponiveis}
+            destino={destinoEncaminhar}
+            onDestino={setDestinoEncaminhar}
+            onSelecionarTudo={() => setSelecionados(new Set(cardsEncaminhaveis.map((c) => c.key)))}
+            onLimpar={() => setSelecionados(new Set())}
+            onConfirmar={() => void confirmarEncaminhamentoLote()}
+            onSair={sairModoSelecao}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Dialog: Assinatura do Paciente */}
       <Dialog open={!!signingFichaId} onOpenChange={(open) => { if (!open) setSigningFichaId(null); }}>

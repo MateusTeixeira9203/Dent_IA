@@ -5,6 +5,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { inserirNotificacao } from '@/lib/notificacoes';
+import { buscarGruposAbertos, type GrupoAberto } from '@/server/patients/get-grupos-abertos';
 import type { OdontogramaEventoDraft } from '@/types/odontograma';
 
 /**
@@ -359,4 +360,192 @@ export async function alternarStatusRegistro(params: {
     return { ok: false, error: 'Não foi possível atualizar o registro.' };
   }
   return { ok: true };
+}
+
+/**
+ * Autor encaminha (ou remove o encaminhamento de) um registro planejado seu a outro
+ * dentista da clínica (R-04). Nunca transfere autoria — `dentista_id` continua o autor;
+ * só `encaminhado_para` muda. RLS de escrita (migration 101) já cobre esta coluna pro
+ * dono; nenhuma policy nova.
+ */
+export async function encaminharProcedimento(params: {
+  eventoIds: string[];
+  /** null = remove o encaminhamento existente. */
+  dentistaDestinoId: string | null;
+}): Promise<{ ok: boolean; error?: string }> {
+  const { supabase, user, clinicId, role } = await requireClinicContext();
+  if (role === 'secretaria') return { ok: false, error: 'Sem permissão.' };
+  if (params.eventoIds.length === 0) return { ok: true };
+
+  const { data: dentistaPerfil } = await supabase
+    .from('dentistas')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('clinica_id', clinicId)
+    .maybeSingle();
+
+  if (!dentistaPerfil) return { ok: false, error: 'Perfil de dentista não encontrado.' };
+
+  // Os eventos precisam ser DESTE dentista (autor) e status='indicado' — só o planejado
+  // tem o que encaminhar (assunção da spec R-04).
+  const { data: eventos } = await supabase
+    .from('odontograma_eventos')
+    .select('id, ficha_id, status, paciente_id')
+    .in('id', params.eventoIds)
+    .eq('clinica_id', clinicId)
+    .eq('dentista_id', dentistaPerfil.id);
+
+  if (!eventos || eventos.length !== params.eventoIds.length) {
+    return { ok: false, error: 'Registro não encontrado ou de outro dentista.' };
+  }
+  if (eventos.some((e) => e.status !== 'indicado')) {
+    return { ok: false, error: 'Só é possível encaminhar registros planejados.' };
+  }
+
+  const fichaIds = [...new Set(eventos.map((e) => e.ficha_id).filter((f): f is string => f != null))];
+  const { data: fichas } = await supabase
+    .from('fichas')
+    .select('id, assinado_em')
+    .in('id', fichaIds)
+    .eq('clinica_id', clinicId);
+
+  if (fichas?.some((f) => f.assinado_em != null)) {
+    return { ok: false, error: 'Esta ficha já foi assinada e não pode mais ser alterada.' };
+  }
+
+  let destino: { id: string; nome: string } | null = null;
+  if (params.dentistaDestinoId != null) {
+    // Destino elegível: mesma clínica, ativo, nunca secretária, nunca o próprio autor —
+    // validado no servidor, não só escondido na UI (a RLS não filtra isso sozinha).
+    const { data: destinoData } = await supabase
+      .from('dentistas')
+      .select('id, nome')
+      .eq('id', params.dentistaDestinoId)
+      .eq('clinica_id', clinicId)
+      .neq('role', 'secretaria')
+      .eq('ativo', true)
+      .neq('id', dentistaPerfil.id)
+      .maybeSingle();
+
+    if (!destinoData) return { ok: false, error: 'Destino inválido.' };
+    destino = destinoData;
+  }
+
+  const { error } = await supabase
+    .from('odontograma_eventos')
+    .update({ encaminhado_para: params.dentistaDestinoId })
+    .in('id', params.eventoIds)
+    .eq('clinica_id', clinicId)
+    .eq('dentista_id', dentistaPerfil.id);
+
+  if (error) {
+    console.error('[encaminharProcedimento]', error.message);
+    return { ok: false, error: 'Não foi possível encaminhar o registro.' };
+  }
+
+  if (destino) {
+    const { data: paciente } = await supabase
+      .from('pacientes')
+      .select('nome')
+      .eq('id', eventos[0].paciente_id)
+      .maybeSingle<{ nome: string }>();
+
+    await inserirNotificacao(supabase, {
+      clinicaId:     clinicId,
+      paraRole:      'dentista',
+      paraDentistaId: destino.id,
+      deDentistaId:  dentistaPerfil.id,
+      tipo:          'procedimento_encaminhado',
+      titulo:        `Procedimento encaminhado — ${paciente?.nome ?? 'Paciente'}`,
+      mensagem:      'Um procedimento planejado foi encaminhado pra você.',
+      href:          `/dashboard/pacientes/${eventos[0].paciente_id}`,
+    });
+  }
+
+  revalidatePath(`/dashboard/pacientes/${eventos[0].paciente_id}`);
+  return { ok: true };
+}
+
+/**
+ * Destino conclui (ou reabre) um registro que foi encaminhado a ele (R-04, Fases 1-4).
+ * Escrita estreita via RPC (migration 109): só status + realizado_em, nunca tipo/âncora/
+ * detalhe/autoria — quem trata de fato o `detalhe` de endo/implante ainda é o autor
+ * (R-04b, item futuro). A RPC valida sozinha (encaminhado_para = caller, ficha não
+ * assinada); esta action só decide o "de quem" da notificação de volta.
+ */
+export async function atualizarStatusEncaminhado(params: {
+  eventoIds: string[];
+  novoStatus: 'indicado' | 'realizado';
+  realizadoEm: string | null;
+}): Promise<{ ok: boolean; error?: string }> {
+  const { supabase, user, clinicId, role } = await requireClinicContext();
+  if (role === 'secretaria') return { ok: false, error: 'Sem permissão.' };
+  if (params.eventoIds.length === 0) return { ok: true };
+
+  const { error } = await supabase.rpc('concluir_evento_encaminhado', {
+    p_evento_ids:   params.eventoIds,
+    p_novo_status:  params.novoStatus,
+    p_realizado_em: params.realizadoEm,
+  });
+
+  if (error) {
+    if (error.message.includes('sem_permissao')) {
+      return { ok: false, error: 'Este registro não foi encaminhado a você, ou a ficha já foi assinada.' };
+    }
+    console.error('[atualizarStatusEncaminhado]', error.message);
+    return { ok: false, error: 'Não foi possível atualizar o registro.' };
+  }
+
+  // Notifica o autor original só ao concluir (Decisão #4) — cortesia, best-effort.
+  // O núcleo clínico já é compartilhado (migration 099): o autor vê a mudança de status
+  // sozinho na próxima vez que abrir o paciente, mesmo se a notificação falhar.
+  if (params.novoStatus === 'realizado') {
+    const { data: destinoPerfil } = await supabase
+      .from('dentistas')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('clinica_id', clinicId)
+      .maybeSingle();
+
+    const { data: evento } = await supabase
+      .from('odontograma_eventos')
+      .select('dentista_id, paciente_id')
+      .in('id', params.eventoIds)
+      .limit(1)
+      .maybeSingle<{ dentista_id: string; paciente_id: string }>();
+
+    if (evento && destinoPerfil) {
+      const { data: paciente } = await supabase
+        .from('pacientes')
+        .select('nome')
+        .eq('id', evento.paciente_id)
+        .maybeSingle<{ nome: string }>();
+
+      await inserirNotificacao(supabase, {
+        clinicaId:     clinicId,
+        paraRole:      'dentista',
+        paraDentistaId: evento.dentista_id,
+        deDentistaId:  destinoPerfil.id,
+        tipo:          'encaminhamento_concluido',
+        titulo:        `Procedimento encaminhado concluído — ${paciente?.nome ?? 'Paciente'}`,
+        mensagem:      'O dentista que você encaminhou concluiu o procedimento.',
+        href:          `/dashboard/pacientes/${evento.paciente_id}`,
+      });
+
+      revalidatePath(`/dashboard/pacientes/${evento.paciente_id}`);
+    }
+  }
+
+  revalidatePath('/dashboard');
+  return { ok: true };
+}
+
+/**
+ * R-02 Fase 3 — trabalhos ainda abertos do paciente, pro modo consulta (alimenta a confirmação
+ * de amarração do ToothDetailPanel). A clínica vem do contexto de auth (nunca confia no client);
+ * a leitura em si é a função pura já testada. Read-only, sem efeito colateral.
+ */
+export async function getGruposAbertos(patientId: string): Promise<GrupoAberto[]> {
+  const { clinicId } = await requireClinicContext();
+  return buscarGruposAbertos({ patientId, clinicId });
 }

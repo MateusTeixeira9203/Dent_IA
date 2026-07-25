@@ -10,7 +10,7 @@
 // endo, chips de orto) entra como `children`, colapsável.
 
 import { useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Forward, Check, X } from 'lucide-react';
 import {
   TIPO_LABEL,
   corDoRegistro,
@@ -39,6 +39,9 @@ export interface RegistroCardData {
   observacao: string | null;
   /** Dado clínico da especialidade (migration 106) — cru, ainda não validado por schema. */
   detalhe: unknown | null;
+  /** Destino do encaminhamento (R-04) — null = não encaminhado. Leitura é aberta pra
+   *  clínica inteira (migration 099); quem AGE é decidido por quem chama o card. */
+  encaminhadoPara: { id: string; nome: string } | null;
 }
 
 export interface RegistroCardProps {
@@ -52,6 +55,32 @@ export interface RegistroCardProps {
    * não havia caminho pra marcar o que foi feito, tudo ficava "Planejado".
    */
   onToggleStatus?: () => void;
+  /**
+   * Variante B — modo seleção (R-04 Fase 3): quando true, o card mostra um checkbox
+   * à esquerda e o clique SELECIONA em vez de expandir. Só é passado pros encamináveis
+   * (indicado · autor = eu · ficha não assinada · ainda não encaminhado). Card
+   * já-encaminhado/inelegível nunca recebe isto — o esmaecimento dele é do FichasTab.
+   */
+  selecionavel?: boolean;
+  selecionado?: boolean;
+  onToggleSelecao?: () => void;
+  /**
+   * Decisão #7 (des-encaminhar): quando presente (autor · registro dele · indicado ·
+   * não assinado · JÁ encaminhado), o badge "Encaminhado a {nome}" ganha um × que
+   * remove o encaminhamento (dentistaDestinoId=null, silencioso). Ausente = só-leitura.
+   */
+  onRemoverEncaminhamento?: () => void;
+  /**
+   * R-02 Fase 1 — card em modo de edição (rascunho, ainda não salvo). Troca o parágrafo
+   * de observação por um input e mostra um botão remover no header. O mesmo componente-
+   * fonte desenha criação E leitura (I1) — só o corpo (children) muda entre
+   * EndoForm/ImplanteForm editável e EndoCard/ImplanteCard só-leitura.
+   */
+  editavel?: boolean;
+  /** Só relevante com editavel=true. */
+  onObservacaoChange?: (valor: string) => void;
+  /** Só relevante com editavel=true — remove o registro do rascunho. */
+  onRemover?: () => void;
 }
 
 const PILL: Record<'coral' | 'teal' | 'slate', { label: string; wrap: string; dot: string }> = {
@@ -91,7 +120,11 @@ function resumoAncora(ancoras: AncoraClinica[]): string {
   return dentes.length === 1 ? `dente ${dentes[0]}` : `dentes ${dentes.join(' · ')}`;
 }
 
-export function RegistroCard({ data, children, defaultOpen = false, onToggleStatus }: RegistroCardProps) {
+export function RegistroCard({
+  data, children, defaultOpen = false, onToggleStatus,
+  selecionavel = false, selecionado = false, onToggleSelecao, onRemoverEncaminhamento,
+  editavel = false, onObservacaoChange, onRemover,
+}: RegistroCardProps) {
   const [aberto, setAberto] = useState(defaultOpen);
   const cor = corDoRegistro(data.status, data.origem);
   const pill = PILL[cor];
@@ -102,17 +135,57 @@ export function RegistroCard({ data, children, defaultOpen = false, onToggleStat
   const retroativo = data.realizadoEm != null && dataBRT(data.registradoEm) > data.realizadoEm;
   const temCorpo = children != null;
 
+  // Modo seleção (variante B): o clique no card marca/desmarca em vez de expandir; o
+  // pill e o × ficam inertes (a ação da vez é escolher o que encaminhar).
+  const emSelecao = selecionavel;
+  const pillClicavel = !emSelecao && onToggleStatus;
+  const containerInterativo = emSelecao || temCorpo;
+  const aoClicar = emSelecao ? onToggleSelecao : temCorpo ? () => setAberto((v) => !v) : undefined;
+
   return (
-    <article className="bg-surface border border-border rounded-xl overflow-hidden">
-      <button
-        type="button"
-        onClick={temCorpo ? () => setAberto((v) => !v) : undefined}
-        aria-expanded={temCorpo ? aberto : undefined}
-        className={`w-full flex items-center gap-3 px-4 py-3 text-left ${temCorpo ? 'cursor-pointer' : 'cursor-default'}`}
+    <article className={`bg-surface border rounded-xl overflow-hidden transition-colors ${
+      emSelecao && selecionado ? 'border-teal ring-1 ring-teal/40' : 'border-border'
+    }`}>
+      <div
+        role={emSelecao ? 'checkbox' : 'button'}
+        aria-checked={emSelecao ? selecionado : undefined}
+        tabIndex={containerInterativo ? 0 : -1}
+        onClick={aoClicar}
+        onKeyDown={
+          containerInterativo
+            ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); aoClicar?.(); } }
+            : undefined
+        }
+        aria-expanded={!emSelecao && temCorpo ? aberto : undefined}
+        // div (não <button>): no modo seleção o checkbox interativo fica aninhado aqui,
+        // e o × do badge (fora do modo) também — elemento interativo dentro de <button>
+        // é HTML inválido. Por isso role/tabIndex/teclado manuais.
+        className={`w-full flex items-center gap-3 px-4 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-teal ${containerInterativo ? 'cursor-pointer' : 'cursor-default'}`}
       >
+        {emSelecao && (
+          <span
+            aria-hidden
+            className={`shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${
+              selecionado ? 'bg-teal border-teal' : 'border-border bg-surface-alt'
+            }`}
+          >
+            {selecionado && <Check className="w-3.5 h-3.5 text-white" />}
+          </span>
+        )}
+
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-sm text-text-primary truncate">{titulo}</p>
-          {data.observacao && (
+          {editavel ? (
+            <input
+              type="text"
+              value={data.observacao ?? ''}
+              onChange={(e) => onObservacaoChange?.(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              placeholder="material, técnica, intercorrência…"
+              className="mt-0.5 w-full bg-transparent border-b border-dashed border-border text-xs italic text-text-primary outline-none focus:border-teal transition-colors placeholder:text-text-secondary/60"
+            />
+          ) : data.observacao && (
             <p className="text-xs text-text-secondary italic mt-0.5 truncate">&ldquo;{data.observacao}&rdquo;</p>
           )}
           <p className="text-xs text-text-secondary mt-0.5">
@@ -131,7 +204,33 @@ export function RegistroCard({ data, children, defaultOpen = false, onToggleStat
           </p>
         </div>
 
-        {onToggleStatus ? (
+        {/* Badge de destino — só-leitura pra todo mundo; com × só pro autor (fora do modo). */}
+        {data.encaminhadoPara && (
+          <span
+            className="inline-flex items-center gap-1 shrink-0 text-[11px] font-medium pl-2 pr-1 py-1 rounded-full bg-surface-alt text-text-secondary border border-border"
+            title={`Encaminhado a ${data.encaminhadoPara.nome}`}
+          >
+            <Forward className="w-3 h-3" />
+            <span className="max-w-[110px] truncate">{data.encaminhadoPara.nome}</span>
+            {!emSelecao && onRemoverEncaminhamento && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onRemoverEncaminhamento(); }}
+                // Enter/Space nativo do <button> já dispara o clique — sem isto, o keydown
+                // ainda sobe pro card pai e expande/colapsa como efeito colateral (o
+                // stopPropagation do onClick acima não freia um evento separado de teclado).
+                onKeyDown={(e) => e.stopPropagation()}
+                title="Remover encaminhamento"
+                aria-label={`Remover encaminhamento a ${data.encaminhadoPara.nome}`}
+                className="ml-0.5 rounded-full p-0.5 text-text-secondary hover:text-coral-ink hover:bg-coral-pale outline-none focus-visible:ring-2 focus-visible:ring-teal transition-colors"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </span>
+        )}
+
+        {pillClicavel ? (
           <span
             role="button"
             tabIndex={0}
@@ -152,14 +251,27 @@ export function RegistroCard({ data, children, defaultOpen = false, onToggleStat
           </span>
         )}
 
-        {temCorpo && (
+        {editavel && onRemover && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onRemover(); }}
+            onKeyDown={(e) => e.stopPropagation()}
+            title="Remover registro"
+            aria-label="Remover registro"
+            className="shrink-0 p-1.5 rounded-md text-text-secondary hover:text-coral-ink hover:bg-coral-pale outline-none focus-visible:ring-2 focus-visible:ring-teal transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+
+        {!emSelecao && temCorpo && (
           <ChevronRight
             className={`w-4 h-4 shrink-0 text-text-secondary transition-transform ${aberto ? 'rotate-90' : ''}`}
           />
         )}
-      </button>
+      </div>
 
-      {temCorpo && aberto && (
+      {!emSelecao && temCorpo && aberto && (
         <div className="border-t border-border bg-surface-alt/40 px-4 py-3">{children}</div>
       )}
     </article>
