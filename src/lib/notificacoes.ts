@@ -12,6 +12,9 @@ export type TipoNotificacao =
   | 'checkin_paciente'
   | 'agendamento_cancelado'
   | 'pagamento_confirmado'
+  // Encaminhamento de procedimento (R-04)
+  | 'procedimento_encaminhado'    // pro destino, quando recebe
+  | 'encaminhamento_concluido'    // pro autor, quando o destino conclui
   // Cross-clínica
   | 'convite_clinica';
 

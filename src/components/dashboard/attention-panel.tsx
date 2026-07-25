@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Bell, CheckCircle2, AlertCircle, Clock, ChevronRight, ChevronDown, User } from 'lucide-react';
+import { Bell, CheckCircle2, AlertCircle, Clock, ChevronRight, ChevronDown, User, Forward } from 'lucide-react';
+import { TIPO_LABEL, type TipoRegistroOdontograma } from '@/types/odontograma';
 
 export interface OrcamentoResumido {
   id: string;
@@ -11,9 +12,19 @@ export interface OrcamentoResumido {
   paciente_nome: string;
 }
 
+export interface EncaminhadoResumido {
+  id: string;
+  tipo: TipoRegistroOdontograma;
+  dente: number | null;
+  paciente_id: string;
+  paciente_nome: string;
+}
+
 interface AttentionPanelProps {
   semConfirmacao: number;
   orcamentosAguardando: OrcamentoResumido[];
+  /** Registros planejados encaminhados a este dentista (R-04), ainda não concluídos. */
+  encaminhados: EncaminhadoResumido[];
 }
 
 interface ActionCardProps {
@@ -135,10 +146,91 @@ function OrcamentosCard({ orcamentos }: { orcamentos: OrcamentoResumido[] }) {
   );
 }
 
-export function AttentionPanel({ semConfirmacao, orcamentosAguardando }: AttentionPanelProps) {
+/** "Canal · dente 12" — resumo do registro encaminhado, mesmo rótulo do card da ficha. */
+function resumoEncaminhado(e: EncaminhadoResumido): string {
+  return e.dente != null ? `${TIPO_LABEL[e.tipo]} · dente ${e.dente}` : TIPO_LABEL[e.tipo];
+}
+
+function EncaminhadosCard({ encaminhados }: { encaminhados: EncaminhadoResumido[] }) {
+  const [aberto, setAberto] = useState(false);
+  const count = encaminhados.length;
+
+  if (count === 1) {
+    const e = encaminhados[0];
+    return (
+      <Link
+        href={`/dashboard/pacientes/${e.paciente_id}`}
+        className="group flex items-center justify-between p-6 rounded-3xl border border-border bg-surface hover:bg-surface-alt transition-all hover:-translate-y-0.5 hover:shadow-md"
+      >
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-surface-alt flex items-center justify-center shrink-0">
+            <Forward className="w-5 h-5 text-text-secondary" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-text-primary">1 procedimento encaminhado pra você</p>
+            <p className="text-xs text-text-secondary mt-0.5">{e.paciente_nome} · {resumoEncaminhado(e)}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="font-mono text-3xl font-bold text-text-secondary">1</span>
+          <ChevronRight className="w-4 h-4 text-text-secondary group-hover:translate-x-0.5 transition-transform" />
+        </div>
+      </Link>
+    );
+  }
+
+  return (
+    <div className="rounded-3xl border border-border bg-surface overflow-hidden">
+      <button
+        onClick={() => setAberto(v => !v)}
+        className="w-full flex items-center justify-between p-6 hover:bg-surface-alt transition-colors"
+      >
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-surface-alt flex items-center justify-center shrink-0">
+            <Forward className="w-5 h-5 text-text-secondary" />
+          </div>
+          <div className="text-left">
+            <p className="text-sm font-semibold text-text-primary">{count} procedimentos encaminhados pra você</p>
+            <p className="text-xs text-text-secondary mt-0.5">Aguardando você</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="font-mono text-3xl font-bold text-text-secondary">{count}</span>
+          <ChevronDown className={`w-4 h-4 text-text-secondary transition-transform ${aberto ? 'rotate-180' : ''}`} />
+        </div>
+      </button>
+
+      {aberto && (
+        <div className="border-t border-border/60 divide-y divide-border/40">
+          {encaminhados.map(e => (
+            <Link
+              key={e.id}
+              href={`/dashboard/pacientes/${e.paciente_id}`}
+              className="flex items-center justify-between px-6 py-3.5 hover:bg-surface-alt transition-colors group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-7 h-7 rounded-full bg-surface-alt flex items-center justify-center shrink-0">
+                  <User className="w-3.5 h-3.5 text-text-secondary" />
+                </div>
+                <span className="text-sm font-medium text-text-primary">{e.paciente_nome}</span>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-xs text-text-secondary">{resumoEncaminhado(e)}</span>
+                <ChevronRight className="w-3.5 h-3.5 text-text-secondary/50 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function AttentionPanel({ semConfirmacao, orcamentosAguardando, encaminhados }: AttentionPanelProps) {
   const hasOrc = orcamentosAguardando.length > 0;
-  const hasItems = semConfirmacao > 0 || hasOrc;
-  const itemCount = (semConfirmacao > 0 ? 1 : 0) + (hasOrc ? 1 : 0);
+  const hasEncaminhados = encaminhados.length > 0;
+  const hasItems = semConfirmacao > 0 || hasOrc || hasEncaminhados;
+  const itemCount = (semConfirmacao > 0 ? 1 : 0) + (hasOrc ? 1 : 0) + (hasEncaminhados ? 1 : 0);
 
   return (
     <div className="mb-8 md:mb-10">
@@ -153,7 +245,7 @@ export function AttentionPanel({ semConfirmacao, orcamentosAguardando }: Attenti
       </div>
 
       {hasItems ? (
-        <div className={`grid gap-4 ${itemCount > 1 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
+        <div className={`grid gap-4 ${itemCount > 1 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1'}`}>
           {semConfirmacao > 0 && (
             <ActionCard
               icon={AlertCircle}
@@ -165,6 +257,7 @@ export function AttentionPanel({ semConfirmacao, orcamentosAguardando }: Attenti
             />
           )}
           {hasOrc && <OrcamentosCard orcamentos={orcamentosAguardando} />}
+          {hasEncaminhados && <EncaminhadosCard encaminhados={encaminhados} />}
         </div>
       ) : (
         <div className="bg-surface rounded-3xl border border-border p-10 flex flex-col items-center justify-center text-center">

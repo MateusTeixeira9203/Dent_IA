@@ -95,6 +95,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       checkin_paciente:      'info',
       agendamento_cancelado: 'warning',
       pagamento_confirmado:  'info',
+      procedimento_encaminhado:  'info',
+      encaminhamento_concluido:  'info',
       convite_clinica:       'info',
     };
 

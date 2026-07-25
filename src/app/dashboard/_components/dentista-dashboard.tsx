@@ -10,6 +10,7 @@ import { DashboardHeader } from '@/components/dashboard/dashboard-header';
 import { MetricsCards } from '@/components/dashboard/metrics-cards';
 import { NextAppointmentHero } from '@/components/dashboard/next-appointment-hero';
 import { AttentionPanel } from '@/components/dashboard/attention-panel';
+import type { TipoRegistroOdontograma } from '@/types/odontograma';
 
 // ── Tipo local para as rows brutas do Supabase ────────────────────────────────
 
@@ -42,6 +43,7 @@ export async function DentistaDashboard({ dentista }: { dentista: DentistaCache 
     { count: semConfirmacao },
     { data: orcamentosAguardandoRaw },
     { data: atendimentosHojeRaw },
+    { data: encaminhadosRaw },
   ] = await Promise.all([
     // Consultas hoje (não canceladas / no-show)
     supabase
@@ -102,6 +104,18 @@ export async function DentistaDashboard({ dentista }: { dentista: DentistaCache 
       .lte('data_hora', todayEnd)
       .not('status', 'in', '(cancelled,no_show)')
       .order('data_hora', { ascending: true }),
+
+    // Encaminhados pra este dentista (R-04) — só o que ainda está indicado (some da
+    // fila quando ele conclui). DentistaDashboard só renderiza pra role != secretaria
+    // (dashboard/page.tsx), então nunca precisa filtrar isso aqui.
+    supabase
+      .from('odontograma_eventos')
+      .select('id, tipo, dente, paciente_id, paciente:pacientes(nome)')
+      .eq('clinica_id', dentista.clinica_id)
+      .eq('encaminhado_para', dentista.id)
+      .eq('status', 'indicado')
+      .order('registrado_em', { ascending: true })
+      .limit(10),
   ]);
 
   const atendimentosHoje = (atendimentosHojeRaw ?? []) as unknown as AtendimentoRaw[];
@@ -112,6 +126,18 @@ export async function DentistaDashboard({ dentista }: { dentista: DentistaCache 
     total: o.total,
     paciente_id: o.paciente_id,
     paciente_nome: o.paciente?.nome ?? 'Paciente',
+  }));
+
+  type EncaminhadoRaw = {
+    id: string; tipo: TipoRegistroOdontograma; dente: number | null;
+    paciente_id: string; paciente: { nome: string } | null;
+  };
+  const encaminhados = ((encaminhadosRaw ?? []) as unknown as EncaminhadoRaw[]).map(e => ({
+    id: e.id,
+    tipo: e.tipo,
+    dente: e.dente,
+    paciente_id: e.paciente_id,
+    paciente_nome: e.paciente?.nome ?? 'Paciente',
   }));
 
   // Próximo = primeiro atendimento não encerrado
@@ -189,6 +215,7 @@ export async function DentistaDashboard({ dentista }: { dentista: DentistaCache 
       <AttentionPanel
         semConfirmacao={semConfirmacao ?? 0}
         orcamentosAguardando={orcamentosAguardando}
+        encaminhados={encaminhados}
       />
     </>
   );

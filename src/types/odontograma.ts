@@ -106,6 +106,9 @@ export interface OdontogramaEvento {
   clinica_id: string;
   paciente_id: string;
   dentista_id: string;
+  /** Dentista a quem o procedimento PLANEJADO foi encaminhado (R-04). Nunca transfere
+   *  autoria — dentista_id continua o autor. null = não encaminhado. */
+  encaminhado_para: string | null;
   ficha_id: string | null;
   grupo_id: string | null;
   tipo: TipoRegistroOdontograma;

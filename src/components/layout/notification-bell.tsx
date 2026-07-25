@@ -7,7 +7,7 @@ import {
   Bell, X, AlertTriangle, Info, AlertCircle,
   ChevronRight, RefreshCw, UserCheck, Stethoscope,
   CalendarPlus, CalendarX, CircleDollarSign, FileText,
-  Send, Clock, Building,
+  Send, Clock, Building, Forward, CheckCircle2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -34,6 +34,8 @@ const TIPO_ICON: Record<string, LucideIcon> = {
   briefing:            Send,
   sistema:             Info,
   convite_clinica:     Building,
+  procedimento_encaminhado: Forward,
+  encaminhamento_concluido: CheckCircle2,
 };
 
 // ── Componente ────────────────────────────────────────────────────────────────
