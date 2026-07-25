@@ -7,8 +7,11 @@
 // da tela-mãe (invariante #1).
 
 import { useMemo, useState } from 'react';
-import { ChevronRight, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'motion/react';
+import { ChevronRight, X, Forward } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { GrupoAberto } from '@/lib/odontograma/grupos-abertos';
 import {
   faceLabel,
   corDoRegistro,
@@ -64,6 +67,12 @@ const CHIPS: { tipo: TipoRegistroOdontograma; modos: StatusRegistro[] }[] = [
   { tipo: 'selante',          modos: ['realizado'] },
 ];
 
+/** ISO (registrado_em) → DD/MM/AAAA pro texto da confirmação de amarração (R-02 F3). */
+function formatarData(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR');
+}
+
 export interface ToothDetailPanelProps {
   dente: number;
   /** Lista COMPLETA de rascunhos (o painel filtra e devolve a lista completa editada). */
@@ -72,6 +81,13 @@ export interface ToothDetailPanelProps {
   onClose: () => void;
   /** Data clínica default pros "realizado" (YYYY-MM-DD) — o dentista pode sobrescrever por evento. */
   dataPadrao: string;
+  /**
+   * R-02 Fase 3 — trabalhos ainda ABERTOS do paciente (algum evento `indicado`), de TODAS as
+   * fichas dele. Ao criar um evento de tipo que já tem grupo aberto no MESMO dente, o painel
+   * pergunta antes de amarrar ("continuar o trabalho aberto ou começar novo?") — nunca em
+   * silêncio (Decisão 2, 25/07). Vazio = comportamento de sempre (todo evento nasce sem grupo).
+   */
+  gruposAbertos?: GrupoAberto[];
   readOnly?: boolean;
   className?: string;
 }
@@ -82,6 +98,7 @@ export function ToothDetailPanel({
   onChange,
   onClose,
   dataPadrao,
+  gruposAbertos = [],
   readOnly = false,
   className,
 }: ToothDetailPanelProps) {
@@ -101,6 +118,13 @@ export function ToothDetailPanel({
   // Detalhe de especialidade (migration 106) — só endo/implante têm Form hoje. Um aberto
   // por vez (regra do artefato de dois-modos §02): abrir outro fecha o anterior.
   const [detalheAbertoIdx, setDetalheAbertoIdx] = useState<number | null>(null);
+
+  // R-02 Fase 3 — confirmação de amarração pendente: quando criar um evento de um tipo que
+  // já tem trabalho aberto neste dente, guarda o que criar até o dentista decidir
+  // continuar (reusa grupo_id) ou começar novo (grupo_id null). null = nada pendente.
+  const [confirmGrupo, setConfirmGrupo] = useState<
+    { grupo: GrupoAberto; tipo: TipoRegistroOdontograma; modos: StatusRegistro[] } | null
+  >(null);
 
   function atualizarDetalhe(evento: OdontogramaEventoDraft, detalhe: unknown) {
     onChange(eventos.map((e) => (e === evento ? { ...e, detalhe } : e)));
@@ -168,28 +192,40 @@ export function ToothDetailPanel({
     onChange(all);
   }
 
+  /** Cria o evento de um tipo no dente. grupoId != null amarra a um trabalho aberto (R-02 F3). */
+  function criarDenteTipo(tipo: TipoRegistroOdontograma, modos: StatusRegistro[], grupoId: string | null) {
+    const all = [...eventos];
+    const ancora: AncoraClinica =
+      tipo === 'selante' ? { nivel: 'face', dente, faces: ['O'] } : { nivel: 'dente', dente };
+    const ev = novo(tipo, modos[0], ancora);
+    all.push(grupoId ? { ...ev, grupo_id: grupoId } : ev);
+    // Endo/implante acabaram de ganhar tabela (migration 106) — abre sozinha na criação,
+    // senão o dentista nunca descobre que ela existe (é o "preciso que apareça" de 21/07).
+    if (tipo === 'endodontia' || tipo === 'implante') {
+      setDetalheAbertoIdx(all.filter((e) => e.ancora.dente === dente).length - 1);
+    }
+    onChange(all);
+  }
+
   /** Chips / raiz: cicla os modos do tipo e depois remove. */
   function cycleDenteTipo(tipo: TipoRegistroOdontograma, modos: StatusRegistro[]) {
     if (readOnly) return;
-    const all = [...eventos];
-    const i = all.findIndex((e) => e.tipo === tipo && e.ancora.dente === dente);
+    const i = eventos.findIndex((e) => e.tipo === tipo && e.ancora.dente === dente);
     if (i === -1) {
-      const ancora: AncoraClinica =
-        tipo === 'selante' ? { nivel: 'face', dente, faces: ['O'] } : { nivel: 'dente', dente };
-      all.push(novo(tipo, modos[0], ancora));
-      // Endo/implante acabaram de ganhar tabela (migration 106) — abre sozinha na criação,
-      // senão o dentista nunca descobre que ela existe (é o "preciso que apareça" de 21/07).
-      if (tipo === 'endodontia' || tipo === 'implante') {
-        setDetalheAbertoIdx(all.filter((e) => e.ancora.dente === dente).length - 1);
-      }
+      // R-02 Fase 3: criação. Se há trabalho aberto do mesmo tipo neste dente, confirmar
+      // antes de amarrar (nunca em silêncio); senão nasce sem grupo, como sempre.
+      const grupo = gruposAbertos.find((g) => g.tipo === tipo && g.dentes.includes(dente));
+      if (grupo) { setConfirmGrupo({ grupo, tipo, modos }); return; }
+      criarDenteTipo(tipo, modos, null);
     } else {
+      const all = [...eventos];
       const e = all[i];
       const pos = modos.indexOf(e.status);
       const next = pos === -1 ? null : modos[pos + 1] ?? null;
       if (next == null) all.splice(i, 1);
       else all[i] = { ...e, status: next, origem: 'clinica', realizado_em: next === 'realizado' ? (e.realizado_em ?? dataPadrao) : null };
+      onChange(all);
     }
-    onChange(all);
   }
 
   function setData(evento: OdontogramaEventoDraft, data: string) {
@@ -503,6 +539,67 @@ export function ToothDetailPanel({
             );
           })}
         </div>
+      )}
+      {/* ── R-02 Fase 3: confirmação de amarração a trabalho aberto ── */}
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {confirmGrupo && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setConfirmGrupo(null)}
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="relative rounded-3xl p-7 max-w-sm w-full shadow-2xl text-center"
+                style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Continuar trabalho aberto"
+              >
+                <div
+                  className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-5"
+                  style={{ background: 'var(--color-teal-pale)' }}
+                >
+                  <Forward className="w-7 h-7" style={{ color: 'var(--color-teal-ink)' }} />
+                </div>
+                <h3 className="text-lg font-bold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                  Continuar o trabalho aberto?
+                </h3>
+                <p className="text-sm mb-7" style={{ color: 'var(--color-text-secondary)' }}>
+                  Já há um trabalho de{' '}
+                  <strong style={{ color: 'var(--color-text-primary)' }}>{TIPO_LABEL[confirmGrupo.tipo]}</strong>{' '}
+                  em andamento no dente {dente}, iniciado em {formatarData(confirmGrupo.grupo.iniciadoEm)}. Continuar esse
+                  trabalho (mesmo grupo) ou começar um registro novo?
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { criarDenteTipo(confirmGrupo.tipo, confirmGrupo.modos, null); setConfirmGrupo(null); }}
+                    className="flex-1 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus-visible:ring-2 focus-visible:ring-teal transition-colors"
+                    style={{ background: 'var(--color-surface-alt)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)' }}
+                  >
+                    Começar novo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { criarDenteTipo(confirmGrupo.tipo, confirmGrupo.modos, confirmGrupo.grupo.grupoId); setConfirmGrupo(null); }}
+                    className="flex-1 rounded-xl px-4 py-2.5 text-sm font-bold text-white outline-none focus-visible:ring-2 focus-visible:ring-teal transition-colors"
+                    style={{ background: 'var(--color-teal)' }}
+                  >
+                    Continuar
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body,
       )}
     </div>
   );

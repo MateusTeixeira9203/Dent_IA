@@ -12,7 +12,8 @@ import { toast } from 'sonner';
 import { useCapturaLivre } from '@/hooks/useCapturaLivre';
 import { useDexGuide } from '@/hooks/useDexGuide';
 import { DexAvatar } from '@/components/ui/dex-avatar';
-import { salvarFichaConsulta, iniciarAtendimentoConsulta, salvarEventosOdontograma } from '../actions';
+import { salvarFichaConsulta, iniciarAtendimentoConsulta, salvarEventosOdontograma, getGruposAbertos } from '../actions';
+import type { GrupoAberto } from '@/lib/odontograma/grupos-abertos';
 import { ConsultaAssinaturaModal } from './consulta-assinatura-modal';
 import { EmitirDocumentoModal } from '@/components/pacientes/EmitirDocumentoModal';
 import { ApresentarPaciente } from '@/components/pacientes/ApresentarPaciente';
@@ -171,6 +172,9 @@ export function ConsultaClient({
   // v3 — rascunho dos eventos do odontograma (a IA propõe; o dentista revisa por toque)
   const [eventosDraft, setEventosDraft] = useState<OdontogramaEventoDraft[]>([]);
   const [denteAberto, setDenteAberto] = useState<number | null>(null);
+  // R-02 Fase 3 — trabalhos abertos do paciente (outras fichas) pra confirmação de amarração
+  // no ToothDetailPanel. Busca 1x ao montar; a consulta é curta, não muda no meio.
+  const [gruposAbertos, setGruposAbertos] = useState<GrupoAberto[]>([]);
   const [exameInicial, setExameInicial] = useState(false);
   const [dataProcedimento, setDataProcedimento] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [isSaving, setIsSaving] = useState(false);
@@ -211,6 +215,13 @@ export function ConsultaClient({
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // R-02 Fase 3: carrega os trabalhos abertos do paciente 1x (fora da demo) pra a
+  // confirmação de amarração de grupo_id no ToothDetailPanel.
+  useEffect(() => {
+    if (isDemo) return;
+    void getGruposAbertos(paciente.id).then(setGruposAbertos).catch(() => {});
+  }, [isDemo, paciente.id]);
 
   const firstName = paciente.nome.split(' ')[0];
 
@@ -1063,6 +1074,7 @@ export function ConsultaClient({
                     onChange={setEventosDraft}
                     onClose={() => setDenteAberto(null)}
                     dataPadrao={dataProcedimento}
+                    gruposAbertos={gruposAbertos}
                   />
                 )}
 

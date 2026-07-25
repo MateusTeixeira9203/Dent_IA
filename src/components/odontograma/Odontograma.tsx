@@ -171,6 +171,10 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
   const crownBot = isUpper ? totalH : crownH;
   const apexY    = isUpper ? 5 : totalH - 5;
   const occluY   = isUpper ? totalH - 8 : 8;
+  // Geometria compartilhada dos glifos v3 (implante/pino) — orientação-agnóstica:
+  const cx       = w / 2;
+  const coloY    = isUpper ? rootH : crownH;   // junção coroa-raiz (cervical) — base do implante/pino
+  const dir      = isUpper ? -1 : 1;           // sentido colo → ápice
 
   const isActive = state === 'selected' || state === 'shared';
 
@@ -178,14 +182,19 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
   if (resumo?.ausente) {
     return (
       <svg width={w} height={totalH} viewBox={`0 0 ${w} ${totalH}`} style={{ display: 'block', overflow: 'visible' }}>
-        <path d={rootPath} style={{ fill: 'none', stroke: 'var(--color-border)', strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.8 }} />
-        <path d={crownPath} style={{ fill: 'none', stroke: 'var(--color-text-muted)', strokeWidth: 1.2, strokeDasharray: '3 3' }} />
+        {/* Contorno tracejado unico (1 token so) — fiel ao artefato (R-01-ficha-registro.html,
+            catalogo "Extraido": silhueta unica, nao duas com cores diferentes). */}
+        <path d={rootPath} style={{ fill: 'none', stroke: 'var(--color-text-muted)', strokeWidth: 1.2, strokeDasharray: '3 3', opacity: 0.8 }} />
+        <path d={crownPath} style={{ fill: 'none', stroke: 'var(--color-text-muted)', strokeWidth: 1.2, strokeDasharray: '3 3', opacity: 0.8 }} />
       </svg>
     );
   }
 
   const clinico = resumo != null;
-  const rootTint = resumo?.implante ?? resumo?.canal ?? resumo?.pino ?? null;
+  // Pino NÃO entra aqui (revisao 25/07): o artefato R-02-simbolos-odontograma.html mostra a raiz
+  // NEUTRA no pino — a marca é só a haste+núcleo, não um preenchimento da raiz (era o "pega o
+  // dente inteiro" que o Mateus apontou). Implante e canal tingem a raiz de propósito.
+  const rootTint = resumo?.implante ?? resumo?.canal ?? null;
 
   const crownFill = clinico
     ? (resumo.cor
@@ -289,29 +298,27 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
           />
         ))}
 
-      {/* v3: parafuso do implante no lugar da raiz */}
-      {clinico && resumo.implante && (
-        <g style={{ stroke: COR_TOKEN[resumo.implante], strokeWidth: 2, strokeLinecap: 'round' }}>
-          {[0, 1, 2, 3, 4].map((i) => {
-            const t = i / 4;
-            const y = isUpper ? rootH - 4 - t * (rootH - 12) : crownH + 4 + t * (rootH - 12);
-            const half = w * 0.24 * (1 - t * 0.55);
-            return <line key={i} x1={w / 2 - half} y1={y} x2={w / 2 + half} y2={y} />;
-          })}
-        </g>
-      )}
-
-      {/* v3: pino/núcleo no terço coronal da raiz */}
-      {clinico && resumo.pino && !resumo.implante && (
-        <rect
-          x={w / 2 - 3.5}
-          y={isUpper ? rootH - rootH * 0.36 - 2 : crownH + 2}
-          width={7}
-          height={rootH * 0.36}
-          rx={2}
-          style={{ fill: COR_TOKEN[resumo.pino] }}
-        />
-      )}
+      {/* v3: implante — PARAFUSO na raiz (corpo afunilado + roscas horizontais + plataforma).
+          Revisao 24/07 (R-02): era capsula+curva e colidia com o pino; o parafuso e o simbolo
+          clinico reconhecivel do implante (Open Dental: "implant = screw only"). Alargado p/
+          leitura. Ref: plans/artefatos/R-02-simbolos-odontograma.html. */}
+      {clinico && resumo.implante && (() => {
+        const c = COR_TOKEN[resumo.implante];
+        const hwC = Math.max(6.5, w * 0.16);              // meia-largura no colo (alargada)
+        const hwA = hwC * 0.4;                            // meia-largura perto do apice
+        const L   = Math.abs(apexY - coloY);
+        const yAt  = (f: number) => coloY + dir * f * L;
+        const hwAt = (f: number) => hwC - (hwC - hwA) * f;
+        return (
+          <g style={{ fill: 'none', stroke: c, strokeWidth: 1.9, strokeLinejoin: 'round', strokeLinecap: 'round' }}>
+            <path d={`M ${cx - hwC},${coloY} L ${cx + hwC},${coloY} L ${cx + hwA},${apexY - dir * 4} Q ${cx},${apexY} ${cx - hwA},${apexY - dir * 4} Z`} />
+            {[0.2, 0.42, 0.64, 0.86].map((f, i) => (
+              <line key={i} x1={cx - hwAt(f)} y1={yAt(f)} x2={cx + hwAt(f)} y2={yAt(f)} />
+            ))}
+            <rect x={cx - hwC * 1.35} y={coloY - 2.5} width={hwC * 2.7} height={5} rx={2} style={{ fill: c, stroke: 'none' }} />
+          </g>
+        );
+      })()}
 
       {/* v3: lesão periapical — círculo vazado no ápice */}
       {clinico && resumo.lesao && (
@@ -336,9 +343,41 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
         <path d={crownPath} style={{ fill: `url(#${dotsId})`, opacity: 0.5, pointerEvents: 'none' }} />
       )}
 
-      {/* v3: coroa total — contorno duplo */}
+      {/* v3: pino/núcleo — HASTE no canal + NÚCLEO triangular no colo. Desenhado DEPOIS da coroa
+          (revisao 25/07): o núcleo fica no colo/coroa e era COBERTO pelo fill do crownPath (pintado
+          acima) — por isso "sumia". Proporções portadas do artefato R-02-simbolos-odontograma.html
+          (base ~0.17·largura no terço cervical, haste ~0.78·raiz). "Nunca rosca horizontal — isso
+          vira implante." */}
+      {clinico && resumo.pino && !resumo.implante && (() => {
+        const c = COR_TOKEN[resumo.pino];
+        const baseY = coloY - dir * crownH * 0.22;        // base do nucleo, no terco cervical da coroa
+        const hb    = w * 0.09;                            // meia-base do triangulo (fiel ao artefato)
+        return (
+          <>
+            <path
+              d={`M ${cx},${coloY} L ${cx},${coloY + dir * rootH * 0.78}`}
+              style={{ fill: 'none', stroke: c, strokeWidth: 2.2, strokeLinecap: 'round' }}
+            />
+            <path d={`M ${cx - hb},${baseY} L ${cx + hb},${baseY} L ${cx},${coloY + dir * 2} Z`} style={{ fill: c }} />
+          </>
+        );
+      })()}
+
+      {/* v3: coroa total — CAPA com hachura diagonal sobre a coroa (raiz intocada). Revisao
+          24/07 (R-02): era so contorno duplo, sem identidade; a hachura e a convencao de coroa
+          (DALE/Bird&Robinson). Ref: R-02-simbolos-odontograma.html. */}
       {clinico && resumo.coroa && (
-        <path d={crownPath} style={{ fill: 'none', stroke: COR_TOKEN[resumo.coroa], strokeWidth: 2.4 }} />
+        <>
+          <defs>
+            <clipPath id={`odx-crown-${num}`}><path d={crownPath} /></clipPath>
+          </defs>
+          <path d={crownPath} style={{ fill: 'none', stroke: COR_TOKEN[resumo.coroa], strokeWidth: 2.2 }} />
+          <g clipPath={`url(#odx-crown-${num})`} style={{ stroke: COR_TOKEN[resumo.coroa], strokeWidth: 1.8, strokeLinecap: 'round' }}>
+            <line x1={w * 0.12} y1={crownBot} x2={w * 0.55} y2={crownTop} />
+            <line x1={w * 0.38} y1={crownBot} x2={w * 0.82} y2={crownTop} />
+            <line x1={w * 0.64} y1={crownBot} x2={w * 1.04} y2={crownTop} />
+          </g>
+        </>
       )}
 
       {/* v3: selante — ponto na oclusal */}
