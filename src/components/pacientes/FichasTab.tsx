@@ -31,6 +31,7 @@ import { toast } from 'sonner';
 import type { PlanoId } from "@/lib/planos";
 import { Odontograma, type ToothStatus } from "@/components/odontograma/Odontograma";
 import { ToothDetailPanel } from "@/components/odontograma/ToothDetailPanel";
+import { OdontogramaComPainel } from "@/components/odontograma/OdontogramaComPainel";
 import {
   ARCH_SUPERIOR, ARCH_INFERIOR, ARCH_COMPLETA, ARCH_LABELS,
   QUAD_SUP_DIREITO, QUAD_SUP_ESQUERDO, QUAD_INF_DIREITO, QUAD_INF_ESQUERDO,
@@ -468,9 +469,13 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
 
   // Camada 1: dente aberto no painel de revisão do odontograma (rascunho do Dex).
   const [denteAberto, setDenteAberto] = React.useState<number | null>(null);
+  // R-20 Fase 2 — destino da tabela de especialidade (endo/implante) abaixo do bloco, full-width.
+  // Um por site (criação vs. ficha salva), já que cada um tem seu OdontogramaComPainel.
+  const [tabelaElA, setTabelaElA] = React.useState<HTMLElement | null>(null);
 
   // Perfil do dente na ficha SALVA (readOnly) — um por vez, preso à ficha dona.
   const [denteSalvoAberto, setDenteSalvoAberto] = React.useState<{ fichaId: string; dente: number } | null>(null);
+  const [tabelaElB, setTabelaElB] = React.useState<HTMLElement | null>(null);
   // G11 — tocar um dente rola até o card do registro correspondente e destaca (some sozinho).
   const registroCardRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
   const [grupoDestacado, setGrupoDestacado] = React.useState<string | null>(null);
@@ -512,16 +517,20 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
    * destacando por 1,6s. Não abre tabela nenhuma sozinho — só direciona a atenção (P1: o
    * corpo da especialidade só aparece se o usuário tocar "Detalhes" em uma das duas entradas).
    */
+  // R-20 Fase 3 — destaque compartilhado: rola até o card e acende por 1,6s. Uma função só
+  // pro rascunho (Site A) E pra ficha salva (Site B) — antes só o Site A tinha isso.
+  const destacarCard = React.useCallback((key: string) => {
+    registroCardRefs.current.get(key)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setGrupoDestacado(key);
+    window.setTimeout(() => setGrupoDestacado((cur) => (cur === key ? null : cur)), 1600);
+  }, []);
+
   const abrirDenteEDestacarRegistro = React.useCallback((dente: number | null) => {
     setDenteAberto(dente);
     if (dente == null) return;
     const card = cardsDraft.find(({ idxs }) => idxs.some((i) => eventosDraft[i].ancora.dente === dente));
-    if (!card) return;
-    const el = registroCardRefs.current.get(card.key);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setGrupoDestacado(card.key);
-    window.setTimeout(() => setGrupoDestacado((cur) => (cur === card.key ? null : cur)), 1600);
-  }, [cardsDraft, eventosDraft]);
+    if (card) destacarCard(card.key);
+  }, [cardsDraft, eventosDraft, destacarCard]);
 
   /** Observação por procedimento (§03 do definitivo) — aplica a todo o grupo. */
   const atualizarObsGrupo = (idxs: number[], obs: string) => {
@@ -1260,8 +1269,9 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
 
               <div className="border-t border-border/60" />
 
-              {/* Odontograma (esq) + perfil do dente (dir) — clicar no dente abre ao lado */}
-              <div className="flex flex-col gap-3">
+              {/* R-20: odontograma + perfil do dente lado-a-lado — encolhe ao abrir um dente */}
+              <OdontogramaComPainel
+                odontograma={
                   <Odontograma
                     eventos={eventosDraft.length > 0 ? eventosDraft : undefined}
                     selectedTeeth={selectedTeeth}
@@ -1270,6 +1280,8 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                     onToothToggle={abrirDenteEDestacarRegistro}
                     hideFilters
                   />
+                }
+                chips={
                   <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-border/40">
                     <span className="text-[9.5px] font-bold uppercase tracking-widest text-text-secondary mr-1">Região</span>
                     {[
@@ -1295,19 +1307,24 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                       </button>
                     ))}
                   </div>
-                </div>
-
-              {/* Perfil do dente — abre full-width ao tocar um dente (artefato §04) */}
-              {denteAberto != null && (
-                <ToothDetailPanel
-                  dente={denteAberto}
-                  eventos={eventosDraft}
-                  onChange={setEventosDraft}
-                  onClose={() => setDenteAberto(null)}
-                  dataPadrao={formData.dataAtendimento}
-                  gruposAbertos={gruposAbertos}
-                />
-              )}
+                }
+                painel={
+                  denteAberto != null ? (
+                    <ToothDetailPanel
+                      dente={denteAberto}
+                      eventos={eventosDraft}
+                      onChange={setEventosDraft}
+                      onClose={() => setDenteAberto(null)}
+                      dataPadrao={formData.dataAtendimento}
+                      gruposAbertos={gruposAbertos}
+                      tabelaContainer={tabelaElA}
+                    />
+                  ) : null
+                }
+              />
+              {/* R-20 Fase 2: a tabela de especialidade (endo/implante) abre aqui — full-width,
+                  abaixo do bloco odontograma+painel e acima dos registros. */}
+              <div ref={setTabelaElA} className="empty:hidden" />
 
               <div className="border-t border-border/60" />
 
@@ -1431,6 +1448,9 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
               // odontograma/cards pra o header não mentir numa ficha mista. Sem filtro
               // === evo.eventos.
               const eventosVis = eventosFiltrados(evo);
+              // R-20 Fase 3 — cards da ficha salva computados aqui (não só no bloco de registros)
+              // pra o onToothToggle do odontograma achar o card por dente e destacar (como o Site A).
+              const cardsVis = eventosParaCards(eventosVis, evo.professional, evo.autorCro, evo.assinadoEm != null);
               const validKeys = evo.teethNotes.flatMap((tn) =>
                 tn.notes.filter(Boolean).map((_, i) => `${tn.tooth}_${i}`)
               );
@@ -1573,37 +1593,53 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                       >
                         <div className="border-t border-border/60 px-5 py-5 flex flex-col gap-4">
 
-                          {/* Odontograma — índice: clicar um dente abre o perfil (readOnly) */}
-                          <div className="bg-surface-alt/40 border border-border/60 rounded-2xl p-4">
-                            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-                              <p className="font-heading text-base text-text-primary">Odontograma — índice</p>
-                              <p className="text-[10.5px] text-text-secondary italic">toque um dente para ver o perfil</p>
-                            </div>
-                            <Odontograma
-                              eventos={eventosVis.length > 0 ? eventosVis.map(eventoViewParaDraft) : undefined}
-                              selectedTeeth={eventosVis.length > 0 ? [] : evo.teethNotes.map((tn) => tn.tooth)}
-                              onToothToggle={(d) => setDenteSalvoAberto((cur) => cur?.fichaId === evo.id && cur.dente === d ? null : { fichaId: evo.id, dente: d })}
-                              compact
-                              hideFilters
-                            />
-                          </div>
-
-                          {denteSalvoAberto?.fichaId === evo.id && (
-                            <ToothDetailPanel
-                              dente={denteSalvoAberto.dente}
-                              eventos={eventosVis.map(eventoViewParaDraft)}
-                              onChange={() => {}}
-                              onClose={() => setDenteSalvoAberto(null)}
-                              dataPadrao={evo.dataAtendimento}
-                              readOnly
-                            />
-                          )}
+                          {/* R-20: odontograma-índice + perfil lado-a-lado (readOnly), encolhe ao abrir */}
+                          <OdontogramaComPainel
+                            odontograma={
+                              <div className="bg-surface-alt/40 border border-border/60 rounded-2xl p-4">
+                                <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                                  <p className="font-heading text-base text-text-primary">Odontograma — índice</p>
+                                  <p className="text-[10.5px] text-text-secondary italic">toque um dente para ver o perfil</p>
+                                </div>
+                                <Odontograma
+                                  eventos={eventosVis.length > 0 ? eventosVis.map(eventoViewParaDraft) : undefined}
+                                  selectedTeeth={eventosVis.length > 0 ? [] : evo.teethNotes.map((tn) => tn.tooth)}
+                                  onToothToggle={(d) => {
+                                    const jaAberto = denteSalvoAberto?.fichaId === evo.id && denteSalvoAberto.dente === d;
+                                    setDenteSalvoAberto(jaAberto ? null : { fichaId: evo.id, dente: d });
+                                    if (jaAberto) return;
+                                    // R-20 Fase 3: acha o card do dente e destaca (mesma mecânica do Site A)
+                                    const ev = eventosVis.find((e) => e.ancora.dente === d);
+                                    const card = ev ? cardsVis.find((c) => c.ids.includes(ev.id)) : undefined;
+                                    if (card) destacarCard(card.key);
+                                  }}
+                                  compact
+                                  hideFilters
+                                />
+                              </div>
+                            }
+                            painel={
+                              denteSalvoAberto?.fichaId === evo.id ? (
+                                <ToothDetailPanel
+                                  dente={denteSalvoAberto.dente}
+                                  eventos={eventosVis.map(eventoViewParaDraft)}
+                                  onChange={() => {}}
+                                  onClose={() => setDenteSalvoAberto(null)}
+                                  dataPadrao={evo.dataAtendimento}
+                                  readOnly
+                                  tabelaContainer={tabelaElB}
+                                />
+                              ) : null
+                            }
+                          />
+                          {/* R-20 Fase 2: tabela de especialidade full-width abaixo do bloco (ficha salva) */}
+                          <div ref={setTabelaElB} className="empty:hidden" />
 
                           {/* Registros — eventos (novo modelo) OU derivação v2 no MESMO visual.
                               R-16: eventosVis já aplicou o filtro por responsável.
                               R-04 Fase 3: modo seleção (variante B) liga o botão "Encaminhar". */}
                           {eventosVis.length > 0 ? (() => {
-                            const cards = eventosParaCards(eventosVis, evo.professional, evo.autorCro, evo.assinadoEm != null);
+                            const cards = cardsVis;
                             const emModo = modoSelecaoFichaId === evo.id;
                             const podeEncaminhar = podeEditarFicha(evo) && !evo.assinadoEm;
                             const temEncaminhavel = cards.some((c) => c.data.status === 'indicado' && !c.data.encaminhadoPara);
@@ -1633,28 +1669,37 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                                     </div>
                                   );
                                 }
+                                const destacado = grupoDestacado === key;
                                 return (
-                                  <RegistroCard
+                                  <div
                                     key={key}
-                                    data={data}
-                                    selecionavel={emModo && encaminhavel}
-                                    selecionado={selecionados.has(key)}
-                                    onToggleSelecao={emModo && encaminhavel ? () => toggleSelecao(key) : undefined}
-                                    onToggleStatus={
-                                      emModo
-                                        ? undefined
-                                        : podeEditarFicha(evo) && !evo.assinadoEm
-                                          ? () => void toggleStatusRegistro(evo, ids, data.status)
-                                          : data.encaminhadoPara?.id === dentistaId && !evo.assinadoEm
-                                            ? () => void concluirEncaminhado(evo, ids, data.status)
-                                            : undefined
-                                    }
-                                    onRemoverEncaminhamento={
-                                      !emModo && jaEncaminhado ? () => void encaminharRegistro(evo, ids, null) : undefined
-                                    }
+                                    ref={(el) => {
+                                      if (el) registroCardRefs.current.set(key, el);
+                                      else registroCardRefs.current.delete(key);
+                                    }}
+                                    className={destacado ? 'rounded-xl ring-2 ring-teal ring-offset-2 ring-offset-background transition-shadow duration-300' : ''}
                                   >
-                                    {corpoEspecialidade(data.tipo, data.detalhe)}
-                                  </RegistroCard>
+                                    <RegistroCard
+                                      data={data}
+                                      selecionavel={emModo && encaminhavel}
+                                      selecionado={selecionados.has(key)}
+                                      onToggleSelecao={emModo && encaminhavel ? () => toggleSelecao(key) : undefined}
+                                      onToggleStatus={
+                                        emModo
+                                          ? undefined
+                                          : podeEditarFicha(evo) && !evo.assinadoEm
+                                            ? () => void toggleStatusRegistro(evo, ids, data.status)
+                                            : data.encaminhadoPara?.id === dentistaId && !evo.assinadoEm
+                                              ? () => void concluirEncaminhado(evo, ids, data.status)
+                                              : undefined
+                                      }
+                                      onRemoverEncaminhamento={
+                                        !emModo && jaEncaminhado ? () => void encaminharRegistro(evo, ids, null) : undefined
+                                      }
+                                    >
+                                      {corpoEspecialidade(data.tipo, data.detalhe)}
+                                    </RegistroCard>
+                                  </div>
                                 );
                               })}
                             </div>

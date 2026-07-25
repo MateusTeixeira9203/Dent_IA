@@ -88,6 +88,13 @@ export interface ToothDetailPanelProps {
    * silêncio (Decisão 2, 25/07). Vazio = comportamento de sempre (todo evento nasce sem grupo).
    */
   gruposAbertos?: GrupoAberto[];
+  /**
+   * R-20 Fase 2 — destino (portal) da tabela de especialidade (endo/implante). Quando dado,
+   * a tabela abre AQUI (full-width, abaixo do bloco odontograma+painel) em vez de espremida
+   * dentro do painel estreito. Ausente = renderiza inline (fallback, ex.: modo consulta ainda
+   * não migrado). O painel continua dono do form (mesmo `valor`/`onChange`); só muda o ONDE.
+   */
+  tabelaContainer?: HTMLElement | null;
   readOnly?: boolean;
   className?: string;
 }
@@ -99,6 +106,7 @@ export function ToothDetailPanel({
   onClose,
   dataPadrao,
   gruposAbertos = [],
+  tabelaContainer,
   readOnly = false,
   className,
 }: ToothDetailPanelProps) {
@@ -517,24 +525,44 @@ export function ToothDetailPanel({
                   )}
                 </div>
 
-                {temDetalhe && aberto && (
-                  <div className="pb-3 pl-4">
-                    {ev.tipo === 'endodontia' && (
-                      <EndoForm
-                        valor={(ev.detalhe ?? null) as EndoDetalhe | null}
-                        onChange={(v) => atualizarDetalhe(ev, v)}
-                        readOnly={readOnly}
-                      />
-                    )}
-                    {ev.tipo === 'implante' && (
-                      <ImplanteForm
-                        valor={(ev.detalhe ?? null) as ImplanteDetalhe | null}
-                        onChange={(v) => atualizarDetalhe(ev, v)}
-                        readOnly={readOnly}
-                      />
-                    )}
-                  </div>
-                )}
+                {temDetalhe && aberto && (() => {
+                  const form = (
+                    <>
+                      {ev.tipo === 'endodontia' && (
+                        <EndoForm
+                          valor={(ev.detalhe ?? null) as EndoDetalhe | null}
+                          onChange={(v) => atualizarDetalhe(ev, v)}
+                          readOnly={readOnly}
+                        />
+                      )}
+                      {ev.tipo === 'implante' && (
+                        <ImplanteForm
+                          valor={(ev.detalhe ?? null) as ImplanteDetalhe | null}
+                          onChange={(v) => atualizarDetalhe(ev, v)}
+                          readOnly={readOnly}
+                        />
+                      )}
+                    </>
+                  );
+                  // R-20 Fase 2: com container do pai → tabela abre full-width lá embaixo, num
+                  // card próprio (dente + tipo no cabeçalho, pra saber de quem é a tabela solta);
+                  // sem container → inline (fallback).
+                  return tabelaContainer
+                    ? createPortal(
+                        <div
+                          className="rounded-xl border p-4"
+                          style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+                        >
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="font-mono font-bold text-[13px]" style={{ color: 'var(--color-text-primary)' }}>{dente}</span>
+                            <span className="text-[12px] font-semibold" style={{ color: 'var(--color-text-secondary)' }}>{TIPO_LABEL[ev.tipo]}</span>
+                          </div>
+                          {form}
+                        </div>,
+                        tabelaContainer,
+                      )
+                    : <div className="pb-3 pl-4">{form}</div>;
+                })()}
               </div>
             );
           })}
