@@ -16,9 +16,24 @@ inventário conferido.** Próximo: commitar o que está pronto (abaixo), depois 
 Prova visual = R-01 (layout) + widget de registros (já validados) — não reconstruir o mockup; validação
 real no localhost, fase por fase.
 
-**Falta no R-20 (gates §5):** Fase 1 (layout `@container` lado-a-lado, odontograma sempre visível, 2
-sites) → Fase 2 (tabela expande) → Fase 3 (destacar no Site B). Cada fase valida no localhost antes da
-próxima. Sem migration, sem mudança de contrato (só apresentação).
+**R-20 em execução:** Fase 1 (layout `@container` lado-a-lado, odontograma sempre visível, 2 sites) —
+🟡 codada, **validada ao vivo pelo Mateus** (screenshots 25/07), ajuste: painel mais largo (`1.3fr/1fr`).
+Fase 2 (tabela de especialidade porta pro full-width abaixo do bloco, via `tabelaContainer` no
+`ToothDetailPanel` + `<div>` alvo na FichasTab) — 🟡 codada, **validada ao vivo pelo Mateus** ("ficou bem
+melhor"). Fase 3 (destacar sem remover no Site B: helper `destacarCard` compartilhado + `cardsVis` no nível
+do item + ref/realce nos cards salvos) — 🟡 codada, **falta ver ao vivo**. As 3 fases aprovadas do R-20
+completas. Componente novo: `OdontogramaComPainel`. Sem migration, só apresentação. `next build` pendente
+(dev server em uso pela validação); rodar antes do commit do R-20.
+
+**DECISÃO (25/07, validada com dentista) — item novo "Registros agrupados por DENTE":** a lista de
+registros vira lista de **dentes colapsáveis** (não de procedimentos soltos). Clica o dente → abre → vê
+TODOS os procedimentos dele com status (planejado/em andamento/concluído); clica de novo → fecha. A tabela
+de especialidade (endo) encaixa dentro do dente aberto. Motivo: dentista pensa por dente, fica mais clean.
+**Implica reformar a lista** e passa por cima da interação da Fase 3 do R-20 (clicar dente no odontograma:
+hoje destaca o card; passaria a abrir o grupo do dente). Não é R-20 — item próprio, precisa spec (decisões:
+dente fechado mostra resumo de status? ordenação dos dentes? como a tabela encaixa? odontograma↔lista).
+Agrupamento hoje = por procedimento (grupo_id, ou dente+tipo+status), ordenado urgência→dente. A ideia das
+**2 colunas** fica subsumida nessa (ou compõe depois).
 
 ### Code-complete, aguardando commit (o "commitamos tudo")
 
