@@ -33,7 +33,7 @@ export function VoiceUX({ isRecording, isTranscribing, liveTranscript, elapsedSe
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 12, scale: 0.97 }}
           transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-          className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4"
+          className="fixed bottom-[calc(var(--dock-inset,0px)+2rem)] left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4"
         >
           <div
             className="rounded-3xl p-5 shadow-2xl"

@@ -52,7 +52,7 @@ export function EncaminharBar({
       // (os dois miram o mesmo lugar). Mobile: sem dock, barra no rodapé (bottom-0).
       // Desktop (md:): sobe pra `bottom-28` (112px), acima do topo do dock (~98px do
       // fundo), pra não colidir. z-[60] é reserva pra telas baixas onde ainda encostem.
-      className="fixed inset-x-0 bottom-0 md:bottom-28 z-[60] px-3 pb-3 pointer-events-none"
+      className="fixed inset-x-0 bottom-[var(--dock-inset,0px)] z-[60] px-3 pb-3 pointer-events-none"
     >
       <div className="pointer-events-auto mx-auto w-full max-w-3xl bg-surface border border-border rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.18)] px-3 py-2.5 flex flex-col sm:flex-row sm:items-center gap-3">
         {/* Contador + selecionar tudo/limpar */}

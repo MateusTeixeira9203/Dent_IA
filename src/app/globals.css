@@ -305,6 +305,14 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* ── R-19 — zona segura do dock (convenção de barras contextuais) ──────────
+   Barras fixas no bottom-center (EncaminharBar, voice-ux, futuras) ancoram ACIMA do dock via
+   bottom-[var(--dock-inset,0px)] (+ gap próprio). O FloatingDock marca body.has-dock ao montar;
+   a var é 0 no mobile (dock é hidden md:flex) e onde não há dock (ex. consulta), e reserva a
+   altura dele no desktop (112px = o antigo bottom-28 do R-17). Barra nova só usa a var. */
+body.has-dock { --dock-inset: 0px; }
+@media (min-width: 768px) { body.has-dock { --dock-inset: 112px; } }
+
 
 /* ── Legibilidade mínima — texto micro (ambos os modos) ────────── */
 @layer utilities {

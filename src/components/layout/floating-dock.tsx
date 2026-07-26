@@ -51,6 +51,15 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
 
   useEffect(() => { setMounted(true); }, []);
 
+  // R-19 — convenção de zona segura: o dock publica sua presença (body.has-dock) pra que barras
+  // contextuais fixas no bottom-center (EncaminharBar, voice-ux, futuras) ancorem ACIMA dele via
+  // var(--dock-inset) no CSS (ver globals.css). No body porque a EncaminharBar portaliza pro body
+  // e escaparia de um wrapper. Desmonta em rota sem dock (ex. consulta) → var some → barra volta pro rodapé.
+  useEffect(() => {
+    document.body.classList.add('has-dock');
+    return () => { document.body.classList.remove('has-dock'); };
+  }, []);
+
   const canSwitch = clinicas.length > 1;
   const { logout, isLoggingOut } = useLogout();
 
