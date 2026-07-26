@@ -106,7 +106,7 @@ export function PrimeiroAcessoClient() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full bg-teal text-white rounded-xl font-bold py-3.5 hover:bg-teal-dark transition-all mt-2 disabled:opacity-60"
+        className="w-full bg-teal-ink text-surface rounded-xl font-bold py-3.5 hover:opacity-90 transition-all mt-2 disabled:opacity-60"
         style={{ boxShadow: '0 10px 30px -10px rgba(47,156,133,0.4)' }}
       >
         {loading ? 'Salvando...' : 'Definir senha e entrar'}
