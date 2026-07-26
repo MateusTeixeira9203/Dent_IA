@@ -42,6 +42,7 @@ import { formatarDataFicha } from '@/lib/format-data-ficha';
 import { CapturaLivreCard } from '@/components/fichas/captura-livre-card';
 import { OrtoCard } from '@/components/fichas/orto-card';
 import { RegistroCard, type RegistroCardData } from '@/components/fichas/registro-card';
+import { DenteGrupoHeader } from '@/components/fichas/dente-grupo-header';
 import { endoDetalheSchema, type EndoDetalhe } from '@/lib/especialidades/endo';
 import { EndoCard } from '@/components/fichas/endo-card';
 import { EndoForm } from '@/components/fichas/endo-form';
@@ -58,6 +59,7 @@ import { salvarEventosOdontograma, alternarStatusRegistro, encaminharProcediment
 import { derivarResponsaveis, eventosVisiveis, fichaVisivel, filtroAindaValido, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
 import { EncaminharBar } from '@/components/fichas/encaminhar-bar';
 import { agruparRegistros } from '@/lib/odontograma/agrupar-registros';
+import { agruparPorDente, type SecaoRegistros } from '@/lib/odontograma/agrupar-por-dente';
 import { agregarGruposAbertos } from '@/lib/odontograma/grupos-abertos';
 import type { EvolucaoFormatada } from '@/app/api/dex/formatar-evolucao/route';
 const SignaturePad = dynamic(
@@ -350,6 +352,88 @@ function corpoEspecialidadeEditavel(
   return null;
 }
 
+/**
+ * R-21 — render de uma lista de registros AGRUPADA por dente (agruparPorDente). Genérico sobre o
+ * card de cada site (Site A tem idxs, Site B tem ids; os dois têm key + data). Dente com 1
+ * procedimento renderiza o card direto; 2+ colapsa num DenteGrupoHeader controlado pelo Set de
+ * abertos do chamador. "Vários dentes"/"Geral" nunca colapsam — rótulo de seção + cards diretos.
+ * Só a apresentação: o renderCard de cada site vem de fora, intocado. `forcarAbertos` mantém tudo
+ * expandido (Site B em modo seleção, pra nenhum encaminhável ficar escondido num grupo fechado).
+ * `siteId` prefixa as chaves de ref/destaque (Fase 3) pra não colidir entre os dois sites.
+ */
+interface RenderSecoesOpts<T extends { key: string; data: RegistroCardData }> {
+  secoes: SecaoRegistros<T>[];
+  renderCard: (card: T) => React.ReactNode;
+  dentesAbertos: Set<number>;
+  onToggleDente: (dente: number) => void;
+  registrarRefDente: (refKey: string, el: HTMLDivElement | null) => void;
+  forcarAbertos: boolean;
+  denteComTabela: number | null;
+  tabelaRef: (el: HTMLElement | null) => void;
+  siteId: string;
+  denteDestacado: string | null;
+}
+
+function renderSecoesPorDente<T extends { key: string; data: RegistroCardData }>({
+  secoes, renderCard, dentesAbertos, onToggleDente, registrarRefDente, forcarAbertos,
+  denteComTabela, tabelaRef, siteId, denteDestacado,
+}: RenderSecoesOpts<T>): React.ReactNode {
+  // R-21 Fase 2 — slot do portal da tabela de especialidade DENTRO da seção do dente aberto no
+  // painel (antes era faixa fixa abaixo do odontograma). O filho injetado pelo portal do
+  // ToothDetailPanel entra com fade/slide leve. Só existe na seção que casa com denteComTabela;
+  // fora disso o ToothDetailPanel cai no fallback inline (tabelaContainer null).
+  const tabelaSlot = (dente: number) =>
+    dente === denteComTabela ? (
+      <div
+        key="tabela-slot"
+        ref={tabelaRef}
+        className="empty:hidden [&>*]:animate-in [&>*]:fade-in [&>*]:slide-in-from-top-1 [&>*]:duration-200"
+      />
+    ) : null;
+
+  return secoes.map((secao) => {
+    if (secao.tipo === 'dente') {
+      const { dente, cards } = secao;
+      const refKey = `${siteId}:${dente}`;
+      // wrapper em flex-col gap-2: no dente solo, espaça o card do slot da tabela igual ao grupo.
+      // ring quando denteDestacado casa (Fase 3 — clique no odontograma acende a seção por 1,6s).
+      return (
+        <div
+          key={`dente-${dente}`}
+          ref={(el) => registrarRefDente(refKey, el)}
+          className={`flex flex-col gap-2 ${denteDestacado === refKey ? 'rounded-xl ring-2 ring-teal ring-offset-2 ring-offset-background transition-shadow duration-300' : ''}`}
+        >
+          {cards.length === 1 ? (
+            <>
+              {renderCard(cards[0])}
+              {tabelaSlot(dente)}
+            </>
+          ) : (
+            <DenteGrupoHeader
+              dente={dente}
+              total={cards.length}
+              aFazer={cards.filter((c) => c.data.status === 'indicado').length}
+              aberto={forcarAbertos || dentesAbertos.has(dente)}
+              onToggle={() => onToggleDente(dente)}
+            >
+              {cards.map(renderCard)}
+              {tabelaSlot(dente)}
+            </DenteGrupoHeader>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div key={secao.tipo} className="flex flex-col gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-text-secondary px-1 pt-1">
+          {secao.tipo === 'multi' ? 'Vários dentes' : 'Geral'}
+        </p>
+        {secao.cards.map(renderCard)}
+      </div>
+    );
+  });
+}
+
 /** EventoView (salvo) -> Draft: o shape que Odontograma/ToothDetailPanel consomem. */
 function eventoViewParaDraft(e: EventoView): OdontogramaEventoDraft {
   return {
@@ -479,6 +563,36 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   // G11 — tocar um dente rola até o card do registro correspondente e destaca (some sozinho).
   const registroCardRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
   const [grupoDestacado, setGrupoDestacado] = React.useState<string | null>(null);
+
+  // R-21 — dentes com grupo ABERTO na lista (2+ procedimentos). Site A (rascunho) e Site B
+  // (ficha salva) têm sets separados; dentesAbertosB reseta ao trocar de ficha (só uma
+  // expandida por vez — mesmo padrão de denteSalvoAberto em alternarExpansaoFicha).
+  const [dentesAbertosA, setDentesAbertosA] = React.useState<Set<number>>(new Set());
+  const [dentesAbertosB, setDentesAbertosB] = React.useState<Set<number>>(new Set());
+  // R-21 — um ref por SEÇÃO de dente (solo ou colapsável), pra clicar o dente no odontograma abrir
+  // o grupo e rolar até ele (Fase 3). Chave = `${siteId}:${dente}` (siteId='A' no rascunho, evo.id
+  // na ficha salva) — desambigua quando o mesmo dente aparece nos dois sites ao mesmo tempo.
+  const denteGrupoRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
+  const registrarRefDente = React.useCallback((refKey: string, el: HTMLDivElement | null) => {
+    if (el) denteGrupoRefs.current.set(refKey, el);
+    else denteGrupoRefs.current.delete(refKey);
+  }, []);
+  // Seção de dente acesa por 1,6s ao clicar o dente no odontograma (Fase 3). Chave = `${siteId}:${dente}`.
+  const [denteDestacado, setDenteDestacado] = React.useState<string | null>(null);
+  const toggleDenteA = React.useCallback((dente: number) => {
+    setDentesAbertosA((prev) => {
+      const next = new Set(prev);
+      if (next.has(dente)) next.delete(dente); else next.add(dente);
+      return next;
+    });
+  }, []);
+  const toggleDenteB = React.useCallback((dente: number) => {
+    setDentesAbertosB((prev) => {
+      const next = new Set(prev);
+      if (next.has(dente)) next.delete(dente); else next.add(dente);
+      return next;
+    });
+  }, []);
   // Dente aberto na FICHA SALVA (leitura) — estado separado do de criação, sempre readOnly.
   // (R-02 Fase 1: grupoDetalheAberto/setGrupoDetalheAberto removidos — o "aberto" agora é
   // interno de cada RegistroCard; múltiplos cards podem abrir ao mesmo tempo, igual à leitura.)
@@ -525,12 +639,41 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     window.setTimeout(() => setGrupoDestacado((cur) => (cur === key ? null : cur)), 1600);
   }, []);
 
+  // R-21 Fase 3 — clicar o dente no odontograma ABRE a seção dele na lista e rola até ela (acende
+  // por 1,6s). Se o dente só existe num card multi-dente (sem seção própria), cai no fallback do
+  // R-20: realça esse card na seção "Vários dentes" via destacarCard/registroCardRefs (preservado).
+  const destacarDente = React.useCallback((
+    dente: number,
+    siteId: string,
+    setDentesAbertos: React.Dispatch<React.SetStateAction<Set<number>>>,
+    cards: Array<{ key: string; data: RegistroCardData }>,
+  ) => {
+    const temSecaoPropria = agruparPorDente(cards).some((s) => s.tipo === 'dente' && s.dente === dente);
+    if (!temSecaoPropria) {
+      const cardMulti = cards.find((c) => {
+        const dentes = new Set(c.data.ancoras.map((a) => a.dente).filter((d): d is number => d != null));
+        return dentes.size >= 2 && dentes.has(dente);
+      });
+      if (cardMulti) destacarCard(cardMulti.key);
+      return;
+    }
+    const refKey = `${siteId}:${dente}`;
+    // Abre a seção ANTES de rolar (senão scrollIntoView mede a altura errada com o acordeão fechado).
+    setDentesAbertos((prev) => (prev.has(dente) ? prev : new Set(prev).add(dente)));
+    setDenteDestacado(refKey);
+    window.setTimeout(() => setDenteDestacado((cur) => (cur === refKey ? null : cur)), 1600);
+    // Espera 1 frame pro acordeão assentar antes de medir/rolar (risco documentado na spec §Fase 3).
+    requestAnimationFrame(() => {
+      denteGrupoRefs.current.get(refKey)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }, [destacarCard]);
+
   const abrirDenteEDestacarRegistro = React.useCallback((dente: number | null) => {
     setDenteAberto(dente);
     if (dente == null) return;
-    const card = cardsDraft.find(({ idxs }) => idxs.some((i) => eventosDraft[i].ancora.dente === dente));
-    if (card) destacarCard(card.key);
-  }, [cardsDraft, eventosDraft, destacarCard]);
+    // R-21 Fase 3: abre a seção do dente na lista e rola até ela (antes só destacava o card).
+    destacarDente(dente, 'A', setDentesAbertosA, cardsDraft);
+  }, [cardsDraft, destacarDente]);
 
   /** Observação por procedimento (§03 do definitivo) — aplica a todo o grupo. */
   const atualizarObsGrupo = (idxs: number[], obs: string) => {
@@ -556,6 +699,39 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     setEventosDraft((prev) => prev.map((ev, i) => (idxs.includes(i)
       ? { ...ev, status: ev.status === 'realizado' ? 'indicado' : 'realizado' }
       : ev)));
+  };
+
+  // R-21 — render de UM card do rascunho (Site A). Extraído do .map anterior sem mudança: mesma
+  // ref (registroCardRefs), mesmo realce (grupoDestacado), mesmo RegistroCard editável. Agora é
+  // chamado por dente (direto se solo, dentro do grupo se 2+) via renderSecoesPorDente.
+  const renderCardDraft = (card: { key: string; idxs: number[]; data: RegistroCardData }) => {
+    const { key, idxs, data } = card;
+    // Só registro de UM evento tem tabela de especialidade — grupo multi-dente não tem "o"
+    // detalhe pra editar (mesma regra do ToothDetailPanel).
+    const temDetalhe = idxs.length === 1 && (data.tipo === 'endodontia' || data.tipo === 'implante');
+    const destacado = grupoDestacado === key;
+    return (
+      <div
+        key={key}
+        ref={(el) => {
+          if (el) registroCardRefs.current.set(key, el);
+          else registroCardRefs.current.delete(key);
+        }}
+        className={destacado ? 'rounded-xl ring-2 ring-teal ring-offset-2 ring-offset-background transition-shadow duration-300' : ''}
+      >
+        <RegistroCard
+          data={data}
+          editavel
+          onObservacaoChange={(v) => atualizarObsGrupo(idxs, v)}
+          onRemover={() => removerGrupoDraft(idxs)}
+          onToggleStatus={() => toggleStatusDraft(idxs)}
+        >
+          {temDetalhe
+            ? corpoEspecialidadeEditavel(data.tipo, data.detalhe, (v) => atualizarDetalheDraft(idxs[0], v))
+            : undefined}
+        </RegistroCard>
+      </div>
+    );
   };
 
   // Busca fichas do Supabase
@@ -875,6 +1051,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
    *  não pode ficar órfã sem os cards na tela). */
   const alternarExpansaoFicha = (evo: Evolution) => {
     setDenteSalvoAberto(null);
+    setDentesAbertosB(new Set()); // R-21 — grupos abertos são por ficha; troca de ficha zera
     const vaiColapsar = viewingEvo?.id === evo.id;
     if (vaiColapsar && modoSelecaoFichaId === evo.id) sairModoSelecao();
     setViewingEvo(vaiColapsar ? null : evo);
@@ -1322,9 +1499,9 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                   ) : null
                 }
               />
-              {/* R-20 Fase 2: a tabela de especialidade (endo/implante) abre aqui — full-width,
-                  abaixo do bloco odontograma+painel e acima dos registros. */}
-              <div ref={setTabelaElA} className="empty:hidden" />
+              {/* R-21 Fase 2: a tabela de especialidade (endo/implante) NÃO abre mais aqui — agora
+                  monta DENTRO da seção do dente na lista (tabelaContainer via renderSecoesPorDente).
+                  Fallback do ToothDetailPanel (tabelaContainer null) = inline no painel. */}
 
               <div className="border-t border-border/60" />
 
@@ -1347,33 +1524,20 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                     </p>
                   </div>
                 ) : (
-                  cardsDraft.map(({ key, idxs, data }) => {
-                    // Só registro de UM evento tem tabela de especialidade — grupo multi-dente
-                    // não tem "o" detalhe pra editar (mesma regra do ToothDetailPanel).
-                    const temDetalhe = idxs.length === 1 && (data.tipo === 'endodontia' || data.tipo === 'implante');
-                    const destacado = grupoDestacado === key;
-                    return (
-                      <div
-                        key={key}
-                        ref={(el) => {
-                          if (el) registroCardRefs.current.set(key, el);
-                          else registroCardRefs.current.delete(key);
-                        }}
-                        className={destacado ? 'rounded-xl ring-2 ring-teal ring-offset-2 ring-offset-background transition-shadow duration-300' : ''}
-                      >
-                        <RegistroCard
-                          data={data}
-                          editavel
-                          onObservacaoChange={(v) => atualizarObsGrupo(idxs, v)}
-                          onRemover={() => removerGrupoDraft(idxs)}
-                          onToggleStatus={() => toggleStatusDraft(idxs)}
-                        >
-                          {temDetalhe
-                            ? corpoEspecialidadeEditavel(data.tipo, data.detalhe, (v) => atualizarDetalheDraft(idxs[0], v))
-                            : undefined}
-                        </RegistroCard>
-                      </div>
-                    );
+                  // R-21 — lista agrupada por dente (Site A). Solo = card direto; 2+ = grupo colapsável.
+                  // Fase 2: a tabela do dente aberto (denteAberto) monta dentro da seção. Fase 3: clique
+                  // no odontograma abre a seção e rola até ela (siteId 'A').
+                  renderSecoesPorDente({
+                    secoes: agruparPorDente(cardsDraft),
+                    renderCard: renderCardDraft,
+                    dentesAbertos: dentesAbertosA,
+                    onToggleDente: toggleDenteA,
+                    registrarRefDente,
+                    forcarAbertos: false,
+                    denteComTabela: denteAberto,
+                    tabelaRef: setTabelaElA,
+                    siteId: 'A',
+                    denteDestacado,
                   })
                 )}
               </div>
@@ -1608,10 +1772,8 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                                     const jaAberto = denteSalvoAberto?.fichaId === evo.id && denteSalvoAberto.dente === d;
                                     setDenteSalvoAberto(jaAberto ? null : { fichaId: evo.id, dente: d });
                                     if (jaAberto) return;
-                                    // R-20 Fase 3: acha o card do dente e destaca (mesma mecânica do Site A)
-                                    const ev = eventosVis.find((e) => e.ancora.dente === d);
-                                    const card = ev ? cardsVis.find((c) => c.ids.includes(ev.id)) : undefined;
-                                    if (card) destacarCard(card.key);
+                                    // R-21 Fase 3: abre a seção do dente na lista e rola até ela (siteId = evo.id).
+                                    destacarDente(d, evo.id, setDentesAbertosB, cardsVis);
                                   }}
                                   compact
                                   hideFilters
@@ -1632,8 +1794,8 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                               ) : null
                             }
                           />
-                          {/* R-20 Fase 2: tabela de especialidade full-width abaixo do bloco (ficha salva) */}
-                          <div ref={setTabelaElB} className="empty:hidden" />
+                          {/* R-21 Fase 2: a tabela de especialidade agora monta DENTRO da seção do dente na
+                              lista (não mais numa faixa aqui). Fallback inline no painel se o alvo não existe. */}
 
                           {/* Registros — eventos (novo modelo) OU derivação v2 no MESMO visual.
                               R-16: eventosVis já aplicou o filtro por responsável.
@@ -1643,6 +1805,53 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                             const emModo = modoSelecaoFichaId === evo.id;
                             const podeEncaminhar = podeEditarFicha(evo) && !evo.assinadoEm;
                             const temEncaminhavel = cards.some((c) => c.data.status === 'indicado' && !c.data.encaminhadoPara);
+                            // R-21 — render de UM card da ficha salva (Site B). Idêntico ao .map anterior
+                            // (modo seleção R-04, dimming do inelegível, realce, encaminhamento); só foi
+                            // extraído pra ser chamado por dente via renderSecoesPorDente.
+                            const renderCardVis = ({ key, ids, data }: { key: string; ids: string[]; data: RegistroCardData }) => {
+                              const encaminhavel = podeEncaminhar && data.status === 'indicado' && !data.encaminhadoPara;
+                              const jaEncaminhado = podeEncaminhar && data.status === 'indicado' && !!data.encaminhadoPara;
+                              // No modo, o que não pode ser encaminhado apaga e fica inerte (#8).
+                              if (emModo && !encaminhavel) {
+                                return (
+                                  <div key={key} className="opacity-40 pointer-events-none">
+                                    <RegistroCard data={data}>{corpoEspecialidade(data.tipo, data.detalhe)}</RegistroCard>
+                                  </div>
+                                );
+                              }
+                              const destacado = grupoDestacado === key;
+                              return (
+                                <div
+                                  key={key}
+                                  ref={(el) => {
+                                    if (el) registroCardRefs.current.set(key, el);
+                                    else registroCardRefs.current.delete(key);
+                                  }}
+                                  className={destacado ? 'rounded-xl ring-2 ring-teal ring-offset-2 ring-offset-background transition-shadow duration-300' : ''}
+                                >
+                                  <RegistroCard
+                                    data={data}
+                                    selecionavel={emModo && encaminhavel}
+                                    selecionado={selecionados.has(key)}
+                                    onToggleSelecao={emModo && encaminhavel ? () => toggleSelecao(key) : undefined}
+                                    onToggleStatus={
+                                      emModo
+                                        ? undefined
+                                        : podeEditarFicha(evo) && !evo.assinadoEm
+                                          ? () => void toggleStatusRegistro(evo, ids, data.status)
+                                          : data.encaminhadoPara?.id === dentistaId && !evo.assinadoEm
+                                            ? () => void concluirEncaminhado(evo, ids, data.status)
+                                            : undefined
+                                    }
+                                    onRemoverEncaminhamento={
+                                      !emModo && jaEncaminhado ? () => void encaminharRegistro(evo, ids, null) : undefined
+                                    }
+                                  >
+                                    {corpoEspecialidade(data.tipo, data.detalhe)}
+                                  </RegistroCard>
+                                </div>
+                              );
+                            };
                             return (
                             <div className="flex flex-col gap-2">
                               {/* Cabeçalho da consulta: liga o modo seleção NESTA consulta */}
@@ -1658,49 +1867,21 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                                   </button>
                                 </div>
                               )}
-                              {cards.map(({ key, ids, data }) => {
-                                const encaminhavel = podeEncaminhar && data.status === 'indicado' && !data.encaminhadoPara;
-                                const jaEncaminhado = podeEncaminhar && data.status === 'indicado' && !!data.encaminhadoPara;
-                                // No modo, o que não pode ser encaminhado apaga e fica inerte (#8).
-                                if (emModo && !encaminhavel) {
-                                  return (
-                                    <div key={key} className="opacity-40 pointer-events-none">
-                                      <RegistroCard data={data}>{corpoEspecialidade(data.tipo, data.detalhe)}</RegistroCard>
-                                    </div>
-                                  );
-                                }
-                                const destacado = grupoDestacado === key;
-                                return (
-                                  <div
-                                    key={key}
-                                    ref={(el) => {
-                                      if (el) registroCardRefs.current.set(key, el);
-                                      else registroCardRefs.current.delete(key);
-                                    }}
-                                    className={destacado ? 'rounded-xl ring-2 ring-teal ring-offset-2 ring-offset-background transition-shadow duration-300' : ''}
-                                  >
-                                    <RegistroCard
-                                      data={data}
-                                      selecionavel={emModo && encaminhavel}
-                                      selecionado={selecionados.has(key)}
-                                      onToggleSelecao={emModo && encaminhavel ? () => toggleSelecao(key) : undefined}
-                                      onToggleStatus={
-                                        emModo
-                                          ? undefined
-                                          : podeEditarFicha(evo) && !evo.assinadoEm
-                                            ? () => void toggleStatusRegistro(evo, ids, data.status)
-                                            : data.encaminhadoPara?.id === dentistaId && !evo.assinadoEm
-                                              ? () => void concluirEncaminhado(evo, ids, data.status)
-                                              : undefined
-                                      }
-                                      onRemoverEncaminhamento={
-                                        !emModo && jaEncaminhado ? () => void encaminharRegistro(evo, ids, null) : undefined
-                                      }
-                                    >
-                                      {corpoEspecialidade(data.tipo, data.detalhe)}
-                                    </RegistroCard>
-                                  </div>
-                                );
+                              {/* R-21 — lista agrupada por dente (Site B). Em modo seleção força tudo aberto
+                                  pra nenhum encaminhável ficar escondido dentro de um grupo fechado.
+                                  Fase 2: a tabela do dente aberto NESTA ficha monta dentro da seção.
+                                  Fase 3: clique no odontograma abre a seção (siteId = evo.id, único por ficha). */}
+                              {renderSecoesPorDente({
+                                secoes: agruparPorDente(cards),
+                                renderCard: renderCardVis,
+                                dentesAbertos: dentesAbertosB,
+                                onToggleDente: toggleDenteB,
+                                registrarRefDente,
+                                forcarAbertos: emModo,
+                                denteComTabela: denteSalvoAberto?.fichaId === evo.id ? denteSalvoAberto.dente : null,
+                                tabelaRef: setTabelaElB,
+                                siteId: evo.id,
+                                denteDestacado,
                               })}
                             </div>
                             );
