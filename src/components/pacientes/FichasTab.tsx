@@ -246,7 +246,10 @@ function derivarV2DosEventos(eventos: OdontogramaEventoDraft[]): {
   const porDente = new Map<number, string[]>();
   const procedimentos: string[] = [];
   for (const ev of eventos) {
-    const rotulo = TIPO_LABEL[ev.tipo] + (ev.status === 'indicado' ? ' - planejado' : '');
+    // R-10: sem " - planejado" — o status é jargão redundante (vive em procedimentos_status) e
+    // poluía o orçamento/PDF que o paciente lê. Caminho manual; o "— planejado" que o Dex injeta
+    // no dentes_observacoes é outro fix (adiado — muda prompt e exige eval).
+    const rotulo = TIPO_LABEL[ev.tipo];
     const linha = ev.observacao ? `${rotulo} (${ev.observacao})` : rotulo;
     const d = ev.ancora.dente;
     if (d != null) {
