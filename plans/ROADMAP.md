@@ -1,9 +1,9 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · **Odonto.IA** · atualizado 2026-07-24
-> **Ativo:** R-21 (registros por dente — spec escrita, **aguardando aprovação do Mateus**) ·
-> **Fila:** 16 · **Concluídos:** 3 · **Congelados:** 0 · **Committado, aguardando deploy (9 commits à
-> frente do origin):** R-16, R-17, R-18, R-04, R-02 (+ fix do pino), R-20 (validado ao vivo)
+> **ROADMAP** · **Odonto.IA** · atualizado 2026-07-26
+> **Ativo:** nenhum — audit visual do Fable concluído 26/07 (relatório entregue, achados congelados em R-22) ·
+> **Fila:** 16 · **Concluídos:** 3 · **Congelados:** 1 · **Validado ao vivo, aguardando commit/deploy:**
+> R-21, R-16, R-17, R-18, R-04, R-02 (+ fix do pino), R-20
 
 > Reconstruído do zero em 2026-07-21 por decisão do Mateus. O histórico anterior está no
 > git (`git show 4a93234:plans/roadmap/roadmap-mestre-2026-07-21.md`) e na pasta
@@ -14,13 +14,12 @@
 
 ## Agora
 
-**Verificação ao vivo (Mateus, 24-25/07, desktop + mobile):** R-16, R-17, R-18, R-04 Fase 3 e
-R-02 Fase 1 rodam certo nos dois dispositivos — Mateus autorizou marcar como 100%. Ficam ✅ na
-essência, mas **falta commit + deploy** (código local, não commitado): promoção formal a "no ar" +
-fechamento (mover spec/artefato pro _arquivo) acontece junto do deploy no fim da sessão. QA completo
-multi-dispositivo (desktop/mobile/tablet, claro/escuro) fica como passo futuro — há muita correção
-pela frente. **Ativo agora:** R-02 Fase 3 — o Mateus pediu ligar o auto-reaproveitamento de
-`grupo_id`, o que **reabre a Decisão 2 da spec** (que tinha deixado só a leitura). Ver `plans/ESTADO.md`.
+**Audit visual do Fable concluído (26/07):** captura completa (67 screenshots, estados interativos
+incluídos) + 15 auditores → relatório priorizado e fingerprint canônico em `auditorias/`. Achados
+**congelados em R-22** por decisão do Mateus — o foco volta ao planejamento normal da fila.
+**Pendência que não muda:** o lote validado ao vivo (R-21, R-16, R-17, R-18, R-04, R-02, R-20 +
+migration 109) segue **sem commit/deploy** — código local. **Ativo agora:** nenhum — próxima sessão
+escolhe da fila. Ver `plans/ESTADO.md`.
 
 ## Fila
 
@@ -43,7 +42,7 @@ Peso: **P** (uma sessão) · **M** (2–3 sessões) · **G** (precisa quebrar).
 
 | ID | Item | Objetivo | Peso |
 |---|---|---|---|
-| R-21 | 🔵 Registros agrupados por dente | A lista vira **dentes colapsáveis** (ordem 11→48; dente solo mostra direto, 2+ colapsa): clica → abre os procedimentos com status → clica fecha; tabela de especialidade dentro do dente aberto; clicar o dente no odontograma abre o grupo. Camada nova `agruparPorDente` por cima do que já existe (não toca `agruparRegistros`). **Validado com dentista.** [spec](specs/R-21-registros-por-dente.md) **aprovada** (25/07), 3 fases. Próximo: mockup → execução. | M |
+| R-21 | ✅ Registros agrupados por dente — codado, **validado ao vivo (Fases 1/2/3, 25/07)**, falta commit+deploy | A lista vira **dentes colapsáveis** (ordem 11→48; dente solo mostra direto, 2+ colapsa): clica → abre os procedimentos com status → clica fecha; tabela de especialidade dentro do dente aberto; clicar o dente no odontograma abre o grupo e rola até ele. Camada nova `agruparPorDente` (10 testes) + `DenteGrupoHeader`, por cima do que já existe (não toca `agruparRegistros`). Recency ("último no topo") **considerado e descartado** — o scroll da Fase 3 resolve o acesso sem quebrar o 11→48. [spec](specs/R-21-registros-por-dente.md) | M |
 | R-20 | ✅ Redesenho da ficha odontograma — codado, validado ao vivo, **committado** (22db484); falta deploy | **Só a ficha**: layout responsivo lado-a-lado (odontograma sempre visível + detalhe) com `@container`; tabela de especialidade full-width abaixo; destaque do registro ao clicar o dente (Site A e B). Componente `OdontogramaComPainel`. Modo consulta reusa depois. [spec](specs/R-20-ficha-odontograma-redesign.md) | M |
 | R-17 | ✅ `EncaminharBar` colide com o dock de navegação (desktop) | Não era z-order, era **posição**: `EncaminharBar` e o dock miram o mesmo centro-inferior. Fix 24/07: `bottom-0 md:bottom-28` + `createPortal` pro body (escapa de ancestral com transform) + `z-[60]`. **Verificado ao vivo por Mateus 24-25/07 (desktop+mobile); falta commit+deploy.** Achado: [auditoria 24/07](auditorias/2026-07-24-ficha-odontograma.md) | P |
 | R-18 | ✅ Filtro por responsável trava em tela vazia após desfazer encaminhamento | Fix aplicado 24/07: `filtroAindaValido()` (nova, 4 testes) reseta o filtro pra "Todos" quando o responsável selecionado deixa de existir. **Verificado ao vivo por Mateus 24-25/07 (desktop+mobile); falta commit+deploy.** Achado: [auditoria 24/07](auditorias/2026-07-24-ficha-odontograma.md) | P |
@@ -66,6 +65,7 @@ Peso: **P** (uma sessão) · **M** (2–3 sessões) · **G** (precisa quebrar).
 
 | ID | Item | Por que parou | Descongelar quando |
 |---|---|---|---|
+| R-22 | 🧊 Achados do audit visual do Fable (115 achados, 15 auditores) — [relatório](auditorias/2026-07-26-relatorio-audit-visual.md) · [fingerprint canônico](auditorias/2026-07-26-fingerprint-canonico.md) | Audit concluído 26/07; Mateus decidiu voltar ao planejamento normal do roadmap antes de atacar o polimento visual | Quando o Mateus quiser voltar ao design. Estrutura de retomada já está no relatório: lote emergência (**`globals.css:267` — 1 linha, app inteiro renderiza corpo em Times; candidato a /pontual antes dos demais**), lote porta-de-entrada (Auth D + Landing C + opacity:0), lote sweep de consistência (CTA único, chips ink, mono, coral), e ícones de procedimento (grid de 2 pesos no odontograma) |
 
 ## Concluído
 
