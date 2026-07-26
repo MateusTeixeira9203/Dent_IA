@@ -46,3 +46,6 @@ next-env.d.ts
 # dev environment (setup_ia)
 .claude/
 .mcp.json
+
+# Audit visual — screenshots regeneráveis pelo harness (pesados, não versionar)
+plans/auditorias/screens/
