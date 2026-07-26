@@ -153,7 +153,7 @@ function LoginFormContent(): React.JSX.Element {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="bg-teal text-white rounded-xl font-bold py-3 w-full hover:bg-teal-dark transition-all mt-2 disabled:opacity-60 flex items-center justify-center gap-2"
+                className="bg-teal-ink text-surface rounded-xl font-bold py-3 w-full hover:opacity-90 transition-all mt-2 disabled:opacity-60 flex items-center justify-center gap-2"
                 style={{ boxShadow: "0 10px 30px -10px rgba(47, 156, 133, 0.4)" }}
               >
                 {isLoading ? "Entrando..." : (

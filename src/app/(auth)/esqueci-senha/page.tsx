@@ -89,7 +89,7 @@ export default function EsqueciSenhaPage(): React.JSX.Element {
               </p>
               <Link
                 href="/login"
-                className="w-full bg-teal text-white py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors hover:bg-teal-dark"
+                className="w-full bg-teal-ink text-surface py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors hover:opacity-90"
               >
                 Voltar para o Login
               </Link>
@@ -120,7 +120,7 @@ export default function EsqueciSenhaPage(): React.JSX.Element {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-teal hover:bg-teal-dark text-white py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-md disabled:opacity-60"
+                className="w-full bg-teal-ink hover:opacity-90 text-surface py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-md disabled:opacity-60"
               >
                 {isLoading ? (
                   <>

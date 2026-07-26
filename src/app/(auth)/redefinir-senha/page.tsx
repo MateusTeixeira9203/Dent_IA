@@ -150,7 +150,7 @@ export default function RedefinirSenhaPage(): React.JSX.Element {
                 </p>
                 <Link
                   href="/esqueci-senha"
-                  className="w-full bg-teal hover:bg-teal-dark text-white py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors"
+                  className="w-full bg-teal-ink hover:opacity-90 text-surface py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors"
                   style={{ boxShadow: "0 10px 30px -10px color-mix(in srgb, var(--color-teal) 40%, transparent)" }}
                 >
                   Solicitar novo link
@@ -249,7 +249,7 @@ export default function RedefinirSenhaPage(): React.JSX.Element {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="bg-teal text-white rounded-xl font-bold py-3.5 w-full hover:bg-teal-dark transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                  className="bg-teal-ink text-surface rounded-xl font-bold py-3.5 w-full hover:opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
                   style={{ boxShadow: "0 10px 30px -10px color-mix(in srgb, var(--color-teal) 40%, transparent)" }}
                 >
                   {isLoading ? (

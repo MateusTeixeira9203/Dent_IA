@@ -72,7 +72,7 @@ export function WelcomeModal({ clinicaNome }: Props) {
 
               <button
                 onClick={handleClose}
-                className="w-full bg-teal hover:bg-teal-dark text-white font-semibold py-3 rounded-xl transition-all"
+                className="w-full bg-teal-ink hover:opacity-90 text-surface font-semibold py-3 rounded-xl transition-all"
                 style={{ boxShadow: '0 10px 30px -10px rgba(47,156,133,0.4)' }}
               >
                 Começar a usar

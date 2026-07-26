@@ -43,7 +43,7 @@ export function MarkAttendedButton({ agendamentoId }: { agendamentoId: string })
           <button
             onClick={marcarAtendido}
             disabled={pending}
-            className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold text-white bg-teal hover:bg-teal-lt transition-all active:scale-[0.98] disabled:opacity-60"
+            className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold text-surface bg-teal-ink hover:opacity-90 transition-all active:scale-[0.98] disabled:opacity-60"
           >
             {pending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
             Sim, atendido

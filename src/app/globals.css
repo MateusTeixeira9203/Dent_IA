@@ -124,7 +124,7 @@
   --color-border: #27272a;
   --color-text-primary: #fafafa;
   --color-text-secondary: #a1a1aa;
-  --color-text-muted: #404040;
+  --color-text-muted: #8d948d;   /* R-12: era #404040 (1,82:1 — reprova AA feio). #8d948d = ~6:1 vs --surface (valor canônico da spec R-01) */
   --color-teal-pale: #1e3a35;
   /* Coral mais claro em dark mode */
   --color-coral: #ef9a9a;

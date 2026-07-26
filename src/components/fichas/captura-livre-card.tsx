@@ -208,7 +208,7 @@ export function CapturaLivreCard({ pacienteNome, formDirty, onOrganizado }: Capt
           type="button"
           onClick={() => void handleOrganizar()}
           disabled={!texto.trim() || isOrganizando}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal hover:bg-teal-lt text-white text-sm font-bold transition-all disabled:opacity-50 shadow-[0_0_15px_rgba(47,156,133,0.3)]"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-ink hover:opacity-90 text-surface text-sm font-bold transition-all disabled:opacity-50 shadow-[0_0_15px_rgba(47,156,133,0.3)]"
         >
           {isOrganizando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bot className="w-4 h-4" />}
           {isOrganizando ? organizarLabel : 'Organizar com Dex'}

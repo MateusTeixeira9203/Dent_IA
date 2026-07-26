@@ -475,7 +475,7 @@ export function SecretariaDashboard({
                 onClick={() => setDentistaSelecionado('todos')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   dentistaSelecionado === 'todos'
-                    ? 'bg-teal text-white shadow-sm'
+                    ? 'bg-teal-ink text-surface shadow-sm'
                     : 'bg-surface border border-border text-text-secondary hover:text-text-primary'
                 }`}
               >
@@ -487,7 +487,7 @@ export function SecretariaDashboard({
                   onClick={() => setDentistaSelecionado(d.id)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                     dentistaSelecionado === d.id
-                      ? 'bg-teal text-white shadow-sm'
+                      ? 'bg-teal-ink text-surface shadow-sm'
                       : 'bg-surface border border-border text-text-secondary hover:text-text-primary'
                   }`}
                 >

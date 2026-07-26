@@ -78,7 +78,7 @@ export function InviteAuthClient({ token, inviteEmail }: Props) {
           onClick={() => setTab('login')}
           className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
             tab === 'login'
-              ? 'bg-teal text-white'
+              ? 'bg-teal-ink text-surface'
               : 'bg-surface text-text-secondary hover:bg-surface-alt'
           }`}
         >
@@ -89,7 +89,7 @@ export function InviteAuthClient({ token, inviteEmail }: Props) {
           onClick={() => setTab('cadastro')}
           className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
             tab === 'cadastro'
-              ? 'bg-teal text-white'
+              ? 'bg-teal-ink text-surface'
               : 'bg-surface text-text-secondary hover:bg-surface-alt'
           }`}
         >
@@ -139,7 +139,7 @@ export function InviteAuthClient({ token, inviteEmail }: Props) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-teal text-white rounded-xl font-bold py-3.5 hover:bg-teal-dark transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+            className="w-full bg-teal-ink text-surface rounded-xl font-bold py-3.5 hover:opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
           >
             {loading ? 'Entrando...' : (<>Entrar e aceitar <ArrowRight className="w-4 h-4" /></>)}
           </button>
@@ -202,7 +202,7 @@ export function InviteAuthClient({ token, inviteEmail }: Props) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-teal text-white rounded-xl font-bold py-3.5 hover:bg-teal-dark transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+            className="w-full bg-teal-ink text-surface rounded-xl font-bold py-3.5 hover:opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
           >
             {loading ? 'Criando conta...' : (<>Criar conta e aceitar <ArrowRight className="w-4 h-4" /></>)}
           </button>
@@ -245,7 +245,7 @@ export function AcceptButton({ token }: AcceptProps) {
       <button
         onClick={handleAccept}
         disabled={loading}
-        className="w-full bg-teal text-white rounded-xl font-bold py-3.5 hover:bg-teal-dark transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+        className="w-full bg-teal-ink text-surface rounded-xl font-bold py-3.5 hover:opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
         style={{ boxShadow: '0 10px 30px -10px rgba(47,156,133,0.4)' }}
       >
         {loading ? 'Processando...' : (<>Aceitar convite <ArrowRight className="w-4 h-4" /></>)}

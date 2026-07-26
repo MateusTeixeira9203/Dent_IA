@@ -217,7 +217,7 @@ export function AssinaturaRecepcaoModal({ open, onOpenChange, pacienteId, pacien
                 <button
                   onClick={() => void handleConfirmar()}
                   disabled={vazio}
-                  className="flex-1 py-3 rounded-xl bg-teal hover:bg-teal-lt text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="flex-1 py-3 rounded-xl bg-teal-ink hover:opacity-90 text-surface text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   style={{ boxShadow: vazio ? 'none' : '0 8px 24px -8px rgba(47,156,133,0.5)' }}
                 >
                   <CheckCircle2 className="w-4 h-4" />
@@ -276,7 +276,7 @@ export function AssinaturaRecepcaoModal({ open, onOpenChange, pacienteId, pacien
               </div>
               <button
                 onClick={() => setStep('assinar')}
-                className="px-6 py-2.5 bg-teal text-white rounded-xl text-sm font-semibold hover:bg-teal-lt transition-colors"
+                className="px-6 py-2.5 bg-teal-ink text-surface rounded-xl text-sm font-semibold hover:opacity-90 transition-colors"
               >
                 Tentar novamente
               </button>
