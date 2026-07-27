@@ -16,6 +16,7 @@ import type {
   QuadranteFDI,
   AncoraClinica,
   OrtoManutencaoInfo,
+  PapelNoGrupo,
 } from '@/types/odontograma';
 
 export interface EvolucaoFormatada {
@@ -46,7 +47,8 @@ interface EvolucaoWire {
   orto_manutencao:     OrtoManutencaoWire | null;
 }
 
-/** Evento como o modelo emite: origem e papel_no_grupo NÃO vêm do modelo (a rota decide). */
+/** Evento como o modelo emite: origem NÃO vem do modelo (a rota decide pelo modo).
+ *  papel_no_grupo vem do modelo SÓ pra ponte (R-06) — validado no parse, null nos demais. */
 interface OdontogramaEventoWire {
   tipo:       string;
   status:     string;
@@ -56,6 +58,7 @@ interface OdontogramaEventoWire {
   dente?:     number | null;
   faces:      string[];
   grupo_id?:  string | null;
+  papel_no_grupo?: string | null;
   observacao: string;
 }
 
@@ -67,8 +70,9 @@ interface OrtoManutencaoWire {
   elastico_intermaxilar?: string | null;
 }
 
-// Fatia A: 'ponte' e 'esfoliacao' NÃO entram no enum do modelo (só na Fatia B, quando a
-// UI sabe renderizá-los — invariante #11). 'fratura'/'pino_nucleo' entram na A.
+// R-06/R-07 (spec R-06-07, Fase 4): enum completo — 'ponte'/'esfoliacao' entraram junto com a
+// UI que os renderiza (invariante #11 satisfeito nas Fases 1-3) e a rotina ganhou nível 'boca'.
+// Mudança gated por eval (evals/extracao-clinica): baseline ATUAL 16/16 não pode regredir.
 const ODONTOGRAMA_EVENTO_SCHEMA: Schema = {
   type: Type.OBJECT,
   required: ['tipo', 'status', 'nivel', 'faces', 'observacao'],
@@ -76,15 +80,17 @@ const ODONTOGRAMA_EVENTO_SCHEMA: Schema = {
     tipo: {
       type: Type.STRING,
       enum: ['carie_restauracao', 'exodontia', 'endodontia', 'lesao_periapical',
-             'implante', 'coroa', 'selante', 'inclusao', 'fratura', 'pino_nucleo'],
+             'implante', 'coroa', 'selante', 'inclusao', 'fratura', 'pino_nucleo',
+             'ponte', 'esfoliacao', 'profilaxia', 'raspagem', 'clareamento', 'fluor'],
     },
     status:    { type: Type.STRING, enum: ['indicado', 'realizado'] },
-    nivel:     { type: Type.STRING, enum: ['arcada', 'quadrante', 'dente', 'face'] },
+    nivel:     { type: Type.STRING, enum: ['boca', 'arcada', 'quadrante', 'dente', 'face'] },
     arcada:    { type: Type.STRING, enum: ['superior', 'inferior'], nullable: true },
     quadrante: { type: Type.INTEGER, nullable: true },
     dente:     { type: Type.INTEGER, nullable: true },
     faces:     { type: Type.ARRAY, items: { type: Type.STRING, enum: ['O', 'M', 'D', 'V', 'L'] } },
     grupo_id:  { type: Type.STRING, nullable: true },
+    papel_no_grupo: { type: Type.STRING, enum: ['pilar', 'pontico'], nullable: true },
     observacao: { type: Type.STRING },
   },
 };
@@ -136,9 +142,11 @@ const isValidFDI = (d: number): boolean => {
   return false;
 };
 
-const TIPOS_FATIA_A = new Set<TipoRegistroOdontograma>([
+const TIPOS_ACEITOS = new Set<TipoRegistroOdontograma>([
   'carie_restauracao', 'exodontia', 'endodontia', 'lesao_periapical',
   'implante', 'coroa', 'selante', 'inclusao', 'fratura', 'pino_nucleo',
+  // R-06/R-07 — abertos com a UI pronta (Fases 1-3 da spec R-06-07):
+  'ponte', 'esfoliacao', 'profilaxia', 'raspagem', 'clareamento', 'fluor',
 ]);
 const FACES_VALIDAS = new Set<FaceDental>(['O', 'M', 'D', 'V', 'L']);
 
@@ -158,9 +166,9 @@ function parseEventos(wire: unknown, modo: 'consulta' | 'exame_inicial'): Odonto
     if (!raw || typeof raw !== 'object') continue;
     const w = raw as OdontogramaEventoWire;
 
-    if (!TIPOS_FATIA_A.has(w.tipo as TipoRegistroOdontograma)) continue;
+    if (!TIPOS_ACEITOS.has(w.tipo as TipoRegistroOdontograma)) continue;
     if (w.status !== 'indicado' && w.status !== 'realizado') continue;
-    if (!['arcada', 'quadrante', 'dente', 'face'].includes(w.nivel)) continue;
+    if (!['boca', 'arcada', 'quadrante', 'dente', 'face'].includes(w.nivel)) continue;
 
     const nivel = w.nivel as NivelAncora;
     const dente = w.dente != null ? Number(w.dente) : undefined;
@@ -168,7 +176,9 @@ function parseEventos(wire: unknown, modo: 'consulta' | 'exame_inicial'): Odonto
 
     // Coerência de âncora — espelha odontograma_eventos_ancora_valida (constraint SQL).
     const ancora: AncoraClinica = { nivel };
-    if (nivel === 'arcada') {
+    if (nivel === 'boca') {
+      // R-07: boca toda — nenhum campo de âncora (constraint exige tudo null).
+    } else if (nivel === 'arcada') {
       if (w.arcada !== 'superior' && w.arcada !== 'inferior') continue;
       ancora.arcada = w.arcada as Arcada;
     } else if (nivel === 'quadrante') {
@@ -183,6 +193,10 @@ function parseEventos(wire: unknown, modo: 'consulta' | 'exame_inicial'): Odonto
       ancora.faces = faces;
     }
 
+    // R-06: esfoliação só existe em decíduo (51-85) e como fato consumado — evento fora
+    // disso é alucinação, descarta (perda silenciosa < dado errado no prontuário).
+    if (w.tipo === 'esfoliacao' && (dente == null || dente < 51 || w.status !== 'realizado')) continue;
+
     let grupo_id: string | null = null;
     if (w.grupo_id) {
       const tag = String(w.grupo_id);
@@ -190,13 +204,19 @@ function parseEventos(wire: unknown, modo: 'consulta' | 'exame_inicial'): Odonto
       grupo_id = grupoMap.get(tag)!;
     }
 
+    // R-06: papel só faz sentido na ponte; qualquer outro valor/tipo degrada pra null.
+    const papel: PapelNoGrupo | null =
+      w.tipo === 'ponte' && (w.papel_no_grupo === 'pilar' || w.papel_no_grupo === 'pontico')
+        ? w.papel_no_grupo
+        : null;
+
     out.push({
       tipo:           w.tipo as TipoRegistroOdontograma,
       status:         w.status as StatusRegistro,
       origem,
       ancora,
       grupo_id,
-      papel_no_grupo: null, // ponte/pilar-pôntico é Fatia B
+      papel_no_grupo: papel,
       observacao:     typeof w.observacao === 'string' ? w.observacao.trim() : '',
     });
   }
@@ -261,7 +281,7 @@ Retorne SOMENTE um JSON válido, sem markdown, com exatamente esta estrutura:
   "procedimentos": ["lista resumida dos procedimentos realizados — ex: Tratamento endodôntico, Radiografia periapical"],
   "conduta": "orientações ao paciente, cuidados pós-procedimento, prescrições mencionadas. String vazia se não mencionado.",
   "alerta_novo": "se o dentista mencionar nova alergia ou medicamento novo do paciente, registrar aqui. null se nenhum",
-  "odontograma_eventos": [{"tipo": "carie_restauracao", "status": "realizado", "nivel": "face", "dente": 14, "faces": ["O"], "grupo_id": null, "observacao": "resina composta"}],
+  "odontograma_eventos": [{"tipo": "carie_restauracao", "status": "realizado", "nivel": "face", "dente": 14, "faces": ["O"], "grupo_id": null, "papel_no_grupo": null, "observacao": "resina composta"}],
   "orto_manutencao": null
 }
 
@@ -286,16 +306,18 @@ Regras críticas:
 
 ODONTOGRAMA (camada visual — além dos campos acima):
 Para CADA achado/procedimento que você registrou em dentes_observacoes, emita TAMBÉM o(s) evento(s) visual(is) correspondente(s) em "odontograma_eventos". Um evento descreve o estado clínico de um dente ou face.
-- tipo (escolha o mais específico): "carie_restauracao" (cárie a restaurar OU restauração feita — ancora em FACE), "endodontia" (canal), "exodontia" (extração), "coroa" (coroa total protética), "implante", "selante" (sempre face O), "lesao_periapical" (achado radiográfico no ápice), "inclusao" (dente incluso/impactado), "fratura" (trauma dentário), "pino_nucleo" (pino/núcleo intrarradicular).
+- tipo (escolha o mais específico): "carie_restauracao" (cárie a restaurar OU restauração feita — ancora em FACE), "endodontia" (canal), "exodontia" (extração), "coroa" (coroa total protética UNITÁRIA), "ponte" (prótese fixa multi-dente — ver regra PONTE), "implante", "selante" (sempre face O), "lesao_periapical" (achado radiográfico no ápice), "inclusao" (dente incluso/impactado), "fratura" (trauma dentário), "pino_nucleo" (pino/núcleo intrarradicular), "esfoliacao" (decíduo que caiu naturalmente — SÓ dentes 51-85, sempre "realizado"), "profilaxia" (limpeza — nível boca), "raspagem" (raspagem/alisamento periodontal — nível quadrante; sem quadrante citado, boca), "clareamento" (nível boca), "fluor" (aplicação de flúor — nível boca).
 - status: "indicado" (a fazer/planejado — MESMA regra do PLANEJADO acima) ou "realizado" (feito / verbo no passado).
 - ⛔ NEGAÇÃO NO EVENTO (erro comum — leia com atenção): se o dentista NEGOU ter feito um procedimento, NÃO emita evento "realizado" pra ele, mesmo que o nome do procedimento apareça no relato. Exemplo obrigatório: "não fiz o canal, só o curativo no 46" → o evento do 46 é NO MÁXIMO {tipo:endodontia, status:"indicado"} (ou nenhum) — JAMAIS {tipo:endodontia, status:"realizado"}. O curativo não vira evento de odontograma (não há tipo pra ele). Regra geral: um tipo de evento só recebe status:"realizado" se AQUELE procedimento foi de fato executado; procedimento citado-e-negado nunca é realizado.
 - nivel decide os campos da âncora:
   · "face": preencha dente (FDI) e faces (array de "O"/"M"/"D"/"V"/"L"). Use para cárie/restauração/selante.
-  · "dente": preencha dente, deixe faces []. Use para endodontia/exodontia/coroa/implante/lesao_periapical/inclusao/fratura/pino_nucleo.
-  · "arcada": preencha arcada. · "quadrante": preencha quadrante (1-8).
+  · "dente": preencha dente, deixe faces []. Use para endodontia/exodontia/coroa/ponte/implante/lesao_periapical/inclusao/fratura/pino_nucleo/esfoliacao.
+  · "arcada": preencha arcada. · "quadrante": preencha quadrante (1=sup dir, 2=sup esq, 3=inf esq, 4=inf dir).
+  · "boca": procedimento de boca toda (profilaxia/clareamento/fluor) — deixe arcada/quadrante/dente null e faces [].
+- PONTE (prótese fixa): emita UM evento tipo "ponte" PARA CADA dente do vão — pilares E pônticos — todos com a MESMA tag curta em grupo_id (ex: "g1") e papel_no_grupo "pilar" (dente de apoio) ou "pontico" (dente ausente que a ponte substitui). Ex: "ponte de 24 a 26" → 3 eventos: {dente:24, papel_no_grupo:"pilar"}, {dente:25, papel_no_grupo:"pontico"}, {dente:26, papel_no_grupo:"pilar"}. Coroa avulsa NUNCA vira ponte — sem menção a ponte/pôntico/pilar ou a um VÃO, use "coroa". papel_no_grupo: null em qualquer tipo que não seja ponte.
 - MOD e multi-face: uma restauração que cobre várias faces é UM evento com faces:["M","O","D"], NUNCA vários eventos de 1 face.
 - observacao do evento: material/detalhe curto (ex: "resina", "amálgama", "coroa de zircônia", "faceta/lente de contato", "fratura coronária", "pulpotomia"). "" se nada a acrescentar.
-- NÃO emita tipo "ponte" nem "esfoliacao" (ainda não suportados nesta versão). NÃO invente evento sem dente/face citado. Se nenhum registro dentário: odontograma_eventos: [].
+- NÃO invente evento sem base no relato — dente/face/procedimento não citado não vira evento. Se nenhum registro dentário: odontograma_eventos: [].
 
 orto_manutencao (SÓ manutenção de aparelho ortodôntico):
 Se o relato for APENAS manutenção de aparelho (troca de arco, ativação, borrachinhas/ligaduras, elásticos), preencha orto_manutencao e deixe "odontograma_eventos": []. Caso contrário orto_manutencao: null.
