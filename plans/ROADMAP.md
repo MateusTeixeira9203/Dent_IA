@@ -1,10 +1,11 @@
 # Roadmap — Odonto.IA
 
 > **ROADMAP** · **Odonto.IA** · atualizado 2026-07-27
-> **Ativo:** nenhum — R-06+R-07 🟡 codados e verificados local (27/07, eval 16/16+4/4), aguardando deploy · R-05 no ar 🟡 (falta check em prod) ·
-> **Fila:** 13 (specs prontas: R-03a, R-11 · escrita aguardando aprovação: R-06+R-07) · **Concluídos:** 13 · **Congelados:** 1 ·
-> **Fechados hoje (26/07):** o lote (R-21/R-20/R-19/R-18/R-17/R-16/R-12/R-04/R-02) + **R-04b** → Concluído ·
-> R-10 P1 verificado (P2 na fila). Deploys no ar: `929f84e..47a6e19` (lote) + `47a6e19..866c1d4` (R-04b + migration 110).
+> **Ativo:** nenhum · **Fila:** 11 (specs prontas: R-03a, R-11) · **Concluídos:** 16 · **Congelados:** 1 ·
+> **Fechados hoje (27/07):** **R-05** (orto manual) + **R-06** (ponte/esfoliação) + **R-07** (rotina) →
+> ✅ verificados em prod pelo Mateus. Deploys: `dbb4228..00602f2` (R-05) e `00602f2..6674f7b`
+> (R-06/R-07 + eval + símbolos). Nenhuma migration nesta leva.
+> **Ontem (26/07):** o lote (R-21/R-20/R-19/R-18/R-17/R-16/R-12/R-04/R-02) + R-04b (migration 110).
 
 > Reconstruído do zero em 2026-07-21 por decisão do Mateus. O histórico anterior está no
 > git (`git show 4a93234:plans/roadmap/roadmap-mestre-2026-07-21.md`) e na pasta
@@ -15,12 +16,17 @@
 
 ## Agora
 
-**Lote da semana no ar e VALIDADO (26/07):** push `929f84e..47a6e19` → Vercel prod (gates: typecheck ✅,
-build ✅, migration 109 conferida no schema ✅). Mateus validou tudo em prod → **9 itens fechados**
-(R-21/R-20/R-19/R-18/R-17/R-16/R-12/R-04/R-02, ver Concluído; specs/artefatos movidos pro `_arquivo/`).
-R-10 P1 verificado, P2 segue na fila. **R-04b executado, no ar e fechado (26/07)** — migration 110
-aplicada + 2 contas testadas pelo Mateus + deploy `866c1d4`. **Ativo agora:** nenhum — próximo é
-**executar R-03a ou R-11** (specs prontas) ou escopar mais da fila (R-05/R-09). Audit do Fable **congelado em R-22**. Ver `plans/ESTADO.md`.
+**Cluster da entrada manual fechado (27/07).** A regra de produto de 21/07 — *toda especialidade
+precisa de entrada manual, não só por voz* — está cumprida para orto, prótese fixa, odontopediatria
+e rotina: **R-05, R-06 e R-07 no ar e verificados em prod** pelo Mateus. Zero migration na leva.
+Ganhos de infra que ficam: **harness de eval** da extração clínica (`evals/extracao-clinica`, gate
+obrigatório pra mexer no prompt — baseline ATUAL 16/16 · 0 inventados) e os **símbolos do
+odontograma portados do artefato canônico** + polidos (auditoria em `plans/auditorias/`).
+
+**Ativo agora:** nenhum. Candidatos: **R-03a** (assinatura — pesado, mexe em prod) ou **R-11**
+(unificar gravação — leve, sem migration), ambos com spec pronta; ou **R-08** (periograma, G) e
+**R-09** (voz nas especialidades), que agora são o que resta do cluster de especialidades.
+Audit do Fable **congelado em R-22** (+ os achados de símbolos P1/P3/P4). Ver `plans/ESTADO.md`.
 
 ## Fila
 
@@ -46,10 +52,7 @@ Peso: **P** (uma sessão) · **M** (2–3 sessões) · **G** (precisa quebrar).
 | R-03a | ⏳ Assinatura por procedimento — modelo + congelamento (backend) — **spec pronta pra execução** | Tabela `assinaturas` (assinatura por LOTE de realizados) + `odontograma_eventos.assinatura_id` + **trigger de imutabilidade no banco** + RPC `assinar_procedimentos` (secretária/dentista via RPC estreita, CRO do autor). Fecha o furo de imutabilidade só-app de hoje. Decisões travadas 26/07. **Mexe em prod (migration+RLS): migration sozinha primeiro, 2 contas.** [spec](specs/R-03a-assinatura-por-procedimento.md) | M |
 | R-03b | ⏳ Assinatura por procedimento — captura/UI + reconciliar os 3 fluxos legados | Depende de R-03a no ar. UI de captura (AssinarBar no modo-seleção do R-04 + signature_pad), estado "assinado" por registro no card, e unificar os 3 fluxos de assinatura de ficha que hoje escrevem em `fichas.assinado_em` sem se conhecer. **Overlap com R-11** — coordenar antes de codar. Decisões #4/#6/#7 pendentes. [sketch na spec R-03a](specs/R-03a-assinatura-por-procedimento.md) | M |
 | R-03c | ⏳ Assinatura de aceite do orçamento (prova de recebimento) | O paciente assina o orçamento que **aceitou pagar** — prova comercial/contrato que protege o recebimento do dentista (hoje o status `aprovado` é só o dentista afirmando). **Reusa a tabela `assinaturas` genérica do R-03a** (`tipo='orcamento'`): liga `orcamentos.assinatura_id` + trigger que **congela os termos** (itens + total) do orçamento assinado (senão editar o orçamento depois esvazia a assinatura) + RPC `assinar_orcamento`. Encaixa no fluxo "aprovar orçamento". Depende de R-03a no ar. Escopo a fundo depois. Ideia do Mateus 26/07 | M |
-| R-05 | 🟡 Ortodontia: lançamento e edição manual — **no ar (deploy `00602f2` 27/07), falta check do Mateus em prod** | `OrtoForm` montado no FichasTab com adicionar/remover; lança sem voz + corrige a arcada errada da IA. Verificado local: typecheck+lint+build ✅ + harness Playwright **18/18 light+dark**. Fecha ✅ com 1 save num paciente real em prod (Mateus). [spec](specs/R-05-orto-lancamento-manual.md) | P |
 | R-05b | ⏳ Orto: atalho "+ Manutenção" com pré-preenchimento | Paciente com orto no histórico (última evolução com `orto_manutencao`) ganha botão direto no topo do prontuário → abre Nova Evolução com a seção orto montada e **pré-preenchida da última manutenção** (manutenção é incremental). Detecção pelo trabalho, zero classificação — obs. do Mateus 27/07: *dentistas não usam as classificações da ficha*. Cold start = R-05 (a seção é sempre disponível). Padrão treatment card (OrthoTrac). Ideia 27/07 | P |
-| R-07 | 🟡 Procedimentos de rotina — **codado + verificado local (27/07), aguardando deploy** | Chips profilaxia/flúor/clareamento (boca) + raspagem por quadrante na evolução; cards "Geral"/"Boca toda"; donos no registry (dentística/perio); PDF trata boca/quadrante. `exame_periodontal` → R-08. Fase 4 (enum IA) compartilhada com R-06 executada: **eval ATUAL 16/16 · 0 inventados · NOVO 4/4**. Harness UI 9/9 + 5/5. [spec conjunta](specs/R-06-07-tipos-novos-especialidades.md) | M |
-| R-06 | 🟡 Prótese fixa e odontopediatria — **codado + verificado local (27/07), aguardando deploy** | Ponte: fluxo manual no painel (extremo→extremo, toggle pilar/pôntico, aviso soft pôntico⇒ausência), linha MINSA reta no odontograma (âncora pela oclusal), grupo vira 1 card; esfoliação: chip só em decíduo + silhueta com seta de erupção. Leitura de `papel_no_grupo` corrigida (era descartada). IA extrai ponte com papéis certos (eval NOVO 4/4, ATUAL 16/16 preservado). Harness light+dark. [spec conjunta](specs/R-06-07-tipos-novos-especialidades.md) | M |
 | R-09 | ⏳ Voz nas especialidades (pass 2) | `/api/dex/extrair-especialidade` não tem um único chamador — endo e implante são 100% digitados. Começar pela endo | M |
 | R-08 | ⏳ Periodontia: periograma | Tela própria (6 sítios × 32 dentes), tabela `perio_exames` — hoje só existe a declaração no registry. NIC calculado, nunca digitado. **Inclui `exame_periodontal`** (transferido do R-07, 27/07 — o exame É o periograma, um dono só) | G |
 | R-10 | ⏳ Rótulo do procedimento no orçamento e no PDF (só falta P2) | **P1 (jargão "- planejado") ✅ verificado em prod (26/07)** — `derivarV2DosEventos` sem o " - planejado". **P2 ⏳ na fila:** tirar a observação clínica (resto radicular etc.) do documento que o paciente lê — `dentes_observacoes` alimenta orçamento **E** prontuário, então o strip precisa de decisão | P |
@@ -68,6 +71,9 @@ Peso: **P** (uma sessão) · **M** (2–3 sessões) · **G** (precisa quebrar).
 
 | ID | Item | Fechado | Spec |
 |---|---|---|---|
+| R-07 | ✅ Procedimentos de rotina (profilaxia · flúor · clareamento · raspagem) — chips na evolução, nível boca/quadrante, card "Boca toda", PDF | 2026-07-27 | [R-06/R-07](_arquivo/specs/R-06-07-tipos-novos-especialidades.md) |
+| R-06 | ✅ Prótese fixa e odontopediatria — ponte (grupo pilar/pôntico + linha derivada) e esfoliação | 2026-07-27 | [R-06/R-07](_arquivo/specs/R-06-07-tipos-novos-especialidades.md) |
+| R-05 | ✅ Ortodontia: lançamento e edição manual (`OrtoForm` montado no FichasTab) | 2026-07-27 | [R-05](_arquivo/specs/R-05-orto-lancamento-manual.md) |
 | R-04b | ✅ Encaminhamento: observação do autor + destino preenche detalhe (endo/implante) | 2026-07-26 | [R-04b](_arquivo/specs/R-04b-encaminhamento-detalhe-clinico.md) |
 | R-21 | ✅ Registros agrupados por dente | 2026-07-26 | [R-21](_arquivo/specs/R-21-registros-por-dente.md) |
 | R-20 | ✅ Redesenho da ficha odontograma (lado a lado, responsivo) | 2026-07-26 | [R-20](_arquivo/specs/R-20-ficha-odontograma-redesign.md) |

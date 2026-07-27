@@ -2,7 +2,7 @@
 
 > **SPEC** · **R-06 + R-07** (um contrato, dois itens — dividem o mesmo enum da IA, então a Fase 4
 > executa **uma vez** cobrindo os dois; gates e fechamento **separados por item**).
-> Fase: **executada e verificada em localhost (27/07) — aguardando deploy + check em prod.**
+> Fase: **CONCLUÍDA — no ar e verificada em prod pelo Mateus (27/07).** Deploy `00602f2..6674f7b`.
 > Gates: G1 ✅ (typecheck/lint/build) · G2-G6 ✅ exceto salvar→recarregar (demo não persiste; coberto
 > por transitividade — o caminho de save já gravava papel/nivel — e fecha no check em prod) ·
 > G7-G9 ✅ · G10 ✅ **eval ATUAL 16/16 · 0 inventados · NOVO 4/4** · G11 ✅ (ponte 24-26 via relato
