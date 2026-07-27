@@ -7,6 +7,8 @@ import { revalidatePath } from 'next/cache';
 import { inserirNotificacao } from '@/lib/notificacoes';
 import { buscarGruposAbertos, type GrupoAberto } from '@/server/patients/get-grupos-abertos';
 import type { OdontogramaEventoDraft } from '@/types/odontograma';
+import { endoDetalheSchema } from '@/lib/especialidades/endo';
+import { implanteDetalheSchema } from '@/lib/especialidades/implante';
 
 /**
  * Monta as linhas de `odontograma_eventos` a partir dos drafts revisados pelo dentista.
@@ -537,6 +539,60 @@ export async function atualizarStatusEncaminhado(params: {
   }
 
   revalidatePath('/dashboard');
+  return { ok: true };
+}
+
+/**
+ * R-04b — o DESTINO de um encaminhamento preenche a TABELA clínica (detalhe) do que recebeu.
+ * Só `detalhe`, nunca a observação do autor (Decisão 4). Valida contra o Zod do plugin certo
+ * ANTES da RPC (a RPC não sabe de Zod — sem isso, um detalhe corrompido só apareceria "sem tabela"
+ * na leitura seguinte, em silêncio). A escrita passa pela RPC preencher_detalhe_encaminhado
+ * (migration 110), que barra quem não é o destino, ficha assinada, ou tipo fora de endo/implante.
+ */
+export async function preencherDetalheEncaminhado(params: {
+  eventoId: string;
+  detalhe: unknown;
+}): Promise<{ ok: boolean; error?: string }> {
+  const { supabase, clinicId, role } = await requireClinicContext();
+  if (role === 'secretaria') return { ok: false, error: 'Sem permissão.' };
+
+  // Descobre o tipo pra escolher o schema certo. Leitura é aberta à clínica (núcleo
+  // compartilhado, migration 099); a autorização de ESCRITA é toda da RPC.
+  const { data: evento } = await supabase
+    .from('odontograma_eventos')
+    .select('tipo, paciente_id')
+    .eq('id', params.eventoId)
+    .eq('clinica_id', clinicId)
+    .maybeSingle<{ tipo: string; paciente_id: string }>();
+
+  if (!evento) return { ok: false, error: 'Registro não encontrado.' };
+
+  const schema =
+    evento.tipo === 'endodontia' ? endoDetalheSchema
+    : evento.tipo === 'implante' ? implanteDetalheSchema
+    : null;
+  if (!schema) return { ok: false, error: 'Esse tipo de registro não tem tabela editável.' };
+
+  const parsed = schema.safeParse(params.detalhe);
+  if (!parsed.success) return { ok: false, error: 'Alguns campos da tabela estão inválidos.' };
+
+  const { error } = await supabase.rpc('preencher_detalhe_encaminhado', {
+    p_evento_id: params.eventoId,
+    p_detalhe:   parsed.data,
+  });
+
+  if (error) {
+    if (error.message.includes('sem_permissao')) {
+      return { ok: false, error: 'Este registro não foi encaminhado a você, ou a ficha já foi assinada.' };
+    }
+    if (error.message.includes('tipo_nao_suportado')) {
+      return { ok: false, error: 'Esse tipo de registro não tem tabela editável.' };
+    }
+    console.error('[preencherDetalheEncaminhado]', error.message);
+    return { ok: false, error: 'Não foi possível salvar a tabela.' };
+  }
+
+  revalidatePath(`/dashboard/pacientes/${evento.paciente_id}`);
   return { ok: true };
 }
 

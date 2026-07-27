@@ -55,7 +55,7 @@ import type {
   TipoRegistroOdontograma, StatusRegistro, OrigemRegistro, AncoraClinica,
   NivelAncora, Arcada, FaceDental,
 } from '@/types/odontograma';
-import { salvarEventosOdontograma, alternarStatusRegistro, encaminharProcedimento, atualizarStatusEncaminhado } from '@/app/consulta/[agendamentoId]/actions';
+import { salvarEventosOdontograma, alternarStatusRegistro, encaminharProcedimento, atualizarStatusEncaminhado, preencherDetalheEncaminhado } from '@/app/consulta/[agendamentoId]/actions';
 import { derivarResponsaveis, eventosVisiveis, fichaVisivel, filtroAindaValido, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
 import { EncaminharBar } from '@/components/fichas/encaminhar-bar';
 import { agruparRegistros } from '@/lib/odontograma/agrupar-registros';
@@ -356,6 +356,38 @@ function corpoEspecialidadeEditavel(
 }
 
 /**
+ * R-04b — corpo de especialidade pro DESTINO de um encaminhamento: form editável (reusa
+ * corpoEspecialidadeEditavel) + botão "Salvar tabela" que grava no servidor pela RPC do destino.
+ * Diferente do card comum (I2), aparece MESMO com detalhe vazio — é onde o destino começa a
+ * preencher. A observação do autor já é mostrada read-only pelo próprio RegistroCard.
+ */
+function corpoEspecialidadeDestino(
+  tipo: TipoRegistroOdontograma,
+  valor: unknown,
+  onChange: (v: unknown) => void,
+  onSalvar: () => void,
+  salvando: boolean,
+): React.ReactNode {
+  const form = corpoEspecialidadeEditavel(tipo, valor, onChange);
+  if (!form) return null;
+  return (
+    <div className="flex flex-col gap-2">
+      {form}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={onSalvar}
+          disabled={salvando}
+          className="inline-flex items-center gap-1.5 text-[11px] font-bold text-surface bg-teal-ink hover:opacity-90 disabled:opacity-60 px-3 py-1.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-teal transition-opacity"
+        >
+          {salvando ? 'Salvando…' : 'Salvar tabela'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * R-21 — render de uma lista de registros AGRUPADA por dente (agruparPorDente). Genérico sobre o
  * card de cada site (Site A tem idxs, Site B tem ids; os dois têm key + data). Dente com 1
  * procedimento renderiza o card direto; 2+ colapsa num DenteGrupoHeader controlado pelo Set de
@@ -513,6 +545,10 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   );
 
   const [evolutions, setEvolutions] = React.useState<Evolution[]>([]);
+  // R-04b — rascunho do detalhe que o DESTINO está preenchendo (chave = key do card = id do evento;
+  // endo/implante nunca agrupam) + qual card está salvando no momento.
+  const [detalheRascunho, setDetalheRascunho] = React.useState<Record<string, unknown>>({});
+  const [salvandoDetalheKey, setSalvandoDetalheKey] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isPanelOpen, setIsPanelOpen] = React.useState(false);
@@ -1083,6 +1119,32 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       setEvolutions(antes);
       toast.error(res.error ?? 'Não foi possível atualizar o registro.');
     }
+  };
+
+  /**
+   * R-04b — DESTINO salva o detalhe (tabela clínica) que preencheu. Otimista com rollback, mesmo
+   * padrão de concluirEncaminhado, via a RPC estreita preencher_detalhe_encaminhado (só `detalhe`,
+   * nunca a observação do autor). key = id do card = id do evento (endo/implante nunca agrupam).
+   */
+  const salvarDetalheEncaminhado = async (evo: Evolution, ids: string[], key: string) => {
+    const detalhe = detalheRascunho[key];
+    if (detalhe === undefined) return; // nada editado ainda
+    setSalvandoDetalheKey(key);
+    const antes = evolutions;
+    setEvolutions((prev) => prev.map((e) => e.id !== evo.id ? e : {
+      ...e,
+      eventos: e.eventos.map((ev) => ids.includes(ev.id) ? { ...ev, detalhe } : ev),
+    }));
+
+    const res = await preencherDetalheEncaminhado({ eventoId: ids[0], detalhe });
+    if (!res.ok) {
+      setEvolutions(antes);
+      toast.error(res.error ?? 'Não foi possível salvar a tabela.');
+    } else {
+      setDetalheRascunho((r) => { const n = { ...r }; delete n[key]; return n; });
+      toast.success('Tabela salva.');
+    }
+    setSalvandoDetalheKey(null);
   };
 
   const handleSave = async () => {
@@ -1850,7 +1912,19 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                                       !emModo && jaEncaminhado ? () => void encaminharRegistro(evo, ids, null) : undefined
                                     }
                                   >
-                                    {corpoEspecialidade(data.tipo, data.detalhe)}
+                                    {/* R-04b — destino do encaminhamento edita a tabela; os demais veem read-only.
+                                        Aparece MESMO com detalhe vazio (oposto do card comum, I2). */}
+                                    {(data.encaminhadoPara?.id === dentistaId
+                                      && (data.tipo === 'endodontia' || data.tipo === 'implante')
+                                      && !evo.assinadoEm)
+                                      ? corpoEspecialidadeDestino(
+                                          data.tipo,
+                                          detalheRascunho[key] !== undefined ? detalheRascunho[key] : data.detalhe,
+                                          (v) => setDetalheRascunho((r) => ({ ...r, [key]: v })),
+                                          () => void salvarDetalheEncaminhado(evo, ids, key),
+                                          salvandoDetalheKey === key,
+                                        )
+                                      : corpoEspecialidade(data.tipo, data.detalhe)}
                                   </RegistroCard>
                                 </div>
                               );

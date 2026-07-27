@@ -240,6 +240,12 @@ export function ToothDetailPanel({
     onChange(eventos.map((e) => (e === evento ? { ...e, realizado_em: data || null } : e)));
   }
 
+  // R-04b Fase 0: o autor escreve a observação (contexto pro colega ao encaminhar). Persiste
+  // via a mesma RPC 107 (salvar_eventos_odontograma já faz upsert de `observacao`).
+  function setObservacao(evento: OdontogramaEventoDraft, observacao: string) {
+    onChange(eventos.map((e) => (e === evento ? { ...e, observacao } : e)));
+  }
+
   function remover(evento: OdontogramaEventoDraft) {
     if (readOnly) return;
     onChange(eventos.filter((e) => e !== evento));
@@ -460,7 +466,7 @@ export function ToothDetailPanel({
                       {(ev.ancora.faces ?? []).join(' ')}
                     </span>
                   )}
-                  {ev.observacao && (
+                  {readOnly && ev.observacao && (
                     <span className="text-[11px] truncate" style={{ color: 'var(--color-text-secondary)' }}>
                       {ev.observacao}
                     </span>
@@ -524,6 +530,25 @@ export function ToothDetailPanel({
                     </button>
                   )}
                 </div>
+
+                {/* R-04b Fase 0: observação editável do autor (contexto pro colega ao encaminhar) — vale pra qualquer registro. */}
+                {!readOnly && (
+                  <div className="pb-2 pl-4">
+                    <textarea
+                      value={ev.observacao ?? ''}
+                      onChange={(e) => setObservacao(ev, e.target.value)}
+                      rows={1}
+                      placeholder="Observação — ex.: contexto pro colega ao encaminhar"
+                      className="w-full resize-y text-[11px] rounded-md px-2 py-1 outline-none focus-visible:ring-1 focus-visible:ring-teal"
+                      style={{
+                        background: 'var(--color-surface-alt)',
+                        border: '1px solid var(--color-border)',
+                        color: 'var(--color-text-secondary)',
+                      }}
+                      aria-label={`Observação — ${TIPO_LABEL[ev.tipo]}`}
+                    />
+                  </div>
+                )}
 
                 {temDetalhe && aberto && (() => {
                   const form = (
