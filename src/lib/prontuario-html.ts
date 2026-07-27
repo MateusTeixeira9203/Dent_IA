@@ -33,6 +33,9 @@ export type EventoFichaPdf = {
   tipo: string;
   status: string;
   origem: string;
+  /** R-07: 'boca'/'quadrante' não têm dente — o "onde" sai do nível. */
+  nivel: string | null;
+  quadrante: number | null;
   dente: number | null;
   faces: string[] | null;
   observacao: string | null;
@@ -100,6 +103,7 @@ const TIPO_EVENTO_PDF: Record<string, string> = {
   lesao_periapical: 'Lesão periapical', implante: 'Implante', coroa: 'Coroa total',
   ponte: 'Ponte', selante: 'Selante', inclusao: 'Dente incluso', esfoliacao: 'Esfoliação',
   fratura: 'Fratura dentária', pino_nucleo: 'Pino/núcleo',
+  profilaxia: 'Profilaxia', raspagem: 'Raspagem', clareamento: 'Clareamento', fluor: 'Aplicação de flúor',
 };
 
 /** v3 §1.10 — tabela de eventos do odontograma: o quê · onde · situação · data. */
@@ -109,6 +113,8 @@ function renderEventosOdontograma(eventos: EventoFichaPdf[]): string {
     const label = TIPO_EVENTO_PDF[ev.tipo] ?? ev.tipo;
     const onde = ev.dente != null
       ? `Dente ${ev.dente}${(ev.faces ?? []).length ? ` · faces ${(ev.faces ?? []).join(', ')}` : ''}`
+      : ev.nivel === 'boca' ? 'Boca toda'
+      : ev.nivel === 'quadrante' && ev.quadrante != null ? `Quadrante ${ev.quadrante}`
       : '—';
     const situacao = ev.status === 'indicado'
       ? 'Indicado'

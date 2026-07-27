@@ -21,9 +21,10 @@ import {
   type TipoRegistroOdontograma,
   type StatusRegistro,
   type AncoraClinica,
+  type PapelNoGrupo,
 } from '@/types/odontograma';
 import { TOOTH_CLASS, DIMS, occlusalContourPath, occlusalZonePoints, occlusalLabelPos } from './tooth-geometry';
-import { ToothSVG, buildResumos, TOOTH_NAMES, getQuadrantLabel } from './Odontograma';
+import { ToothSVG, buildResumos, TOOTH_NAMES, getQuadrantLabel, TEETH_UPPER, TEETH_LOWER } from './Odontograma';
 // Detalhe de especialidade (migration 106) — resolvido por tipo CONCRETO, não pelo
 // registry apagado (o registry só lê metadados; Form/Card são invocados com o tipo
 // real, mesma convenção do orto em FichasTab).
@@ -66,6 +67,10 @@ const CHIPS: { tipo: TipoRegistroOdontograma; modos: StatusRegistro[] }[] = [
   { tipo: 'lesao_periapical', modos: ['indicado'] },
   { tipo: 'selante',          modos: ['realizado'] },
 ];
+
+/** R-06: esfoliação só existe em decíduo (51–85) e só como fato consumado. */
+const CHIP_ESFOLIACAO: { tipo: TipoRegistroOdontograma; modos: StatusRegistro[] } =
+  { tipo: 'esfoliacao', modos: ['realizado'] };
 
 /** ISO (registrado_em) → DD/MM/AAAA pro texto da confirmação de amarração (R-02 F3). */
 function formatarData(iso: string): string {
@@ -133,6 +138,77 @@ export function ToothDetailPanel({
   const [confirmGrupo, setConfirmGrupo] = useState<
     { grupo: GrupoAberto; tipo: TipoRegistroOdontograma; modos: StatusRegistro[] } | null
   >(null);
+
+  // R-06 — mini-fluxo da ponte (spec R-06-07 Fase 1): o dente atual é um extremo; o dentista
+  // escolhe o outro, o vão nasce com papéis default (extremos pilar, meio pôntico) e cada
+  // dente tem toggle antes de confirmar. Nada entra no rascunho até "Confirmar".
+  const deciduo = dente >= 51 && dente <= 85;
+  const arco = superior ? TEETH_UPPER : TEETH_LOWER;
+  const [ponteFlow, setPonteFlow] = useState<
+    { ate: number | null; papeis: Record<number, PapelNoGrupo>; status: StatusRegistro } | null
+  >(null);
+
+  /** Dentes do vão na ordem do arco (inclusive). [] se algum extremo não é do arco. */
+  function spanPonte(a: number, b: number): number[] {
+    const i = arco.indexOf(a);
+    const j = arco.indexOf(b);
+    if (i === -1 || j === -1) return [];
+    const [lo, hi] = i < j ? [i, j] : [j, i];
+    return arco.slice(lo, hi + 1);
+  }
+
+  /** Papéis default do vão: extremos pilar, intermediários pôntico (D1/D8 da spec). */
+  function papeisDefault(span: number[]): Record<number, PapelNoGrupo> {
+    const m: Record<number, PapelNoGrupo> = {};
+    span.forEach((t, i) => { m[t] = i === 0 || i === span.length - 1 ? 'pilar' : 'pontico'; });
+    return m;
+  }
+
+  const ponteSpan = ponteFlow?.ate != null ? spanPonte(dente, ponteFlow.ate) : [];
+  /** D2 (soft): pôntico sobre dente sem ausência registrada — avisa, não bloqueia. */
+  const ponticosSemAusencia = ponteSpan.filter(
+    (t) =>
+      ponteFlow?.papeis[t] === 'pontico' &&
+      !eventos.some(
+        (e) => e.ancora.dente === t && (e.tipo === 'exodontia' || e.tipo === 'esfoliacao') && e.status === 'realizado',
+      ),
+  );
+  /** Sobreposição com outra ponte no rascunho — erro de lançamento, bloqueia confirmar. */
+  const ponteConflito = ponteSpan.filter((t) =>
+    eventos.some((e) => e.tipo === 'ponte' && e.ancora.dente === t),
+  );
+
+  function confirmarPonte() {
+    if (!ponteFlow || ponteFlow.ate == null || ponteSpan.length < 2 || ponteConflito.length > 0) return;
+    const gid = crypto.randomUUID();
+    const novos = ponteSpan.map((t) => ({
+      ...novo('ponte', ponteFlow.status, { nivel: 'dente' as const, dente: t }),
+      grupo_id: gid,
+      papel_no_grupo: ponteFlow.papeis[t] ?? 'pilar',
+    }));
+    onChange([...eventos, ...novos]);
+    setPonteFlow(null);
+  }
+
+  /** Chip Ponte: sem ponte no dente → abre o fluxo; com ponte → cicla o status do GRUPO
+   *  inteiro (indicado → realizado → remove) — ponte não é meio-instalada por dente (spec F1). */
+  function cyclePonte() {
+    if (readOnly) return;
+    const meu = doDente.find((e) => e.tipo === 'ponte');
+    if (!meu) {
+      setPonteFlow({ ate: null, papeis: {}, status: 'indicado' });
+      return;
+    }
+    const doGrupo = (e: OdontogramaEventoDraft) =>
+      e.tipo === 'ponte' && (meu.grupo_id != null ? e.grupo_id === meu.grupo_id : e === meu);
+    if (meu.status === 'indicado') {
+      onChange(eventos.map((e) =>
+        doGrupo(e) ? { ...e, status: 'realizado' as const, origem: 'clinica' as const, realizado_em: e.realizado_em ?? dataPadrao } : e,
+      ));
+    } else {
+      onChange(eventos.filter((e) => !doGrupo(e)));
+    }
+  }
 
   function atualizarDetalhe(evento: OdontogramaEventoDraft, detalhe: unknown) {
     onChange(eventos.map((e) => (e === evento ? { ...e, detalhe } : e)));
@@ -423,7 +499,7 @@ export function ToothDetailPanel({
       {/* ── Chips de ação (dente inteiro) ── */}
       {!readOnly && (
         <div className="flex flex-wrap gap-1.5 pt-2 border-t" style={{ borderColor: 'var(--color-border)' }}>
-          {CHIPS.map(({ tipo, modos }) => {
+          {(deciduo ? [...CHIPS, CHIP_ESFOLIACAO] : CHIPS).map(({ tipo, modos }) => {
             const cor = chipEstado(tipo);
             return (
               <button
@@ -443,6 +519,132 @@ export function ToothDetailPanel({
               </button>
             );
           })}
+          {/* R-06 — ponte só em permanente; sem ponte abre o fluxo, com ponte cicla o grupo */}
+          {!deciduo && (() => {
+            const cor = chipEstado('ponte');
+            const ativo = ponteFlow != null;
+            return (
+              <button
+                type="button"
+                onClick={cyclePonte}
+                aria-expanded={ativo}
+                className="px-2.5 py-1 rounded-lg text-[10.5px] font-semibold transition-all outline-none focus-visible:ring-1 focus-visible:ring-teal"
+                style={{
+                  background: cor
+                    ? `color-mix(in srgb, ${COR_TOKEN[cor]} 16%, var(--color-surface-alt))`
+                    : ativo ? 'color-mix(in srgb, var(--color-teal) 10%, var(--color-surface-alt))'
+                    : 'var(--color-surface-alt)',
+                  color: cor ? COR_TOKEN_INK[cor] : ativo ? 'var(--color-teal-ink)' : 'var(--color-text-secondary)',
+                  border: `1px solid ${cor ? `color-mix(in srgb, ${COR_TOKEN[cor]} 45%, var(--color-border))` : ativo ? 'var(--color-teal)' : 'var(--color-border)'}`,
+                }}
+              >
+                {TIPO_LABEL.ponte}
+              </button>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ── R-06: mini-fluxo da ponte (extremo → extremo, papéis editáveis, confirmar) ── */}
+      {!readOnly && ponteFlow && (
+        <div
+          className="rounded-lg border p-2.5 flex flex-col gap-2"
+          style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface-alt)' }}
+          role="group"
+          aria-label={`Criar ponte a partir do dente ${dente}`}
+        >
+          <div className="flex items-center gap-2 text-[11px] font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+            <span>Ponte de <span className="font-mono" style={{ color: 'var(--color-text-primary)' }}>{dente}</span> até</span>
+            <select
+              value={ponteFlow.ate ?? ''}
+              onChange={(e) => {
+                const ate = e.target.value ? Number(e.target.value) : null;
+                const span = ate != null ? spanPonte(dente, ate) : [];
+                setPonteFlow({ ...ponteFlow, ate, papeis: papeisDefault(span) });
+              }}
+              className="rounded-md border px-1.5 py-1 text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-teal"
+              style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+              aria-label="Dente do outro extremo da ponte"
+            >
+              <option value="">—</option>
+              {arco.filter((t) => t !== dente).map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <div className="flex-1" />
+            <button
+              type="button"
+              onClick={() => setPonteFlow({ ...ponteFlow, status: ponteFlow.status === 'indicado' ? 'realizado' : 'indicado' })}
+              className="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide outline-none focus-visible:ring-1 focus-visible:ring-teal"
+              style={{
+                background: `color-mix(in srgb, ${ponteFlow.status === 'indicado' ? COR_TOKEN.coral : COR_TOKEN.teal} 16%, var(--color-surface))`,
+                color: ponteFlow.status === 'indicado' ? COR_TOKEN_INK.coral : COR_TOKEN_INK.teal,
+              }}
+            >
+              {ponteFlow.status === 'indicado' ? 'A instalar' : 'Instalada'}
+            </button>
+          </div>
+
+          {ponteSpan.length >= 2 && (
+            <>
+              <div className="flex flex-wrap gap-1">
+                {ponteSpan.map((t) => {
+                  const papel = ponteFlow.papeis[t] ?? 'pilar';
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() =>
+                        setPonteFlow({
+                          ...ponteFlow,
+                          papeis: { ...ponteFlow.papeis, [t]: papel === 'pilar' ? 'pontico' : 'pilar' },
+                        })
+                      }
+                      aria-label={`Dente ${t}: ${papel} — toque pra alternar`}
+                      className="px-2 py-1 rounded-md text-[10.5px] font-mono font-bold outline-none focus-visible:ring-1 focus-visible:ring-teal"
+                      style={{
+                        background: papel === 'pilar' ? 'color-mix(in srgb, var(--color-teal) 14%, var(--color-surface))' : 'var(--color-surface)',
+                        color: papel === 'pilar' ? 'var(--color-teal-ink)' : 'var(--color-text-secondary)',
+                        border: `1px solid ${papel === 'pilar' ? 'var(--color-teal)' : 'var(--color-border)'}`,
+                      }}
+                    >
+                      {t} · {papel === 'pilar' ? 'pilar' : 'pôntico'}
+                    </button>
+                  );
+                })}
+              </div>
+              {ponteConflito.length > 0 && (
+                <p className="text-[10.5px] font-semibold" style={{ color: COR_TOKEN_INK.coral }}>
+                  {ponteConflito.join(', ')} já {ponteConflito.length === 1 ? 'pertence' : 'pertencem'} a outra ponte — ajuste o vão.
+                </p>
+              )}
+              {ponteConflito.length === 0 && ponticosSemAusencia.length > 0 && (
+                <p className="text-[10.5px]" style={{ color: 'var(--color-text-secondary)' }}>
+                  ⚠ Pôntico sem ausência registrada no {ponticosSemAusencia.join(', ')} — confira se o vão está certo. Dá pra confirmar mesmo assim.
+                </p>
+              )}
+            </>
+          )}
+
+          <div className="flex items-center justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => setPonteFlow(null)}
+              className="px-2.5 py-1 rounded-md text-[10.5px] font-semibold outline-none focus-visible:ring-1 focus-visible:ring-teal"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={confirmarPonte}
+              disabled={ponteFlow.ate == null || ponteSpan.length < 2 || ponteConflito.length > 0}
+              className="px-2.5 py-1 rounded-md text-[10.5px] font-bold outline-none focus-visible:ring-1 focus-visible:ring-teal disabled:opacity-40"
+              style={{ background: 'var(--color-teal)', color: 'white' }}
+            >
+              Confirmar ponte
+            </button>
+          </div>
         </div>
       )}
 

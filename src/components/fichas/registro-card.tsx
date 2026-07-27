@@ -109,10 +109,11 @@ function facesTitulo(ancoras: AncoraClinica[]): string {
   return [...new Set(ancoras.flatMap((a) => a.faces ?? []))].join('');
 }
 
-/** Resumo da âncora pro título: "dente 36" · "dentes 31 · 41 · 42" · "arcada superior" · "quadrante 3". */
+/** Resumo da âncora pro título: "dente 36" · "dentes 31 · 41 · 42" · "arcada superior" · "quadrante 3" · "boca toda". */
 function resumoAncora(ancoras: AncoraClinica[]): string {
   const primeiro = ancoras[0];
   if (!primeiro) return '';
+  if (primeiro.nivel === 'boca') return 'boca toda'; // R-07: rotina sem dente âncora
   if (primeiro.nivel === 'arcada') return `arcada ${primeiro.arcada ?? ''}`.trim();
   if (primeiro.nivel === 'quadrante') return `quadrante ${primeiro.quadrante ?? ''}`.trim();
   const dentes = [...new Set(ancoras.map((a) => a.dente).filter((d): d is number => d != null))];

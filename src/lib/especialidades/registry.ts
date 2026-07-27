@@ -22,7 +22,9 @@ import { implantePlugin } from './implante';
 const dentisticaPlugin: EspecialidadePlugin = {
   id: 'dentistica',
   label: 'Dentística / Clínico Geral',
-  tiposEvento: ['carie_restauracao', 'selante', 'fratura', 'pino_nucleo'],
+  // R-07: profilaxia/clareamento/fluor são atos de clínico geral (nível boca) — dono aqui,
+  // sem 9º plugin (D6 da spec R-06-07). Nunca pintam dente: nível boca vira card (D5).
+  tiposEvento: ['carie_restauracao', 'selante', 'fratura', 'pino_nucleo', 'profilaxia', 'clareamento', 'fluor'],
   persistencia: { forma: 'evento-detalhe' },
   detalheSchema: null, // o dado É o próprio evento — sem detalhe estruturado na A0
   extractor: null,
@@ -58,9 +60,9 @@ const proteseFixaPlugin: EspecialidadePlugin = {
 const periodontiaPlugin: EspecialidadePlugin = {
   id: 'periodontia',
   label: 'Periodontia',
-  // Perio não emite tipo de evento próprio — o selo âmbar deriva do exame. A detecção
-  // (exame presente) e o motor determinístico entram na A2.
-  tiposEvento: [],
+  // O selo âmbar deriva do exame (periograma — R-08); o motor determinístico entra lá.
+  // R-07: raspagem é tratamento perio (nível quadrante) — dono aqui (D6 da spec R-06-07).
+  tiposEvento: ['raspagem'],
   persistencia: { forma: 'tabela-satelite', tabela: 'perio_exames' },
   detalheSchema: null,
   extractor: null, // A2: motor determinístico (zero LLM — I6)

@@ -10,8 +10,9 @@
 
 // ── Âncora hierárquica (§1.1) ────────────────────────────────────────────
 
-/** Nível da âncora. 'boca' não é emitido por eventos novos (sentinela 99 legado em fichas.dentes_afetados). */
-export type NivelAncora = 'arcada' | 'quadrante' | 'dente' | 'face';
+/** Nível da âncora. 'boca' = procedimento de boca toda (R-07: profilaxia/clareamento/fluor) —
+ *  sem dente/arcada/quadrante; NUNCA pinta o odontograma, vira card "Boca" (D5 da spec R-06-07). */
+export type NivelAncora = 'boca' | 'arcada' | 'quadrante' | 'dente' | 'face';
 
 export type Arcada = 'superior' | 'inferior';
 
@@ -77,9 +78,14 @@ export type TipoRegistroOdontograma =
   | 'ponte'             // MULTI-DENTE — grupo_id/papel_no_grupo. Fatia B liga o render.
   | 'selante'           // preventivo, quase sempre 'realizado'. Ancora em face (sempre 'O').
   | 'inclusao'          // achado estrutural (dente incluso/impactado). Ancora em dente.
-  | 'esfoliacao'        // decíduo caiu — Fatia B. Ancora em dente (51-85).
+  | 'esfoliacao'        // decíduo caiu (R-06). Ancora em dente (51-85), só 'realizado'.
   | 'fratura'           // trauma dentário (achado, como lesao_periapical). Ancora em dente.
-  | 'pino_nucleo';      // pino intrarradicular/núcleo. Ancora em dente (raiz).
+  | 'pino_nucleo'       // pino intrarradicular/núcleo. Ancora em dente (raiz).
+  // R-07 — rotina (migration 106). Nível boca/quadrante: nunca pintam dente, viram card.
+  | 'profilaxia'        // limpeza. Ancora em boca.
+  | 'raspagem'          // raspagem/alisamento periodontal. Ancora em quadrante (ou boca).
+  | 'clareamento'       // clareamento dental. Ancora em boca.
+  | 'fluor';            // aplicação de flúor. Ancora em boca.
 
 export type PapelNoGrupo = 'pilar' | 'pontico';
 
@@ -97,6 +103,10 @@ export const TIPO_LABEL: Record<TipoRegistroOdontograma, string> = {
   esfoliacao:        'Esfoliado',
   fratura:           'Fratura',
   pino_nucleo:       'Pino/núcleo',
+  profilaxia:        'Profilaxia',
+  raspagem:          'Raspagem',
+  clareamento:       'Clareamento',
+  fluor:             'Flúor',
 };
 
 // ── Evento (event-log) e estado reduzido (§1.4) ──────────────────────────

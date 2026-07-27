@@ -50,11 +50,11 @@ import { EndoForm } from '@/components/fichas/endo-form';
 import { implanteDetalheSchema, type ImplanteDetalhe } from '@/lib/especialidades/implante';
 import { ImplanteCard } from '@/components/fichas/implante-card';
 import { ImplanteForm } from '@/components/fichas/implante-form';
-import { TIPO_LABEL } from '@/types/odontograma';
+import { TIPO_LABEL, corDoRegistro } from '@/types/odontograma';
 import type {
   OrtoManutencaoInfo, OdontogramaEventoDraft,
   TipoRegistroOdontograma, StatusRegistro, OrigemRegistro, AncoraClinica,
-  NivelAncora, Arcada, FaceDental,
+  NivelAncora, Arcada, FaceDental, QuadranteFDI, PapelNoGrupo,
 } from '@/types/odontograma';
 import { salvarEventosOdontograma, alternarStatusRegistro, encaminharProcedimento, atualizarStatusEncaminhado, preencherDetalheEncaminhado } from '@/app/consulta/[agendamentoId]/actions';
 import { derivarResponsaveis, eventosVisiveis, fichaVisivel, filtroAindaValido, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
@@ -95,6 +95,9 @@ const STATUS_META: Record<ProcStatus, { label: string; icon: typeof Check; class
 interface EventoView {
   id: string;
   grupoId: string | null;
+  /** R-06: papel na ponte (pilar/pôntico) — antes descartado na leitura, o que perderia
+   *  os papéis ao editar uma ficha com ponte. */
+  papelNoGrupo: PapelNoGrupo | null;
   tipo: TipoRegistroOdontograma;
   status: StatusRegistro;
   origem: OrigemRegistro;
@@ -119,6 +122,7 @@ type EventoRow = {
   id: string;
   ficha_id: string | null;
   grupo_id: string | null;
+  papel_no_grupo: PapelNoGrupo | null;
   tipo: TipoRegistroOdontograma;
   status: StatusRegistro;
   origem: OrigemRegistro;
@@ -475,7 +479,7 @@ function eventoViewParaDraft(e: EventoView): OdontogramaEventoDraft {
   return {
     id: e.id, // já existe no banco — o draft de EDIÇÃO reusa o id, nunca gera outro (R-01)
     tipo: e.tipo, status: e.status, origem: e.origem, ancora: e.ancora,
-    grupo_id: e.grupoId, papel_no_grupo: null, observacao: e.observacao ?? '',
+    grupo_id: e.grupoId, papel_no_grupo: e.papelNoGrupo, observacao: e.observacao ?? '',
     detalhe: e.detalhe, realizado_em: e.realizadoEm,
   };
 }
@@ -731,6 +735,44 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   };
 
   /**
+   * R-07 — chips de rotina (spec R-06-07 Fase 3): cicla o evento de boca/quadrante no rascunho
+   * (sem registro → indicado → realizado → remove), mesmo ciclo dos chips de dente do painel.
+   * Nível 'boca' quando sem quadrante (profilaxia/clareamento/flúor); raspagem ancora por quadrante.
+   */
+  const eventoRotina = (tipo: TipoRegistroOdontograma, quadrante?: QuadranteFDI) =>
+    eventosDraft.find((e) =>
+      e.tipo === tipo && (quadrante == null ? e.ancora.nivel === 'boca' : e.ancora.quadrante === quadrante),
+    ) ?? null;
+
+  const cycleRotina = (tipo: TipoRegistroOdontograma, quadrante?: QuadranteFDI) => {
+    setEventosDraft((prev) => {
+      const i = prev.findIndex((e) =>
+        e.tipo === tipo && (quadrante == null ? e.ancora.nivel === 'boca' : e.ancora.quadrante === quadrante),
+      );
+      if (i === -1) {
+        return [...prev, {
+          id: crypto.randomUUID(),
+          tipo,
+          status: 'indicado' as const,
+          origem: 'clinica' as const,
+          ancora: quadrante != null ? { nivel: 'quadrante' as const, quadrante } : { nivel: 'boca' as const },
+          grupo_id: null,
+          papel_no_grupo: null,
+          observacao: '',
+          realizado_em: null,
+        }];
+      }
+      const e = prev[i];
+      if (e.status === 'indicado') {
+        return prev.map((ev, j) =>
+          j === i ? { ...ev, status: 'realizado' as const, origem: 'clinica' as const, realizado_em: ev.realizado_em ?? hojeBRT() } : ev,
+        );
+      }
+      return prev.filter((_, j) => j !== i);
+    });
+  };
+
+  /**
    * R-02 Fase 1: alterna planejado ⇄ realizado no RASCUNHO — flip local, sem chamada ao
    * servidor (só grava no save). O card salvo usa toggleStatusRegistro (RPC); este é o
    * equivalente pro card ainda não persistido.
@@ -800,7 +842,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       // antigas não têm eventos → recebem [] e seguem no display legado (fonte híbrida).
       const { data: evData, error: evError } = await supabase
         .from("odontograma_eventos")
-        .select("id, ficha_id, grupo_id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, observacao, detalhe, realizado_em, registrado_em, encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(id, nome)")
+        .select("id, ficha_id, grupo_id, papel_no_grupo, tipo, status, origem, nivel, arcada, quadrante, dente, faces, observacao, detalhe, realizado_em, registrado_em, encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(id, nome)")
         .eq("paciente_id", patientId)
         .eq("clinica_id", clinicaId);
 
@@ -820,7 +862,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
           ...(e.faces && e.faces.length > 0 && { faces: e.faces }),
         };
         const view: EventoView = {
-          id: e.id, grupoId: e.grupo_id, tipo: e.tipo, status: e.status,
+          id: e.id, grupoId: e.grupo_id, papelNoGrupo: e.papel_no_grupo ?? null, tipo: e.tipo, status: e.status,
           origem: e.origem, ancora, observacao: e.observacao ?? null, realizadoEm: e.realizado_em, registradoEm: e.registrado_em,
           detalhe: e.detalhe ?? null,
           encaminhadoPara: e.encaminhado_para ? (e.encaminhado_dentista ?? null) : null,
@@ -1634,6 +1676,68 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                     className="w-full bg-surface-alt border border-border rounded-xl px-3.5 py-2.5 text-sm font-medium text-text-primary outline-none focus:border-teal transition-colors min-h-[80px] resize-y"
                   />
                 </div>
+              </div>
+
+              {/* R-07 — procedimentos de rotina (boca/quadrante): chips que ciclam eventos no
+                  rascunho. Nunca pintam o odontograma (D5) — o registro cai na seção "Geral" da
+                  lista e persiste pelo caminho normal de eventos. Raspagem ancora por quadrante. */}
+              <div className="border-t border-border/60 pt-4">
+                <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-[0.15em] mb-2">
+                  Procedimentos de rotina
+                </label>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(['profilaxia', 'fluor', 'clareamento'] as const).map((tipo) => {
+                    const ev = eventoRotina(tipo);
+                    const cor = ev ? corDoRegistro(ev.status, ev.origem) : null;
+                    return (
+                      <button
+                        key={tipo}
+                        type="button"
+                        onClick={() => cycleRotina(tipo)}
+                        aria-label={`${TIPO_LABEL[tipo]} (boca toda) — ${ev ? (ev.status === 'indicado' ? 'a fazer' : 'feito') : 'sem registro'}`}
+                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all outline-none focus-visible:ring-1 focus-visible:ring-teal"
+                        style={{
+                          background: cor
+                            ? `color-mix(in srgb, var(--color-${cor}) 16%, var(--color-surface-alt))`
+                            : 'var(--color-surface-alt)',
+                          color: cor ? `var(--color-${cor}-ink)` : 'var(--color-text-secondary)',
+                          border: `1px solid ${cor ? `color-mix(in srgb, var(--color-${cor}) 45%, var(--color-border))` : 'var(--color-border)'}`,
+                        }}
+                      >
+                        {TIPO_LABEL[tipo]}
+                      </button>
+                    );
+                  })}
+                  <span className="mx-1 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                    Raspagem
+                  </span>
+                  {([1, 2, 3, 4] as const).map((q) => {
+                    const ev = eventoRotina('raspagem', q);
+                    const cor = ev ? corDoRegistro(ev.status, ev.origem) : null;
+                    return (
+                      <button
+                        key={q}
+                        type="button"
+                        onClick={() => cycleRotina('raspagem', q)}
+                        aria-label={`Raspagem quadrante ${q} — ${ev ? (ev.status === 'indicado' ? 'a fazer' : 'feito') : 'sem registro'}`}
+                        title={`Raspagem — quadrante ${q}`}
+                        className="px-2 py-1.5 rounded-lg text-[11px] font-mono font-bold transition-all outline-none focus-visible:ring-1 focus-visible:ring-teal"
+                        style={{
+                          background: cor
+                            ? `color-mix(in srgb, var(--color-${cor}) 16%, var(--color-surface-alt))`
+                            : 'var(--color-surface-alt)',
+                          color: cor ? `var(--color-${cor}-ink)` : 'var(--color-text-secondary)',
+                          border: `1px solid ${cor ? `color-mix(in srgb, var(--color-${cor}) 45%, var(--color-border))` : 'var(--color-border)'}`,
+                        }}
+                      >
+                        Q{q}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-1.5 text-[10px] text-text-muted">
+                  1º toque marca <span className="font-semibold">a fazer</span>, 2º marca <span className="font-semibold">feito</span>, 3º remove.
+                </p>
               </div>
 
               {/* R-05 — manutenção ortodôntica manual: monta o OrtoForm (que já existia mas nunca
