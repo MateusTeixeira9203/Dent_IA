@@ -267,45 +267,67 @@ export function rootPathUp(w: number, crownH: number, rootH: number, family: Too
   );
 }
 
-// ─── v3: silhueta de canal (design aprovado 18/07) ───────────────────────────
-// O canal é desenhado POR INTEIRO dentro da raiz — vazio (contorno) = a tratar,
-// preenchido = tratado. Nunca linha fina (reprovada por legibilidade).
+// ─── v3: silhueta do canal ────────────────────────────────────────────────────
+// Vazio (contorno) = a tratar · preenchido = tratado. Nunca linha fina (reprovada
+// por legibilidade em 18/07).
+//
+// Forma APROVADA pelo Mateus em 27/07 apontando o catálogo: o canal mora na RAIZ,
+// nasce logo abaixo da cervical e afunila até quase um ponto antes do ápice, com um
+// lado quase reto e o outro curvo — é essa assimetria que dá a leitura de canal
+// radicular curvo, e não de triângulo. Sem câmara pulpar na coroa (uma versão com
+// câmara+cornos foi testada nesta mesma sessão e reprovada: pesa demais no tamanho
+// real do odontograma). Molar → 1 canal por raiz; demais → 1 canal central.
+//
+// Números portados do artefato `R-01-ficha-registro.html` (viewBox 96×152, raiz
+// 64→150), normalizados: t = fração da raiz, offsets em múltiplos da meia-largura.
+const CANAL = {
+  tTopo: (66 - 64) / 86,    // nasce logo abaixo da cervical
+  tA:    (96 - 64) / 86,    // 1º ponto de controle
+  tB:    (124 - 64) / 86,   // 2º ponto de controle (barriga)
+  tFim:  (141 - 64) / 86,   // fim do lado direito
+  tPont: (143 - 64) / 86,   // ponta (antes do ápice anatômico)
+  // offsets em múltiplos de hw, medidos no path do artefato
+  dirA: 1.0, dirB: 1.27, dirFim: 0.87,
+  pont: 0.73,
+  esqB: 0.20, esqA: -0.87,
+} as const;
 
-function canalPath(cx: number, hw: number, yCerv: number, yApex: number): string {
-  const yMid = (yCerv + yApex) / 2;
-  const dir  = yApex > yCerv ? 1 : -1;
+/** Canal do artefato: lado direito quase reto, lado esquerdo curvo, ponta deslocada. */
+function canalPath(cx: number, hw: number, yCerv: number, rootH: number, d: number): string {
+  const y = (t: number) => yCerv + d * t * rootH;
+  const x = (k: number) => cx + k * hw;
   return (
-    `M ${q(cx - hw)} ${q(yCerv)} L ${q(cx + hw)} ${q(yCerv)} ` +
-    `C ${q(cx + hw * 0.6)} ${q(yMid)} ${q(cx + 1.2)} ${q(yApex - 5 * dir)} ${q(cx)} ${q(yApex)} ` +
-    `C ${q(cx - 1.2)} ${q(yApex - 5 * dir)} ${q(cx - hw * 0.6)} ${q(yMid)} ${q(cx - hw)} ${q(yCerv)} Z`
+    `M ${q(x(-1))} ${q(y(CANAL.tTopo))} L ${q(x(1))} ${q(y(CANAL.tTopo))} ` +
+    `C ${q(x(CANAL.dirA))} ${q(y(CANAL.tA))} ${q(x(CANAL.dirB))} ${q(y(CANAL.tB))} ${q(x(CANAL.dirFim))} ${q(y(CANAL.tFim))} ` +
+    `L ${q(x(CANAL.pont))} ${q(y(CANAL.tPont))} ` +
+    `C ${q(x(CANAL.esqB))} ${q(y(CANAL.tB))} ${q(x(CANAL.esqA))} ${q(y(CANAL.tA))} ${q(x(-1))} ${q(y(CANAL.tTopo))} Z`
   );
 }
 
 /**
- * Silhuetas dos canais do dente. `rootAtTop` = raiz pra cima (dentes superiores na
- * orientação de boca). Molar → 2 canais; demais → 1.
+ * Silhueta do canal por raiz. `rootAtTop` = raiz pra cima (superiores na orientação
+ * de boca). Molar → 2 canais (um por raiz); demais → 1 canal central.
  */
 export function canalPaths(num: number, rootAtTop: boolean): string[] {
   const cls = TOOTH_CLASS[num] ?? 'premolar';
   const family = TOOTH_FAMILY[cls];
   const { w, crownH, rootH } = DIMS[cls];
   const neck = w * CERVICAL;
-  const nL = (w - neck) / 2;
-  const nR = nL + neck;
 
-  // Cervical/ápice conforme orientação da raiz.
-  const yCerv = rootAtTop ? rootH - 2 : crownH + 2;
-  const yApex = rootAtTop ? 6 : crownH + rootH - 6;
+  // Eixo coroa→ápice e junção coroa-raiz, independentes da orientação.
+  const d     = rootAtTop ? -1 : 1;
+  const yCerv = rootAtTop ? rootH : crownH;
 
+  // Proporção do artefato: o canal ocupa ~28% da largura da raiz que o abriga.
   if (family === 'molar') {
-    const rW  = neck * 0.42;
-    const lCx = nL + rW / 2;
-    const rCx = nR - rW / 2;
-    const hw  = Math.max(2.6, rW * 0.28);
-    return [canalPath(lCx, hw, yCerv, yApex), canalPath(rCx, hw, yCerv, yApex)];
+    const rW  = neck * 0.42;                  // largura de cada raiz (mesma de rootPath*)
+    const lCx = (w - neck) / 2 + rW / 2;
+    const rCx = (w + neck) / 2 - rW / 2;
+    const hw  = Math.max(1.5, rW * 0.14);
+    return [canalPath(lCx, hw, yCerv, rootH, d), canalPath(rCx, hw, yCerv, rootH, d)];
   }
-  const hw = Math.max(3, neck * 0.54 * 0.3);
-  return [canalPath(w / 2, hw, yCerv, yApex)];
+  const hw = Math.max(1.7, neck * 0.54 * 0.14);
+  return [canalPath(w / 2, hw, yCerv, rootH, d)];
 }
 
 // ─── v3: mapa oclusal (painel de detalhe) ────────────────────────────────────

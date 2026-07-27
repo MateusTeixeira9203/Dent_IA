@@ -70,6 +70,31 @@ const COR_TOKEN_INK: Record<CorClinica, string> = {
   slate: 'var(--color-slate-ink)',
 };
 
+/** Versão clara — tinge a RAIZ (canal/implante). Artefato usa o token -pale direto. */
+const COR_PALE: Record<CorClinica, string> = {
+  coral: 'var(--color-coral-pale)',
+  teal:  'var(--color-teal-pale)',
+  slate: 'var(--color-slate-pale)',
+};
+
+/**
+ * Preenchimento da COROA por estado — valores do artefato (catálogo R-01): cárie usa o
+ * token `-pale` e restauração feita usa mix 24% (antes era um mix 30% uniforme).
+ *
+ * DIVERGÊNCIA DELIBERADA no slate: o artefato pinta o pré-existente com slate SÓLIDO.
+ * Medido no dark, isso dá 7,36:1 de contraste contra o fundo — contra 1,27:1 do coral
+ * (pendência). Na arcada cheia o "já estava assim" viraria o elemento mais chamativo da
+ * tela, invertendo a hierarquia que o próprio componente declara (coral > teal > slate:
+ * "a pendência é o que não pode sumir da vista"). O catálogo não expõe isso porque cada
+ * símbolo vive sozinho num card. Fica no `-pale`; quem identifica "antigo" é a TEXTURA
+ * pontilhada + o contorno slate, que são fiéis ao artefato.
+ */
+const CROWN_FILL: Record<CorClinica, string> = {
+  coral: 'var(--color-coral-pale)',
+  teal:  'color-mix(in srgb, var(--color-teal) 24%, var(--color-surface-alt))',
+  slate: 'var(--color-slate-pale)',
+};
+
 /** Status falado — cor sozinha não comunica estado clínico (achado auditoria
  * UX 19/07, HIGH #5: aria-label/aria-pressed nunca refletiam a cor da boca). */
 const STATUS_CLINICO_LABEL: Record<CorClinica, string> = {
@@ -78,9 +103,62 @@ const STATUS_CLINICO_LABEL: Record<CorClinica, string> = {
   slate: 'pré-existente',
 };
 
+/**
+ * GEOMETRIA DOS SÍMBOLOS — portada do artefato canônico (27/07).
+ * Fonte: `plans/_arquivo/artefatos/R-01-ficha-registro.html` (catálogo) e
+ * `R-02-simbolos-odontograma.html`, lidos por HTTP + extração JS (skill artefato-visual).
+ *
+ * O artefato desenha em viewBox 96×152 — coroa y=8→64 (crownH 56), raiz y=64→150
+ * (rootH 86), cx=48. Nossos dentes têm dimensão por classe (w 24–51), então o que se
+ * porta são as FRAÇÕES, nunca as coordenadas absolutas (aprendizado 22/07: portar o
+ * algoritmo, não aproximar no olho). Cada número abaixo tem a medida-fonte ao lado.
+ */
+const G = {
+  // Implante — parafuso: M39,63 L57,63 L51.8,131 Q48,145 44.2,131 Z
+  impHwColo:    9 / 96,        // meia-largura no colo
+  impHwRatio:   3.8 / 9,       // afunilamento: meia-largura no fim do corpo / no colo
+  impCorpo:     (131 - 64) / 86, // corpo termina a esta fração da raiz
+  impPonta:     (145 - 64) / 86, // vértice do Q (ponta apical)
+  impRoscas:    [0.206, 0.412, 0.618, 0.824], // t ao longo do CORPO (y=77,91,105,119)
+  impPlacaHw:   13 / 96,       // rect x=35 w=26 → meia-largura da plataforma
+  impPlacaH:    8 / 96,        // altura da plataforma (fração de w)
+  impPlacaGap:  3 / 56,        // folga entre a plataforma (y=61) e o colo (y=64)
+  // Pino/núcleo — haste M48,64 L48,128 + núcleo M42,50 L54,50 L48,66 Z
+  pinoHaste:    (128 - 64) / 86,
+  pinoHb:       6 / 96,        // meia-base do triângulo
+  pinoBase:     14 / 56,       // base do triângulo acima do colo (fração da coroa)
+  // Lesão periapical — circle cy=141 r=7 stroke 2.2
+  lesaoCy:      (141 - 64) / 86,
+  lesaoR:       7 / 96,
+  // As frações de coroa abaixo são medidas da BORDA OCLUSAL (0) até o colo (1):
+  // (y_artefato − 8) / 56, já que a coroa vive entre y=8 e y=64 no viewBox de origem.
+  // Extração indicada — M24,96 L72,140 dentro do g invertido → cobre a coroa; stroke 3.4
+  xoX1:         24 / 96,
+  xoX2:         72 / 96,
+  xoY1:         (12 - 8) / 56,
+  xoY2:         (56 - 8) / 56,
+  // Selante — circle cy=30 r=6 (DENTRO da coroa, não colado na borda)
+  selR:         6 / 96,
+  selY:         (30 - 8) / 56,
+  // Coroa protética — 3 diagonais no clip da coroa. O ÂNGULO é portado (não as frações
+  // de x/y separadas): o dente do artefato tem proporção 1,71 (larg/coroa) e os nossos
+  // 0,73–1,13, então fração independente entortaria a hachura pra ~70° (medido). Início
+  // das linhas no colo, espaçadas 16,5/96 da largura; o clip corta o excedente.
+  coroaHachAng:  55.7 * Math.PI / 180,  // (16,60)→(46,16)
+  coroaHachX0:   16 / 96,
+  coroaHachGap:  16.5 / 96,
+  // Fratura — M32,14 L46,28 L36,38 L52,52 stroke 2.6
+  fratura: [
+    [32 / 96, (14 - 8) / 56], [46 / 96, (28 - 8) / 56],
+    [36 / 96, (38 - 8) / 56], [52 / 96, (52 - 8) / 56],
+  ],
+} as const;
+
 export interface ResumoDente {
   cor: CorClinica | null;       // dominante: coral (a fazer) > teal (feito aqui) > slate (pré-existente)
   ausente: boolean;             // exodontia realizada / esfoliação
+  /** R-06: ausência por esfoliação (decíduo caiu) — render distinto da extração (D4). */
+  esfoliado: boolean;
   exodontiaIndicada: boolean;
   incluso: boolean;
   canal: CorClinica | null;
@@ -90,12 +168,16 @@ export interface ResumoDente {
   pino: CorClinica | null;
   selante: CorClinica | null;
   fratura: boolean;
+  /** R-06: dente faz parte de ponte — cor + papel + grupo (a linha MINSA deriva daqui, D3/I1). */
+  ponte: CorClinica | null;
+  pontePapel: 'pilar' | 'pontico' | null;
+  ponteGrupo: string | null;
 }
 
 const RESUMO_VAZIO: ResumoDente = {
-  cor: null, ausente: false, exodontiaIndicada: false, incluso: false,
+  cor: null, ausente: false, esfoliado: false, exodontiaIndicada: false, incluso: false,
   canal: null, lesao: false, implante: null, coroa: null, pino: null,
-  selante: null, fratura: false,
+  selante: null, fratura: false, ponte: null, pontePapel: null, ponteGrupo: null,
 };
 
 /** coral vence teal, que vence slate (a pendência é o que não pode sumir da vista). */
@@ -119,7 +201,7 @@ export function buildResumos(eventos: OdontogramaEventoDraft[]): Map<number, Res
         else r.exodontiaIndicada = true;
         break;
       case 'esfoliacao':
-        if (ev.status === 'realizado') r.ausente = true;
+        if (ev.status === 'realizado') { r.ausente = true; r.esfoliado = true; }
         break;
       case 'inclusao':          r.incluso = true; break;
       case 'endodontia':        r.canal = corDominante(r.canal, cor); break;
@@ -129,9 +211,16 @@ export function buildResumos(eventos: OdontogramaEventoDraft[]): Map<number, Res
       case 'pino_nucleo':       r.pino = corDominante(r.pino, cor); break;
       case 'selante':           r.selante = corDominante(r.selante, cor); break;
       case 'fratura':           r.fratura = true; break;
-      case 'carie_restauracao':
       case 'ponte':
-        break; // contribuem só pra cor dominante (ponte ganha bracket na Fatia B)
+        // R-06: a linha MINSA deriva do grupo em render-time (D3/I1) — aqui só o resumo.
+        r.ponte = corDominante(r.ponte, cor);
+        r.pontePapel = ev.papel_no_grupo;
+        r.ponteGrupo = ev.grupo_id;
+        break;
+      case 'carie_restauracao':
+        break; // contribui só pra cor dominante
+      default:
+        break; // rotina (boca/quadrante) nunca chega aqui — sem dente âncora (D5)
     }
     map.set(dente, r);
   }
@@ -149,9 +238,43 @@ interface ToothSVGProps {
   ringed?: boolean;
   /** v3: resumo clínico do dente — quando presente, dirige o visual (cores/marcas do catálogo). */
   resumo?: ResumoDente | null;
+  /** R-06: continuidade da linha da ponte com os vizinhos DO MESMO grupo + altura comum da
+   *  linha (menor totalH do grupo, da borda oclusal). Calculado pelo renderArch, que conhece
+   *  a ordem e as classes do arco — o ToothSVG só desenha o seu segmento. */
+  ponteLinks?: { left: boolean; right: boolean; altura: number } | null;
 }
 
-export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = false, resumo = null }: ToothSVGProps) {
+/** R-06 (D3, norma MINSA RM-559-2022): segmento da ponte na altura dos ápices + traço
+ *  vertical no pilar. Duas sutilezas de geometria (vistas no harness 27/07):
+ *  1. O y é ancorado na borda OCLUSAL (a borda alinhada do arco) via `links.altura` — o
+ *     menor totalH do grupo. Ancorar no topo de cada svg (apexY) quebrava a linha em
+ *     degraus, porque cada classe de dente tem altura própria (62–93px).
+ *  2. Segmento estende ±6px quando o vizinho é do mesmo grupo (overflow visible cobre o
+ *     gap do arco; sobreposição de mesma cor sólida é invisível). Pilar de extremo para
+ *     dentro do dente. */
+function PonteMarks({ resumo, links, w, totalH, isUpper }: {
+  resumo: ResumoDente;
+  links: { left: boolean; right: boolean; altura: number } | null;
+  w: number; totalH: number; isUpper: boolean;
+}) {
+  if (!resumo.ponte) return null;
+  const c = COR_TOKEN[resumo.ponte];
+  const x1 = links?.left ? -6 : w * 0.18;
+  const x2 = links?.right ? w + 6 : w * 0.82;
+  // Sem links (dente isolado, ex. painel de detalhe): ápice do próprio dente.
+  const y = links ? (isUpper ? totalH - links.altura : links.altura) : (isUpper ? 5 : totalH - 5);
+  const tickDir = isUpper ? 1 : -1; // da linha em direção à coroa
+  return (
+    <g style={{ stroke: c, strokeWidth: 2, strokeLinecap: 'round' }} aria-hidden="true">
+      <line x1={x1} y1={y} x2={x2} y2={y} />
+      {resumo.pontePapel === 'pilar' && (
+        <line x1={w / 2} y1={y} x2={w / 2} y2={y + tickDir * 7} />
+      )}
+    </g>
+  );
+}
+
+export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = false, resumo = null, ponteLinks = null }: ToothSVGProps) {
   const cls    = TOOTH_CLASS[num] ?? 'premolar';
   const family = TOOTH_FAMILY[cls];
   const { w, crownH, rootH } = DIMS[cls];
@@ -166,26 +289,40 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
     ? rootPathUp(w, crownH, rootH, family)
     : rootPathDown(w, crownH, rootH, family);
 
-  // Regiões (dependem da orientação) — usadas pelas marcas do catálogo v3.
-  const crownTop = isUpper ? rootH : 0;
-  const crownBot = isUpper ? totalH : crownH;
-  const apexY    = isUpper ? 5 : totalH - 5;
-  const occluY   = isUpper ? totalH - 8 : 8;
-  // Geometria compartilhada dos glifos v3 (implante/pino) — orientação-agnóstica:
+  // Geometria das marcas do catálogo v3 — orientação-agnóstica. As antigas âncoras de
+  // offset fixo (crownTop/crownBot/apexY/occluY, margens de 5–8px) saíram na portagem do
+  // artefato 27/07: tudo ancora por FRAÇÃO da coroa/raiz, que é o que escala entre as
+  // classes de dente (w 24–51) sem deformar o símbolo.
   const cx       = w / 2;
   const coloY    = isUpper ? rootH : crownH;   // junção coroa-raiz (cervical) — base do implante/pino
-  const dir      = isUpper ? -1 : 1;           // sentido colo → ápice
+  const dir      = isUpper ? -1 : 1;           // sentido colo → ápice (== sentido oclusal → colo)
+  // Âncora das marcas de COROA: borda oclusal (f=0) → colo (f=1), pelas frações de G.
+  const oclEdge  = isUpper ? totalH : 0;
+  const naCoroa  = (f: number) => oclEdge + dir * f * crownH;
 
   const isActive = state === 'selected' || state === 'shared';
 
   // ── v3: dente AUSENTE — só o contorno tracejado ("vaga" na arcada) ──
   if (resumo?.ausente) {
+    // R-06: seta da erupção do permanente (esfoliação) — aponta pra oclusal.
+    const setaY1 = isUpper ? totalH * 0.30 : totalH * 0.70;
+    const setaY2 = isUpper ? totalH * 0.62 : totalH * 0.38;
+    const ah = isUpper ? -4 : 4; // recuo da ponta da seta
     return (
       <svg width={w} height={totalH} viewBox={`0 0 ${w} ${totalH}`} style={{ display: 'block', overflow: 'visible' }}>
         {/* Contorno tracejado unico (1 token so) — fiel ao artefato (R-01-ficha-registro.html,
             catalogo "Extraido": silhueta unica, nao duas com cores diferentes). */}
         <path d={rootPath} style={{ fill: 'none', stroke: 'var(--color-text-muted)', strokeWidth: 1.2, strokeDasharray: '3 3', opacity: 0.8 }} />
         <path d={crownPath} style={{ fill: 'none', stroke: 'var(--color-text-muted)', strokeWidth: 1.2, strokeDasharray: '3 3', opacity: 0.8 }} />
+        {/* R-06 (D4): esfoliado ≠ extraído — seta do permanente irrompendo (convenção EX) */}
+        {resumo.esfoliado && (
+          <g style={{ stroke: 'var(--color-text-muted)', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', fill: 'none' }} aria-hidden="true">
+            <line x1={w / 2} y1={setaY1} x2={w / 2} y2={setaY2} />
+            <polyline points={`${w / 2 - 3.2},${setaY2 + ah} ${w / 2},${setaY2} ${w / 2 + 3.2},${setaY2 + ah}`} />
+          </g>
+        )}
+        {/* R-06: pôntico costuma viver sobre dente ausente — a linha da ponte continua aqui */}
+        <PonteMarks resumo={resumo} links={ponteLinks} w={w} totalH={totalH} isUpper={isUpper} />
       </svg>
     );
   }
@@ -197,8 +334,12 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
   const rootTint = resumo?.implante ?? resumo?.canal ?? null;
 
   const crownFill = clinico
-    ? (resumo.cor
-        ? `color-mix(in srgb, ${COR_TOKEN[resumo.cor]} 30%, var(--color-surface-alt))`
+    ? (resumo.implante
+        // Artefato: no implante a coroa é VAZADA (só contorno) e a raiz some — é isso que
+        // deixa o parafuso e a plataforma legíveis, e diz "o dente não está aqui".
+        ? 'transparent'
+        : resumo.cor
+        ? CROWN_FILL[resumo.cor]
         : 'var(--color-surface-alt)')
     : state === 'selected'    ? 'var(--color-teal)'
     : state === 'shared'    ? 'color-mix(in srgb, var(--color-teal) 25%, var(--color-surface-alt))'
@@ -207,7 +348,7 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
     : 'var(--color-surface-alt)';
 
   const crownStroke = clinico
-    ? (hovered ? 'var(--color-teal)' : resumo.incluso ? 'var(--color-text-secondary)' : resumo.cor ? COR_TOKEN[resumo.cor] : 'var(--color-border)')
+    ? (hovered ? 'var(--color-teal)' : resumo.implante ? COR_TOKEN[resumo.implante] : resumo.incluso ? 'var(--color-text-secondary)' : resumo.cor ? COR_TOKEN[resumo.cor] : 'var(--color-border)')
     : ringed ? 'var(--color-teal)'
     : hovered                   ? 'var(--color-teal)'
     : state === 'selected'    ? 'var(--color-teal)'
@@ -225,9 +366,7 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
     : 'none';
 
   const rootFill = clinico
-    ? (rootTint
-        ? `color-mix(in srgb, ${COR_TOKEN[rootTint]} 16%, var(--color-surface-alt))`
-        : 'var(--color-surface-alt)')
+    ? (rootTint ? COR_PALE[rootTint] : 'var(--color-surface-alt)')
     : state === 'selected'
     ? 'color-mix(in srgb, var(--color-teal) 18%, var(--color-surface-alt))'
     : hovered
@@ -235,7 +374,7 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
     : 'var(--color-surface-alt)';
 
   const rootStroke = clinico && rootTint
-    ? `color-mix(in srgb, ${COR_TOKEN[rootTint]} 55%, var(--color-border))`
+    ? COR_TOKEN[rootTint]   // artefato usa a cor CHEIA no contorno da raiz tingida
     : hovered
     ? 'color-mix(in srgb, var(--color-teal) 35%, var(--color-border))'
     : 'var(--color-border)';
@@ -284,7 +423,9 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
         />
       )}
 
-      {/* v3: silhueta do canal — vazia (contorno) = a tratar · preenchida = tratado */}
+      {/* v3: canal — vazio (contorno) = a tratar · preenchido = tratado. Mora na RAIZ, então
+          entra logo depois dela e antes da coroa. Os canais são paths independentes (um por
+          raiz) que NÃO se tocam, então o contorno não tem emenda a esconder. */}
       {clinico && resumo.canal && !resumo.implante &&
         canalPaths(num, isUpper).map((d, i) => (
           <path
@@ -292,7 +433,7 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
             d={d}
             style={
               resumo.canal === 'coral'
-                ? { fill: 'none', stroke: COR_TOKEN.coral, strokeWidth: 1.4 }
+                ? { fill: 'none', stroke: COR_TOKEN.coral, strokeWidth: 1.7, strokeLinejoin: 'round' }
                 : { fill: COR_TOKEN[resumo.canal!], stroke: 'none' }
             }
           />
@@ -304,26 +445,81 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
           leitura. Ref: plans/artefatos/R-02-simbolos-odontograma.html. */}
       {clinico && resumo.implante && (() => {
         const c = COR_TOKEN[resumo.implante];
-        const hwC = Math.max(6.5, w * 0.16);              // meia-largura no colo (alargada)
-        const hwA = hwC * 0.4;                            // meia-largura perto do apice
-        const L   = Math.abs(apexY - coloY);
-        const yAt  = (f: number) => coloY + dir * f * L;
-        const hwAt = (f: number) => hwC - (hwC - hwA) * f;
+        // Proporções exatas do artefato (G.imp*): corpo estreito que afunila, 4 roscas
+        // no terço superior e plataforma no colo. Antes o corpo era ~1,7× mais largo
+        // ("alargado p/ leitura", 24/07) e as roscas desciam até o ápice.
+        // Piso de legibilidade: o catálogo desenha um dente de 96px, o odontograma
+        // desenha 24–51px — a fração pura vira fio de cabelo num incisivo.
+        const hwC = Math.max(4, w * G.impHwColo);
+        const hwA = hwC * G.impHwRatio;
+        const yAt  = (f: number) => coloY + dir * f * rootH;      // f = fração da raiz
+        const yCorpo = yAt(G.impCorpo);
+        const hwAt = (t: number) => hwC - (hwC - hwA) * t;        // t = fração do corpo
+        // Revisão 27/07 — rosca com PERFIL EM V (dente de serra) no contorno do corpo, em
+        // vez de linhas horizontais atravessando: é assim que a rosca aparece num implante
+        // real e no raio-x. O corpo é traçado seguindo o serrilhado dos dois lados.
+        const nR = G.impRoscas.length;
+        const ladoDireito: string[] = [];
+        const ladoEsquerdo: string[] = [];
+        for (let i = 0; i <= nR; i++) {
+          const t0 = i / (nR + 1);
+          const t1 = (i + 0.5) / (nR + 1);
+          const y0 = coloY + dir * t0 * G.impCorpo * rootH;
+          const y1 = coloY + dir * t1 * G.impCorpo * rootH;
+          ladoDireito.push(`L ${cx + hwAt(t0)},${y0} L ${cx + hwAt(t1) * 0.62},${y1}`);
+          ladoEsquerdo.unshift(`L ${cx - hwAt(t1) * 0.62},${y1} L ${cx - hwAt(t0)},${y0}`);
+        }
         return (
-          <g style={{ fill: 'none', stroke: c, strokeWidth: 1.9, strokeLinejoin: 'round', strokeLinecap: 'round' }}>
-            <path d={`M ${cx - hwC},${coloY} L ${cx + hwC},${coloY} L ${cx + hwA},${apexY - dir * 4} Q ${cx},${apexY} ${cx - hwA},${apexY - dir * 4} Z`} />
-            {[0.2, 0.42, 0.64, 0.86].map((f, i) => (
-              <line key={i} x1={cx - hwAt(f)} y1={yAt(f)} x2={cx + hwAt(f)} y2={yAt(f)} />
-            ))}
-            <rect x={cx - hwC * 1.35} y={coloY - 2.5} width={hwC * 2.7} height={5} rx={2} style={{ fill: c, stroke: 'none' }} />
+          <g style={{ fill: 'none', stroke: c, strokeWidth: 1.7, strokeLinejoin: 'round', strokeLinecap: 'round' }}>
+            <path
+              d={
+                `M ${cx - hwC},${coloY} L ${cx + hwC},${coloY} ` +
+                ladoDireito.join(' ') +
+                ` L ${cx + hwA},${yCorpo} Q ${cx},${yAt(G.impPonta)} ${cx - hwA},${yCorpo} ` +
+                ladoEsquerdo.join(' ') +
+                ' Z'
+              }
+            />
+            {(() => {
+              // Plataforma dentro da coroa, adjacente ao colo (artefato: y 53→61, colo 64).
+              const h = Math.max(3.4, w * G.impPlacaH);
+              const hw = Math.max(hwC * 1.45, w * G.impPlacaHw);
+              const gap = crownH * G.impPlacaGap;
+              return (
+                <rect
+                  x={cx - hw}
+                  y={isUpper ? coloY + gap : coloY - gap - h}
+                  width={hw * 2}
+                  height={h}
+                  rx={2}
+                  style={{ fill: c, stroke: 'none' }}
+                />
+              );
+            })()}
           </g>
         );
       })()}
 
-      {/* v3: lesão periapical — círculo vazado no ápice */}
-      {clinico && resumo.lesao && (
-        <circle cx={w / 2} cy={apexY} r={4.5} style={{ fill: 'none', stroke: 'var(--color-coral)', strokeWidth: 1.8 }} />
-      )}
+      {/* v3: lesão periapical — radiolucência no ápice. Revisão 27/07: elipse levemente
+          irregular (como a lesão aparece no periapical) em vez de círculo geométrico
+          perfeito; mantém posição/raio/stroke do artefato. */}
+      {clinico && resumo.lesao && (() => {
+        // Piso de 4.6: o artefato desenha num dente 2–3× maior; com r=3 e stroke 2.2 o
+        // miolo fecha e a lesão vira um ponto (visto no harness 27/07).
+        const r  = Math.max(5.2, w * G.lesaoR);
+        const cyL = coloY + dir * G.lesaoCy * rootH;
+        return (
+          <path
+            d={
+              `M ${cx},${cyL - r * 1.04} ` +
+              `C ${cx + r * 0.98},${cyL - r * 0.92} ${cx + r * 1.06},${cyL + r * 0.62} ${cx + r * 0.12},${cyL + r * 1.02} ` +
+              `C ${cx - r * 0.78},${cyL + r * 1.06} ${cx - r * 1.08},${cyL + r * 0.18} ${cx - r * 0.86},${cyL - r * 0.52} ` +
+              `C ${cx - r * 0.7},${cyL - r * 0.95} ${cx - r * 0.3},${cyL - r * 1.06} ${cx},${cyL - r * 1.04} Z`
+            }
+            style={{ fill: 'none', stroke: 'var(--color-coral)', strokeWidth: 2.2, strokeLinejoin: 'round' }}
+          />
+        );
+      })()}
 
       {/* Crown */}
       <path
@@ -343,6 +539,7 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
         <path d={crownPath} style={{ fill: `url(#${dotsId})`, opacity: 0.5, pointerEvents: 'none' }} />
       )}
 
+
       {/* v3: pino/núcleo — HASTE no canal + NÚCLEO triangular no colo. Desenhado DEPOIS da coroa
           (revisao 25/07): o núcleo fica no colo/coroa e era COBERTO pelo fill do crownPath (pintado
           acima) — por isso "sumia". Proporções portadas do artefato R-02-simbolos-odontograma.html
@@ -350,16 +547,27 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
           vira implante." */}
       {clinico && resumo.pino && !resumo.implante && (() => {
         const c = COR_TOKEN[resumo.pino];
-        const baseY = coloY - dir * crownH * 0.22;        // base do nucleo, no terco cervical da coroa
-        const hb    = w * 0.09;                            // meia-base do triangulo (fiel ao artefato)
+        // Revisão 27/07 — peça protética real no lugar de "haste + triângulo": o NÚCLEO é
+        // a porção coronária que reconstrói o dente (trapézio com ombro cervical, mais
+        // largo na base e afunilando pra oclusal), e o PINO é o corpo cônico cimentado
+        // dentro do canal, com ponta arredondada. Uma peça só, contínua.
+        const hbBase = Math.max(2.8, w * 0.085);        // meia-largura no colo (ombro)
+        const hbTopo = hbBase * 0.52;                    // meia-largura no topo do núcleo
+        const yTopo  = coloY - dir * crownH * G.pinoBase;
+        const yPonta = coloY + dir * rootH * G.pinoHaste;
+        const hbPino = Math.max(1.5, hbBase * 0.42);     // meia-largura do pino no colo
         return (
-          <>
-            <path
-              d={`M ${cx},${coloY} L ${cx},${coloY + dir * rootH * 0.78}`}
-              style={{ fill: 'none', stroke: c, strokeWidth: 2.2, strokeLinecap: 'round' }}
-            />
-            <path d={`M ${cx - hb},${baseY} L ${cx + hb},${baseY} L ${cx},${coloY + dir * 2} Z`} style={{ fill: c }} />
-          </>
+          <path
+            d={
+              `M ${cx - hbTopo},${yTopo} L ${cx + hbTopo},${yTopo} ` +          // topo do núcleo
+              `L ${cx + hbBase},${coloY - dir * crownH * 0.06} ` +               // ombro cervical
+              `L ${cx + hbPino},${coloY + dir * rootH * 0.06} ` +                // entrada do canal
+              `C ${cx + hbPino * 0.9},${yPonta - dir * rootH * 0.22} ${cx + hbPino * 0.7},${yPonta - dir * rootH * 0.06} ${cx},${yPonta} ` +
+              `C ${cx - hbPino * 0.7},${yPonta - dir * rootH * 0.06} ${cx - hbPino * 0.9},${yPonta - dir * rootH * 0.22} ${cx - hbPino},${coloY + dir * rootH * 0.06} ` +
+              `L ${cx - hbBase},${coloY - dir * crownH * 0.06} Z`
+            }
+            style={{ fill: c, stroke: 'none' }}
+          />
         );
       })()}
 
@@ -371,35 +579,74 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
           <defs>
             <clipPath id={`odx-crown-${num}`}><path d={crownPath} /></clipPath>
           </defs>
-          <path d={crownPath} style={{ fill: 'none', stroke: COR_TOKEN[resumo.coroa], strokeWidth: 2.2 }} />
-          <g clipPath={`url(#odx-crown-${num})`} style={{ stroke: COR_TOKEN[resumo.coroa], strokeWidth: 1.8, strokeLinecap: 'round' }}>
-            <line x1={w * 0.12} y1={crownBot} x2={w * 0.55} y2={crownTop} />
-            <line x1={w * 0.38} y1={crownBot} x2={w * 0.82} y2={crownTop} />
-            <line x1={w * 0.64} y1={crownBot} x2={w * 1.04} y2={crownTop} />
+          <path d={crownPath} style={{ fill: 'none', stroke: COR_TOKEN[resumo.coroa], strokeWidth: 2.4 }} />
+          {/* Hachura: 3 diagonais nas posições do artefato (a 3ª ia até 1.04·w — fora do dente). */}
+          <g clipPath={`url(#odx-crown-${num})`} style={{ stroke: COR_TOKEN[resumo.coroa], strokeWidth: 2, strokeLinecap: 'round' }}>
+            {[0, 1, 2].map((i) => {
+              const x1 = w * (G.coroaHachX0 + i * G.coroaHachGap);
+              const L  = crownH * 1.5; // generoso: o clipPath da coroa corta o excedente
+              return (
+                <line
+                  key={i}
+                  x1={x1}
+                  y1={naCoroa(1)}
+                  x2={x1 + L * Math.cos(G.coroaHachAng)}
+                  y2={naCoroa(1) - dir * L * Math.sin(G.coroaHachAng)}
+                />
+              );
+            })}
+            {/* Margem cervical — o término da capa protética sobre o preparo. É o traço
+                que faz a coroa ler como PEÇA cimentada, não como dente pintado (27/07). */}
+            <line
+              x1={0} y1={naCoroa(0.93)} x2={w} y2={naCoroa(0.93)}
+              style={{ strokeWidth: 2.6 }}
+            />
           </g>
         </>
       )}
 
-      {/* v3: selante — ponto na oclusal */}
-      {clinico && resumo.selante && (
-        <circle cx={w / 2} cy={occluY} r={3} style={{ fill: COR_TOKEN[resumo.selante] }} />
-      )}
+      {/* v3: selante — revisão 27/07: o selante veda os SULCOS oclusais, então segue o
+          sulco (molar: sulco central + ramos = Y deitado; demais: sulco único), em vez
+          de um ponto solto no meio da coroa. */}
+      {clinico && resumo.selante && (() => {
+        const c  = COR_TOKEN[resumo.selante];
+        const y  = naCoroa(G.selY);
+        const sw = Math.max(2.2, w * G.selR * 0.78);
+        const hx = w * (family === 'molar' ? 0.20 : 0.15);
+        return (
+          <g style={{ fill: 'none', stroke: c, strokeWidth: sw, strokeLinecap: 'round', strokeLinejoin: 'round' }}>
+            <path d={`M ${cx - hx},${y} L ${cx + hx},${y}`} />
+            {family === 'molar' && (
+              <path d={`M ${cx},${y} L ${cx},${y - dir * crownH * 0.13} M ${cx},${y} L ${cx},${y + dir * crownH * 0.10}`} />
+            )}
+          </g>
+        );
+      })()}
 
-      {/* v3: fratura — zigue-zague na coroa */}
-      {clinico && resumo.fratura && (
-        <path
-          d={`M ${w * 0.30} ${crownTop + crownH * 0.12} L ${w * 0.56} ${crownTop + crownH * 0.38} L ${w * 0.40} ${crownTop + crownH * 0.60} L ${w * 0.66} ${crownTop + crownH * 0.88}`}
-          style={{ fill: 'none', stroke: 'var(--color-coral)', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }}
-        />
-      )}
+      {/* v3: fratura — revisão 27/07: traço com ramificação e ponta fina (a trinca se
+          espalha e afina), no lugar do zigue-zague uniforme. Traçado-base do artefato. */}
+      {clinico && resumo.fratura && (() => {
+        const pts = G.fratura.map(([fx, fy]) => [w * fx, naCoroa(fy)] as const);
+        const principal = pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'} ${x} ${y}`).join(' ');
+        const [rx, ry] = pts[2];
+        return (
+          <g style={{ fill: 'none', stroke: 'var(--color-coral)', strokeLinecap: 'round', strokeLinejoin: 'round' }}>
+            <path d={principal} style={{ strokeWidth: 2.6 }} />
+            <path d={`M ${rx},${ry} L ${rx - w * 0.14},${ry + dir * crownH * 0.16}`} style={{ strokeWidth: 1.5 }} />
+          </g>
+        );
+      })()}
 
-      {/* v3: extração indicada — X sobre a coroa */}
+      {/* v3: extração indicada — X sobre a coroa (artefato: 0.25→0.75·w, stroke 3.4) */}
       {clinico && resumo.exodontiaIndicada && (
-        <g style={{ stroke: 'var(--color-coral)', strokeWidth: 2.6, strokeLinecap: 'round' }}>
-          <line x1={w * 0.18} y1={crownTop + 5} x2={w * 0.82} y2={crownBot - 5} />
-          <line x1={w * 0.82} y1={crownTop + 5} x2={w * 0.18} y2={crownBot - 5} />
+        <g style={{ stroke: 'var(--color-coral)', strokeWidth: 3.4, strokeLinecap: 'round' }}>
+          <line x1={w * G.xoX1} y1={naCoroa(G.xoY1)} x2={w * G.xoX2} y2={naCoroa(G.xoY2)} />
+          <line x1={w * G.xoX2} y1={naCoroa(G.xoY1)} x2={w * G.xoX1} y2={naCoroa(G.xoY2)} />
         </g>
       )}
+
+      {/* R-06: segmento da ponte (linha nos ápices + traço do pilar) — deriva do grupo (D3/I1) */}
+      {clinico && <PonteMarks resumo={resumo} links={ponteLinks} w={w} totalH={totalH} isUpper={isUpper} />}
 
       {/* Checkbox (multi-select mode) */}
       {showCheckbox && (
@@ -557,6 +804,25 @@ export function Odontograma({
         : isHov                 ? 'var(--color-text-primary)'
         : 'var(--color-text-secondary)';
 
+      // R-06: continuidade da linha da ponte — vizinho do arco no MESMO grupo estende o
+      // segmento pra cobrir o gap, e `altura` (menor totalH do grupo, medido da borda
+      // oclusal alinhada) mantém a linha RETA entre classes de dente de alturas diferentes.
+      const ponteLinks = clinico && resumo?.ponte && resumo.ponteGrupo != null
+        ? (() => {
+            const idx = teeth.indexOf(num);
+            const mesmoGrupo = (n: number | undefined) =>
+              n != null && resumos.get(n)?.ponteGrupo === resumo.ponteGrupo;
+            const doGrupo = teeth.filter((t) => resumos.get(t)?.ponteGrupo === resumo.ponteGrupo);
+            const altura = Math.min(
+              ...doGrupo.map((t) => {
+                const d = DIMS[TOOTH_CLASS[t] ?? 'premolar'];
+                return d.crownH + d.rootH;
+              }),
+            ) - 2;
+            return { left: mesmoGrupo(teeth[idx - 1]), right: mesmoGrupo(teeth[idx + 1]), altura };
+          })()
+        : null;
+
       return (
         <Fragment key={num}>
           {isMidlineStart && (
@@ -612,6 +878,7 @@ export function Odontograma({
               showCheckbox={showCheckbox && !clinico}
               ringed={colorMode === 'status' && !clinico && selectedTeeth.includes(num)}
               resumo={resumo}
+              ponteLinks={ponteLinks}
             />
 
             {!isUpper && (
