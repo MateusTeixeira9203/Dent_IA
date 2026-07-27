@@ -1,61 +1,43 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-07-26 · **Ativo:** nenhum — R-04b executado, no ar e **fechado** (migration 110 + 2 contas + deploy `866c1d4`) ·
-> **Próximo:** executar R-03a ou R-11 (specs prontas), ou escopar mais da fila (R-05/R-09).
+> **ESTADO** · atualizado 2026-07-26 · **Ativo:** nenhum — tudo da sessão está no ar e verificado ·
+> **Modo da próxima:** o Mateus escolhe (executar ou escopar). Handoff: `handoffs/handoff-2026-07-26-0300.md`.
 
 ## Agora
 
-**Audit visual do Fable concluído (26/07).** Captura completa (67 screenshots — logadas, light+dark,
-estados interativos: modais, abas, odontograma expandido, dente aberto) + 15 auditores → 115 achados.
-Saídas: [relatório priorizado](auditorias/2026-07-26-relatorio-audit-visual.md) +
-[fingerprint canônico](auditorias/2026-07-26-fingerprint-canonico.md) (a régua reutilizável do design).
-Achados **congelados em R-22** por decisão do Mateus — mexe neles quando quiser voltar ao design.
+**Sem item ativo — sessão fechou tudo que abriu, no ar.** O que rodou (26/07):
+- **Audit visual do Fable** → [relatório](auditorias/2026-07-26-relatorio-audit-visual.md) (115 achados)
+  + [fingerprint canônico](auditorias/2026-07-26-fingerprint-canonico.md). Achados **congelados em R-22**.
+- **Lote da semana** deployado (`929f84e..47a6e19` → Vercel) e validado em prod → **9 itens ✅** fechados.
+- **R-04b** executado ponta a ponta e fechado ✅ (migration 110 aplicada + 2 contas + deploy `866c1d4`).
+- Registrados R-24 e R-25; eslint silencia `.cjs`. Working tree limpo, tudo pushado.
 
-**Agora = escopar a fila (planejamento).** Plano combinado com o Mateus (26/07): (1) lote da semana
-commitado ✅; (2) status dos não-verificados marcados 🟡; (3) **escopar as próximas coisas da fila**;
-(4) SÓ ENTÃO fazer o deploy; (5) Mateus volta, testa tudo e a gente avalia (promove 🟡→✅).
-**R-03 escopado (26/07):** virou **R-03a** (backend: tabela `assinaturas` + trigger de imutabilidade
-+ RPC — [spec pronta pra execução](specs/R-03a-assinatura-por-procedimento.md)) + **R-03b** (captura/UI
-+ reconciliar 3 fluxos legados — fila) + **R-03c** (assinatura de aceite do ORÇAMENTO — prova de
-recebimento; ideia nova do Mateus 26/07, reusa a tabela `assinaturas` genérica). Decisões travadas:
-assinatura por lote, trigger no banco, secretária+dentista via RPC, e **tabela `assinaturas` genérica**
-(serve clínico + orçamento — ajustada no R-03a antes de virar migration). R-03a mexe em prod (migration+RLS)
-→ item de execução próprio, 2 contas.
-**R-11 escopado (26/07):** [spec pronta pra execução](specs/R-11-unificar-gravacao-ficha.md).
-Reenquadre — não é "status divergente" (o `status` nunca é lido): são 9 caminhos + código morto
-duplicando create/update/delete sem validação, + 2 furos vivos (client apaga sem checar autoria;
-UPDATE de ficha assinada não barrado no servidor). Afunila em `salvarFicha`/`deletarFicha`, apaga o
-morto, zero migration. Decisões travadas: arquivo novo, incluir DELETE, guard de imutabilidade,
-apagar morto, não tocar assinatura. Também nasceu **R-24** (indicador de ficha em aberto — dar uso
-ao `status`). Próximos candidatos a escopar: R-04b, R-05, R-09.
-R-19/R-12/R-10-P1 já codados (só faltam verificar).
+**Pronto pra retomar (specs prontas pra execução):**
+- **R-03a** — assinatura por procedimento (backend: tabela `assinaturas` genérica + trigger + RPC).
+  ⚠️ mexe em **prod** (migration+trigger+RLS) → migration sozinha primeiro, **teste 2 contas**. Migration nº **111**.
+- **R-11** — unificar gravação da ficha. **Zero migration/RLS**; a Fase 0 (apagar código morto) pode ir sozinha.
+  **Overlap com R-03b** (os 3 fluxos de assinatura) — coordenar as duas antes de codar.
 
-**Infra nova reutilizável (desta sessão):**
-- Captura logada resolvida: conta de teste e-mail/senha (NUNCA o botão Google) + Playwright headed.
-- `capture-audit-3.cjs --headless` reusa a sessão salva — re-captura sem login (até expirar no Supabase).
-- Workflow do Fable é retomável (`resumeFromRunId`) — agentes prontos voltam do cache.
-
-## Lote da semana — NO AR e FECHADO (deploy 26/07, `929f84e..47a6e19` → Vercel prod)
-
-Mateus **validou tudo em prod (26/07)**. **9 itens fechados** → Concluído, specs/artefatos movidos pro
-`_arquivo/`: R-21, R-20, R-19, R-18, R-17, R-16, R-12, R-04, R-02. **R-10 P1 verificado** (P2 segue na fila).
-Rollback (se precisar): Vercel → promover deployment anterior, ou `git revert` do range.
+**Infra reutilizável (desta sessão):** captura logada = conta de teste e-mail/senha + Playwright headed;
+`capture-audit-3.cjs` reusa a sessão salva (re-captura headless, sem login); workflow do Fable é retomável
+(`resumeFromRunId`). Aplicar migration em prod = MCP `apply_migration` **com confirmação explícita** do Mateus.
 
 ## Travado
 
-**Nada trava.** Constraints conhecidas: pane embutido não renderiza ficha (captura = Playwright);
-banco é prod (auditoria nunca clica em botão destrutivo); Dex da ficha rápida fora do ar (ambiente,
-chave/quota — diagnosticado 25/07, adiado).
+**Nada travado.** Constraints de sempre: pane embutido não renderiza a ficha (captura = Playwright);
+banco é prod (dev=prod), então escrita em prod precisa de confirmação e RLS/permissão pede teste de 2 contas.
 
 ## Esperando você
 
-- [ ] **Executar R-03a e/ou R-11** (specs prontas) — próximo passo natural. R-03a mexe em prod (migration+trigger+RLS, 2 contas); R-11 é refactor sem migration (Fase 0 = apagar código morto pode ir sozinha).
-- [ ] **Commit dos docs** — muita coisa em `plans/` no working tree desta sessão (roadmap/estado, specs R-03a/R-11, arquivamentos). Vai num `docs(plans)` no fim da sessão.
-- [ ] **Escopar mais da fila** (opcional) — R-04b, R-05, R-09.
-- [ ] **Esclarecer o que é "ficha rápida"** — o R-11 revelou que as rotas `/dashboard/fichas/{nova,[id]}`
-      são `redirect` puro pra uma rota inexistente (**404 hoje**), não uma tela viva. A criação que
-      funciona é o "Nova Evolução" no FichasTab do paciente. Então o "Dex da ficha rápida fora do ar"
-      pode ser: (a) a rota foi desmontada de propósito, ou (b) o Dex do Nova Evolução que falha por
-      ambiente. **Mateus dizer qual** → ajustar o diagnóstico (e se quer reviver a ficha rápida standalone).
-- [ ] *(sugestão registrada, decisão sua)* dentro do R-22 congelado há 1 fix de linha única
-      (`globals.css:267` — corpo do app inteiro renderiza em Times) — candidato a `/pontual` a qualquer momento.
+- [ ] **Escolher o próximo passo** — executar **R-03a** (pesado, prod) ou **R-11** (leve, sem migration),
+      ou escopar mais da fila (R-05 orto manual · R-09 voz nas especialidades · R-10 P2 · R-24 · R-25).
+- [ ] **O que é "ficha rápida" pra você** — as rotas `/dashboard/fichas/{nova,[id]}` são `redirect` pra 404
+      (mortas); a criação viva é o "Nova Evolução" no FichasTab. Então o "Dex fora do ar" ou é rota
+      desmontada, ou é o Dex do Nova Evolução falhando por ambiente. Sua resposta fecha esse diagnóstico.
+- [ ] *(sugestão, decisão sua)* dentro do R-22 congelado há 1 fix de 1 linha (`globals.css:267` — corpo do
+      app renderiza em Times, não Outfit) — candidato a `/pontual` a qualquer momento, alto ganho.
+
+## Próximo da fila
+
+Fila em `plans/ROADMAP.md` (12 itens · 13 concluídos · 1 congelado). Sem ordem imposta — as duas specs
+prontas (R-03a, R-11) são os candidatos mais maduros; o resto precisa de escopo antes de código.
