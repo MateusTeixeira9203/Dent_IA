@@ -12,8 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Scripts CLI standalone (CommonJS, fora do build da app).
+    // Scripts CLI standalone (CommonJS, fora do build da app) — require() é o correto aqui,
+    // não faz sentido a regra de import de TS (ex.: capture-audit*.cjs do audit visual).
     "scripts/**",
+    "**/*.cjs",
   ]),
 ]);
 
