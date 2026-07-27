@@ -1,7 +1,7 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-07-26 · **Ativo:** R-04b **codado** (Fases 0-3, gates typecheck/build verdes), 🟡 não verificado ·
-> **Próximo (R-04b):** aplicar a **migration 110** no banco (prod, tua confirmação) → **teste 2 contas** (autor/destino/terceiro) → deploy.
+> **ESTADO** · atualizado 2026-07-26 · **Ativo:** nenhum — R-04b executado, no ar e **fechado** (migration 110 + 2 contas + deploy `866c1d4`) ·
+> **Próximo:** executar R-03a ou R-11 (specs prontas), ou escopar mais da fila (R-05/R-09).
 
 ## Agora
 

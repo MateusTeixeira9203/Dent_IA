@@ -1,7 +1,7 @@
 # R-04b — Encaminhamento: destino edita detalhe clínico do endo/implante
 
-> **SPEC** · **R-04b** · fase **CODADO (Fases 0-3, 26/07), 🟡 não verificado** — falta aplicar a
-> migration 110 no banco (prod) + teste de 2 contas + deploy. Gates typecheck/build verdes.
+> **SPEC** · **R-04b** · **✅ NO AR E VERIFICADO (26/07)** — migration 110 aplicada em prod, teste
+> de 2 contas feito pelo Mateus, deploy `866c1d4` (Vercel). Item fechado.
 > **Modelo:** Sonnet na execução (reusou o template de RPC do R-04/109 e os forms já existentes).
 > **Escopo dobrou pra dois lados (26/07):** lado autor (input de observação no ToothDetailPanel,
 > inexistente hoje) + lado destino (RPC + tabela editável). Ainda peso P.

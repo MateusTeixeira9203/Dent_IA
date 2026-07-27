@@ -1,10 +1,10 @@
 # Roadmap — Odonto.IA
 
 > **ROADMAP** · **Odonto.IA** · atualizado 2026-07-26
-> **Ativo:** nenhum — lote da semana **VALIDADO EM PROD E FECHADO** (26/07) ·
-> **Fila:** 13 (specs prontas: R-03a, R-11) · **Concluídos:** 12 · **Congelados:** 1 ·
-> **Fechados nesta validação (26/07):** R-21, R-20, R-19, R-18, R-17, R-16, R-12, R-04, R-02 → Concluído ·
-> R-10 P1 verificado (P2 segue na fila). Deploy `929f84e..47a6e19` no ar (Vercel prod).
+> **Ativo:** nenhum — R-04b executado, no ar e **fechado** (26/07) ·
+> **Fila:** 12 (specs prontas: R-03a, R-11) · **Concluídos:** 13 · **Congelados:** 1 ·
+> **Fechados hoje (26/07):** o lote (R-21/R-20/R-19/R-18/R-17/R-16/R-12/R-04/R-02) + **R-04b** → Concluído ·
+> R-10 P1 verificado (P2 na fila). Deploys no ar: `929f84e..47a6e19` (lote) + `47a6e19..866c1d4` (R-04b + migration 110).
 
 > Reconstruído do zero em 2026-07-21 por decisão do Mateus. O histórico anterior está no
 > git (`git show 4a93234:plans/roadmap/roadmap-mestre-2026-07-21.md`) e na pasta
@@ -18,8 +18,9 @@
 **Lote da semana no ar e VALIDADO (26/07):** push `929f84e..47a6e19` → Vercel prod (gates: typecheck ✅,
 build ✅, migration 109 conferida no schema ✅). Mateus validou tudo em prod → **9 itens fechados**
 (R-21/R-20/R-19/R-18/R-17/R-16/R-12/R-04/R-02, ver Concluído; specs/artefatos movidos pro `_arquivo/`).
-R-10 P1 verificado, P2 segue na fila. **Ativo agora:** nenhum — próximo é **executar R-03a ou R-11**
-(specs prontas) ou escopar mais da fila (R-04b/R-05/R-09). Audit do Fable **congelado em R-22**. Ver `plans/ESTADO.md`.
+R-10 P1 verificado, P2 segue na fila. **R-04b executado, no ar e fechado (26/07)** — migration 110
+aplicada + 2 contas testadas pelo Mateus + deploy `866c1d4`. **Ativo agora:** nenhum — próximo é
+**executar R-03a ou R-11** (specs prontas) ou escopar mais da fila (R-05/R-09). Audit do Fable **congelado em R-22**. Ver `plans/ESTADO.md`.
 
 ## Fila
 
@@ -45,7 +46,6 @@ Peso: **P** (uma sessão) · **M** (2–3 sessões) · **G** (precisa quebrar).
 | R-03a | ⏳ Assinatura por procedimento — modelo + congelamento (backend) — **spec pronta pra execução** | Tabela `assinaturas` (assinatura por LOTE de realizados) + `odontograma_eventos.assinatura_id` + **trigger de imutabilidade no banco** + RPC `assinar_procedimentos` (secretária/dentista via RPC estreita, CRO do autor). Fecha o furo de imutabilidade só-app de hoje. Decisões travadas 26/07. **Mexe em prod (migration+RLS): migration sozinha primeiro, 2 contas.** [spec](specs/R-03a-assinatura-por-procedimento.md) | M |
 | R-03b | ⏳ Assinatura por procedimento — captura/UI + reconciliar os 3 fluxos legados | Depende de R-03a no ar. UI de captura (AssinarBar no modo-seleção do R-04 + signature_pad), estado "assinado" por registro no card, e unificar os 3 fluxos de assinatura de ficha que hoje escrevem em `fichas.assinado_em` sem se conhecer. **Overlap com R-11** — coordenar antes de codar. Decisões #4/#6/#7 pendentes. [sketch na spec R-03a](specs/R-03a-assinatura-por-procedimento.md) | M |
 | R-03c | ⏳ Assinatura de aceite do orçamento (prova de recebimento) | O paciente assina o orçamento que **aceitou pagar** — prova comercial/contrato que protege o recebimento do dentista (hoje o status `aprovado` é só o dentista afirmando). **Reusa a tabela `assinaturas` genérica do R-03a** (`tipo='orcamento'`): liga `orcamentos.assinatura_id` + trigger que **congela os termos** (itens + total) do orçamento assinado (senão editar o orçamento depois esvazia a assinatura) + RPC `assinar_orcamento`. Encaixa no fluxo "aprovar orçamento". Depende de R-03a no ar. Escopo a fundo depois. Ideia do Mateus 26/07 | M |
-| R-04b | 🟡 Encaminhamento: observação do autor + destino preenche detalhe — **codado (Fases 0-3), gates verdes (typecheck/build), NÃO verificado** | **Dois lados:** (autor) textarea de observação no `ToothDetailPanel` pra escrever contexto ao encaminhar — hoje inexistente (só Dex/voz preenche); (destino) RPC estreita `preencher_detalhe_encaminhado` (SECURITY DEFINER, só quem recebeu, só `detalhe`, nunca a observação do autor) + `EndoForm`/`ImplanteForm` editável no card do destino. Decisões travadas 26/07. Migration da RPC vai sozinha, 2 contas. Fase 0 (input do autor) não tem migration, pode ir 1º. [spec](specs/R-04b-encaminhamento-detalhe-clinico.md) | P |
 | R-05 | ⏳ Ortodontia: lançamento e edição manual | `OrtoForm` existe e **nunca é renderizado** — hoje só a voz cria manutenção e não há como corrigir. Registro de arcada, não de dente | P |
 | R-07 | ⏳ Procedimentos de rotina sem dono | `profilaxia`, `raspagem`, `clareamento`, `fluor`, `exame_periodontal` entraram no banco na migration 106 e não existem em plugin, chip nem enum da IA — "fiz profilaxia" não vira registro | M |
 | R-06 | ⏳ Prótese fixa e odontopediatria completas | `ponte` e `esfoliacao` estão barradas no enum da IA e ausentes dos chips; faltam os símbolos (colchete pilar-pôntico, seta do permanente) | M |
@@ -67,6 +67,7 @@ Peso: **P** (uma sessão) · **M** (2–3 sessões) · **G** (precisa quebrar).
 
 | ID | Item | Fechado | Spec |
 |---|---|---|---|
+| R-04b | ✅ Encaminhamento: observação do autor + destino preenche detalhe (endo/implante) | 2026-07-26 | [R-04b](_arquivo/specs/R-04b-encaminhamento-detalhe-clinico.md) |
 | R-21 | ✅ Registros agrupados por dente | 2026-07-26 | [R-21](_arquivo/specs/R-21-registros-por-dente.md) |
 | R-20 | ✅ Redesenho da ficha odontograma (lado a lado, responsivo) | 2026-07-26 | [R-20](_arquivo/specs/R-20-ficha-odontograma-redesign.md) |
 | R-19 | ✅ Barras contextuais acima do dock (convenção `--dock-inset`) | 2026-07-26 | sem spec (design decision inline) |
