@@ -41,6 +41,7 @@ import type SignaturePadLib from 'signature_pad';
 import { formatarDataFicha } from '@/lib/format-data-ficha';
 import { CapturaLivreCard } from '@/components/fichas/captura-livre-card';
 import { OrtoCard } from '@/components/fichas/orto-card';
+import { OrtoForm, ORTO_VAZIO } from '@/components/fichas/orto-form';
 import { RegistroCard, type RegistroCardData } from '@/components/fichas/registro-card';
 import { DenteGrupoHeader } from '@/components/fichas/dente-grupo-header';
 import { endoDetalheSchema, type EndoDetalhe } from '@/lib/especialidades/endo';
@@ -1633,6 +1634,40 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                     className="w-full bg-surface-alt border border-border rounded-xl px-3.5 py-2.5 text-sm font-medium text-text-primary outline-none focus:border-teal transition-colors min-h-[80px] resize-y"
                   />
                 </div>
+              </div>
+
+              {/* R-05 — manutenção ortodôntica manual: monta o OrtoForm (que já existia mas nunca
+                  era renderizado). Caminho SEM voz — o dentista lança ou corrige a arcada/fio na mão.
+                  orto é por-ficha (não por-dente), então mora aqui e não no ToothDetailPanel. */}
+              <div className="border-t border-border/60 pt-4">
+                <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-[0.15em] mb-2">
+                  Manutenção ortodôntica
+                </label>
+                {formData.ortoManutencao == null ? (
+                  <button
+                    type="button"
+                    onClick={() => setFormData((f) => ({ ...f, ortoManutencao: { ...ORTO_VAZIO } }))}
+                    className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-dashed border-border text-sm font-semibold text-text-secondary hover:border-teal hover:text-teal transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Adicionar manutenção ortodôntica
+                  </button>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <OrtoForm
+                      valor={formData.ortoManutencao}
+                      onChange={(v) => setFormData((f) => ({ ...f, ortoManutencao: v }))}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setFormData((f) => ({ ...f, ortoManutencao: null }))}
+                      className="self-start flex items-center gap-1.5 text-xs font-semibold text-text-secondary hover:text-coral transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Remover manutenção
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/60">

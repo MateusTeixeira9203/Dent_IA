@@ -13,7 +13,8 @@ const ARCADAS: ReadonlyArray<{ v: OrtoManutencaoDetalhe['arcada']; label: string
   { v: 'ambas', label: 'Ambas' },
 ];
 
-const VAZIO: OrtoManutencaoDetalhe = {
+/** Estado inicial de uma manutenção — fonte única (voz e entrada manual R-05 reusam). */
+export const ORTO_VAZIO: OrtoManutencaoDetalhe = {
   arcada: 'superior',
   fio: null,
   ativacao: null,
@@ -25,7 +26,7 @@ const VAZIO: OrtoManutencaoDetalhe = {
 const limpar = (s: string): string | null => (s.trim() === '' ? null : s);
 
 export function OrtoForm({ valor, onChange, readOnly }: PluginFormProps<OrtoManutencaoDetalhe>) {
-  const v = valor ?? VAZIO;
+  const v = valor ?? ORTO_VAZIO;
   const set = (patch: Partial<OrtoManutencaoDetalhe>) => onChange({ ...v, ...patch });
 
   const inputCls =
