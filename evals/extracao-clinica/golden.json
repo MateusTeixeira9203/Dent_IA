@@ -1,0 +1,152 @@
+{
+  "_doc": "Conjunto golden do eval de extração clínica (pass 1 — /api/dex/formatar-evolucao). Cada caso: relato ditado -> eventos esperados. 'cat':'atual' deve passar HOJE e não pode regredir; 'cat':'novo' é esperado AUSENTE hoje (o enum barra) e é o alvo do R-06/R-07 — a diferença atual->novo mede o buraco que esses itens preenchem. O matcher só confere os campos presentes em 'esperado' (match parcial). 'proibido' = eventos que NÃO podem aparecer (ex: realizado sob negação). Relatos são exemplos sintéticos — trocar pelos reais do Mateus quando ele trouxer o material de base por especialidade.",
+  "casos": [
+    {
+      "id": "carie-face-oclusal",
+      "cat": "atual",
+      "relato": "restaurei a oclusal do 26 com resina composta",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "carie_restauracao", "dente": 26, "status": "realizado", "nivel": "face", "faces": ["O"] }], "orto": null }
+    },
+    {
+      "id": "carie-mod-multiface",
+      "cat": "atual",
+      "relato": "restauração MOD no 36 em resina, cobrindo mesial, oclusal e distal",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "carie_restauracao", "dente": 36, "status": "realizado", "nivel": "face", "faces": ["M", "O", "D"] }], "orto": null }
+    },
+    {
+      "id": "endodontia-realizada",
+      "cat": "atual",
+      "relato": "terminei o tratamento de canal do 46, três canais obturados",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "endodontia", "dente": 46, "status": "realizado" }], "orto": null }
+    },
+    {
+      "id": "exodontia-realizada",
+      "cat": "atual",
+      "relato": "extraí o 38 hoje, sem intercorrências",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "exodontia", "dente": 38, "status": "realizado" }], "orto": null }
+    },
+    {
+      "id": "exodontia-planejada",
+      "cat": "atual",
+      "relato": "indiquei a exodontia do 28, vamos extrair na próxima sessão",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "exodontia", "dente": 28, "status": "indicado" }], "proibido": [{ "tipo": "exodontia", "dente": 28, "status": "realizado" }] }
+    },
+    {
+      "id": "coroa-realizada",
+      "cat": "atual",
+      "relato": "cimentei a coroa de zircônia no 24",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "coroa", "dente": 24, "status": "realizado" }], "orto": null }
+    },
+    {
+      "id": "implante-realizado",
+      "cat": "atual",
+      "relato": "instalei o implante na região do 46",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "implante", "dente": 46, "status": "realizado" }], "orto": null }
+    },
+    {
+      "id": "selante",
+      "cat": "atual",
+      "relato": "apliquei selante no 16",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "selante", "dente": 16, "nivel": "face", "faces": ["O"] }], "orto": null }
+    },
+    {
+      "id": "lesao-periapical",
+      "cat": "atual",
+      "relato": "a radiografia mostrou lesão periapical no ápice do 21",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "lesao_periapical", "dente": 21 }] }
+    },
+    {
+      "id": "inclusao",
+      "cat": "atual",
+      "relato": "o 48 está incluso, sem espaço na arcada",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "inclusao", "dente": 48 }] }
+    },
+    {
+      "id": "fratura",
+      "cat": "atual",
+      "relato": "fratura coronária no 11 por trauma na queda",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "fratura", "dente": 11 }] }
+    },
+    {
+      "id": "pino-nucleo",
+      "cat": "atual",
+      "relato": "instalei pino e núcleo no 45 antes da coroa",
+      "modo": "consulta",
+      "esperado": { "eventos": [
+        { "tipo": "pino_nucleo", "dente": 45, "status": "realizado" },
+        { "tipo": "coroa", "dente": 45, "status": "indicado" }
+      ] }
+    },
+    {
+      "id": "negacao-canal",
+      "cat": "atual",
+      "relato": "não fiz o canal, só o curativo de demora no 46",
+      "modo": "consulta",
+      "esperado": { "proibido": [{ "tipo": "endodontia", "dente": 46, "status": "realizado" }] }
+    },
+    {
+      "id": "multi-dente",
+      "cat": "atual",
+      "relato": "restaurei o 14 e o 15, ambos na oclusal, com resina",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "carie_restauracao", "dente": 14, "status": "realizado", "faces": ["O"] }, { "tipo": "carie_restauracao", "dente": 15, "status": "realizado", "faces": ["O"] }] }
+    },
+    {
+      "id": "sem-evento-dentario",
+      "cat": "atual",
+      "relato": "orientei higiene oral, uso de fio dental e retorno em seis meses",
+      "modo": "consulta",
+      "esperado": { "eventos": [] }
+    },
+    {
+      "id": "orto-manutencao",
+      "cat": "atual",
+      "relato": "manutenção do aparelho: troquei o arco superior para 0.018 de aço, ativei e troquei as ligaduras",
+      "modo": "consulta",
+      "esperado": { "eventos": [], "orto": { "arcada": "superior", "camposPreenchidos": ["fio", "ativacao"] } }
+    },
+    {
+      "id": "ponte-fixa",
+      "cat": "novo",
+      "relato": "instalei ponte fixa de 24 a 26, com pilares no 24 e no 26 e pôntico no 25",
+      "modo": "consulta",
+      "esperado": { "eventos": [
+        { "tipo": "ponte", "dente": 24, "status": "realizado" },
+        { "tipo": "ponte", "dente": 25, "status": "realizado" },
+        { "tipo": "ponte", "dente": 26, "status": "realizado" }
+      ] }
+    },
+    {
+      "id": "esfoliacao",
+      "cat": "novo",
+      "relato": "o dente 51 esfoliou naturalmente, permanente já irrompendo",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "esfoliacao", "dente": 51 }] }
+    },
+    {
+      "id": "profilaxia-fluor",
+      "cat": "novo",
+      "relato": "fiz profilaxia com jato de bicarbonato e apliquei flúor",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "profilaxia" }, { "tipo": "fluor" }] }
+    },
+    {
+      "id": "raspagem",
+      "cat": "novo",
+      "relato": "raspagem e alisamento radicular no quadrante superior direito",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "raspagem" }] }
+    }
+  ]
+}
