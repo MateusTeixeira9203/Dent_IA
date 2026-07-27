@@ -1,7 +1,8 @@
 # R-04b — Encaminhamento: destino edita detalhe clínico do endo/implante
 
-> **SPEC** · **R-04b** · fase **contrato — decisões travadas 26/07, pronta pra execução** ·
-> **Modelo:** Sonnet na execução (reusa o template de RPC do R-04/109 e os forms já existentes).
+> **SPEC** · **R-04b** · fase **CODADO (Fases 0-3, 26/07), 🟡 não verificado** — falta aplicar a
+> migration 110 no banco (prod) + teste de 2 contas + deploy. Gates typecheck/build verdes.
+> **Modelo:** Sonnet na execução (reusou o template de RPC do R-04/109 e os forms já existentes).
 > **Escopo dobrou pra dois lados (26/07):** lado autor (input de observação no ToothDetailPanel,
 > inexistente hoje) + lado destino (RPC + tabela editável). Ainda peso P.
 > **Aberto:** 2026-07-26 · **Depende de:** R-04 (no ar, migration 109) · **Peso:** P

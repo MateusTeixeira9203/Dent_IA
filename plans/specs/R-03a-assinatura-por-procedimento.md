@@ -152,7 +152,7 @@ traço por ora (consistente com os 3 fluxos atuais) — perguntar se há caso re
 
 | Arquivo | O que muda |
 |---|---|
-| supabase/migrations/*_110_assinatura_por_registro.sql (novo) | tabela assinaturas, coluna odontograma_eventos.assinatura_id, trigger de imutabilidade, RPC assinar_procedimentos, ajuste em salvar_eventos_odontograma (guard de linha assinada) |
+| supabase/migrations/*_111_assinatura_por_registro.sql (novo) | tabela assinaturas, coluna odontograma_eventos.assinatura_id, trigger de imutabilidade, RPC assinar_procedimentos, ajuste em salvar_eventos_odontograma (guard de linha assinada) — **nº 111: a 110 foi tomada pelo R-04b (26/07)** |
 | src/types/odontograma.ts | OdontogramaEvento.assinatura_id; novo tipo Assinatura |
 | src/app/consulta/[agendamentoId]/actions.ts | nova action assinarProcedimentos (wrapper fino da RPC) |
 
