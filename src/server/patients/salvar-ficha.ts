@@ -295,11 +295,12 @@ export async function deletarFicha(fichaId: string, pacienteId: string): Promise
     return { ok: false, error: 'Esta ficha tem procedimentos assinados e não pode ser apagada.' };
   }
 
-  const { error } = await supabase
+  const { data: apagada, error } = await supabase
     .from('fichas')
     .delete()
     .eq('id', fichaId)
-    .eq('clinica_id', clinicId);
+    .eq('clinica_id', clinicId)
+    .select('id');
 
   if (error) {
     // R-03a: ficha com algum evento assinado é imutável até no DELETE — o cascade tenta
@@ -310,6 +311,14 @@ export async function deletarFicha(fichaId: string, pacienteId: string): Promise
       return { ok: false, error: 'Esta ficha tem procedimentos assinados e não pode ser apagada.' };
     }
     console.error('[deletarFicha]', error.message);
+    return { ok: false, error: 'Erro ao apagar ficha.' };
+  }
+
+  // RLS pode barrar o DELETE sem devolver erro (0 linhas afetadas) — sem o .select() acima
+  // isso vira falso "ok: true" com a ficha intacta no banco. Achado ao vivo 28/07: a policy de
+  // DELETE do admin tinha sumido do banco (fichas_write_own sozinha só libera o dono).
+  if (!apagada || apagada.length === 0) {
+    console.error('[deletarFicha] DELETE bloqueado silenciosamente (RLS?) — 0 linhas para', fichaId);
     return { ok: false, error: 'Erro ao apagar ficha.' };
   }
 
