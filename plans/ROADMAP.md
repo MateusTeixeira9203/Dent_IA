@@ -1,21 +1,21 @@
 # Roadmap — Odonto.IA
 
 > **ROADMAP** · **Odonto.IA** · atualizado 2026-07-28
-> **Ativo:** nenhum · **Fila:** 10 · **Concluídos:** 20 · **Congelados:** 1 ·
+> **Ativo:** nenhum · **Fila:** 9 · **Concluídos:** 21 · **Congelados:** 1 ·
 > **Fechados 27-28/07:** **R-05·R-06·R-07** (verificados em prod 27/07) + **R-03a·R-03b**
 > (assinatura por procedimento — modelo/backend + captura nos 3 fluxos legados, verificado ao
 > vivo com 2 contas 28/07, **no ar em produção**). Migrations 111/112 aplicadas em prod. Deploys:
 > `dbb4228..00602f2` (R-05) e `00602f2..6674f7b` (R-06/R-07 + eval + símbolos).
-> **R-11 no ar** (`8af1fea..1949e54`, deploy `dpl_8rEuxQR`) — 🟡, gate #6 (admin apaga ficha de
-> outro dentista) tinha RLS quebrada (`fichas_delete_admin` sumida do banco vivo), corrigida e
-> confirmada por simulação com `auth.uid()` real 28/07 — falta só o clique ao vivo com 2 contas.
+> **R-11 ✅ fechado** (`8af1fea..1949e54`, deploy `dpl_8rEuxQR`) — gate #6 (admin apaga ficha de
+> outro dentista) tinha RLS quebrada (`fichas_delete_admin` sumida do banco vivo), corrigida,
+> confirmada por simulação com `auth.uid()` real e **verificada com 2 contas ao vivo** 28/07.
 > **Sessão de 28/07 (tarde):** 4 correções `/pontual` (responsividade orçamento mobile, texto
 > escapando dos chips de especialidade, status "Quitado" com drift de float, embed ambíguo
-> zerando a aba Agenda do paciente) + **R-05b e R-08a ✅ codados e verificados ao vivo** (o pane
-> do browser tinha travado sem compor frame — o Mateus mostrou o painel, testados por clique real
-> com dado no banco de teste, revertido depois sem deixar rastro). **R-03c e R-08 investigados a
-> fundo** (workflow read-only no schema real + código) — pesos corrigidos abaixo, achados na spec
-> de cada sub-item. Ainda **falta o push** de tudo isso.
+> zerando a aba Agenda do paciente) + **R-05b e R-08a ✅ codados e verificados ao vivo**, primeiro
+> num pane que tinha travado sem compor frame (resolvido mostrando o painel) e depois **em
+> produção** (`dentia.app.br`, deploy `dpl_3pkPtEA`) — botão, chip e a aba Agenda conferidos por
+> clique real. **R-03c e R-08 investigados a fundo** (workflow read-only no schema real + código)
+> — pesos corrigidos abaixo, achados na spec de cada sub-item. Tudo **pushado e no ar**.
 > **Ontem (26/07):** o lote (R-21/R-20/R-19/R-18/R-17/R-16/R-12/R-04/R-02) + R-04b (migration 110).
 
 > Reconstruído do zero em 2026-07-21 por decisão do Mateus. O histórico anterior está no
@@ -34,9 +34,8 @@ Ganhos de infra que ficam: **harness de eval** da extração clínica (`evals/ex
 obrigatório pra mexer no prompt — baseline ATUAL 16/16 · 0 inventados) e os **símbolos do
 odontograma portados do artefato canônico** + polidos (auditoria em `plans/auditorias/`).
 
-**Ativo agora:** nenhum. **R-03a/R-03b no ar em produção** (assinatura por procedimento).
-**R-11 segue 🟡** (RLS do gate #6 corrigida em código 28/07, falta o clique ao vivo com 2 contas).
-**R-05b e R-08a ✅ verificados** (ver Concluído), falta só o push. **R-03c e R-08** tiveram
+**Ativo agora:** nenhum. **R-03a/R-03b e R-11 no ar em produção**, todos ✅ verificados com 2
+contas. **R-05b e R-08a ✅ verificados** em produção (ver Concluído). **R-03c e R-08** tiveram
 investigação a fundo 28/07 — pesos corrigidos na Fila (R-03c virou G,
 R-08 G confirmado mas com 1º corte P já entregue). **R-09** (voz nas especialidades) segue sem
 spec. Audit do Fable **congelado em R-22** (+ achados de símbolos P1/P3/P4). Ver `plans/ESTADO.md`.
@@ -68,7 +67,6 @@ Peso: **P** (uma sessão) · **M** (2–3 sessões) · **G** (precisa quebrar).
 | R-07b | ⏳ Chips de rotina (R-07) chegam ao modo consulta | Achado de carona no R-08a (28/07): profilaxia/flúor/clareamento/raspagem só existem na ficha rápida — grep em `src/app/consulta` por rotina/profilaxia/raspagem = zero. R-07 está ✅ na ficha rápida e furado no outro fluxo | P |
 | R-26 | ⏳ Dex vira hub de notificações operacionais — começando por faltosos sem retorno | Ideia do Mateus 28/07. Paciente que **faltou e não voltou** é receita perdida silenciosa — hoje ninguém vê. Vira um card/balão no painel do Dex: pra **secretária** (todos da clínica, é ela que liga) e **por dentista** (os dele). **Não é pontual** — precisa de escopo antes de código: (a) o que conta como "faltou e não retornou"? Existe `agendamentos.status` com `no_show`/`cancelled`, mas "não retornou" é derivado (nenhum agendamento futuro E nenhum atendimento desde) — a janela é decisão de produto; (b) o painel do Dex hoje é assistente de IA, virar hub de notificações operacionais é redesenho de propósito, não um card a mais — e já existe a tabela `notificacoes` (`inserirNotificacao`) usada por consulta/pagamento, então a decisão é se faltoso vira linha de `notificacoes` (derivado on-the-fly não cabe lá) ou consulta própria; (c) silo: a secretária vê tudo, o dentista só os dele — mesmo predicado de `is_own_clinical_record`. Encosta no R-15 (cockpit) só na superfície, não na fundação | M |
 | R-10 | ⏳ Rótulo do procedimento no orçamento e no PDF (só falta P2) | **P1 (jargão "- planejado") ✅ verificado em prod (26/07)** — `derivarV2DosEventos` sem o " - planejado". **P2 ⏳ na fila:** tirar a observação clínica (resto radicular etc.) do documento que o paciente lê — `dentes_observacoes` alimenta orçamento **E** prontuário, então o strip precisa de decisão | P |
-| R-11 | 🟡 Unificar o caminho de gravação da ficha — **no ar, não verificado** | 4 fases no ar: contrato único `salvarFicha`/`deletarFicha` (`src/server/patients/salvar-ficha.ts`) substitui os 3 caminhos que escreviam `fichas` direto + apaga o código morto achado na investigação (9 caminhos vivos + 4 mortos). Guard de imutabilidade e status derivado no servidor verificados ao vivo em build de produção antes do push. **Zero migration nesta fase.** Gate #6 (admin apaga ficha de outro dentista): achado 28/07 que a RLS estava quebrada (`fichas_delete_admin` sumida do banco vivo — `fichas_write_own` sozinha só libera o dono) — deletarFicha() mentia `ok:true` com 0 linhas. Corrigido (migration 112 + `.select()` no delete pra nunca mais mentir) e confirmado por simulação com `auth.uid()` real dos 2 lados. Commits `1de02c4`/`1949e54`, deploy `dpl_8rEuxQR` (READY). **Falta:** clique ao vivo com 2 contas (a simulação não substitui), decisão sobre `procedimentos_concluidos` (achado fora do escopo da spec durante a execução). [spec](specs/R-11-unificar-gravacao-ficha.md) | M |
 | R-24 | ⏳ Indicador de "ficha em aberto" (usar o `status`) | Achado do R-11: `fichas.status` (`aberta`/`concluida`) é gravado mas nunca lido. Este item dá uso real: badge/indicador de ficha em aberto (rascunho não finalizado) no dashboard/lista. **Escopo pendente:** hoje `concluida` = modo consulta e `aberta` = criada no FichasTab — definir se esse recorte é o que "em aberto" deve significar pro usuário (e o que muda uma ficha de aberta→concluída). Ideia do Mateus 26/07 | P |
 | R-25 | ⏳ Limpar `setState` síncrono dentro de `useEffect` (cascading renders) | 24 erros de lint "Calling setState synchronously within an effect can trigger cascading renders" em ~20 componentes pré-existentes (dex-widget, dex-presence, floating-dock, ApresentarPanel, use-mobile, useDexGuide…). Não quebra runtime, mas cada um é um render duplo evitável — dívida de performance. Mover o setState pra fora do efeito ou guardar por condição. Achado no lint 26/07 | M |
 | R-15 | ⏳ Modo consulta: o cockpit do atendimento | Vira o cockpit do atendimento — procedimentos ativos, odontograma vivo, tabelas, implante, raio-x, gravação como canto pequeno; motor compartilhado com a ficha rápida. [Visão em debate](specs/R-15-modo-consulta-cockpit.md); depende de R-01 · R-02 · plugins | G |
@@ -83,6 +81,7 @@ Peso: **P** (uma sessão) · **M** (2–3 sessões) · **G** (precisa quebrar).
 
 | ID | Item | Fechado | Spec |
 |---|---|---|---|
+| R-11 | ✅ Unificar o caminho de gravação da ficha — contrato único `salvarFicha`/`deletarFicha` substitui os 3 caminhos que escreviam `fichas` direto + apaga código morto (9 caminhos vivos + 4 mortos). Gate #6 (admin apaga ficha de outro dentista) achou RLS quebrada (`fichas_delete_admin` sumida — `deletarFicha()` mentia `ok:true` com 0 linhas), corrigida (migration 112 + `.select()` no delete) e **verificada com 2 contas ao vivo** 28/07. `procedimentos_concluidos` (achado fora do escopo desta spec) segue como decisão em aberto, não bloqueia o fechamento | 2026-07-28 | [R-11](_arquivo/specs/R-11-unificar-gravacao-ficha.md) |
 | R-08a | ✅ Exame periodontal vira registro — 1º corte do R-08 (`exame_periodontal` em `TipoRegistroOdontograma`, chip na faixa de rotina, zero migration) | 2026-07-28 | [R-08a](_arquivo/specs/R-08a-exame-periodontal-registro.md) |
 | R-05b | ✅ Orto: atalho "+ Manutenção" com pré-preenchimento (herda arcada/fio/elásticos da última manutenção dentro de 120 dias, ativação nunca herdada) | 2026-07-28 | [R-05b](_arquivo/specs/R-05b-orto-atalho-manutencao.md) |
 | R-03b | ✅ Assinatura por procedimento — captura/UI: os 3 fluxos legados (ficha rápida, recepção, fim de consulta) migrados pro caminho granular; `AssinarBar` pra seleção de subconjunto | 2026-07-28 | [R-03b](_arquivo/specs/R-03b-assinatura-captura-ui.md) |
