@@ -219,6 +219,21 @@ function hojeBRT(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 }
 
+/**
+ * R-05b (D2) — janela do atalho "+ Manutenção". Manutenção orto é ~mensal; 4 meses absorve
+ * férias/falta sem ressuscitar tratamento já encerrado. Não existe alta nem fim de tratamento
+ * em `fichas`, e criar essa marcação geraria dado morto (o dentista não marca) — a janela erra
+ * barato dos dois lados: some cedo = o botão do R-05 continua lá; some tarde = botão sem clique.
+ */
+const JANELA_ORTO_DIAS = 120;
+
+/** 'YYYY-MM-DD' → 'DD/MM/YYYY'. Sem `new Date()`: um 'YYYY-MM-DD' é parseado como UTC e
+ *  volta um dia atrás no fuso da clínica (mesmo cuidado do formatarDataFicha). */
+const dataBR = (iso: string): string => {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+};
+
 const mapFichaToEvolution = (f: FichaDB): Evolution => ({
   id: f.id,
   date: formatarDataFicha(f.data_atendimento, f.created_at),
@@ -620,6 +635,10 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   // eventos (edição sem reorganizar preserva os eventos existentes — no-opa em lista vazia).
   const [eventosDraft, setEventosDraft] = React.useState<OdontogramaEventoDraft[]>([]);
 
+  // R-05b (D3) — origem do bloco orto quando veio do atalho. Quem salva assina, então o autor
+  // e a data da manutenção herdada aparecem ANTES do save, não depois. null = digitado agora.
+  const [ortoHerdadaDe, setOrtoHerdadaDe] = React.useState<{ data: string; autorNome: string } | null>(null);
+
   // Camada 1: dente aberto no painel de revisão do odontograma (rascunho do Dex).
   const [denteAberto, setDenteAberto] = React.useState<number | null>(null);
   // R-20 Fase 2 — destino da tabela de especialidade (endo/implante) abaixo do bloco, full-width.
@@ -958,6 +977,26 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     [evolutions],
   );
 
+  // ── R-05b: última manutenção ortodôntica dentro da janela, pro atalho "+ Manutenção".
+  // Deriva de `evolutions` (o fetch já traz orto_manutencao de TODAS as fichas do paciente, já
+  // ordenado por data_atendimento desc) — zero query nova, mesmo padrão do gruposAbertos acima.
+  // D2: janela de 120 dias — não existe alta/fim de tratamento no schema, e criar essa marcação
+  // geraria dado morto (o dentista não marca). D3: herda de qualquer autor da clínica, com autor
+  // e data visíveis antes do save — a lista já inclui fichas de toda a clínica por RLS, então
+  // isso é decisão explícita, não consequência acidental.
+  const ultimaOrto = React.useMemo(() => {
+    // 'YYYY-MM-DD' compara lexicograficamente — sem date lib e sem o shift de fuso que
+    // `new Date('YYYY-MM-DD')` (parseado como UTC) introduziria, mesmo motivo do hojeBRT.
+    const limite = new Date(Date.now() - JANELA_ORTO_DIAS * 864e5)
+      .toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    for (const e of evolutions) {
+      if (!e.ortoManutencao) continue;
+      if (e.dataAtendimento < limite) return null; // desc: a 1ª fora da janela encerra a busca
+      return { valor: e.ortoManutencao, data: e.dataAtendimento, autorNome: e.professional };
+    }
+    return null;
+  }, [evolutions]);
+
   // R-18 (achado na auditoria 24/07): reseta pra "Todos" assim que o responsável
   // selecionado deixa de existir — sem isto o filtro travava preso num id inválido
   // e a tela ficava vazia sem nenhum controle pra voltar (ver filtroAindaValido).
@@ -1046,7 +1085,10 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     selectedTeeth.length > 0 ||
     sharedTeeth.length > 0 ||
     formData.procedimentos.length > 0 ||
-    formData.conduta.trim()
+    formData.conduta.trim() ||
+    // R-05b: sem isto, o form aberto pelo atalho é considerado limpo e o guard de saída
+    // o descarta em silêncio — o bloco orto herdado É conteúdo.
+    formData.ortoManutencao != null
   );
 
   // Mapeamento IA → form (§5): "Organizar com Dex" preenche o form existente — o
@@ -1410,6 +1452,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     setFormData({ dataAtendimento: hojeBRT(), type: "Evolução", observation: "", teethNotes: [], procedimentos: [], conduta: "", ortoManutencao: null });
     setEventosDraft([]);
     setDenteAberto(null);
+    setOrtoHerdadaDe(null);
   };
 
   const updateProcStatus = async (fichaId: string, currentStatus: Record<string, ProcStatus>, procKey: string, newStatus: ProcStatus) => {
@@ -1455,6 +1498,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       detectedSharedGroup ? detectedSharedGroup.notes.split('\n').filter(Boolean) : ['']
     );
     setEditingId(evolution.id);
+    setOrtoHerdadaDe(null); // editar ficha salva: o orto é o dela, não herdado (R-05b)
     setFormData({
       dataAtendimento: evolution.dataAtendimento,
       type: evolution.type,
@@ -1474,6 +1518,35 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     setSelectedTeeth(individualNotes.map((tn) => tn.tooth));
     setIsPanelOpen(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  /**
+   * R-05b — abre ficha NOVA com o bloco orto já montado e pré-preenchido. Não é edição:
+   * `editingId` fica null, então o save cria (não atualiza a ficha de origem).
+   * D1: herda os 4 campos que descrevem o ESTADO do aparelho (verdade enquanto não trocar) e
+   * NUNCA `ativacao`, que descreve o ATO daquele dia — copiar o ato gravaria procedimento que
+   * pode não ter acontecido, num documento legal.
+   */
+  const abrirNovaComOrto = () => {
+    if (!ultimaOrto) return;
+    const { arcada, fio, elastico_corrente, elastico_intermaxilar } = ultimaOrto.valor;
+    setEditingId(null);
+    setSharedTeeth([]);
+    setSharedNotes(['']);
+    setSelectedTeeth([]);
+    setEventosDraft([]);
+    setFormData({
+      dataAtendimento: hojeBRT(),
+      type: 'Evolução',
+      observation: '',
+      teethNotes: [],
+      procedimentos: [],
+      conduta: '',
+      ortoManutencao: { arcada, fio, elastico_corrente, elastico_intermaxilar, ativacao: null },
+    });
+    setOrtoHerdadaDe({ data: ultimaOrto.data, autorNome: ultimaOrto.autorNome });
+    setIsPanelOpen(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDelete = async (id: string) => {
@@ -1503,13 +1576,29 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       <div className="flex justify-between items-center">
         <h2 className="font-heading text-2xl text-text-primary">Histórico Clínico</h2>
         {!isPanelOpen && canWrite && (
-          <Button
-            onClick={() => setIsPanelOpen(true)}
-            className="bg-teal hover:bg-teal-lt text-white rounded-xl px-6 py-5 font-bold text-sm flex items-center gap-2 shadow-[0_0_15px_rgba(47,156,133,0.3)] transition-all active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            Nova Evolução
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* R-05b (D4) — atalho secundário: "Nova Evolução" segue o único CTA sólido teal.
+                Só aparece com manutenção dentro da janela; fora dela o caminho do R-05 (botão
+                dentro do form) continua intacto. */}
+            {ultimaOrto && (
+              <Button
+                variant="outline"
+                onClick={abrirNovaComOrto}
+                title={`Abre uma evolução nova com a manutenção de ${dataBR(ultimaOrto.data)} pré-preenchida`}
+                className="rounded-xl px-4 py-5 font-bold text-sm flex items-center gap-2 border-border text-text-secondary hover:text-teal hover:border-teal/50 transition-all active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                Manutenção
+              </Button>
+            )}
+            <Button
+              onClick={() => setIsPanelOpen(true)}
+              className="bg-teal hover:bg-teal-lt text-white rounded-xl px-6 py-5 font-bold text-sm flex items-center gap-2 shadow-[0_0_15px_rgba(47,156,133,0.3)] transition-all active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              Nova Evolução
+            </Button>
+          </div>
         )}
       </div>
 
@@ -1810,6 +1899,17 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                   </button>
                 ) : (
                   <div className="flex flex-col gap-3">
+                    {/* R-05b (D1/D3) — proveniência do bloco herdado. Sem isto o dentista não
+                        distingue o que digitou hoje do que veio de outra consulta, e é aí que
+                        "copiado sem olhar" vira assinatura em cima de dado alheio. */}
+                    {ortoHerdadaDe && (
+                      <p className="text-[11px] text-text-secondary bg-surface-alt border border-border rounded-lg px-3 py-2">
+                        Pré-preenchido com a manutenção de{' '}
+                        <span className="font-semibold text-text-primary">{dataBR(ortoHerdadaDe.data)}</span>
+                        {' · '}{ortoHerdadaDe.autorNome} — <span className="font-semibold">confira antes de salvar</span>.
+                        {' '}A ativação de hoje não é herdada.
+                      </p>
+                    )}
                     <OrtoForm
                       valor={formData.ortoManutencao}
                       onChange={(v) => setFormData((f) => ({ ...f, ortoManutencao: v }))}
