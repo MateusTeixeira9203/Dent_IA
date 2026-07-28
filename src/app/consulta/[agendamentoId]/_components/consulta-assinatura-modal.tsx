@@ -90,7 +90,7 @@ export function ConsultaAssinaturaModal({
     }
 
     const dataUrl = padRef.current.toDataURL('image/png');
-    const result  = await salvarAssinaturaConsulta(fichaId, pacienteId, dataUrl);
+    const result  = await salvarAssinaturaConsulta(fichaId, pacienteId, pacienteNome, dataUrl);
 
     if (!result.ok) {
       setErro(result.error ?? 'Erro ao salvar assinatura.');

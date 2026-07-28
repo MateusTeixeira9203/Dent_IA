@@ -119,6 +119,9 @@ export interface OdontogramaEvento {
   /** Dentista a quem o procedimento PLANEJADO foi encaminhado (R-04). Nunca transfere
    *  autoria — dentista_id continua o autor. null = não encaminhado. */
   encaminhado_para: string | null;
+  /** Assinatura que congelou este evento (R-03a). null = ainda editável — imposto por
+   *  trigger no banco (trg_odontograma_evento_imutavel), não só por checagem em app. */
+  assinatura_id: string | null;
   ficha_id: string | null;
   grupo_id: string | null;
   tipo: TipoRegistroOdontograma;
@@ -144,6 +147,33 @@ export interface OdontogramaEvento {
   /** Data em que o evento entrou no prontuário (ordena o reduce do acumulado). */
   registrado_em: string;
   created_at: string;
+}
+
+// ── Assinatura por procedimento (R-03a) ──────────────────────────────────
+
+/**
+ * 1 ato de assinatura = 1 linha. Genérica: tipo='procedimentos' (R-03a, congela um lote de
+ * odontograma_eventos via assinatura_id) | tipo='orcamento' (R-03c, aceite financeiro —
+ * fichaId fica null, orcamentoId assume). Alvo é sempre XOR, imposto por constraint no banco.
+ */
+export interface Assinatura {
+  id: string;
+  clinicaId: string;
+  pacienteId: string;
+  tipo: 'procedimentos' | 'orcamento';
+  /** Alvo clínico — set só quando tipo='procedimentos'. */
+  fichaId: string | null;
+  /** Alvo financeiro — set só quando tipo='orcamento' (R-03c). */
+  orcamentoId: string | null;
+  /** Autor/responsável no momento — não necessariamente quem coletou (pode ser a secretária). */
+  dentistaId: string;
+  /** Nome de quem assinou (paciente ou responsável legal) — editável na captura. */
+  assinadoPor: string;
+  /** CRO do responsável no ato — snapshot, nunca recalculado (invariante). */
+  croNoAto: string | null;
+  /** Storage path, bucket `fichas` (silo por clínica). */
+  assinaturaRef: string;
+  assinadoEm: string;
 }
 
 /** Estado atual reduzido — 1 linha por (dente, tipo, face|null). Saída do endpoint de acumulado (§3.4). */

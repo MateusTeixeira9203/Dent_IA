@@ -80,7 +80,7 @@ export function AssinaturaRecepcaoModal({ open, onOpenChange, pacienteId, pacien
     setStep('salvando');
 
     const dataUrl = padRef.current.toDataURL('image/png');
-    const result  = await salvarAssinaturaRecepcao(fichaId, pacienteId, dataUrl);
+    const result  = await salvarAssinaturaRecepcao(fichaId, pacienteId, pacienteNome, dataUrl);
 
     if (!result.ok) {
       setErro(result.error ?? 'Erro ao salvar assinatura.');

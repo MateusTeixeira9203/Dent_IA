@@ -279,7 +279,7 @@ export async function deletarFicha(fichaId: string, pacienteId: string): Promise
 
   const { data: ficha } = await supabase
     .from('fichas')
-    .select('id, dentista_id')
+    .select('id, dentista_id, assinado_em')
     .eq('id', fichaId)
     .eq('clinica_id', clinicId)
     .maybeSingle();
@@ -287,6 +287,12 @@ export async function deletarFicha(fichaId: string, pacienteId: string): Promise
   if (!ficha) return { ok: false, error: 'Ficha não encontrada.' };
   if (role === 'dentista' && ficha.dentista_id !== dentistaId) {
     return { ok: false, error: 'Sem permissão para apagar fichas de outro dentista.' };
+  }
+  // R-03b (#B5) — fecha a assimetria com o caminho novo: ficha com evento assinado já é
+  // imutável no DELETE via trigger; ficha legada (sem evento, fichas.assinado_em) não tinha
+  // guard nenhum aqui até agora.
+  if (ficha.assinado_em != null) {
+    return { ok: false, error: 'Esta ficha tem procedimentos assinados e não pode ser apagada.' };
   }
 
   const { error } = await supabase
@@ -296,6 +302,13 @@ export async function deletarFicha(fichaId: string, pacienteId: string): Promise
     .eq('clinica_id', clinicId);
 
   if (error) {
+    // R-03a: ficha com algum evento assinado é imutável até no DELETE — o cascade tenta
+    // desamarrar odontograma_eventos.assinatura_id e o trigger trg_odontograma_evento_imutavel
+    // barra (raise 'evento_assinado_imutavel'). Comportamento correto (protege prova clínica
+    // assinada — CFO), só precisa de mensagem clara em vez do erro cru do Postgres.
+    if (error.message.includes('evento_assinado_imutavel')) {
+      return { ok: false, error: 'Esta ficha tem procedimentos assinados e não pode ser apagada.' };
+    }
     console.error('[deletarFicha]', error.message);
     return { ok: false, error: 'Erro ao apagar ficha.' };
   }

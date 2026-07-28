@@ -56,10 +56,11 @@ import type {
   TipoRegistroOdontograma, StatusRegistro, OrigemRegistro, AncoraClinica,
   NivelAncora, Arcada, FaceDental, QuadranteFDI, PapelNoGrupo,
 } from '@/types/odontograma';
-import { alternarStatusRegistro, encaminharProcedimento, atualizarStatusEncaminhado, preencherDetalheEncaminhado } from '@/app/consulta/[agendamentoId]/actions';
+import { alternarStatusRegistro, encaminharProcedimento, atualizarStatusEncaminhado, preencherDetalheEncaminhado, assinarProcedimentos, assinarTodosRealizadosDaFicha } from '@/app/consulta/[agendamentoId]/actions';
 import { salvarFicha, deletarFicha } from '@/server/patients/salvar-ficha';
 import { derivarResponsaveis, eventosVisiveis, fichaVisivel, filtroAindaValido, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
 import { EncaminharBar } from '@/components/fichas/encaminhar-bar';
+import { AssinarBar } from '@/components/fichas/assinar-bar';
 import { agruparRegistros } from '@/lib/odontograma/agrupar-registros';
 import { agruparPorDente, type SecaoRegistros } from '@/lib/odontograma/agrupar-por-dente';
 import { agregarGruposAbertos } from '@/lib/odontograma/grupos-abertos';
@@ -77,6 +78,17 @@ interface ToothNote {
 
 
 type ProcStatus = ToothStatus;
+
+/**
+ * R-03b — alvo do Dialog de assinatura. 'legado' é o caminho antigo (ficha sem evento,
+ * fichas.assinado_em); 'todos'/'subset' são os dois caminhos granulares (R-03a) — a
+ * diferença é só QUEM resolve os eventoIds (o servidor, no gesto padrão de 1 clique, ou o
+ * client, quando o dentista selecionou um subconjunto via AssinarBar).
+ */
+type SigningTarget =
+  | { kind: 'legado'; fichaId: string }
+  | { kind: 'todos'; fichaId: string; pacienteId: string }
+  | { kind: 'subset'; eventoIds: string[]; pacienteId: string };
 
 // #16 D3 — ciclo de status (clique avança) e metadados visuais (cinza → âmbar → teal).
 const STATUS_CYCLE: Record<ProcStatus, ProcStatus> = {
@@ -110,6 +122,10 @@ interface EventoView {
   detalhe: unknown | null;
   /** Destino do encaminhamento (R-04) — null = não encaminhado. */
   encaminhadoPara: { id: string; nome: string } | null;
+  /** Assinatura que congelou este registro (R-03a/b) — null = ainda editável. Trava por
+   *  REGISTRO, não mais por ficha inteira (evo.assinadoEm segue existindo, mas só rege o
+   *  caminho legado sem evento — ver spec R-03b). */
+  assinaturaId: string | null;
 }
 
 /**
@@ -140,6 +156,8 @@ type EventoRow = {
   /** Destino do encaminhamento (R-04, migration 106/109) — null = não encaminhado. */
   encaminhado_para: string | null;
   encaminhado_dentista: { id: string; nome: string } | null;
+  /** Assinatura por registro (R-03a, migration 111) — null = ainda editável. */
+  assinatura_id: string | null;
 };
 
 interface Evolution {
@@ -274,12 +292,14 @@ function derivarV2DosEventos(eventos: OdontogramaEventoDraft[]): {
 /**
  * Agrupa os eventos de uma ficha em cards §11 (camada 2): eventos com o MESMO grupo_id
  * viram UM card multi-dente ("Exodontia · dentes 31–41"); os isolados, um card cada.
- * Autor/CRO e estado de assinatura vêm da ficha (na ficha rápida, um autor por ficha).
+ * Autor/CRO vêm da ficha (na ficha rápida, um autor por ficha). `assinada` (R-03b) agora é
+ * POR CARD — `primeiro.assinaturaId != null` — não mais um flag uniforme de toda a ficha
+ * (a assinatura granular do R-03a congela registro a registro, não a ficha inteira).
  * Agrupamento/ordenação delegados a agruparRegistros (R-02 I2 — antes duplicado aqui
  * e em gruposDraft; agora uma função só, em src/lib/odontograma/agrupar-registros.ts).
  */
 function eventosParaCards(
-  eventos: EventoView[], autorNome: string, autorCro: string | null, assinada: boolean,
+  eventos: EventoView[], autorNome: string, autorCro: string | null,
 ): Array<{ key: string; ids: string[]; data: RegistroCardData }> {
   return agruparRegistros(eventos).map(({ itens }) => {
     const primeiro = itens[0];
@@ -297,7 +317,7 @@ function eventosParaCards(
         registradoEm: primeiro.registradoEm,
         autorNome,
         autorCro,
-        assinada,
+        assinada: primeiro.assinaturaId != null,
         encaminhadoPara: primeiro.encaminhadoPara,
       },
     };
@@ -560,7 +580,8 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   const [isPanelOpen, setIsPanelOpen] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);  const [selectedTeeth, setSelectedTeeth] = React.useState<number[]>([]);
   const [sharedTeeth, setSharedTeeth] = React.useState<number[]>([]);  const [sharedNotes, setSharedNotes] = React.useState<string[]>(['']);  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState<string | null>(null);
-  const [signingFichaId, setSigningFichaId] = React.useState<string | null>(null);
+  const [signingTarget, setSigningTarget] = React.useState<SigningTarget | null>(null);
+  const [assinadoPorInput, setAssinadoPorInput] = React.useState('');
   const [isSavingSignature, setIsSavingSignature] = React.useState(false);
   const signaturePadRef = React.useRef<SignaturePadLib | null>(null);
 
@@ -573,10 +594,13 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   // 'me' = Meus · senão um dentista.id.
   const [filtroResponsavel, setFiltroResponsavel] = React.useState<string | null>(null);
 
-  // ── R-04 Fase 3: modo seleção (encaminhar em lote), escopado à CONSULTA aberta ──
-  // Só uma consulta em modo por vez. selecionados = chaves de card (grupo);
-  // destino = 1 dentista pro lote inteiro. Confirmar = 1 chamada batch.
+  // ── R-04 Fase 3 / R-03b: modo seleção (encaminhar OU assinar em lote), escopado à
+  // CONSULTA aberta. Só uma consulta em modo por vez, e só um tipo por vez (não dá pra
+  // selecionar pra encaminhar e assinar ao mesmo tempo na mesma ficha — mesma restrição de
+  // "só uma consulta em modo" já valia antes). selecionados = chaves de card (grupo);
+  // destino = 1 dentista pro lote inteiro (só faz sentido em modoSelecaoTipo='encaminhar').
   const [modoSelecaoFichaId, setModoSelecaoFichaId] = React.useState<string | null>(null);
+  const [modoSelecaoTipo, setModoSelecaoTipo] = React.useState<'encaminhar' | 'assinar' | null>(null);
   const [selecionados, setSelecionados] = React.useState<Set<string>>(new Set());
   const [destinoEncaminhar, setDestinoEncaminhar] = React.useState<string | null>(null);
 
@@ -843,7 +867,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       // antigas não têm eventos → recebem [] e seguem no display legado (fonte híbrida).
       const { data: evData, error: evError } = await supabase
         .from("odontograma_eventos")
-        .select("id, ficha_id, grupo_id, papel_no_grupo, tipo, status, origem, nivel, arcada, quadrante, dente, faces, observacao, detalhe, realizado_em, registrado_em, encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(id, nome)")
+        .select("id, ficha_id, grupo_id, papel_no_grupo, tipo, status, origem, nivel, arcada, quadrante, dente, faces, observacao, detalhe, realizado_em, registrado_em, encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(id, nome), assinatura_id")
         .eq("paciente_id", patientId)
         .eq("clinica_id", clinicaId);
 
@@ -867,6 +891,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
           origem: e.origem, ancora, observacao: e.observacao ?? null, realizadoEm: e.realizado_em, registradoEm: e.registrado_em,
           detalhe: e.detalhe ?? null,
           encaminhadoPara: e.encaminhado_para ? (e.encaminhado_dentista ?? null) : null,
+          assinaturaId: e.assinatura_id ?? null,
         };
         const arr = eventosPorFicha.get(e.ficha_id);
         if (arr) arr.push(view); else eventosPorFicha.set(e.ficha_id, [view]);
@@ -958,26 +983,32 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     [evolutions, filtroResponsavel, dentistaId],
   );
 
-  // ── R-04 Fase 3: ficha em modo seleção + seus cards encamináveis VISÍVEIS ──────
-  // Encaminhável = indicado · autor = eu · ficha não assinada · não já encaminhado.
-  // Sobre os visíveis (compõe com o filtro do R-16: seleciona só o que se vê).
+  // ── R-04 Fase 3 / R-03b: ficha em modo seleção + seus cards elegíveis VISÍVEIS ──
+  // Encaminhável = indicado · autor = eu · ficha (legado) não assinada · não já encaminhado.
+  // Assinável = realizado · autor = eu · ainda não assinado (por REGISTRO, não por ficha —
+  // R-03b). Sobre os visíveis (compõe com o filtro do R-16: seleciona só o que se vê).
   const fichaEmModo = React.useMemo(
     () => evolutions.find((e) => e.id === modoSelecaoFichaId) ?? null,
     [evolutions, modoSelecaoFichaId],
   );
-  const cardsEncaminhaveis = React.useMemo(() => {
-    if (!fichaEmModo || !podeEditarFicha(fichaEmModo) || fichaEmModo.assinadoEm) return [];
-    return eventosParaCards(
-      eventosFiltrados(fichaEmModo), fichaEmModo.professional, fichaEmModo.autorCro, fichaEmModo.assinadoEm != null,
-    )
-      .filter((c) => c.data.status === 'indicado' && !c.data.encaminhadoPara)
+  const cardsSelecionaveis = React.useMemo(() => {
+    if (!fichaEmModo || !podeEditarFicha(fichaEmModo) || !modoSelecaoTipo) return [];
+    const cards = eventosParaCards(eventosFiltrados(fichaEmModo), fichaEmModo.professional, fichaEmModo.autorCro);
+    if (modoSelecaoTipo === 'encaminhar') {
+      if (fichaEmModo.assinadoEm) return [];
+      return cards
+        .filter((c) => c.data.status === 'indicado' && !c.data.encaminhadoPara)
+        .map((c) => ({ key: c.key, ids: c.ids }));
+    }
+    return cards
+      .filter((c) => c.data.status === 'realizado' && !c.data.assinada)
       .map((c) => ({ key: c.key, ids: c.ids }));
-  }, [fichaEmModo, podeEditarFicha, eventosFiltrados]);
-  // Selecionados que ainda são encamináveis válidos (uma key pode virar órfã se o
-  // filtro esconder o card) — é o que a barra conta e o confirmar envia.
+  }, [fichaEmModo, podeEditarFicha, eventosFiltrados, modoSelecaoTipo]);
+  // Selecionados que ainda são elegíveis válidos (uma key pode virar órfã se o filtro
+  // esconder o card) — é o que a barra conta e o confirmar envia.
   const idsSelecionados = React.useMemo(
-    () => cardsEncaminhaveis.filter((c) => selecionados.has(c.key)),
-    [cardsEncaminhaveis, selecionados],
+    () => cardsSelecionaveis.filter((c) => selecionados.has(c.key)),
+    [cardsSelecionaveis, selecionados],
   );
 
 
@@ -1102,15 +1133,17 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     }
   };
 
-  // ── R-04 Fase 3: handlers do modo seleção (lote na consulta aberta) ──────────
+  // ── R-04 Fase 3 / R-03b: handlers do modo seleção (lote na consulta aberta) ──
   const sairModoSelecao = React.useCallback(() => {
     setModoSelecaoFichaId(null);
+    setModoSelecaoTipo(null);
     setSelecionados(new Set());
     setDestinoEncaminhar(null);
   }, []);
-  const ligarModoSelecao = (fichaId: string) => {
+  const ligarModoSelecao = (fichaId: string, tipo: 'encaminhar' | 'assinar') => {
     setSelecionados(new Set());
     setDestinoEncaminhar(null);
+    setModoSelecaoTipo(tipo);
     setModoSelecaoFichaId(fichaId);
   };
   const toggleSelecao = (key: string) => {
@@ -1129,6 +1162,19 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     const destino = destinoEncaminhar;
     sairModoSelecao();
     await encaminharRegistro(evo, ids, destino);
+  };
+  /**
+   * R-03b — sai do modo seleção e abre o pad de assinatura pro subconjunto escolhido.
+   * Quem grava é handleSaveSignature (signingTarget.kind === 'subset'), não esta função —
+   * ela só decide QUAIS ids entram no lote.
+   */
+  const confirmarAssinaturaLote = () => {
+    if (!fichaEmModo) return;
+    const ids = idsSelecionados.flatMap((c) => c.ids);
+    if (ids.length === 0) return;
+    sairModoSelecao();
+    setAssinadoPorInput(patientName ?? '');
+    setSigningTarget({ kind: 'subset', eventoIds: ids, pacienteId: patientId });
   };
   /** Abre/fecha a consulta. Colapsar a que está em modo seleção sai do modo (a barra
    *  não pode ficar órfã sem os cards na tela). */
@@ -1261,54 +1307,92 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     }
   };
 
+  /**
+   * R-03b — 3 caminhos por trás de 1 diálogo: 'legado' é o antigo (ficha sem evento,
+   * fichas.assinado_em, inalterado); 'todos'/'subset' são o granular do R-03a — só muda
+   * quem resolve os eventoIds (servidor no gesto padrão, client quando veio da AssinarBar).
+   */
   const handleSaveSignature = async () => {
-    if (!signingFichaId || !signaturePadRef.current) return;
+    if (!signingTarget || !signaturePadRef.current) return;
     if (signaturePadRef.current.isEmpty()) {
       toast.error('Nenhuma assinatura detectada. Por favor assine antes de confirmar.');
+      return;
+    }
+    if (signingTarget.kind !== 'legado' && assinadoPorInput.trim().length < 2) {
+      toast.error('Informe o nome de quem está assinando.');
       return;
     }
 
     setIsSavingSignature(true);
     try {
       const dataUrl = signaturePadRef.current.toDataURL('image/png');
-      const res = await fetch(dataUrl);
-      const blob = await res.blob();
 
-      const supabase = createClient();
-      const storagePath = `${clinicaId}/${patientId}/assinatura_${signingFichaId}.png`;
+      if (signingTarget.kind === 'legado') {
+        const fichaId = signingTarget.fichaId;
+        const res = await fetch(dataUrl);
+        const blob = await res.blob();
 
-      const { error: storageErr } = await supabase.storage
-        .from('fichas')
-        .upload(storagePath, blob, { upsert: true, contentType: 'image/png' });
-      if (storageErr) throw storageErr;
+        const supabase = createClient();
+        const storagePath = `${clinicaId}/${patientId}/assinatura_${fichaId}.png`;
 
-      const assinadoEm = new Date().toISOString();
+        const { error: storageErr } = await supabase.storage
+          .from('fichas')
+          .upload(storagePath, blob, { upsert: true, contentType: 'image/png' });
+        if (storageErr) throw storageErr;
 
-      const { data: signed, error: dbErr } = await supabase
-        .from('fichas')
-        .update({ assinatura_url: storagePath, assinado_em: assinadoEm })
-        .eq('id', signingFichaId)
-        .eq('clinica_id', clinicaId)
-        .select('id');
-      if (dbErr) throw dbErr;
-      // .select() vazio = RLS barrou (ficha de outro autor). O botão já é gated (defesa em
-      // profundidade), mas se chegar aqui: remove o PNG órfão que subiu antes do update e
-      // falha alto — nunca o "Assinatura salva com sucesso" falso (invariante #9).
-      if (!signed?.length) {
-        await supabase.storage.from('fichas').remove([storagePath]);
-        toast.error('Só o dentista autor pode assinar esta ficha.');
+        const assinadoEm = new Date().toISOString();
+
+        const { data: signed, error: dbErr } = await supabase
+          .from('fichas')
+          .update({ assinatura_url: storagePath, assinado_em: assinadoEm })
+          .eq('id', fichaId)
+          .eq('clinica_id', clinicaId)
+          .select('id');
+        if (dbErr) throw dbErr;
+        // .select() vazio = RLS barrou (ficha de outro autor). O botão já é gated (defesa em
+        // profundidade), mas se chegar aqui: remove o PNG órfão que subiu antes do update e
+        // falha alto — nunca o "Assinatura salva com sucesso" falso (invariante #9).
+        if (!signed?.length) {
+          await supabase.storage.from('fichas').remove([storagePath]);
+          toast.error('Só o dentista autor pode assinar esta ficha.');
+          return;
+        }
+
+        setEvolutions((prev) =>
+          prev.map((e) =>
+            e.id === fichaId
+              ? { ...e, assinaturaUrl: storagePath, assinadoEm: assinadoEm }
+              : e
+          )
+        );
+        setSigningTarget(null);
+        toast.success('Assinatura salva com sucesso.');
         return;
       }
 
-      setEvolutions((prev) =>
-        prev.map((e) =>
-          e.id === signingFichaId
-            ? { ...e, assinaturaUrl: storagePath, assinadoEm: assinadoEm }
-            : e
-        )
-      );
+      // Granular (R-03a/b) — sempre passa pela RPC assinar_procedimentos (trigger de
+      // imutabilidade no banco). Refetch em vez de merge otimista: o sucesso pode tocar
+      // N eventos espalhados em cards diferentes, mais barato reler que reconciliar local.
+      const res = signingTarget.kind === 'todos'
+        ? await assinarTodosRealizadosDaFicha({
+            fichaId: signingTarget.fichaId,
+            pacienteId: signingTarget.pacienteId,
+            assinadoPor: assinadoPorInput.trim(),
+            assinaturaDataUrl: dataUrl,
+          })
+        : await assinarProcedimentos({
+            eventoIds: signingTarget.eventoIds,
+            assinadoPor: assinadoPorInput.trim(),
+            assinaturaDataUrl: dataUrl,
+          });
 
-      setSigningFichaId(null);
+      if (!res.ok) {
+        toast.error(res.error ?? 'Não foi possível registrar a assinatura.');
+        return;
+      }
+
+      await fetchFichas();
+      setSigningTarget(null);
       toast.success('Assinatura salva com sucesso.');
     } catch (err) {
       console.error('[assinatura] Erro ao salvar:', err);
@@ -1786,7 +1870,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
               const eventosVis = eventosFiltrados(evo);
               // R-20 Fase 3 — cards da ficha salva computados aqui (não só no bloco de registros)
               // pra o onToothToggle do odontograma achar o card por dente e destacar (como o Site A).
-              const cardsVis = eventosParaCards(eventosVis, evo.professional, evo.autorCro, evo.assinadoEm != null);
+              const cardsVis = eventosParaCards(eventosVis, evo.professional, evo.autorCro);
               const validKeys = evo.teethNotes.flatMap((tn) =>
                 tn.notes.filter(Boolean).map((_, i) => `${tn.tooth}_${i}`)
               );
@@ -1975,16 +2059,23 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                           {eventosVis.length > 0 ? (() => {
                             const cards = cardsVis;
                             const emModo = modoSelecaoFichaId === evo.id;
+                            const modoAtual = emModo ? modoSelecaoTipo : null;
                             const podeEncaminhar = podeEditarFicha(evo) && !evo.assinadoEm;
                             const temEncaminhavel = cards.some((c) => c.data.status === 'indicado' && !c.data.encaminhadoPara);
+                            // R-03b — assinável é por REGISTRO (data.assinada), não mais por ficha
+                            // (evo.assinadoEm continua existindo, mas só governa o caminho legado).
+                            const podeAssinarLote = podeEditarFicha(evo) && !evo.assinadoEm;
+                            const temAssinavel = cards.some((c) => c.data.status === 'realizado' && !c.data.assinada);
                             // R-21 — render de UM card da ficha salva (Site B). Idêntico ao .map anterior
-                            // (modo seleção R-04, dimming do inelegível, realce, encaminhamento); só foi
+                            // (modo seleção R-04/R-03b, dimming do inelegível, realce, encaminhamento); só foi
                             // extraído pra ser chamado por dente via renderSecoesPorDente.
                             const renderCardVis = ({ key, ids, data }: { key: string; ids: string[]; data: RegistroCardData }) => {
                               const encaminhavel = podeEncaminhar && data.status === 'indicado' && !data.encaminhadoPara;
+                              const assinavel = podeAssinarLote && data.status === 'realizado' && !data.assinada;
+                              const elegivel = modoAtual === 'encaminhar' ? encaminhavel : modoAtual === 'assinar' ? assinavel : false;
                               const jaEncaminhado = podeEncaminhar && data.status === 'indicado' && !!data.encaminhadoPara;
-                              // No modo, o que não pode ser encaminhado apaga e fica inerte (#8).
-                              if (emModo && !encaminhavel) {
+                              // No modo, o que não é elegível pra esse tipo de lote apaga e fica inerte (#8).
+                              if (emModo && !elegivel) {
                                 return (
                                   <div key={key} className="opacity-40 pointer-events-none">
                                     <RegistroCard data={data}>{corpoEspecialidade(data.tipo, data.detalhe)}</RegistroCard>
@@ -2003,15 +2094,15 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                                 >
                                   <RegistroCard
                                     data={data}
-                                    selecionavel={emModo && encaminhavel}
+                                    selecionavel={emModo && elegivel}
                                     selecionado={selecionados.has(key)}
-                                    onToggleSelecao={emModo && encaminhavel ? () => toggleSelecao(key) : undefined}
+                                    onToggleSelecao={emModo && elegivel ? () => toggleSelecao(key) : undefined}
                                     onToggleStatus={
                                       emModo
                                         ? undefined
-                                        : podeEditarFicha(evo) && !evo.assinadoEm
+                                        : podeEditarFicha(evo) && !data.assinada
                                           ? () => void toggleStatusRegistro(evo, ids, data.status)
-                                          : data.encaminhadoPara?.id === dentistaId && !evo.assinadoEm
+                                          : data.encaminhadoPara?.id === dentistaId && !data.assinada
                                             ? () => void concluirEncaminhado(evo, ids, data.status)
                                             : undefined
                                     }
@@ -2023,7 +2114,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                                         Aparece MESMO com detalhe vazio (oposto do card comum, I2). */}
                                     {(data.encaminhadoPara?.id === dentistaId
                                       && (data.tipo === 'endodontia' || data.tipo === 'implante')
-                                      && !evo.assinadoEm)
+                                      && !data.assinada)
                                       ? corpoEspecialidadeDestino(
                                           data.tipo,
                                           detalheRascunho[key] !== undefined ? detalheRascunho[key] : data.detalhe,
@@ -2039,16 +2130,29 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                             return (
                             <div className="flex flex-col gap-2">
                               {/* Cabeçalho da consulta: liga o modo seleção NESTA consulta */}
-                              {podeEncaminhar && temEncaminhavel && !emModo && destinosDisponiveis.length > 0 && (
-                                <div className="flex justify-end -mb-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => ligarModoSelecao(evo.id)}
-                                    className="inline-flex items-center gap-1.5 text-[11px] font-bold text-teal-ink hover:bg-teal-pale px-2.5 py-1.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-teal transition-colors"
-                                  >
-                                    <Forward className="w-3.5 h-3.5" />
-                                    Encaminhar
-                                  </button>
+                              {!emModo && (podeEncaminhar && temEncaminhavel && destinosDisponiveis.length > 0
+                                || podeAssinarLote && temAssinavel) && (
+                                <div className="flex justify-end gap-2 -mb-1">
+                                  {podeAssinarLote && temAssinavel && (
+                                    <button
+                                      type="button"
+                                      onClick={() => ligarModoSelecao(evo.id, 'assinar')}
+                                      className="inline-flex items-center gap-1.5 text-[11px] font-bold text-teal-ink hover:bg-teal-pale px-2.5 py-1.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-teal transition-colors"
+                                    >
+                                      <PenLine className="w-3.5 h-3.5" />
+                                      Selecionar quais assinar
+                                    </button>
+                                  )}
+                                  {podeEncaminhar && temEncaminhavel && destinosDisponiveis.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => ligarModoSelecao(evo.id, 'encaminhar')}
+                                      className="inline-flex items-center gap-1.5 text-[11px] font-bold text-teal-ink hover:bg-teal-pale px-2.5 py-1.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-teal transition-colors"
+                                    >
+                                      <Forward className="w-3.5 h-3.5" />
+                                      Encaminhar
+                                    </button>
+                                  )}
                                 </div>
                               )}
                               {/* R-21 — lista agrupada por dente (Site B). Em modo seleção força tudo aberto
@@ -2107,9 +2211,12 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                           )}
 
                           {/* Assinatura por procedimento (artefato §07) — sai do topo, vem
-                              pro rodapé mostrando O QUE ela cobre. Planejado não assina. */}
+                              pro rodapé mostrando O QUE ela cobre. Planejado não assina.
+                              R-03b: "realizados" aqui já exclui os que ESTE evento (não a
+                              ficha) já tem assinaturaId — o bloco some quando não sobra
+                              nada a assinar, mesmo com a ficha ainda "aberta". */}
                           {podeEditarFicha(evo) && !evo.assinadoEm && (() => {
-                            const realizados = evo.eventos.filter((e) => e.status === 'realizado');
+                            const realizados = evo.eventos.filter((e) => e.status === 'realizado' && e.assinaturaId == null);
                             const legado = evo.eventos.length === 0 && totalProcs > 0;
                             if (realizados.length === 0 && !legado) return null;
                             return (
@@ -2125,7 +2232,14 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                                   </p>
                                 </div>
                                 <button
-                                  onClick={() => setSigningFichaId(evo.id)}
+                                  onClick={() => {
+                                    setAssinadoPorInput(patientName ?? '');
+                                    setSigningTarget(
+                                      legado
+                                        ? { kind: 'legado', fichaId: evo.id }
+                                        : { kind: 'todos', fichaId: evo.id, pacienteId: patientId },
+                                    );
+                                  }}
                                   className="shrink-0 bg-teal hover:bg-teal-lt text-white px-4 py-2 rounded-xl font-semibold text-xs flex items-center gap-2 transition-colors"
                                 >
                                   <PenLine className="w-3.5 h-3.5" />
@@ -2164,25 +2278,35 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
 
       </div>
 
-      {/* R-04 Fase 3: barra de ação do modo seleção — fixa, escopada à consulta em modo */}
+      {/* R-04 Fase 3 / R-03b: barra de ação do modo seleção — fixa, escopada à consulta em modo */}
       <AnimatePresence>
-        {modoSelecaoFichaId && (
+        {modoSelecaoFichaId && modoSelecaoTipo === 'encaminhar' && (
           <EncaminharBar
             totalSelecionado={idsSelecionados.length}
-            totalEncaminhavel={cardsEncaminhaveis.length}
+            totalEncaminhavel={cardsSelecionaveis.length}
             destinosDisponiveis={destinosDisponiveis}
             destino={destinoEncaminhar}
             onDestino={setDestinoEncaminhar}
-            onSelecionarTudo={() => setSelecionados(new Set(cardsEncaminhaveis.map((c) => c.key)))}
+            onSelecionarTudo={() => setSelecionados(new Set(cardsSelecionaveis.map((c) => c.key)))}
             onLimpar={() => setSelecionados(new Set())}
             onConfirmar={() => void confirmarEncaminhamentoLote()}
+            onSair={sairModoSelecao}
+          />
+        )}
+        {modoSelecaoFichaId && modoSelecaoTipo === 'assinar' && (
+          <AssinarBar
+            totalSelecionado={idsSelecionados.length}
+            totalAssinavel={cardsSelecionaveis.length}
+            onConfirmar={confirmarAssinaturaLote}
+            onSelecionarTudo={() => setSelecionados(new Set(cardsSelecionaveis.map((c) => c.key)))}
+            onLimpar={() => setSelecionados(new Set())}
             onSair={sairModoSelecao}
           />
         )}
       </AnimatePresence>
 
       {/* Dialog: Assinatura do Paciente */}
-      <Dialog open={!!signingFichaId} onOpenChange={(open) => { if (!open) setSigningFichaId(null); }}>
+      <Dialog open={!!signingTarget} onOpenChange={(open) => { if (!open) setSigningTarget(null); }}>
         <DialogContent className="max-w-md rounded-2xl bg-surface border-border">
           <DialogHeader>
             <DialogTitle className="font-heading text-xl text-text-primary flex items-center gap-2">
@@ -2194,12 +2318,27 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
             </DialogDescription>
           </DialogHeader>
 
+          {signingTarget?.kind !== 'legado' && (
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-[0.15em]">
+                Nome de quem assina
+              </label>
+              <input
+                type="text"
+                value={assinadoPorInput}
+                onChange={(e) => setAssinadoPorInput(e.target.value)}
+                placeholder="Nome do paciente ou responsável"
+                className="w-full bg-surface-alt border border-border rounded-xl px-3.5 py-2 text-sm font-medium text-text-primary outline-none focus:border-teal transition-colors"
+              />
+            </div>
+          )}
+
           <SignaturePad padRef={signaturePadRef} />
 
           <DialogFooter className="gap-2 pt-2">
             <Button
               variant="outline"
-              onClick={() => setSigningFichaId(null)}
+              onClick={() => setSigningTarget(null)}
               disabled={isSavingSignature}
               className="rounded-xl border-border text-text-primary hover:bg-surface-alt"
             >

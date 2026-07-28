@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { requireClinicContext } from '@/server/auth/clinic';
 import { createServiceClient } from '@/lib/supabase/service';
 import { revalidatePath } from 'next/cache';
@@ -119,6 +120,7 @@ export async function salvarEventosOdontograma(params: {
 export async function salvarAssinaturaConsulta(
   fichaId: string,
   pacienteId: string,
+  assinadoPor: string,
   assinaturaDataUrl: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const { clinicId, dentistaId, role } = await requireClinicContext();
@@ -137,6 +139,11 @@ export async function salvarAssinaturaConsulta(
     .maybeSingle();
 
   if (!ficha) return { ok: false, error: 'Ficha não encontrada' };
+
+  // R-03b: tenta o caminho granular primeiro (ficha com evento) — só cai pro legado
+  // (abaixo, inalterado) se genuinamente não há nada realizado sem assinatura.
+  const granular = await assinarTodosRealizadosDaFicha({ fichaId, pacienteId, assinadoPor, assinaturaDataUrl });
+  if (granular.ok || granular.error !== 'Nada a assinar nesta ficha.') return granular;
 
   const base64 = assinaturaDataUrl.split(',')[1];
   if (!base64) return { ok: false, error: 'Assinatura inválida' };
@@ -254,6 +261,11 @@ export async function alternarStatusRegistro(params: {
     .eq('dentista_id', dentistaPerfil.id);
 
   if (error) {
+    // R-03a: evento assinado individualmente é imutável mesmo com a ficha ainda aberta
+    // (assinatura é por registro, não por ficha) — trg_odontograma_evento_imutavel barra.
+    if (error.message.includes('evento_assinado_imutavel')) {
+      return { ok: false, error: 'Este registro já foi assinado e não pode mais ser alterado.' };
+    }
     console.error('[alternarStatusRegistro]', error.message);
     return { ok: false, error: 'Não foi possível atualizar o registro.' };
   }
@@ -500,4 +512,113 @@ export async function preencherDetalheEncaminhado(params: {
 export async function getGruposAbertos(patientId: string): Promise<GrupoAberto[]> {
   const { clinicId } = await requireClinicContext();
   return buscarGruposAbertos({ patientId, clinicId });
+}
+
+const assinarProcedimentosSchema = z.object({
+  eventoIds: z.array(z.string().uuid()).min(1),
+  assinadoPor: z.string().trim().min(2).max(120),
+  assinaturaDataUrl: z.string().startsWith('data:image/png;base64,'),
+});
+export type AssinarProcedimentosInput = z.infer<typeof assinarProcedimentosSchema>;
+
+/**
+ * R-03a — assinatura por procedimento (lote). Wrapper fino da RPC assinar_procedimentos
+ * (migration 111, SECURITY DEFINER): quem pode assinar é decisão #5, validada NO BANCO —
+ * autor da ficha ou secretária da mesma clínica, nunca via bypass de service role (diferente
+ * dos 3 fluxos legados de assinatura de FICHA, que ficam fora deste item — R-03b reconcilia).
+ * Cliente normal (RLS ligada), não service role: o bucket `fichas` já é silo por clínica.
+ */
+export async function assinarProcedimentos(
+  params: AssinarProcedimentosInput,
+): Promise<{ ok: boolean; error?: string }> {
+  const parsed = assinarProcedimentosSchema.safeParse(params);
+  if (!parsed.success) return { ok: false, error: 'Dados inválidos.' };
+  const { eventoIds, assinadoPor, assinaturaDataUrl } = parsed.data;
+
+  const { supabase, clinicId } = await requireClinicContext();
+
+  // Resolve paciente_id/ficha_id só pro path do storage — a RPC valida tudo de novo por
+  // dentro (este read não é a autorização, é só pra montar o nome do arquivo).
+  const { data: eventoRef } = await supabase
+    .from('odontograma_eventos')
+    .select('paciente_id, ficha_id')
+    .eq('id', eventoIds[0])
+    .eq('clinica_id', clinicId)
+    .maybeSingle();
+
+  if (!eventoRef?.ficha_id) return { ok: false, error: 'Registro não encontrado.' };
+
+  const base64 = assinaturaDataUrl.split(',')[1];
+  if (!base64) return { ok: false, error: 'Assinatura inválida.' };
+  const buffer = Buffer.from(base64, 'base64');
+  const storagePath = `${clinicId}/${eventoRef.paciente_id}/assinatura_${eventoRef.ficha_id}_${Date.now()}.png`;
+
+  const { error: storageErr } = await supabase.storage
+    .from('fichas')
+    .upload(storagePath, buffer, { contentType: 'image/png', upsert: true });
+
+  if (storageErr) {
+    console.error('[assinarProcedimentos] storage:', storageErr.message);
+    return { ok: false, error: 'Erro ao salvar a assinatura.' };
+  }
+
+  const { error } = await supabase.rpc('assinar_procedimentos', {
+    p_evento_ids: eventoIds,
+    p_assinado_por: assinadoPor,
+    p_assinatura_ref: storagePath,
+  });
+
+  if (error) {
+    // PNG já subiu mas a RPC rejeitou — remove o órfão antes de devolver o erro (mesmo
+    // cuidado que salvarAssinaturaConsulta/FichasTab.handleSaveSignature já tomam).
+    await supabase.storage.from('fichas').remove([storagePath]);
+    if (error.message.includes('sem_permissao')) {
+      return { ok: false, error: 'Você não tem permissão para assinar estes registros.' };
+    }
+    // A RPC funde "status diferente de realizado", "já assinado" e "mistura de fichas"
+    // num único raise (status_invalido) — não há como o wrapper distinguir os 3 casos.
+    if (error.message.includes('status_invalido')) {
+      return { ok: false, error: 'Só é possível assinar procedimentos já realizados e ainda não assinados, todos da mesma ficha.' };
+    }
+    console.error('[assinarProcedimentos]', error.message);
+    return { ok: false, error: 'Não foi possível registrar a assinatura.' };
+  }
+
+  revalidatePath(`/dashboard/pacientes/${eventoRef.paciente_id}`);
+  return { ok: true };
+}
+
+/**
+ * R-03b — gesto padrão dos 3 fluxos de captura: assina TODOS os realizados ainda não
+ * assinados desta ficha, preservando o "1 clique assina tudo" de hoje. Ficha sem evento
+ * (caminho legado, fichas.assinado_em) nunca chega aqui — cada chamador branchueia antes
+ * (spec R-03b, Decisão #B3).
+ */
+export async function assinarTodosRealizadosDaFicha(params: {
+  fichaId: string;
+  pacienteId: string;
+  assinadoPor: string;
+  assinaturaDataUrl: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const { supabase, clinicId } = await requireClinicContext();
+
+  const { data: eventos } = await supabase
+    .from('odontograma_eventos')
+    .select('id')
+    .eq('ficha_id', params.fichaId)
+    .eq('paciente_id', params.pacienteId)
+    .eq('clinica_id', clinicId)
+    .eq('status', 'realizado')
+    .is('assinatura_id', null);
+
+  const eventoIds = (eventos ?? []).map((e) => e.id as string);
+  if (eventoIds.length === 0) {
+    return { ok: false, error: 'Nada a assinar nesta ficha.' };
+  }
+
+  return assinarProcedimentos({
+    eventoIds,
+    assinadoPor: params.assinadoPor,
+    assinaturaDataUrl: params.assinaturaDataUrl,
+  });
 }
