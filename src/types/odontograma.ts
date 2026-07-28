@@ -85,7 +85,9 @@ export type TipoRegistroOdontograma =
   | 'profilaxia'        // limpeza. Ancora em boca.
   | 'raspagem'          // raspagem/alisamento periodontal. Ancora em quadrante (ou boca).
   | 'clareamento'       // clareamento dental. Ancora em boca.
-  | 'fluor';            // aplicação de flúor. Ancora em boca.
+  | 'fluor'             // aplicação de flúor. Ancora em boca.
+  // R-08a — o tipo já existia no CHECK do banco (migration 106) mas nunca chegou ao TS.
+  | 'exame_periodontal'; // exame periodontal aconteceu. Ancora em boca. Números vêm no R-08b.
 
 export type PapelNoGrupo = 'pilar' | 'pontico';
 
@@ -107,6 +109,7 @@ export const TIPO_LABEL: Record<TipoRegistroOdontograma, string> = {
   raspagem:          'Raspagem',
   clareamento:       'Clareamento',
   fluor:             'Flúor',
+  exame_periodontal: 'Exame periodontal',
 };
 
 // ── Evento (event-log) e estado reduzido (§1.4) ──────────────────────────

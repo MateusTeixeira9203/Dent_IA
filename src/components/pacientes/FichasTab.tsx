@@ -1827,7 +1827,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                   Procedimentos de rotina
                 </label>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {(['profilaxia', 'fluor', 'clareamento'] as const).map((tipo) => {
+                  {(['profilaxia', 'fluor', 'clareamento', 'exame_periodontal'] as const).map((tipo) => {
                     const ev = eventoRotina(tipo);
                     const cor = ev ? corDoRegistro(ev.status, ev.origem) : null;
                     return (
