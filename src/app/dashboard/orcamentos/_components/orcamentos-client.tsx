@@ -1206,8 +1206,11 @@ export function OrcamentosClient({
                     .filter((p) => p.status === 'pago')
                     .reduce((s, p) => s + p.valor, 0);
                   const total = selected.total ?? 0;
-                  const valorRestante = Math.max(0, total - valorPago);
-                  const quitado = valorRestante === 0 && valorPago > 0;
+                  // Arredonda pra centavo antes de comparar — soma de floats (parcelas)
+                  // raramente bate exato com o total, e "=== 0" cru deixava "Quitado" sem
+                  // aparecer mesmo com o valor certo pago.
+                  const valorRestante = Math.max(0, Math.round((total - valorPago) * 100) / 100);
+                  const quitado = valorRestante <= 0 && valorPago > 0;
                   const percPago = total > 0 ? Math.min(100, Math.round((valorPago / total) * 100)) : 0;
 
                   return (

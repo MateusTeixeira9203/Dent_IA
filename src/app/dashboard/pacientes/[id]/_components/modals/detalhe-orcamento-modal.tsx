@@ -182,14 +182,18 @@ export function DetalheOrcamentoModal({
     const pago    = detalheOrc.pagamentos.filter(p => p.status === 'pago').reduce((s, p) => s + p.valor, 0);
     const pendente= detalheOrc.pagamentos.filter(p => p.status === 'pendente').reduce((s, p) => s + p.valor, 0);
     const total   = detalheOrc.total ?? 0;
+    // Arredonda pra centavo antes de comparar — soma de floats (parcelas) raramente bate
+    // exato com o total (ex.: 149.99999999999997), e ">= total" cru deixava "Quitado" sem
+    // aparecer mesmo com o valor certo pago.
+    const restanteArred = Math.max(0, Math.round((total - pago) * 100) / 100);
     return {
       totalPago:    pago,
       totalPendente: pendente,
       pctPago:      total > 0 ? Math.min(100, (pago / total) * 100) : 0,
-      quitado:      total > 0 && pago >= total,
+      quitado:      total > 0 && restanteArred <= 0,
       // Mesma definição de "Preencher restante" já usada na página de Orçamentos:
       // total - pago (não desconta pendências já agendadas separadamente).
-      restante:     Math.max(0, total - pago),
+      restante:     restanteArred,
     };
   }, [detalheOrc]);
 
