@@ -84,8 +84,8 @@ export function NovoOrcamentoModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="rounded-3xl bg-surface border-border p-0 overflow-hidden gap-0"
-        style={{ width: '78vw', maxWidth: 'none', maxHeight: '90vh', left: '50%' }}
+        className="rounded-3xl bg-surface border-border p-0 overflow-hidden gap-0 w-[94vw] sm:w-[78vw]"
+        style={{ maxWidth: 'none', maxHeight: '90vh', left: '50%' }}
         showCloseButton={false}
       >
         {/* Banner teal */}
@@ -148,7 +148,7 @@ export function NovoOrcamentoModal({
 
         {/* ── Etapa 2: edição de itens (duas colunas) ── */}
         {etapaNovoOrc === 'itens' && (
-          <div className="flex" style={{ height: 'calc(90vh - 92px)', minHeight: 0 }}>
+          <div className="flex flex-col sm:flex-row" style={{ height: 'calc(90vh - 92px)', minHeight: 0 }}>
 
             {/* Coluna esquerda — itens */}
             <div className="flex-1 min-w-0 overflow-y-auto p-6 space-y-4">
@@ -286,7 +286,7 @@ export function NovoOrcamentoModal({
             </div>
 
             {/* Coluna direita — total + ações */}
-            <div className="w-64 shrink-0 border-l border-border flex flex-col" style={{ background: 'rgba(47,156,133,0.04)' }}>
+            <div className="w-full sm:w-64 sm:shrink-0 overflow-y-auto border-t sm:border-t-0 sm:border-l border-border flex flex-col" style={{ background: 'rgba(47,156,133,0.04)' }}>
               <div className="flex-1 p-6 space-y-4">
                 <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#2f9c85' }}>
                   Resumo

@@ -206,8 +206,8 @@ export function DetalheOrcamentoModal({
   return (
     <Dialog open={!!detalheOrcId} onOpenChange={open => { if (!open) onClose(); }}>
       <DialogContent
-        className="rounded-3xl bg-surface border-border p-0 overflow-hidden gap-0"
-        style={{ width: '78vw', maxWidth: 'none', maxHeight: '90vh', left: '50%' }}
+        className="rounded-3xl bg-surface border-border p-0 overflow-hidden gap-0 w-[94vw] sm:w-[78vw]"
+        style={{ maxWidth: 'none', maxHeight: '90vh', left: '50%' }}
         showCloseButton={false}
       >
         {detalheOrc && (
@@ -267,7 +267,7 @@ export function DetalheOrcamentoModal({
             </div>
 
             {/* ── Body: two columns ───────────────────────────────────── */}
-            <div className="flex" style={{ height: 'calc(90vh - 96px)', minHeight: 0 }}>
+            <div className="flex flex-col sm:flex-row" style={{ height: 'calc(90vh - 96px)', minHeight: 0 }}>
 
               {/* ── Left column ───────────────────────────────────────── */}
               <div className="flex-1 min-w-0 overflow-y-auto p-6 space-y-6">
@@ -653,7 +653,7 @@ export function DetalheOrcamentoModal({
               </div>
 
               {/* ── Right column ──────────────────────────────────────── */}
-              <div className="w-72 shrink-0 border-l border-border flex flex-col" style={{ background: 'rgba(47,156,133,0.04)' }}>
+              <div className="w-full sm:w-72 sm:shrink-0 overflow-y-auto border-t sm:border-t-0 sm:border-l border-border flex flex-col" style={{ background: 'rgba(47,156,133,0.04)' }}>
                 <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
                   {/* Total hero card */}
