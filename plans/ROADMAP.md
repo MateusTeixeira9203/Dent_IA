@@ -1,10 +1,13 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · **Odonto.IA** · atualizado 2026-07-27
-> **Ativo:** nenhum · **Fila:** 11 (specs prontas: R-03a, R-11) · **Concluídos:** 16 · **Congelados:** 1 ·
-> **Fechados hoje (27/07):** **R-05** (orto manual) + **R-06** (ponte/esfoliação) + **R-07** (rotina) →
-> ✅ verificados em prod pelo Mateus. Deploys: `dbb4228..00602f2` (R-05) e `00602f2..6674f7b`
-> (R-06/R-07 + eval + símbolos). Nenhuma migration nesta leva.
+> **ROADMAP** · **Odonto.IA** · atualizado 2026-07-28
+> **Ativo:** nenhum · **Fila:** 9 · **Concluídos:** 18 · **Congelados:** 1 ·
+> **Fechados 27-28/07:** **R-05·R-06·R-07** (verificados em prod 27/07) + **R-03a·R-03b**
+> (assinatura por procedimento — modelo/backend + captura nos 3 fluxos legados, verificado ao
+> vivo com 2 contas 28/07). Migrations 111/112 já aplicadas em prod (Supabase); código **ainda
+> não pushado**. Deploys: `dbb4228..00602f2` (R-05) e `00602f2..6674f7b` (R-06/R-07 + eval + símbolos).
+> **R-11 no ar** (`8af1fea..1949e54`, deploy `dpl_8rEuxQR`) — 🟡 ainda aguardando verificação
+> (2 contas pro delete, decisão sobre `procedimentos_concluidos`).
 > **Ontem (26/07):** o lote (R-21/R-20/R-19/R-18/R-17/R-16/R-12/R-04/R-02) + R-04b (migration 110).
 
 > Reconstruído do zero em 2026-07-21 por decisão do Mateus. O histórico anterior está no
@@ -23,10 +26,12 @@ Ganhos de infra que ficam: **harness de eval** da extração clínica (`evals/ex
 obrigatório pra mexer no prompt — baseline ATUAL 16/16 · 0 inventados) e os **símbolos do
 odontograma portados do artefato canônico** + polidos (auditoria em `plans/auditorias/`).
 
-**Ativo agora:** nenhum. Candidatos: **R-03a** (assinatura — pesado, mexe em prod) ou **R-11**
-(unificar gravação — leve, sem migration), ambos com spec pronta; ou **R-08** (periograma, G) e
-**R-09** (voz nas especialidades), que agora são o que resta do cluster de especialidades.
-Audit do Fable **congelado em R-22** (+ os achados de símbolos P1/P3/P4). Ver `plans/ESTADO.md`.
+**Ativo agora:** nenhum. **R-03a/R-03b fechados** (assinatura por procedimento): trigger de
+imutabilidade no banco, RPC estreita, os 3 fluxos legados (ficha rápida, recepção, fim de
+consulta) migrados pro caminho granular, verificados ao vivo com 2 contas — falta só o push.
+**R-11 segue 🟡** (no ar, não verificado — 2 contas pro delete). Sem spec pronta ainda: **R-03c**
+(aceite de orçamento), **R-08** (periograma, G) e **R-09** (voz nas especialidades). Audit do
+Fable **congelado em R-22** (+ achados de símbolos P1/P3/P4). Ver `plans/ESTADO.md`.
 
 ## Fila
 
@@ -49,14 +54,12 @@ Peso: **P** (uma sessão) · **M** (2–3 sessões) · **G** (precisa quebrar).
 
 | ID | Item | Objetivo | Peso |
 |---|---|---|---|
-| R-03a | ⏳ Assinatura por procedimento — modelo + congelamento (backend) — **spec pronta pra execução** | Tabela `assinaturas` (assinatura por LOTE de realizados) + `odontograma_eventos.assinatura_id` + **trigger de imutabilidade no banco** + RPC `assinar_procedimentos` (secretária/dentista via RPC estreita, CRO do autor). Fecha o furo de imutabilidade só-app de hoje. Decisões travadas 26/07. **Mexe em prod (migration+RLS): migration sozinha primeiro, 2 contas.** [spec](specs/R-03a-assinatura-por-procedimento.md) | M |
-| R-03b | ⏳ Assinatura por procedimento — captura/UI + reconciliar os 3 fluxos legados | Depende de R-03a no ar. UI de captura (AssinarBar no modo-seleção do R-04 + signature_pad), estado "assinado" por registro no card, e unificar os 3 fluxos de assinatura de ficha que hoje escrevem em `fichas.assinado_em` sem se conhecer. **Overlap com R-11** — coordenar antes de codar. Decisões #4/#6/#7 pendentes. [sketch na spec R-03a](specs/R-03a-assinatura-por-procedimento.md) | M |
 | R-03c | ⏳ Assinatura de aceite do orçamento (prova de recebimento) | O paciente assina o orçamento que **aceitou pagar** — prova comercial/contrato que protege o recebimento do dentista (hoje o status `aprovado` é só o dentista afirmando). **Reusa a tabela `assinaturas` genérica do R-03a** (`tipo='orcamento'`): liga `orcamentos.assinatura_id` + trigger que **congela os termos** (itens + total) do orçamento assinado (senão editar o orçamento depois esvazia a assinatura) + RPC `assinar_orcamento`. Encaixa no fluxo "aprovar orçamento". Depende de R-03a no ar. Escopo a fundo depois. Ideia do Mateus 26/07 | M |
 | R-05b | ⏳ Orto: atalho "+ Manutenção" com pré-preenchimento | Paciente com orto no histórico (última evolução com `orto_manutencao`) ganha botão direto no topo do prontuário → abre Nova Evolução com a seção orto montada e **pré-preenchida da última manutenção** (manutenção é incremental). Detecção pelo trabalho, zero classificação — obs. do Mateus 27/07: *dentistas não usam as classificações da ficha*. Cold start = R-05 (a seção é sempre disponível). Padrão treatment card (OrthoTrac). Ideia 27/07 | P |
 | R-09 | ⏳ Voz nas especialidades (pass 2) | `/api/dex/extrair-especialidade` não tem um único chamador — endo e implante são 100% digitados. Começar pela endo | M |
 | R-08 | ⏳ Periodontia: periograma | Tela própria (6 sítios × 32 dentes), tabela `perio_exames` — hoje só existe a declaração no registry. NIC calculado, nunca digitado. **Inclui `exame_periodontal`** (transferido do R-07, 27/07 — o exame É o periograma, um dono só) | G |
 | R-10 | ⏳ Rótulo do procedimento no orçamento e no PDF (só falta P2) | **P1 (jargão "- planejado") ✅ verificado em prod (26/07)** — `derivarV2DosEventos` sem o " - planejado". **P2 ⏳ na fila:** tirar a observação clínica (resto radicular etc.) do documento que o paciente lê — `dentes_observacoes` alimenta orçamento **E** prontuário, então o strip precisa de decisão | P |
-| R-11 | ⏳ Unificar o caminho de gravação da ficha — **spec pronta pra execução (decisões travadas 26/07)** | Investigação achou **9 caminhos vivos + 4 grupos de código morto** (não 2) criando/editando/apagando ficha de 6+ formas, sem Zod em nenhum. Reenquadre: o `status` é escrito mas **nunca lido** (não há bug de status), e há **2 furos de segurança vivos** — client apaga ficha sem checar autoria, e UPDATE de conteúdo de ficha assinada não é barrado no servidor. R-11 afunila create/update/delete num `salvarFicha`/`deletarFicha` (`src/server/patients/salvar-ficha.ts`) com Zod + guard de imutabilidade, e apaga o código morto. **Zero migration/RLS.** 4 fases (Fase 0 = apagar morto, pode ir sozinha). [spec](specs/R-11-unificar-gravacao-ficha.md) | M |
+| R-11 | 🟡 Unificar o caminho de gravação da ficha — **no ar, não verificado** | 4 fases no ar: contrato único `salvarFicha`/`deletarFicha` (`src/server/patients/salvar-ficha.ts`) substitui os 3 caminhos que escreviam `fichas` direto + apaga o código morto achado na investigação (9 caminhos vivos + 4 mortos). Guard de imutabilidade e status derivado no servidor verificados ao vivo em build de produção antes do push. **Zero migration.** Commits `1de02c4`/`1949e54`, deploy `dpl_8rEuxQR` (READY). Falta: teste de autoria com 2 contas (apagar ficha de outro dentista / como admin), decisão sobre `procedimentos_concluidos` (achado fora do escopo da spec durante a execução). [spec](specs/R-11-unificar-gravacao-ficha.md) | M |
 | R-24 | ⏳ Indicador de "ficha em aberto" (usar o `status`) | Achado do R-11: `fichas.status` (`aberta`/`concluida`) é gravado mas nunca lido. Este item dá uso real: badge/indicador de ficha em aberto (rascunho não finalizado) no dashboard/lista. **Escopo pendente:** hoje `concluida` = modo consulta e `aberta` = criada no FichasTab — definir se esse recorte é o que "em aberto" deve significar pro usuário (e o que muda uma ficha de aberta→concluída). Ideia do Mateus 26/07 | P |
 | R-25 | ⏳ Limpar `setState` síncrono dentro de `useEffect` (cascading renders) | 24 erros de lint "Calling setState synchronously within an effect can trigger cascading renders" em ~20 componentes pré-existentes (dex-widget, dex-presence, floating-dock, ApresentarPanel, use-mobile, useDexGuide…). Não quebra runtime, mas cada um é um render duplo evitável — dívida de performance. Mover o setState pra fora do efeito ou guardar por condição. Achado no lint 26/07 | M |
 | R-15 | ⏳ Modo consulta: o cockpit do atendimento | Vira o cockpit do atendimento — procedimentos ativos, odontograma vivo, tabelas, implante, raio-x, gravação como canto pequeno; motor compartilhado com a ficha rápida. [Visão em debate](specs/R-15-modo-consulta-cockpit.md); depende de R-01 · R-02 · plugins | G |
@@ -71,6 +74,8 @@ Peso: **P** (uma sessão) · **M** (2–3 sessões) · **G** (precisa quebrar).
 
 | ID | Item | Fechado | Spec |
 |---|---|---|---|
+| R-03b | ✅ Assinatura por procedimento — captura/UI: os 3 fluxos legados (ficha rápida, recepção, fim de consulta) migrados pro caminho granular; `AssinarBar` pra seleção de subconjunto | 2026-07-28 | [R-03b](_arquivo/specs/R-03b-assinatura-captura-ui.md) |
+| R-03a | ✅ Assinatura por procedimento — modelo + congelamento: tabela `assinaturas`, trigger de imutabilidade, RPC `assinar_procedimentos` (migrations 111/112) | 2026-07-28 | [R-03a](_arquivo/specs/R-03a-assinatura-por-procedimento.md) |
 | R-07 | ✅ Procedimentos de rotina (profilaxia · flúor · clareamento · raspagem) — chips na evolução, nível boca/quadrante, card "Boca toda", PDF | 2026-07-27 | [R-06/R-07](_arquivo/specs/R-06-07-tipos-novos-especialidades.md) |
 | R-06 | ✅ Prótese fixa e odontopediatria — ponte (grupo pilar/pôntico + linha derivada) e esfoliação | 2026-07-27 | [R-06/R-07](_arquivo/specs/R-06-07-tipos-novos-especialidades.md) |
 | R-05 | ✅ Ortodontia: lançamento e edição manual (`OrtoForm` montado no FichasTab) | 2026-07-27 | [R-05](_arquivo/specs/R-05-orto-lancamento-manual.md) |
