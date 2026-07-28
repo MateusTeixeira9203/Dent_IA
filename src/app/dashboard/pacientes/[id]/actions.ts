@@ -1,36 +1,7 @@
 "use server";
 
 import { requireClinicContext } from "@/server/auth/clinic";
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-
-export async function deletarFicha(fichaId: string): Promise<void> {
-  const { supabase, clinicId, dentistaId, role } = await requireClinicContext();
-
-  if (role === 'secretaria') throw new Error("Sem permissão para apagar fichas clínicas");
-
-  // Dentista só pode apagar fichas que criou (dentista_id = criador/responsável).
-  // Quando o schema evoluir para created_by + responsible_dentista_id, estender aqui.
-  if (role === 'dentista') {
-    const { data: ficha } = await supabase
-      .from("fichas")
-      .select("dentista_id")
-      .eq("id", fichaId)
-      .eq("clinica_id", clinicId)
-      .maybeSingle();
-    if (ficha && ficha.dentista_id !== dentistaId) {
-      throw new Error("Sem permissão para apagar fichas de outro dentista");
-    }
-  }
-
-  const { error } = await supabase
-    .from("fichas")
-    .delete()
-    .eq("id", fichaId)
-    .eq("clinica_id", clinicId);
-
-  if (error) throw new Error("Erro ao apagar ficha");
-}
 
 export async function atualizarPaciente(
   pacienteId: string,
@@ -78,43 +49,6 @@ export async function salvarAnotacoes(
     .from("pacientes")
     .update({ observacoes, updated_at: new Date().toISOString() })
     .eq("id", pacienteId)
-    .eq("clinica_id", clinicId);
-
-  if (error) return { error: error.message };
-  revalidatePath(`/dashboard/pacientes/${pacienteId}`);
-  return {};
-}
-
-export async function atualizarFicha(
-  fichaId: string,
-  pacienteId: string,
-  dados: {
-    queixa_principal?: string | null;
-    anotacoes?: string | null;
-    status?: "aberta" | "concluida";
-  }
-): Promise<{ error?: string }> {
-  const { supabase, clinicId, dentistaId, role } = await requireClinicContext();
-
-  if (role === 'secretaria') return { error: "Sem permissão para editar fichas clínicas" };
-
-  // Dentista só pode editar fichas que criou (mesma regra do deletar)
-  if (role === 'dentista') {
-    const { data: ficha } = await supabase
-      .from("fichas")
-      .select("dentista_id")
-      .eq("id", fichaId)
-      .eq("clinica_id", clinicId)
-      .maybeSingle();
-    if (ficha && ficha.dentista_id !== dentistaId) {
-      return { error: "Sem permissão para editar fichas de outro dentista" };
-    }
-  }
-
-  const { error } = await supabase
-    .from("fichas")
-    .update({ ...dados, updated_at: new Date().toISOString() })
-    .eq("id", fichaId)
     .eq("clinica_id", clinicId);
 
   if (error) return { error: error.message };
@@ -237,33 +171,4 @@ export async function criarPacienteRapido(dados: {
 
   revalidatePath("/dashboard/pacientes");
   return { id: (data as { id: string }).id };
-}
-
-export async function criarFichaInline(dados: {
-  pacienteId: string;
-  queixaPrincipal: string;
-  anotacoes: string;
-  dentesAfetados: string[];
-}): Promise<{ error?: string; id?: string }> {
-  const { supabase, clinicId, dentistaId, role } = await requireClinicContext();
-
-  if (role === 'secretaria') return { error: "Sem permissão para criar fichas clínicas" };
-
-  const { data, error } = await supabase
-    .from("fichas")
-    .insert({
-      paciente_id:      dados.pacienteId,
-      dentista_id:      dentistaId,
-      clinica_id:       clinicId,
-      queixa_principal: dados.queixaPrincipal || null,
-      anotacoes:        dados.anotacoes || null,
-      dentes_afetados:  dados.dentesAfetados.length > 0 ? dados.dentesAfetados : null,
-      status:           "aberta",
-    })
-    .select("id")
-    .single();
-
-  if (error) return { error: error.message };
-  revalidatePath(`/dashboard/pacientes/${dados.pacienteId}`);
-  return { id: data.id };
 }
