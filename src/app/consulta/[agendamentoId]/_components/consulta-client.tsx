@@ -12,7 +12,8 @@ import { toast } from 'sonner';
 import { useCapturaLivre } from '@/hooks/useCapturaLivre';
 import { useDexGuide } from '@/hooks/useDexGuide';
 import { DexAvatar } from '@/components/ui/dex-avatar';
-import { salvarFichaConsulta, iniciarAtendimentoConsulta, salvarEventosOdontograma, getGruposAbertos } from '../actions';
+import { iniciarAtendimentoConsulta, salvarEventosOdontograma, getGruposAbertos } from '../actions';
+import { salvarFicha } from '@/server/patients/salvar-ficha';
 import type { GrupoAberto } from '@/lib/odontograma/grupos-abertos';
 import { ConsultaAssinaturaModal } from './consulta-assinatura-modal';
 import { EmitirDocumentoModal } from '@/components/pacientes/EmitirDocumentoModal';
@@ -361,20 +362,25 @@ export function ConsultaClient({
       ? `${evolucao.anotacoes}\n\n⚠️ Novo alerta detectado: ${evolucao.alerta_novo}`
       : evolucao.anotacoes;
 
-    const result = await salvarFichaConsulta({
-      agendamentoId,
+    const result = await salvarFicha({
       pacienteId:         paciente.id,
-      queixa_principal:   evolucao.queixa_principal,
+      origem:             'modo_consulta',
+      agendamentoId,
+      // Data clínica explícita (hoje no fuso da clínica) — mesma técnica que o caminho
+      // antigo usava no servidor (Job A §7.2): timeZone explícito, não depende do relógio
+      // local nem do fuso do processo que roda o código.
+      dataAtendimento:    new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }),
+      queixaPrincipal:    evolucao.queixa_principal,
       anotacoes:          anotacoesFinais,
-      dentes_afetados:    dentesConfirmados,
-      dentes_observacoes: evolucao.dentes_observacoes,
+      dentesAfetados:     dentesConfirmados,
+      dentesObservacoes:  evolucao.dentes_observacoes,
       procedimentos:      evolucao.procedimentos,
       conduta:            evolucao.conduta,
-      alerta_novo:        evolucao.alerta_novo,
-      odontograma_eventos: eventosDraft,
+      alertaNovo:         evolucao.alerta_novo,
+      odontogramaEventos: eventosDraft,
     });
-    if (result.error) { toast.error(result.error); setIsSaving(false); return; }
-    if (result.fichaId) setSavedFichaId(result.fichaId);
+    if (!result.ok) { toast.error(result.error); setIsSaving(false); return; }
+    setSavedFichaId(result.fichaId);
     // A ficha salvou; o desenho pode não ter. Não engolir — guardar pro retry.
     if (result.eventosFalharam) setEventosPendentes(eventosDraft);
     setFase('salvo');

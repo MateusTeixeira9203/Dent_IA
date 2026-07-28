@@ -2,7 +2,6 @@
 
 import { requireClinicContext } from '@/server/auth/clinic';
 import { createServiceClient } from '@/lib/supabase/service';
-import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { inserirNotificacao } from '@/lib/notificacoes';
 import { buscarGruposAbertos, type GrupoAberto } from '@/server/patients/get-grupos-abertos';
@@ -49,114 +48,10 @@ function montarRowsEventos(
   }));
 }
 
-export async function salvarFichaConsulta(params: {
-  agendamentoId:      string;
-  pacienteId:         string;
-  queixa_principal:   string;
-  anotacoes:          string;
-  dentes_afetados:    number[];
-  dentes_observacoes: Record<string, string>;
-  // Novos campos opcionais:
-  procedimentos?:     string[];
-  conduta?:           string;
-  alerta_novo?:       string | null;
-  /** v3 — eventos de odontograma revisados pelo dentista na confirmação (Fatia A). */
-  odontograma_eventos?: OdontogramaEventoDraft[];
-  /**
-   * `eventosFalharam` sinaliza que a ficha salvou mas o event-log do odontograma NÃO —
-   * o chamador mostra aviso não-bloqueante + retry (`salvarEventosOdontograma`).
-   */
-}): Promise<{ fichaId?: string; error?: string; eventosFalharam?: boolean }> {
-  const { supabase, user, clinicId, role } = await requireClinicContext();
-
-  if (role === 'secretaria') return { error: 'Sem permissão.' };
-
-  const { data: dentistaPerfil } = await supabase
-    .from('dentistas')
-    .select('id')
-    .eq('user_id', user.id)
-    .eq('clinica_id', clinicId)
-    .maybeSingle();
-
-  if (!dentistaPerfil) redirect('/onboarding');
-
-  const { data: fichaData, error: fichaError } = await supabase.from('fichas').insert({
-    clinica_id:          clinicId,
-    paciente_id:         params.pacienteId,
-    dentista_id:         dentistaPerfil.id,
-    // Job A §7.2 — data clínica explícita (hoje no fuso da clínica); o default
-    // do banco é rede de segurança, não a fonte de verdade da aplicação.
-    data_atendimento:    new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }),
-    queixa_principal:    params.queixa_principal,
-    anotacoes:           params.anotacoes,
-    dentes_afetados:     params.dentes_afetados,
-    dentes_observacoes:  params.dentes_observacoes,
-    // Novos campos:
-    ...(params.procedimentos !== undefined && { procedimentos: params.procedimentos }),
-    ...(params.conduta !== undefined && { conduta: params.conduta }),
-    ...(params.alerta_novo != null && { alerta_novo: params.alerta_novo }),
-    status:              'concluida',
-    origem:              'modo_consulta',
-  }).select('id').single();
-
-  if (fichaError) {
-    console.error('[salvarFichaConsulta]', fichaError.message);
-    return { error: 'Erro ao salvar a ficha. Tente novamente.' };
-  }
-
-  const fichaId = (fichaData as { id: string }).id;
-
-  // v3 — event-log do odontograma (migration 101). Fail-soft deliberado (espírito D5):
-  // a ficha v2 JÁ está salva; se a camada visual falhar, loga e segue — o dado clínico
-  // textual não se perde e o odontograma degrada pra "sem registro".
-  const eventos = params.odontograma_eventos ?? [];
-  let eventosFalharam = false;
-  if (eventos.length > 0) {
-    const rows = montarRowsEventos(eventos, {
-      clinicId,
-      pacienteId: params.pacienteId,
-      dentistaId: dentistaPerfil.id,
-      fichaId,
-    });
-    const { error: eventosError } = await supabase.from('odontograma_eventos').insert(rows);
-    if (eventosError) {
-      console.error('[salvarFichaConsulta] odontograma_eventos:', eventosError.message);
-      // Fail-soft CONTINUA (a ficha não é desfeita), mas deixou de ser silencioso:
-      // o chamador recebe o sinal e oferece "tentar de novo" ao dentista.
-      eventosFalharam = true;
-    }
-  }
-
-  await supabase
-    .from('agendamentos')
-    .update({ status: 'completed' })
-    .eq('id', params.agendamentoId)
-    .eq('clinica_id', clinicId);
-
-  // Busca nome do paciente para a notificação
-  const { data: paciente } = await supabase
-    .from('pacientes')
-    .select('nome')
-    .eq('id', params.pacienteId)
-    .maybeSingle<{ nome: string }>();
-
-  // Notifica a secretaria que a consulta foi finalizada
-  await inserirNotificacao(supabase, {
-    clinicaId:     clinicId,
-    paraRole:      'secretaria',
-    deDentistaId:  dentistaPerfil.id,
-    tipo:          'consulta_finalizada',
-    titulo:        `Consulta finalizada — ${paciente?.nome ?? 'Paciente'}`,
-    mensagem:      'A consulta foi encerrada pelo dentista.',
-    href:          '/dashboard/agendamentos',
-  });
-
-  return { fichaId, ...(eventosFalharam && { eventosFalharam: true }) };
-}
-
 /**
  * Salva o event-log do odontograma — retry do save inicial (fail-soft, ver
- * `salvarFichaConsulta`) E caminho único de save da ficha rápida (FichasTab).
+ * `salvarFicha` em `@/server/patients/salvar-ficha`) E caminho único de save da ficha
+ * rápida (FichasTab).
  * Upsert por id (migration 107, R-01): registro que saiu do rascunho é apagado,
  * os demais são atualizados no lugar mantendo o id — nunca renumera.
  */
@@ -293,7 +188,8 @@ export async function iniciarAtendimentoConsulta(agendamentoId: string): Promise
   return {};
 }
 
-// finalizarConsulta foi removida — fluxo de finalização usa salvarFichaConsulta diretamente.
+// finalizarConsulta foi removida — fluxo de finalização usa `salvarFicha`
+// (`@/server/patients/salvar-ficha`, R-11) diretamente.
 
 /**
  * Alterna planejado ⇄ realizado de UM registro (grupo de eventos) na ficha salva.

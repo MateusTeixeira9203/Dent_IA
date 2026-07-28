@@ -56,7 +56,8 @@ import type {
   TipoRegistroOdontograma, StatusRegistro, OrigemRegistro, AncoraClinica,
   NivelAncora, Arcada, FaceDental, QuadranteFDI, PapelNoGrupo,
 } from '@/types/odontograma';
-import { salvarEventosOdontograma, alternarStatusRegistro, encaminharProcedimento, atualizarStatusEncaminhado, preencherDetalheEncaminhado } from '@/app/consulta/[agendamentoId]/actions';
+import { alternarStatusRegistro, encaminharProcedimento, atualizarStatusEncaminhado, preencherDetalheEncaminhado } from '@/app/consulta/[agendamentoId]/actions';
+import { salvarFicha, deletarFicha } from '@/server/patients/salvar-ficha';
 import { derivarResponsaveis, eventosVisiveis, fichaVisivel, filtroAindaValido, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
 import { EncaminharBar } from '@/components/fichas/encaminhar-bar';
 import { agruparRegistros } from '@/lib/odontograma/agrupar-registros';
@@ -590,9 +591,9 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   } as { dataAtendimento: string; type: string; observation: string; teethNotes: ToothNote[]; procedimentos: string[]; conduta: string; ortoManutencao: OrtoManutencaoInfo | null });
 
   // Eventos de odontograma propostos pelo "Organizar com Dex" (camada 2). Só o campo
-  // mágico os preenche na ficha rápida; persistem no save via a RPC atômica da consulta
-  // (salvarEventosOdontograma). Vazio = save não toca a tabela de eventos (edição sem
-  // reorganizar preserva os eventos existentes — a action no-opa em lista vazia).
+  // mágico os preenche na ficha rápida; persistem no save via `salvarFicha` (R-11), que
+  // reusa a mesma RPC atômica da consulta por baixo. Vazio = save não toca a tabela de
+  // eventos (edição sem reorganizar preserva os eventos existentes — no-opa em lista vazia).
   const [eventosDraft, setEventosDraft] = React.useState<OdontogramaEventoDraft[]>([]);
 
   // Camada 1: dente aberto no painel de revisão do odontograma (rascunho do Dex).
@@ -1194,7 +1195,6 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     setIsSaving(true);
 
     try {
-      const supabase = createClient();
       const validSharedNotes = sharedNotes.filter((n) => n.trim()).join('\n');
 
       // Design definitivo (21/07): o lançamento manual virou EVENTO (perfil do dente).
@@ -1225,67 +1225,37 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
         ...derivado.procedimentos.filter((p) => !formData.procedimentos.includes(p)),
       ];
 
-      let fichaId: string;
-      if (editingId) {
-        const { error } = await supabase
-          .from("fichas")
-          .update({
-            // data_atendimento é editável (o dentista pode corrigir a data na edição);
-            // origem NUNCA entra aqui — update não reescreve origem (invariante #9).
-            data_atendimento: formData.dataAtendimento,
-            queixa_principal: formData.type,
-            anotacoes: formData.observation || null,
-            dentes_afetados: dentesAfetados,
-            dentes_observacoes: dentesObservacoes,
-            procedimentos: procedimentosFinais,
-            conduta: formData.conduta || null,
-            orto_manutencao: formData.ortoManutencao,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", editingId)
-          .eq("clinica_id", clinicaId);
+      // R-11 — contrato único (create+update, eventos inclusos): origem NUNCA entra no
+      // update (invariante #9); data_atendimento é editável (o dentista pode corrigir na
+      // edição). Lista de eventos vazia (edição sem reorganizar) = no-op, preserva.
+      const result = await salvarFicha({
+        ...(editingId && { fichaId: editingId }),
+        pacienteId:         patientId,
+        origem:             'manual',
+        dataAtendimento:    formData.dataAtendimento,
+        queixaPrincipal:    formData.type,
+        anotacoes:          formData.observation,
+        dentesAfetados,
+        dentesObservacoes,
+        procedimentos:      procedimentosFinais,
+        conduta:            formData.conduta,
+        ortoManutencao:     formData.ortoManutencao,
+        odontogramaEventos: eventosDraft,
+      });
 
-        if (error) throw error;
-        fichaId = editingId;
-      } else {
-        const { data: novaFicha, error } = await supabase.from("fichas").insert({
-          paciente_id: patientId,
-          dentista_id: dentistaId,
-          clinica_id: clinicaId,
-          data_atendimento: formData.dataAtendimento,
-          queixa_principal: formData.type,
-          anotacoes: formData.observation || null,
-          dentes_afetados: dentesAfetados,
-          dentes_observacoes: dentesObservacoes,
-          procedimentos: procedimentosFinais,
-          conduta: formData.conduta || null,
-          orto_manutencao: formData.ortoManutencao,
-          status: "aberta",
-          // Ficha rápida grava sempre 'manual' — a constraint fichas_origem_check só aceita
-          // 'modo_consulta' | 'manual'. O antigo 'ficha_rapida' era rejeitado pelo banco (a
-          // ficha nem salvava) e não era lido em lugar nenhum. Bug achado 23/07.
-          origem: 'manual',
-        }).select("id").single();
-
-        if (error) throw error;
-        if (!novaFicha) throw new Error("Falha ao criar a ficha.");
-        fichaId = novaFicha.id as string;
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
       }
-
-      // Camada 2 (Roadmap A / A0): persiste os eventos do odontograma via a RPC atômica
-      // da consulta — upsert por id, idempotente, respeita autoria e imutabilidade da
-      // ficha assinada (migration 107, R-01). Fail-soft: a ficha JÁ foi salva; se os
-      // eventos falharem, avisa mas não desfaz. Lista vazia (edição sem reorganizar) =
-      // a action no-opa, preserva.
-      if (eventosDraft.length > 0) {
-        const res = await salvarEventosOdontograma({ fichaId, pacienteId: patientId, eventos: eventosDraft });
-        if (!res.ok) toast.error(res.error ?? "A ficha salvou, mas o odontograma não foi gravado.");
+      if (result.eventosFalharam) {
+        toast.error("A ficha salvou, mas o odontograma não foi gravado.");
       }
 
       await fetchFichas();
       closePanel();
     } catch (err) {
       console.error("Erro ao salvar ficha:", err);
+      toast.error("Erro ao salvar a ficha. Tente novamente.");
     } finally {
       setIsSaving(false);
     }
@@ -1424,17 +1394,15 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
 
   const handleDelete = async (id: string) => {
     try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("fichas")
-        .delete()
-        .eq("id", id)
-        .eq("clinica_id", clinicaId);
-
-      if (error) throw error;
+      const result = await deletarFicha(id, patientId);
+      if (!result.ok) {
+        toast.error(result.error ?? "Erro ao apagar ficha.");
+        return;
+      }
       setEvolutions((prev) => prev.filter((e) => e.id !== id));
     } catch (err) {
       console.error("Erro ao excluir ficha:", err);
+      toast.error("Erro ao apagar ficha. Tente novamente.");
     } finally {
       setShowDeleteConfirm(null);
     }
