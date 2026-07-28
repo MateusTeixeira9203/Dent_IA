@@ -27,7 +27,7 @@ export function EspecialidadeChips({ selected, onChange, disabled = false }: Esp
             disabled={disabled}
             onClick={() => toggle(esp)}
             aria-pressed={isSelected}
-            className={`px-3 py-2 rounded-xl border text-xs font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+            className={`px-3 py-2 rounded-xl border text-xs font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed break-words text-center leading-tight ${
               isSelected
                 ? 'bg-teal border-teal text-white shadow-[0_2px_6px_rgba(47,156,133,0.35)]'
                 : 'bg-surface-alt border-border text-text-secondary hover:border-teal/50 hover:text-teal hover:bg-teal/5'
