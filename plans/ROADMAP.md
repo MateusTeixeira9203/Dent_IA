@@ -1,7 +1,11 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · **Odonto.IA** · atualizado 2026-07-28
-> **Ativo:** nenhum · **Fila:** 9 · **Concluídos:** 22 · **Congelados:** 1 ·
+> **ROADMAP** · **Odonto.IA** · atualizado 2026-07-29
+> **Ativo:** nenhum · **Fila:** 10 · **Concluídos:** 23 · **Congelados:** 1 ·
+> **R-27 ✅ fechado 29/07** — redesign do padrão de modal/painel (orçamento + agendamento),
+> verificado ao vivo por ele no browser. Achado de carona virou **R-28** (pagamento pendente
+> nunca fecha em data diferente de hoje — duplica recebimento). **R-03c-1 🟡 pushado 29/07**
+> (migration 113 + RPC + UI, verificado com 1 conta — falta 2ª conta pra virar ✅).
 > **Fechados 27-28/07:** **R-05·R-06·R-07** (verificados em prod 27/07) + **R-03a·R-03b**
 > (assinatura por procedimento — modelo/backend + captura nos 3 fluxos legados, verificado ao
 > vivo com 2 contas 28/07, **no ar em produção**). Migrations 111/112 aplicadas em prod. Deploys:
@@ -34,11 +38,13 @@ Ganhos de infra que ficam: **harness de eval** da extração clínica (`evals/ex
 obrigatório pra mexer no prompt — baseline ATUAL 16/16 · 0 inventados) e os **símbolos do
 odontograma portados do artefato canônico** + polidos (auditoria em `plans/auditorias/`).
 
-**Ativo agora:** nenhum. **R-03a/R-03b e R-11 no ar em produção**, todos ✅ verificados com 2
-contas. **R-05b e R-08a ✅ verificados** em produção (ver Concluído). **R-03c e R-08** tiveram
-investigação a fundo 28/07 — pesos corrigidos na Fila (R-03c virou G,
-R-08 G confirmado mas com 1º corte P já entregue). **R-09** (voz nas especialidades) segue sem
-spec. Audit do Fable **congelado em R-22** (+ achados de símbolos P1/P3/P4). Ver `plans/ESTADO.md`.
+**Ativo agora:** nenhum. **R-27 fechado** 29/07 (ver Concluído). **R-03c-1 aprovado, codado e
+pushado** 29/07 (migration 113 em prod, RPC + UI + fluxo completo verificados com 1 conta) —
+**🟡, falta o teste com 2 contas** pra virar ✅. **R-03a/R-03b e R-11 no ar em produção**, todos
+✅ verificados com 2 contas. **R-05b e R-08a ✅ verificados** em produção (ver Concluído). **R-08**
+teve investigação a fundo 28/07 — G confirmado, mas com 1º corte P já entregue. **R-09** (voz nas
+especialidades) segue sem spec. Audit do Fable **congelado em R-22** (+ achados de símbolos
+P1/P3/P4). Ver `plans/ESTADO.md`.
 
 ## Fila
 
@@ -61,7 +67,7 @@ Peso: **P** (uma sessão) · **M** (2–3 sessões) · **G** (precisa quebrar).
 
 | ID | Item | Objetivo | Peso |
 |---|---|---|---|
-| R-03c | ⏳ Assinatura de aceite do orçamento (prova de recebimento) | O paciente assina o orçamento que **aceitou pagar** — prova comercial que protege o recebimento do dentista. **Investigado a fundo 28/07** (workflow read-only): a premissa original subestimava o problema — são **5 caminhos** que aprovam orçamento, e em **4 nem o dentista afirma nada** (`registrarPagamentoRapido`, webhook AbacatePay, handler de PIX no WhatsApp). Achado grave: `assinaturas.orcamento_id` é `ON DELETE CASCADE` e `excluirOrcamento` só barra com pagamento `pago` — hoje dá pra apagar orçamento assinado (não pago) em 2 cliques, levando a prova junto. Reusa `assinaturas` do R-03a (`tipo='orcamento'` já cabeado no banco). **Peso corrigido pra G** — quebra em R-03c-1 (aceite assinado + snapshot dos termos, P — entrega prova sozinho), R-03c-2 (congelamento/gate), R-03c-3 (revisar orçamento assinado sem apagar a prova), R-03c-4 (aceite no PDF). Decisão travada 28/07: orçamento assinado que precisa mudar **bloqueia e oferece "Revisar"** (cria novo, o assinado fica read-only). Spec ainda não escrita | G |
+| R-03c | 🟡 Assinatura de aceite do orçamento (prova de recebimento) — **R-03c-1 codado e no ar, falta verificar** | O paciente assina o orçamento que **aceitou pagar** — prova comercial que protege o recebimento do dentista. **Peso G**, quebrado em R-03c-1 (aceite assinado + snapshot, P) · R-03c-2 (congelamento/gate) · R-03c-3 (revisar sem apagar a prova) · R-03c-4 (aceite no PDF). Achado que motivou o corte: `assinaturas.orcamento_id` era `ON DELETE CASCADE` e `excluirOrcamento` só barrava com pagamento `pago` — hoje corrigido pra `RESTRICT` (migration 113). **[R-03c-1](specs/R-03c-1-aceite-assinado-orcamento.md) 🟡 no ar (29/07):** migration + RPC + UI codados, fluxo completo verificado com 1 conta (assinatura real → RPC → selo, FK e índice único testados com DELETE/INSERT diretos no banco, snapshot provado imutável editando o orçamento depois do aceite). **Falta o teste com 2 contas** (secretária coleta · outro dentista é barrado · outra clínica não vê nada) pra virar ✅ | G |
 | R-09 | ⏳ Voz nas especialidades (pass 2) | `/api/dex/extrair-especialidade` não tem um único chamador — endo e implante são 100% digitados. Começar pela endo | M |
 | R-08 | ⏳ Periodontia: periograma — **R-08a e R-08b ✅ no Concluído** | Roadmap descrevia só o corte final ("tela 6×32"). O rastreio PSR (R-08b) prova o modelo: `concluirPSR` decide corretamente entre 1 sextante em 3 / 2+ sextantes em 3 / código 4, verificado com 10 casos puros + clique real em produção local. Sub-itens: R-08a ✅ · R-08b ✅ (ver Concluído) → R-08c (tabela `perio_exames`, grade 6×32, **G de verdade** — migration+RLS+2 contas) → R-08d (PDF + assinatura/imutabilidade) → R-08e (comparação com exame anterior) → R-08f (ditado posicional, parser determinístico, nunca LLM decidindo número). **Invariantes clínicos que atravessam todos os sub-itens (sinal do NIC, furca por entrada, implante sem JCE, severidade≠estágio, append-only, visualização própria, MG por superfície, registro por exceção, exame anterior visível): [contrato clínico](specs/R-08-contrato-clinico-perio.md)** — travado e ampliado 28/07 | G |
 | R-07b | ⏳ Chips de rotina (R-07) chegam ao modo consulta | Achado de carona no R-08a (28/07): profilaxia/flúor/clareamento/raspagem só existem na ficha rápida — grep em `src/app/consulta` por rotina/profilaxia/raspagem = zero. R-07 está ✅ na ficha rápida e furado no outro fluxo | P |
@@ -69,6 +75,7 @@ Peso: **P** (uma sessão) · **M** (2–3 sessões) · **G** (precisa quebrar).
 | R-10 | ⏳ Rótulo do procedimento no orçamento e no PDF (só falta P2) | **P1 (jargão "- planejado") ✅ verificado em prod (26/07)** — `derivarV2DosEventos` sem o " - planejado". **P2 ⏳ na fila:** tirar a observação clínica (resto radicular etc.) do documento que o paciente lê — `dentes_observacoes` alimenta orçamento **E** prontuário, então o strip precisa de decisão | P |
 | R-24 | ⏳ Indicador de "ficha em aberto" (usar o `status`) | Achado do R-11: `fichas.status` (`aberta`/`concluida`) é gravado mas nunca lido. Este item dá uso real: badge/indicador de ficha em aberto (rascunho não finalizado) no dashboard/lista. **Escopo pendente:** hoje `concluida` = modo consulta e `aberta` = criada no FichasTab — definir se esse recorte é o que "em aberto" deve significar pro usuário (e o que muda uma ficha de aberta→concluída). Ideia do Mateus 26/07 | P |
 | R-25 | ⏳ Limpar `setState` síncrono dentro de `useEffect` (cascading renders) | 24 erros de lint "Calling setState synchronously within an effect can trigger cascading renders" em ~20 componentes pré-existentes (dex-widget, dex-presence, floating-dock, ApresentarPanel, use-mobile, useDexGuide…). Não quebra runtime, mas cada um é um render duplo evitável — dívida de performance. Mover o setState pra fora do efeito ou guardar por condição. Achado no lint 26/07 | M |
+| R-28 | ⏳ Pagamento: gravar quem registrou + fechar parcela pendente sem duplicar + consertar quem marca o orçamento como aprovado | Achados de carona do R-27a (29/07). **(1)** `marcado_por_id` preenchido em **0 de 83 pagamentos** — só `marcarPagamentoPago` grava; `registrarPagamento`, `registrarPagamentoRapido` e `gerarParcelas` não. O R-27a exibe "—" até isso entrar. **(2) Achado do Mateus 29/07, confirmado no código:** não existe caminho pra marcar uma parcela `pendente` como paga em data diferente de hoje. `marcarPagamentoPago(id, forma)` existe mas **nunca é chamada em lugar nenhum do app** (código morto) e hardcoda `data_pagamento: hoje` — nem aceita data customizada. O único caminho com data livre é "Registrar pagamento", que sempre **cria linha nova** em vez de fechar a pendente existente → duplica recebimento (parcela adiantada é o caso que ele bateu na cadeira). Conserto proposto: `marcarPagamentoPago` ganha parâmetro de data; UI ganha ação "Marcar como pago" na linha pendente (aba Pagamentos do R-27a), pré-preenchendo a aba Registrar pagamento pro ID daquela parcela em vez de abrir formulário genérico. **(3)** **39 orçamentos têm pagamento mas só 34 `aprovado`** — 5 dessincronizados; `registrarPagamento` só auto-aprova com `status='enviado'` (1 de 52). Decidir regra antes de codar — é negócio, não ajuste | M |
 | R-15 | ⏳ Modo consulta: o cockpit do atendimento | Vira o cockpit do atendimento — procedimentos ativos, odontograma vivo, tabelas, implante, raio-x, gravação como canto pequeno; motor compartilhado com a ficha rápida. [Visão em debate](specs/R-15-modo-consulta-cockpit.md); depende de R-01 · R-02 · plugins | G |
 
 ## Congelado
@@ -81,6 +88,7 @@ Peso: **P** (uma sessão) · **M** (2–3 sessões) · **G** (precisa quebrar).
 
 | ID | Item | Fechado | Spec |
 |---|---|---|---|
+| R-27 | ✅ Redesign do padrão de modal/painel — orçamento (abas, sem seletor de status) + detalhe do agendamento + novo agendamento, um esqueleto só: cabeçalho com canto reservado, faixa/linha de números, coluna de ação fixa. Corrige de raiz o X do `DialogContent` sobrepondo ação no canto (bug repetido no orçamento e no agendamento, mesma causa) e o app inteiro renderizando em Times New Roman (`globals.css:267`, `--font-sans` circular). Achado de carona (não corrigido aqui — vira R-28): `marcarPagamentoPago` nunca é chamada em lugar nenhum do app e hardcoda a data de hoje, então fechar uma parcela pendente em data diferente sempre duplica o recebimento. Verificado por ele no browser 29/07 | 2026-07-29 | [R-27](_arquivo/specs/R-27-redesign-modais-orcamento.md) |
 | R-11 | ✅ Unificar o caminho de gravação da ficha — contrato único `salvarFicha`/`deletarFicha` substitui os 3 caminhos que escreviam `fichas` direto + apaga código morto (9 caminhos vivos + 4 mortos). Gate #6 (admin apaga ficha de outro dentista) achou RLS quebrada (`fichas_delete_admin` sumida — `deletarFicha()` mentia `ok:true` com 0 linhas), corrigida (migration 112 + `.select()` no delete) e **verificada com 2 contas ao vivo** 28/07. `procedimentos_concluidos` (achado fora do escopo desta spec) segue como decisão em aberto, não bloqueia o fechamento | 2026-07-28 | [R-11](_arquivo/specs/R-11-unificar-gravacao-ficha.md) |
 | R-08b | ✅ Rastreio periodontal (PSR/CPITN) — 2º corte do R-08: 6 códigos por sextante (`perio.ts` novo), `concluirPSR` determinística (zero IA) decide entre higiene/cálculo/periograma-de-sextante/periograma-de-boca, plugin `periodontia` ganha Form/Card reais. Zero migration — persiste no `detalhe` jsonb do evento `exame_periodontal` (R-08a). Verificado: 10 casos puros da conclusão + clique real com save/reload/conferência no banco (registro por exceção confirmado — campos não avaliados ausentes do JSON, não `null`) | 2026-07-29 | [R-08b](_arquivo/specs/R-08b-rastreio-psr.md) |
 | R-08a | ✅ Exame periodontal vira registro — 1º corte do R-08 (`exame_periodontal` em `TipoRegistroOdontograma`, chip na faixa de rotina, zero migration) | 2026-07-28 | [R-08a](_arquivo/specs/R-08a-exame-periodontal-registro.md) |
