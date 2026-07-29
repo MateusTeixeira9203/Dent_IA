@@ -5,11 +5,16 @@ import { createClient } from '@/lib/supabase/client';
 import {
   Edit2, Trash2, CircleDollarSign, Plus, CheckCircle2,
   XCircle, Loader2, CreditCard, Clock, Banknote, Smartphone,
-  Receipt, ArrowUpRight, User, Send, CalendarClock, Layers,
+  Receipt, User, Send, CalendarClock, Layers, MoreHorizontal, X, PenLine,
 } from 'lucide-react';
+import { AceiteOrcamentoModal } from '@/components/orcamentos/aceite-orcamento-modal';
 import {
   Dialog, DialogContent, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { LucideIcon } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -39,8 +44,8 @@ const STATUS_OPTIONS: StatusOption[] = [
     value: 'enviado',
     label: 'Enviado',
     icon: Send,
-    active: 'bg-yellow-500/10 border-yellow-500/40 text-yellow-600 dark:text-yellow-400',
-    inactive: 'border-border text-text-secondary hover:border-yellow-400/30 hover:text-yellow-600',
+    active: 'bg-warning-pale border-warning/40 text-warning-ink',
+    inactive: 'border-border text-text-secondary hover:border-warning/30 hover:text-warning-ink',
   },
   {
     value: 'aprovado',
@@ -53,8 +58,8 @@ const STATUS_OPTIONS: StatusOption[] = [
     value: 'recusado',
     label: 'Recusado',
     icon: XCircle,
-    active: 'bg-red-500/10 border-red-400/40 text-red-500',
-    inactive: 'border-border text-text-secondary hover:border-red-400/30 hover:text-red-500',
+    active: 'bg-coral-pale border-coral/40 text-coral-ink',
+    inactive: 'border-border text-text-secondary hover:border-coral/30 hover:text-coral-ink',
   },
 ];
 
@@ -123,6 +128,8 @@ interface Props {
   setConfirmDeletePagId: (id: string | null) => void;
   pagDeleteSaving: boolean;
   onExcluirPagamento: (id: string) => void;
+  /** R-03c-1 — chamado depois que o servidor confirma o aceite (o pai decide como refletir). */
+  onAceiteRegistrado: () => void;
 }
 
 // ─── component ───────────────────────────────────────────────────────────────
@@ -138,11 +145,13 @@ export function DetalheOrcamentoModal({
   editingPagId, editPagForm, setEditPagForm, editPagSaving, editPagError,
   onIniciarEdicaoPagamento, onCancelarEdicaoPagamento, onSalvarEdicaoPagamento,
   confirmDeletePagId, setConfirmDeletePagId, pagDeleteSaving, onExcluirPagamento,
+  onAceiteRegistrado,
 }: Props) {
   const hoje = new Date().toISOString().split('T')[0];
-  const [isApprovingLocal, setIsApprovingLocal] = useState(false);
-  const [justApproved, setJustApproved] = useState(false);
   const [isChangingStatus, setIsChangingStatus] = useState(false);
+  /** R-27a: a informação vira abas em vez de duas colunas roláveis. */
+  const [tab, setTab] = useState<'procedimentos' | 'pagamentos' | 'registrar' | 'atividade'>('procedimentos');
+  const [showAceiteModal, setShowAceiteModal] = useState(false);
   const [activityLogs, setActivityLogs] = useState<{ id: string; actor_nome: string | null; action: string; created_at: string }[]>([]);
 
   // Patch 4: Lazy-fetch activity logs quando o modal abre
@@ -197,15 +206,20 @@ export function DetalheOrcamentoModal({
     };
   }, [detalheOrc]);
 
-  async function handleApprove() {
-    if (!detalheOrc) return;
-    setIsApprovingLocal(true);
-    onStatusChange(detalheOrc.id, 'aprovado');
-    await new Promise(r => setTimeout(r, 600));
-    setIsApprovingLocal(false);
-    setJustApproved(true);
-    setTimeout(() => setJustApproved(false), 3000);
-  }
+  /**
+   * R-27a: quantidade de pagamentos recebidos e formas distintas usadas — é o que a aba
+   * "Pagamentos" resume. Derivado do mesmo array, sem query nova.
+   */
+  const { pagosCount, formasUsadas, totalParcelas } = useMemo(() => {
+    const pgs = detalheOrc?.pagamentos ?? [];
+    const pagos = pgs.filter(p => p.status === 'pago');
+    const formas = [...new Set(pagos.map(p => p.forma_pagamento).filter(Boolean) as string[])];
+    return {
+      pagosCount:    pagos.length,
+      formasUsadas:  formas,
+      totalParcelas: pgs.find(p => p.total_parcelas)?.total_parcelas ?? null,
+    };
+  }, [detalheOrc]);
 
   return (
     <Dialog open={!!detalheOrcId} onOpenChange={open => { if (!open) onClose(); }}>
@@ -216,159 +230,105 @@ export function DetalheOrcamentoModal({
       >
         {detalheOrc && (
           <>
-            {/* ── Header premium ──────────────────────────────────────── */}
-            <div
-              className="relative px-8 pt-6 pb-5 shrink-0"
-              style={{ background: 'linear-gradient(135deg, #2f9c85 0%, #1a7a65 100%)' }}
-            >
-              <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent pointer-events-none" />
+            {/* ── Cabeçalho (R-27a) ────────────────────────────────────
+                Sem gradiente hardcoded e sem seletor de status. O canto direito é
+                reservado — nada de conteúdo cai embaixo do ✕. A única pergunta que a
+                tabela de procedimentos não responde ("está sendo pago?") vive aqui. */}
+            <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-border shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <DialogTitle className="font-heading font-semibold text-xl text-text-primary leading-tight">
+                  Orçamento
+                </DialogTitle>
+                <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md bg-surface-alt text-text-secondary shrink-0">
+                  {STATUS_ORCAMENTO[detalheOrc.status]?.label ?? detalheOrc.status}
+                </span>
+                <DialogDescription className="text-text-muted text-xs truncate">
+                  {format(parseISO(detalheOrc.created_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                </DialogDescription>
+              </div>
 
-              <div className="relative flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.15)' }}>
-                    {justApproved
-                      ? <CheckCircle2 className="w-5 h-5 text-white" />
-                      : <CircleDollarSign className="w-5 h-5 text-white" />
-                    }
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <DialogTitle className="font-heading font-semibold text-xl text-white leading-tight">
-                        {justApproved ? 'Orçamento Aprovado!' : 'Orçamento'}
-                      </DialogTitle>
-                      <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md bg-white/20 text-white">
-                        {STATUS_ORCAMENTO[detalheOrc.status]?.label ?? detalheOrc.status}
-                      </span>
-                    </div>
-                    <DialogDescription className="text-white/70 text-xs">
-                      {format(parseISO(detalheOrc.created_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
-                    </DialogDescription>
-                  </div>
-                </div>
-
-                {/* Payment progress pill */}
-                {detalheOrc.pagamentos.length > 0 && (
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-white/60 font-mono">
-                        {pctPago.toFixed(0)}% pago
-                      </span>
-                      {quitado && (
-                        <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 text-white px-2 py-0.5 rounded-full">
-                          Quitado
-                        </span>
-                      )}
-                    </div>
-                    <div className="w-32 h-1.5 bg-white/20 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-white rounded-full transition-all duration-700"
-                        style={{ width: `${pctPago}%` }}
-                      />
-                    </div>
-                  </div>
+              <div className="flex items-center gap-3 shrink-0">
+                {quitado ? (
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full bg-teal text-white">
+                    <CheckCircle2 className="w-3 h-3" />
+                    Quitado
+                  </span>
+                ) : (
+                  <span className="font-mono text-sm font-medium text-text-primary hidden sm:inline">
+                    <span className="text-teal-ink">R$ {fmt(totalPago)}</span>
+                    <span className="font-sans text-xs text-text-secondary"> de </span>
+                    R$ {fmt(detalheOrc.total ?? 0)}
+                    <span className="font-sans text-xs text-text-secondary"> pagos</span>
+                  </span>
                 )}
+
+                {/* Transições de status saem do caminho principal, não do sistema:
+                    'enviado' e 'recusado' somam 2 orçamentos em 52, mas 28 dos 34
+                    aprovados foram aprovados por aqui. Mesma action, mesma assinatura. */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    aria-label="Outras ações"
+                    disabled={isChangingStatus}
+                    className="p-1.5 rounded-lg text-text-secondary hover:bg-surface-alt hover:text-text-primary transition-colors disabled:opacity-50"
+                  >
+                    <MoreHorizontal className="w-4 h-4" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {STATUS_OPTIONS.map(opt => (
+                      <DropdownMenuItem
+                        key={opt.value}
+                        onClick={() => handleStatusChangeSafe(detalheOrc.id, opt.value)}
+                        className={detalheOrc.status === opt.value ? 'text-teal-ink' : 'text-text-secondary'}
+                      >
+                        <opt.icon className="w-3.5 h-3.5" />
+                        Marcar como {opt.label.toLowerCase()}
+                        {detalheOrc.status === opt.value && <CheckCircle2 className="w-3 h-3 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <button
+                  onClick={onClose}
+                  aria-label="Fechar"
+                  className="p-1.5 rounded-lg text-text-secondary hover:bg-surface-alt hover:text-text-primary transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
-            {/* ── Body: two columns ───────────────────────────────────── */}
-            <div className="flex flex-col sm:flex-row" style={{ height: 'calc(90vh - 96px)', minHeight: 0 }}>
-
-              {/* ── Left column ───────────────────────────────────────── */}
-              <div className="flex-1 min-w-0 overflow-y-auto p-6 space-y-6">
-
-                {/* Approval CTA — só quando enviado */}
-                {detalheOrc.status === 'enviado' && !justApproved && (
-                  <div className="rounded-2xl border border-teal/25 bg-gradient-to-br from-teal/5 to-transparent p-5 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-lg bg-teal/15 flex items-center justify-center">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-teal" />
-                      </div>
-                      <p className="text-sm font-bold text-text-primary">Orçamento aguardando aprovação</p>
-                    </div>
-                    <p className="text-xs text-text-secondary leading-relaxed">
-                      Este orçamento foi enviado ao paciente. Ao aprovar, o tratamento é confirmado e o pagamento fica aguardando registro.
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => void handleApprove()}
-                        disabled={isApprovingLocal}
-                        className="flex-1 py-2.5 bg-teal text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-teal-lt disabled:opacity-60 transition-all shadow-[0_4px_20px_rgba(47,156,133,0.3)]"
-                      >
-                        {isApprovingLocal
-                          ? <><Loader2 className="w-4 h-4 animate-spin" />Aprovando...</>
-                          : <><CheckCircle2 className="w-4 h-4" />Aprovar Orçamento</>
-                        }
-                      </button>
-                      <button
-                        onClick={() => handleStatusChangeSafe(detalheOrc.id, 'recusado')}
-                        className="px-4 py-2.5 bg-surface-alt text-text-secondary rounded-xl text-sm font-medium hover:bg-coral/10 hover:text-coral transition-colors border border-border"
-                        title="Recusar orçamento"
-                      >
-                        <XCircle className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Aprovado — feedback visual */}
-                {justApproved && (
-                  <div className="rounded-2xl border border-teal/25 bg-teal/5 p-5 flex items-center gap-3">
-                    <CheckCircle2 className="w-5 h-5 text-teal shrink-0" />
-                    <div>
-                      <p className="text-sm font-bold text-teal">Orçamento aprovado com sucesso</p>
-                      <p className="text-xs text-text-secondary mt-0.5">Registre o pagamento quando o paciente confirmar.</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Status selector — pills */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-bold uppercase tracking-widest text-teal">Status</p>
-                    {!orcEditMode && (
-                      <button
-                        onClick={onOpenEditOrc}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border text-text-secondary hover:bg-surface-alt hover:text-text-primary text-xs font-medium transition-colors"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                        Editar
-                      </button>
+            {/* ── Corpo em abas (R-27a) ──────────────────────────────────
+                Substitui as duas colunas com rolagem independente. A aba ativa ocupa a
+                área toda: no caso típico (2 procedimentos, até 3 pagamentos) nada rola. */}
+            <Tabs
+              value={tab}
+              onValueChange={(v) => setTab(v as typeof tab)}
+              className="flex flex-col gap-0 min-h-0"
+              style={{ height: 'calc(90vh - 137px)' }}
+            >
+              <TabsList className="h-auto shrink-0 justify-start gap-1 rounded-none border-b border-border bg-transparent px-6 py-0 overflow-x-auto">
+                {([
+                  { value: 'procedimentos', label: 'Procedimentos', count: detalheOrc.itens.length },
+                  { value: 'pagamentos',    label: 'Pagamentos',    count: detalheOrc.pagamentos.length },
+                  { value: 'registrar',     label: 'Registrar pagamento', count: null },
+                  { value: 'atividade',     label: 'Atividade',     count: null },
+                ] as const).map(t => (
+                  <TabsTrigger
+                    key={t.value}
+                    value={t.value}
+                    className="rounded-none border-b-2 border-transparent px-3 py-2.5 font-semibold data-[selected]:bg-transparent data-[selected]:shadow-none data-[selected]:border-teal data-[selected]:text-teal-ink"
+                  >
+                    {t.label}
+                    {t.count !== null && (
+                      <span className="ml-1.5 font-mono text-[11px] text-text-muted">{t.count}</span>
                     )}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {STATUS_OPTIONS.map(opt => {
-                      const isActive = detalheOrc.status === opt.value;
-                      return (
-                        <button
-                          key={opt.value}
-                          onClick={() => handleStatusChangeSafe(detalheOrc.id, opt.value)}
-                          disabled={isChangingStatus}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all disabled:opacity-50 ${
-                            isActive ? opt.active : opt.inactive
-                          }`}
-                        >
-                          <opt.icon className="w-3.5 h-3.5" />
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
 
-                {/* Audit: aprovação */}
-                {detalheOrc.status === 'aprovado' && (detalheOrc.aprovado_por || detalheOrc.aprovado_em) && (
-                  <div className="flex items-center gap-2 bg-teal/5 border border-teal/15 rounded-xl px-3 py-2.5">
-                    <User className="w-3.5 h-3.5 text-teal shrink-0" />
-                    <p className="text-xs text-text-secondary">
-                      {detalheOrc.aprovado_por && (
-                        <span>Aprovado por <span className="font-semibold text-text-primary">{detalheOrc.aprovado_por.nome}</span></span>
-                      )}
-                      {detalheOrc.aprovado_em && (
-                        <span> em {format(parseISO(detalheOrc.aprovado_em), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
-                      )}
-                    </p>
-                  </div>
-                )}
+              {/* ── Aba: procedimentos ─────────────────────────────────── */}
+              <TabsContent value="procedimentos" className="mt-0 flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
 
                 {/* Procedimentos */}
                 <div className="space-y-2">
@@ -390,7 +350,7 @@ export function DetalheOrcamentoModal({
                             />
                             <button
                               onClick={() => setOrcEditItens(prev => prev.filter((_, i) => i !== idx))}
-                              className="p-2 rounded-xl hover:bg-red-500/10 text-red-400 hover:text-red-500 transition-colors"
+                              className="p-2 rounded-xl hover:bg-coral-pale text-coral-ink transition-colors"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -468,18 +428,56 @@ export function DetalheOrcamentoModal({
                   )}
                 </div>
 
-                {/* Histórico de pagamentos */}
-                {detalheOrc.pagamentos.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-bold uppercase tracking-widest text-teal">Pagamentos</p>
-                      <div className="flex items-center gap-3 text-xs font-mono text-text-secondary">
-                        <span className="text-teal font-semibold">R$ {fmt(totalPago)} pago</span>
-                        {totalPendente > 0 && (
-                          <span className="text-yellow-600">R$ {fmt(totalPendente)} pendente</span>
-                        )}
+              </TabsContent>
+
+              {/* ── Aba: pagamentos ───────────────────────────────────────
+                  Responde as 4 perguntas do briefing: quantos recebidos, de quais formas,
+                  em quantas vezes, e quanto falta. */}
+              <TabsContent value="pagamentos" className="mt-0 flex-1 min-h-0 overflow-y-auto p-6 space-y-4">
+                {detalheOrc.pagamentos.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-border p-8 text-center">
+                    <p className="text-sm text-text-secondary">Nenhum pagamento registrado ainda.</p>
+                    <button
+                      onClick={() => setTab('registrar')}
+                      className="mt-3 text-xs font-semibold text-teal-ink hover:underline"
+                    >
+                      Registrar o primeiro pagamento
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-px rounded-2xl border border-border bg-border overflow-hidden">
+                      <div className="bg-surface px-4 py-3">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Recebidos</p>
+                        <p className="font-mono text-base font-semibold text-text-primary mt-0.5">
+                          {pagosCount}
+                          <span className="ml-1 font-sans text-[11px] font-normal text-text-muted">
+                            de {detalheOrc.pagamentos.length}
+                          </span>
+                        </p>
+                      </div>
+                      <div className="bg-surface px-4 py-3">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Formas</p>
+                        <p className="text-sm font-medium text-text-primary mt-0.5 truncate">
+                          {formasUsadas.length > 0
+                            ? formasUsadas.map(f => FORMA_LABEL[f] ?? f).join(', ')
+                            : '—'}
+                        </p>
+                      </div>
+                      <div className="bg-surface px-4 py-3">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Dividido em</p>
+                        <p className="font-mono text-base font-semibold text-text-primary mt-0.5">
+                          {totalParcelas ? `${totalParcelas}×` : '—'}
+                        </p>
+                      </div>
+                      <div className="bg-surface px-4 py-3">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Falta receber</p>
+                        <p className={`font-mono text-base font-semibold mt-0.5 ${restante > 0 ? 'text-warning-ink' : 'text-teal-ink'}`}>
+                          R$ {fmt(restante)}
+                        </p>
                       </div>
                     </div>
+
                     <div className="space-y-1.5">
                       {detalheOrc.pagamentos.map(pg => {
                         const Icon = FORMA_ICON[pg.forma_pagamento ?? 'outro'] ?? CircleDollarSign;
@@ -524,7 +522,7 @@ export function DetalheOrcamentoModal({
                                   ))}
                                 </SelectContent>
                               </Select>
-                              {editPagError && <p className="text-xs text-red-500">{editPagError}</p>}
+                              {editPagError && <p className="text-xs text-coral-ink">{editPagError}</p>}
                               <div className="flex gap-2">
                                 <Button
                                   size="sm" variant="outline" onClick={onCancelarEdicaoPagamento} disabled={editPagSaving}
@@ -556,7 +554,10 @@ export function DetalheOrcamentoModal({
                                 </Button>
                                 <Button
                                   size="sm" onClick={() => onExcluirPagamento(pg.id)} disabled={pagDeleteSaving}
-                                  className="rounded-lg h-7 text-xs px-2 bg-coral hover:bg-coral/90 text-white"
+                                  /* `text-white` sobre `bg-coral` reprova no escuro: coral vira
+                                     #ef9a9a (rosa claro) e branco em cima dá ~1,9:1. Par
+                                     coral-ink/coral-pale funciona nos dois temas. */
+                                  className="rounded-lg h-7 text-xs px-2 bg-coral-pale border border-coral text-coral-ink hover:bg-coral/20"
                                 >
                                   {pagDeleteSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Excluir'}
                                 </Button>
@@ -572,12 +573,12 @@ export function DetalheOrcamentoModal({
                               isPago
                                 ? 'border-teal/20 bg-teal/5'
                                 : isVencido
-                                  ? 'border-red-300 dark:border-red-800/50 bg-red-50 dark:bg-red-900/10'
+                                  ? 'border-coral/40 bg-coral-pale'
                                   : 'border-border bg-surface-alt/40'
                             }`}
                           >
                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                              isPago ? 'bg-teal/15 text-teal' : isVencido ? 'bg-red-500/10 text-red-500' : 'bg-surface-alt text-text-secondary'
+                              isPago ? 'bg-teal/15 text-teal' : isVencido ? 'bg-coral/15 text-coral-ink' : 'bg-surface-alt text-text-secondary'
                             }`}>
                               <Icon className="w-4 h-4" />
                             </div>
@@ -590,18 +591,22 @@ export function DetalheOrcamentoModal({
                                 )}
                                 {isPago ? (FORMA_LABEL[pg.forma_pagamento ?? 'outro'] ?? 'Pagamento') : 'A receber'}
                               </p>
-                              <p className={`text-[11px] ${isVencido ? 'text-red-500 font-semibold' : 'text-text-secondary'}`}>
+                              <p className={`text-[11px] ${isVencido ? 'text-coral-ink font-semibold' : 'text-text-secondary'}`}>
                                 {isPago
                                   ? <>Pago em {pg.data_pagamento ? format(parseISO(pg.data_pagamento), 'dd/MM/yyyy', { locale: ptBR }) : '—'}</>
                                   : pg.data_vencimento
                                     ? <>{isVencido ? 'Venceu' : 'Vence'} em {format(parseISO(pg.data_vencimento), 'dd/MM/yyyy', { locale: ptBR })}</>
                                     : 'Pendente'
                                 }
-                                {pg.marcado_por && ` · por ${pg.marcado_por.nome.split(' ')[0]}`}
+                                {/* R-27a: quem registrou aparece SEMPRE que o pagamento está pago,
+                                    inclusive como "—". Hoje `marcado_por_id` está vazio em 83 de 83
+                                    pagamentos — só `marcarPagamentoPago` grava. Esconder o campo
+                                    faria a lacuna parecer inexistente; o R-28 conserta a escrita. */}
+                                {isPago && ` · registrado por ${pg.marcado_por?.nome.split(' ')[0] ?? '—'}`}
                               </p>
                             </div>
                             <div className="text-right shrink-0">
-                              <p className={`font-mono text-sm font-semibold ${isPago ? 'text-teal' : isVencido ? 'text-red-500' : 'text-text-secondary'}`}>
+                              <p className={`font-mono text-sm font-semibold ${isPago ? 'text-teal' : isVencido ? 'text-coral-ink' : 'text-text-secondary'}`}>
                                 R$ {fmt(pg.valor)}
                               </p>
                               {isPago
@@ -632,11 +637,52 @@ export function DetalheOrcamentoModal({
                   </div>
                 )}
 
-                {/* Atividade deste orçamento */}
-                {activityLogs.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-bold uppercase tracking-widest text-text-secondary/50">Atividade</p>
-                    <div className="space-y-0">
+              </TabsContent>
+
+              {/* ── Aba: atividade ────────────────────────────────────────
+                  Ganha lugar próprio: antes era um rodapé espremido no fim da coluna
+                  esquerda, junto da auditoria de aprovação. */}
+              <TabsContent value="atividade" className="mt-0 flex-1 min-h-0 overflow-y-auto p-6 space-y-4">
+                {/* R-03c-1 — aceite assinado: prova de que o paciente concordou em pagar
+                    (distinta da aprovação de status acima, que não afirma nada em 4 dos 5
+                    caminhos que a disparam). */}
+                {detalheOrc.aceite ? (
+                  <div className="flex items-start gap-2 bg-teal/5 border border-teal/15 rounded-xl px-3 py-2.5">
+                    <PenLine className="w-3.5 h-3.5 text-teal-ink shrink-0 mt-0.5" />
+                    <p className="text-xs text-text-secondary">
+                      Aceite assinado por <span className="font-semibold text-text-primary">{detalheOrc.aceite.assinadoPor}</span>
+                      {' '}em {format(parseISO(detalheOrc.aceite.assinadoEm), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                      {detalheOrc.aceite.croNoAto && <> · CRO {detalheOrc.aceite.croNoAto}</>}
+                    </p>
+                  </div>
+                ) : detalheOrc.status !== 'recusado' && (
+                  <button
+                    onClick={() => setShowAceiteModal(true)}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-border text-sm font-semibold text-text-secondary hover:bg-teal/5 hover:text-teal-ink hover:border-teal/30 transition-all"
+                  >
+                    <PenLine className="w-4 h-4" />
+                    Coletar aceite do paciente
+                  </button>
+                )}
+
+                {detalheOrc.status === 'aprovado' && (detalheOrc.aprovado_por || detalheOrc.aprovado_em) && (
+                  <div className="flex items-center gap-2 bg-teal/5 border border-teal/15 rounded-xl px-3 py-2.5">
+                    <User className="w-3.5 h-3.5 text-teal shrink-0" />
+                    <p className="text-xs text-text-secondary">
+                      {detalheOrc.aprovado_por && (
+                        <span>Aprovado por <span className="font-semibold text-text-primary">{detalheOrc.aprovado_por.nome}</span></span>
+                      )}
+                      {detalheOrc.aprovado_em && (
+                        <span> em {format(parseISO(detalheOrc.aprovado_em), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                      )}
+                    </p>
+                  </div>
+                )}
+
+                {activityLogs.length === 0 ? (
+                  <p className="text-sm text-text-secondary text-center py-8">Nenhuma atividade registrada ainda.</p>
+                ) : (
+                  <div className="space-y-0">
                       {activityLogs.map(log => (
                         <div key={log.id} className="flex items-center gap-2 py-1.5 border-b border-border/30 last:border-0">
                           <div className="w-1.5 h-1.5 rounded-full bg-teal/40 shrink-0" />
@@ -651,59 +697,67 @@ export function DetalheOrcamentoModal({
                           </span>
                         </div>
                       ))}
-                    </div>
                   </div>
                 )}
-              </div>
+              </TabsContent>
 
-              {/* ── Right column ──────────────────────────────────────── */}
-              <div className="w-full sm:w-72 sm:shrink-0 overflow-y-auto border-t sm:border-t-0 sm:border-l border-border flex flex-col" style={{ background: 'rgba(47,156,133,0.04)' }}>
-                <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              {/* ── Aba: registrar pagamento ──────────────────────────────
+                  Porcentagem, não o valor total de novo — o total já vive no cabeçalho e
+                  na linha de Total da aba de procedimentos. A 100%, o formulário sai e
+                  entra o resumo do que foi recebido. */}
+              <TabsContent value="registrar" className="mt-0 flex-1 min-h-0 overflow-y-auto p-6">
+                <div className="max-w-md mx-auto space-y-5">
 
-                  {/* Total hero card */}
-                  <div className="rounded-2xl p-5 border border-teal/15 space-y-3" style={{ background: 'rgba(47,156,133,0.07)' }}>
-                    <p className="text-xs font-bold uppercase tracking-widest text-teal">
-                      {orcEditMode ? 'Novo total' : 'Total do tratamento'}
-                    </p>
-                    <p className="font-mono text-3xl font-bold text-teal leading-none">
-                      R$ {fmt(orcEditMode
-                        ? orcEditItens.reduce((s, i) => s + i.quantidade * parseValorBR(i.preco_unitario), 0)
-                        : detalheOrc.total ?? 0
-                      )}
-                    </p>
-
-                    {/* Payment progress bar */}
-                    {!orcEditMode && detalheOrc.pagamentos.length > 0 && (
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between text-xs text-text-secondary">
-                          <span>Pago</span>
-                          <span className="font-mono">{pctPago.toFixed(0)}%</span>
+                  {orcEditMode ? (
+                    <div className="rounded-2xl border border-teal/25 p-5 text-center">
+                      <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">Novo total</p>
+                      <p className="font-mono text-3xl font-semibold text-teal-ink mt-1">
+                        R$ {fmt(orcEditItens.reduce((s, i) => s + i.quantidade * parseValorBR(i.preco_unitario), 0))}
+                      </p>
+                      <p className="text-xs text-text-secondary mt-2">
+                        Salve as alterações na aba Procedimentos para registrar pagamentos.
+                      </p>
+                    </div>
+                  ) : quitado ? (
+                    <div className="rounded-2xl border border-teal p-6 text-center space-y-1">
+                      <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">Recebido neste orçamento</p>
+                      <p className="font-mono text-3xl font-semibold text-teal-ink">R$ {fmt(totalPago)}</p>
+                      <p className="text-xs text-text-secondary">
+                        {pagosCount} {pagosCount === 1 ? 'pagamento' : 'pagamentos'}
+                        {formasUsadas.length > 0 && ` · ${formasUsadas.map(f => FORMA_LABEL[f] ?? f).join(', ')}`}
+                      </p>
+                      <p className="text-xs text-text-secondary pt-2">Nada mais a receber.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-5">
+                      <div className="space-y-2">
+                        <div className="flex items-baseline justify-between">
+                          <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">Quanto já foi pago</p>
+                          <p className="font-mono text-3xl font-semibold text-teal-ink leading-tight">
+                            {pctPago.toFixed(0)}<span className="text-lg">%</span>
+                          </p>
                         </div>
-                        <div className="w-full h-1.5 bg-teal/15 rounded-full overflow-hidden">
+                        <div className="w-full h-2.5 bg-surface-alt rounded-full overflow-hidden">
                           <div
                             className="h-full bg-teal rounded-full transition-all duration-700"
                             style={{ width: `${pctPago}%` }}
                           />
                         </div>
-                        <div className="flex justify-between text-xs font-mono text-text-secondary">
-                          <span className="text-teal">R$ {fmt(totalPago)}</span>
-                          {totalPendente > 0 && <span className="text-yellow-600">R$ {fmt(totalPendente)} pend.</span>}
-                        </div>
+                        {totalPendente > 0 && (
+                          <p className="text-[11px] font-mono text-warning-ink">
+                            R$ {fmt(totalPendente)} agendado, ainda não recebido
+                          </p>
+                        )}
                       </div>
-                    )}
-                  </div>
 
-                  {/* Registrar pagamento */}
-                  {!orcEditMode && (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <p className="text-xs font-bold uppercase tracking-widest text-teal flex items-center gap-1.5">
-                          <ArrowUpRight className="w-3 h-3" />
-                          {parcelasMode ? 'Dividir em Parcelas' : 'Registrar Pagamento'}
+                        <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">
+                          {parcelasMode ? 'Dividir em parcelas' : 'Registrar pagamento'}
                         </p>
                         <button
                           onClick={() => setParcelasMode(!parcelasMode)}
-                          className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary hover:text-teal transition-colors"
+                          className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary hover:text-teal-ink transition-colors"
                         >
                           <Layers className="w-3 h-3" />
                           {parcelasMode ? 'Pagamento único' : 'Dividir em parcelas'}
@@ -742,7 +796,7 @@ export function DetalheOrcamentoModal({
                             );
                           })()}
                           {parcelasError && (
-                            <p className="text-xs text-red-500 bg-red-500/10 rounded-xl px-3 py-2">{parcelasError}</p>
+                            <p className="text-xs text-coral-ink bg-coral-pale rounded-xl px-3 py-2">{parcelasError}</p>
                           )}
                           <Button
                             onClick={onGerarParcelas}
@@ -782,9 +836,9 @@ export function DetalheOrcamentoModal({
                             />
                           </div>
                           {pagForm.dataVencimento && pagForm.dataVencimento > hoje ? (
-                            <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded-xl px-3 py-2.5">
-                              <CalendarClock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                              <p className="text-xs text-amber-700 dark:text-amber-400">
+                            <div className="flex items-center gap-2 bg-warning-pale border border-warning/40 rounded-xl px-3 py-2.5">
+                              <CalendarClock className="w-3.5 h-3.5 text-warning-ink shrink-0" />
+                              <p className="text-xs text-warning-ink">
                                 Vencimento futuro — será registrado como <strong>pendente</strong>.
                               </p>
                             </div>
@@ -820,7 +874,7 @@ export function DetalheOrcamentoModal({
                             </>
                           )}
                           {pagError && (
-                            <p className="text-xs text-red-500 bg-red-500/10 rounded-xl px-3 py-2">{pagError}</p>
+                            <p className="text-xs text-coral-ink bg-coral-pale rounded-xl px-3 py-2">{pagError}</p>
                           )}
                           <Button
                             onClick={onRegistrarPagamento}
@@ -834,61 +888,83 @@ export function DetalheOrcamentoModal({
                           </Button>
                         </div>
                       )}
+                      </div>
                     </div>
                   )}
                 </div>
+              </TabsContent>
+            </Tabs>
 
-                {/* Footer actions */}
-                <div className="p-5 border-t border-border space-y-2">
-                  {orcEditMode ? (
-                    <>
-                      {orcEditError && (
-                        <p className="text-xs text-red-500 bg-red-500/10 rounded-xl px-3 py-2">{orcEditError}</p>
-                      )}
-                      <Button
-                        onClick={onSalvarEdicaoOrc}
-                        disabled={orcEditSaving}
-                        className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl font-bold"
-                      >
-                        {orcEditSaving
-                          ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</>
-                          : 'Salvar Alterações'
-                        }
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => { setOrcEditMode(false); setOrcEditError(null); }}
-                        disabled={orcEditSaving}
-                        className="w-full rounded-xl border-border text-text-primary hover:bg-surface-alt"
-                      >
-                        Cancelar
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button
-                        variant="outline"
-                        onClick={onClose}
-                        className="w-full rounded-xl border-border text-text-primary hover:bg-surface-alt"
-                      >
-                        Fechar
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => onDeleteClick(detalheOrcId)}
-                        className="w-full rounded-xl border-red-500/30 text-red-500 hover:bg-red-500/10"
-                      >
-                        <Trash2 className="w-4 h-4 mr-1.5" />
-                        Excluir
-                      </Button>
-                    </>
+            {/* ── Rodapé único (R-27a) — fora das abas ─────────────────── */}
+            <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-6 py-4 border-t border-border">
+              {orcEditMode ? (
+                <>
+                  {orcEditError && (
+                    <p className="text-xs text-coral-ink bg-coral-pale rounded-xl px-3 py-2 w-full">{orcEditError}</p>
                   )}
-                </div>
-              </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => { setOrcEditMode(false); setOrcEditError(null); }}
+                    disabled={orcEditSaving}
+                    className="rounded-xl border-border text-text-primary hover:bg-surface-alt"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={onSalvarEdicaoOrc}
+                    disabled={orcEditSaving}
+                    className="bg-teal text-white hover:bg-teal-lt rounded-xl font-bold ml-auto"
+                  >
+                    {orcEditSaving
+                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</>
+                      : 'Salvar alterações'
+                    }
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => onDeleteClick(detalheOrcId)}
+                    className="rounded-xl border-coral/40 text-coral-ink hover:bg-coral-pale"
+                  >
+                    <Trash2 className="w-4 h-4 mr-1.5" />
+                    Excluir
+                  </Button>
+                  <div className="flex items-center gap-2 ml-auto">
+                    <Button
+                      variant="outline"
+                      onClick={onOpenEditOrc}
+                      className="rounded-xl border-border text-text-primary hover:bg-surface-alt"
+                    >
+                      <Edit2 className="w-4 h-4 mr-1.5" />
+                      Editar
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={onClose}
+                      className="rounded-xl border-border text-text-primary hover:bg-surface-alt"
+                    >
+                      Fechar
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
           </>
         )}
       </DialogContent>
+
+      {detalheOrc && (
+        <AceiteOrcamentoModal
+          open={showAceiteModal}
+          onOpenChange={setShowAceiteModal}
+          orcamentoId={detalheOrc.id}
+          itens={detalheOrc.itens}
+          total={detalheOrc.total}
+          onAccepted={onAceiteRegistrado}
+        />
+      )}
     </Dialog>
   );
 }

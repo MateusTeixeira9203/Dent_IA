@@ -1207,352 +1207,306 @@ export function AgendamentosClient({
       )}
       </AnimatePresence>
 
-      {/* Drawer: Novo Agendamento */}
-      <Sheet open={isNewModalOpen} onOpenChange={(open) => { if (!open) resetForm(); setIsNewModalOpen(open); }}>
-        <SheetContent
-          side="right"
+      {/* Modal: Novo Agendamento (R-27b) — era Sheet lateral de 560px, coluna única.
+          Achado do Mateus 29/07: preenche nome e data, e "tem que rolar pra baixo pra
+          clicar" em Salvar — o atrito era o formulário empilhado, não o botão (o rodapé
+          já era fixo). Vira Dialog largo, mesma anatomia do orçamento/agendamento:
+          cabeçalho com canto reservado, faixa ao vivo, coluna de ação fixa. */}
+      <Dialog open={isNewModalOpen} onOpenChange={(open) => { if (!open) resetForm(); setIsNewModalOpen(open); }}>
+        <DialogContent
           showCloseButton={false}
-          className="!w-full sm:!w-[560px] p-0 gap-0 flex flex-col bg-surface border-l border-border"
+          className="max-w-lg sm:max-w-[880px] rounded-2xl bg-surface border-border p-0 gap-0 overflow-hidden"
         >
-          <SheetDescription className="sr-only">Preencha os dados para marcar uma nova consulta.</SheetDescription>
+          <DialogDescription className="sr-only">Preencha os dados para marcar uma nova consulta.</DialogDescription>
 
-          {/* Header teal */}
-          <div className="relative px-6 pt-6 pb-5 shrink-0" style={{ background: 'linear-gradient(135deg, #2f9c85 0%, #1a7a65 100%)' }}>
-            <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent pointer-events-none" />
-            <div className="relative flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.15)' }}>
-                  <CalendarIcon className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <SheetTitle className="font-heading font-semibold text-xl text-white leading-tight">Novo Agendamento</SheetTitle>
-                  <p className="text-white/70 text-xs mt-0.5">Preencha os dados para marcar uma nova consulta.</p>
-                </div>
-              </div>
-              <SheetClose
-                render={<button className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/10 hover:bg-white/20 transition-colors" />}
-              >
-                <X className="w-4 h-4 text-white" />
-              </SheetClose>
-            </div>
-          </div>
-
-          {/* Scrollable body */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-
-            {/* Dentista — apenas secretária */}
-            {isSecretaria && dentistas.length > 0 && (
-              <div className="space-y-2">
-                <Label className="text-[10px] font-bold uppercase tracking-widest text-teal">
-                  Dentista <span className="text-coral">*</span>
-                </Label>
-                <Select
-                  value={novoForm.dentistaId}
-                  onValueChange={(v) => v && setNovoForm((f) => ({ ...f, dentistaId: v }))}
-                >
-                  <SelectTrigger className="rounded-xl bg-surface-alt border-border text-text-primary">
-                    <SelectValue>
-                      {(v: string | null) =>
-                        v
-                          ? (dentistas.find((d) => d.id === v)?.nome ?? v)
-                          : 'Selecione o dentista...'
-                      }
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="bg-surface border-border">
-                    {dentistasOrdenados.map((d) => (
-                      <SelectItem key={d.id} value={d.id}>
-                        {d.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {/* Busca de paciente com autocomplete */}
-            <div className="space-y-2 relative">
-              <Label htmlFor="patient-drawer" className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-secondary">
-                Paciente <span className="text-coral">*</span>
-              </Label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary/40 pointer-events-none" />
-                <Input
-                  id="patient-drawer"
-                  placeholder="Buscar paciente pelo nome..."
-                  value={novoForm.pacienteSearch}
-                  autoComplete="off"
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setNovoForm((f) => ({ ...f, pacienteSearch: v, pacienteId: '', pacienteNome: '' }));
-                    setShowSugestoes(true);
-                    void buscarPacientes(v);
-                  }}
-                  onBlur={() => setTimeout(() => setShowSugestoes(false), 150)}
-                  className="rounded-xl bg-surface-alt border-border text-text-primary pl-10 focus:border-teal/40 transition-all"
-                />
-              </div>
-              {showSugestoes && novoForm.pacienteSearch.trim().length >= 2 && (pacienteSugestoes.length > 0 || !novoForm.pacienteId) && (
-                <div className="absolute z-50 w-full bg-surface border border-border rounded-xl shadow-lg mt-1 overflow-hidden">
-                  {pacienteSugestoes.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => {
-                        setNovoForm((f) => ({
-                          ...f,
-                          pacienteSearch: p.nome,
-                          pacienteId: p.id,
-                          pacienteNome: p.nome,
-                        }));
-                        setShowSugestoes(false);
-                        setPacienteSugestoes([]);
-                      }}
-                      className="w-full px-4 py-2.5 text-sm text-left hover:bg-surface-alt transition-colors text-text-primary"
-                    >
-                      {p.nome}
-                    </button>
-                  ))}
-                  {!novoForm.pacienteId && (
-                    <button
-                      type="button"
-                      onClick={() => void handleCriarPacienteRapidoNovo()}
-                      disabled={criandoPacienteNovo}
-                      className={`w-full px-4 py-2.5 text-sm text-left flex items-center gap-2 font-semibold text-teal hover:bg-teal/5 transition-colors disabled:opacity-60 ${pacienteSugestoes.length > 0 ? 'border-t border-border' : ''}`}
-                    >
-                      {criandoPacienteNovo
-                        ? <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
-                        : <UserPlus className="w-4 h-4 shrink-0" />}
-                      Cadastrar &ldquo;{novoForm.pacienteSearch.trim()}&rdquo; como novo paciente
-                    </button>
-                  )}
-                </div>
-              )}
-              {novoForm.pacienteId && (
-                <motion.div
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex items-center gap-2.5 px-3 py-2.5 border border-teal/25 rounded-xl text-sm text-teal font-semibold"
-                  style={{ background: 'color-mix(in srgb, var(--color-teal) 8%, var(--color-surface-alt))' }}
-                >
-                  <div className="w-6 h-6 rounded-lg bg-teal/20 flex items-center justify-center shrink-0">
-                    <User className="w-3.5 h-3.5 text-teal" />
-                  </div>
-                  <span className="truncate">{novoForm.pacienteNome}</span>
-                  <CheckCircle2 className="w-3.5 h-3.5 ml-auto shrink-0 opacity-60" />
-                </motion.div>
-              )}
-            </div>
-
-            {/* ── Quando ──────────────────────────────── */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-border/50" />
-              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-text-secondary/50 flex items-center gap-1.5">
-                <CalendarIcon className="w-3 h-3" />
-                Quando
-              </span>
-              <div className="flex-1 h-px bg-border/50" />
-            </div>
-
-            {/* Data + Hora */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="apt-date-drawer" className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-secondary">
-                  Data
-                </Label>
-                <div className="relative">
-                  <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-secondary/40 pointer-events-none" />
-                  <Input
-                    id="apt-date-drawer"
-                    type="date"
-                    value={novoForm.data}
-                    onChange={(e) => setNovoForm((f) => ({ ...f, data: e.target.value }))}
-                    className="rounded-xl bg-surface-alt border-border text-text-primary pl-9"
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="apt-time-drawer" className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-secondary">
-                  Hora
-                </Label>
-                <div className="relative">
-                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-secondary/40 pointer-events-none" />
-                  <Input
-                    id="apt-time-drawer"
-                    type="time"
-                    value={novoForm.hora}
-                    onChange={(e) => setNovoForm((f) => ({ ...f, hora: e.target.value }))}
-                    className="rounded-xl bg-surface-alt border-border text-text-primary pl-9"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* ── Duração ─────────────────────────────── */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-border/50" />
-              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-text-secondary/50 flex items-center gap-1.5">
-                <Clock className="w-3 h-3" />
-                Duração
-              </span>
-              <div className="flex-1 h-px bg-border/50" />
-            </div>
-
-            <div className="grid grid-cols-5 gap-2">
-              {[
-                { value: '30',  label: '30',  sub: 'min' },
-                { value: '45',  label: '45',  sub: 'min' },
-                { value: '60',  label: '1h',  sub: '' },
-                { value: '90',  label: '1h',  sub: '30m' },
-                { value: '120', label: '2h',  sub: '' },
-                { value: '180', label: '3h',  sub: '' },
-                { value: '240', label: '4h',  sub: '' },
-                { value: '300', label: '5h',  sub: '' },
-                { value: '360', label: '6h',  sub: '' },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setNovoForm((f) => ({ ...f, duracao: opt.value }))}
-                  className={`flex flex-col items-center justify-center py-3 rounded-2xl border-2 transition-all ${
-                    novoForm.duracao === opt.value
-                      ? 'bg-teal/10 border-teal text-teal shadow-[0_0_0_3px_rgba(47,156,133,0.12)]'
-                      : 'border-border text-text-secondary hover:border-teal/40 hover:text-teal bg-surface-alt'
-                  }`}
-                >
-                  <span className="text-sm font-extrabold leading-tight">{opt.label}</span>
-                  {opt.sub && <span className="text-[10px] font-semibold mt-0.5 opacity-60">{opt.sub}</span>}
-                </button>
-              ))}
-            </div>
-
-            {/* Duração livre — os chips acima são atalho, não limite (pedido 21/07).
-                Aceita qualquer valor em minutos; o campo e os chips leem o mesmo estado,
-                então digitar 45 acende o chip de 45 e vice-versa. */}
-            <div className="flex items-center gap-2.5">
-              <Label htmlFor="apt-duracao-livre" className="text-xs text-text-secondary shrink-0">
-                Ou digite:
-              </Label>
-              <Input
-                id="apt-duracao-livre"
-                type="number"
-                min={5}
-                max={600}
-                step={5}
-                inputMode="numeric"
-                value={novoForm.duracao}
-                onChange={(e) => setNovoForm((f) => ({ ...f, duracao: e.target.value }))}
-                className="w-24 rounded-xl bg-surface-alt border-border text-text-primary text-sm"
-                aria-label="Duração personalizada em minutos"
-              />
-              <span className="text-xs text-text-secondary">minutos</span>
-            </div>
-
-            {/* ── Notas ───────────────────────────────── */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-border/50" />
-              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-text-secondary/50 flex items-center gap-1.5">
-                <PenLine className="w-3 h-3" />
-                Notas
-              </span>
-              <div className="flex-1 h-px bg-border/50" />
-            </div>
-
-            <textarea
-              id="apt-notes-drawer"
-              value={novoForm.observacoes}
-              onChange={(e) => setNovoForm((f) => ({ ...f, observacoes: e.target.value }))}
-              className="w-full bg-surface-alt border border-border rounded-2xl p-4 text-sm min-h-[88px] focus:ring-2 focus:ring-teal/15 focus:border-teal/30 transition-all resize-none text-text-primary placeholder:text-text-secondary/40"
-              placeholder="Procedimento, observações clínicas..."
-            />
-
-            {/* Aviso de conflito */}
-            {conflitoNovo && (
-              <div className="flex items-start gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-600 dark:text-amber-400">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                <span>Conflito de horário — já existe um agendamento nesse intervalo.</span>
-              </div>
-            )}
-
-            {/* Resumo visual */}
-            {novoForm.pacienteId && novoForm.data && novoForm.hora && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="rounded-2xl border border-teal/30 p-4 space-y-3"
-                style={{ background: 'color-mix(in srgb, var(--color-teal) 7%, var(--color-surface-alt))' }}
-              >
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-teal" />
-                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-teal">Pronto para agendar</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-teal/15 flex items-center justify-center shrink-0">
-                    <User className="w-4 h-4 text-teal" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-text-primary truncate">{novoForm.pacienteNome}</p>
-                    <p className="text-xs text-text-secondary font-mono mt-0.5">
-                      {novoForm.data.split('-').reverse().join('/')} · {novoForm.hora} ·{' '}
-                      {(() => { const m = parseInt(novoForm.duracao, 10); if (!m) return '–'; if (m < 60) return `${m}min`; const h = Math.floor(m / 60); const rem = m % 60; return rem ? `${h}h${rem}m` : `${h}h`; })()}
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </div>
-
-          {/* Sticky footer */}
-          <div className="shrink-0 px-6 py-5 border-t border-border space-y-3 bg-surface">
-            {saveError && !conflitoServidor && (
-              <p className="text-xs text-red-500 bg-red-500/10 rounded-lg p-2">{saveError}</p>
-            )}
-
-            {/* Conflito do DENTISTA — recuperável. Âmbar (aviso), não vermelho (erro):
-                a recepção decide. O conflito do PACIENTE nunca chega aqui, cai no bloco
-                vermelho acima e continua sem saída. */}
-            {conflitoServidor && (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
-                <div className="flex items-start gap-2 mb-2.5">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-                  <p className="text-xs text-amber-700 dark:text-amber-400">
-                    {saveError} Marcar mesmo assim vai <b>sobrepor</b> os dois na agenda.
-                  </p>
-                </div>
-                <Button
-                  onClick={() => void handleCriarAgendamento(true)}
-                  disabled={isSaving}
-                  size="sm"
-                  className="w-full rounded-lg text-xs bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
-                >
-                  {isSaving ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-2" /> Salvando...</> : 'Marcar mesmo assim'}
-                </Button>
-              </div>
-            )}
-
-            <Button
-              onClick={() => void handleCriarAgendamento()}
-              disabled={isSaving}
-              className="w-full bg-gradient-to-r from-teal to-teal-lt text-white rounded-2xl py-3 font-bold shadow-[0_8px_32px_rgba(47,156,133,0.40)] hover:shadow-[0_12px_40px_rgba(47,156,133,0.50)] hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 disabled:shadow-none transition-all"
-            >
-              {isSaving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                  Salvando...
-                </>
-              ) : (
-                'Salvar Agendamento'
-              )}
-            </Button>
+          {/* ── Cabeçalho ─────────────────────────────────────────────── */}
+          <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-border">
+            <DialogTitle className="font-heading font-semibold text-xl text-text-primary leading-tight">
+              Novo agendamento
+            </DialogTitle>
             <button
               onClick={() => { setIsNewModalOpen(false); resetForm(); }}
-              className="w-full py-1.5 text-sm font-medium text-text-secondary hover:text-text-primary transition-colors"
+              aria-label="Fechar"
+              className="p-1.5 rounded-lg text-text-secondary hover:bg-surface-alt hover:text-text-primary transition-colors"
             >
-              Cancelar
+              <X className="w-4 h-4" />
             </button>
           </div>
-        </SheetContent>
-      </Sheet>
+
+          {/* ── Faixa ao vivo ─────────────────────────────────────────────
+              Substitui o card "Pronto para agendar" que ficava no FIM do formulário —
+              agora preenche em tempo real no topo, sem exigir rolar até o fim pra
+              conferir o que está sendo criado. */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-px border-b border-border bg-border">
+            <div className="bg-surface px-4 py-3 min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Paciente</p>
+              <p className="text-sm font-medium text-text-primary mt-0.5 truncate">{novoForm.pacienteNome || '—'}</p>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Data</p>
+              <p className="font-mono text-sm font-semibold text-text-primary mt-0.5">
+                {novoForm.data ? novoForm.data.split('-').reverse().join('/') : '—'}
+              </p>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Hora</p>
+              <p className="font-mono text-sm font-semibold text-text-primary mt-0.5">{novoForm.hora || '—'}</p>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Duração</p>
+              <p className="font-mono text-sm font-semibold text-text-primary mt-0.5">
+                {(() => {
+                  const m = parseInt(novoForm.duracao, 10);
+                  if (!m) return '—';
+                  if (m < 60) return `${m}min`;
+                  const h = Math.floor(m / 60); const rem = m % 60;
+                  return rem ? `${h}h${rem}m` : `${h}h`;
+                })()}
+              </p>
+            </div>
+          </div>
+
+          {/* ── Corpo: 2 colunas ──────────────────────────────────────── */}
+          <div className="flex flex-col sm:flex-row">
+            <div className="flex-1 min-w-0 p-6 space-y-5 overflow-y-auto" style={{ maxHeight: '58vh' }}>
+
+              {/* Dentista — apenas secretária */}
+              {isSecretaria && dentistas.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
+                    Dentista <span className="text-coral-ink">*</span>
+                  </Label>
+                  <Select
+                    value={novoForm.dentistaId}
+                    onValueChange={(v) => v && setNovoForm((f) => ({ ...f, dentistaId: v }))}
+                  >
+                    <SelectTrigger className="rounded-xl bg-surface-alt border-border text-text-primary">
+                      <SelectValue>
+                        {(v: string | null) =>
+                          v
+                            ? (dentistas.find((d) => d.id === v)?.nome ?? v)
+                            : 'Selecione o dentista...'
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent className="bg-surface border-border">
+                      {dentistasOrdenados.map((d) => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Busca de paciente com autocomplete */}
+              <div className="space-y-2 relative">
+                <Label htmlFor="patient-drawer" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
+                  Paciente <span className="text-coral-ink">*</span>
+                </Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary/40 pointer-events-none" />
+                  <Input
+                    id="patient-drawer"
+                    placeholder="Buscar paciente pelo nome..."
+                    value={novoForm.pacienteSearch}
+                    autoComplete="off"
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setNovoForm((f) => ({ ...f, pacienteSearch: v, pacienteId: '', pacienteNome: '' }));
+                      setShowSugestoes(true);
+                      void buscarPacientes(v);
+                    }}
+                    onBlur={() => setTimeout(() => setShowSugestoes(false), 150)}
+                    className="rounded-xl bg-surface-alt border-border text-text-primary pl-10 focus:border-teal/40 transition-all"
+                  />
+                </div>
+                {showSugestoes && novoForm.pacienteSearch.trim().length >= 2 && (pacienteSugestoes.length > 0 || !novoForm.pacienteId) && (
+                  <div className="absolute z-50 w-full bg-surface border border-border rounded-xl shadow-lg mt-1 overflow-hidden">
+                    {pacienteSugestoes.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setNovoForm((f) => ({
+                            ...f,
+                            pacienteSearch: p.nome,
+                            pacienteId: p.id,
+                            pacienteNome: p.nome,
+                          }));
+                          setShowSugestoes(false);
+                          setPacienteSugestoes([]);
+                        }}
+                        className="w-full px-4 py-2.5 text-sm text-left hover:bg-surface-alt transition-colors text-text-primary"
+                      >
+                        {p.nome}
+                      </button>
+                    ))}
+                    {!novoForm.pacienteId && (
+                      <button
+                        type="button"
+                        onClick={() => void handleCriarPacienteRapidoNovo()}
+                        disabled={criandoPacienteNovo}
+                        className={`w-full px-4 py-2.5 text-sm text-left flex items-center gap-2 font-semibold text-teal-ink hover:bg-teal/5 transition-colors disabled:opacity-60 ${pacienteSugestoes.length > 0 ? 'border-t border-border' : ''}`}
+                      >
+                        {criandoPacienteNovo
+                          ? <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+                          : <UserPlus className="w-4 h-4 shrink-0" />}
+                        Cadastrar &ldquo;{novoForm.pacienteSearch.trim()}&rdquo; como novo paciente
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Notas */}
+              <div className="space-y-2">
+                <Label htmlFor="apt-notes-drawer" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
+                  Observações
+                </Label>
+                <textarea
+                  id="apt-notes-drawer"
+                  value={novoForm.observacoes}
+                  onChange={(e) => setNovoForm((f) => ({ ...f, observacoes: e.target.value }))}
+                  className="w-full bg-surface-alt border border-border rounded-xl p-3.5 text-sm min-h-[88px] focus:ring-2 focus:ring-teal/15 focus:border-teal/30 transition-all resize-none text-text-primary placeholder:text-text-secondary/40"
+                  placeholder="Procedimento, observações clínicas..."
+                />
+              </div>
+
+              {/* Aviso de conflito */}
+              {conflitoNovo && (
+                <div className="flex items-start gap-2 rounded-xl bg-warning-pale border border-warning/30 p-3 text-xs text-warning-ink">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>Conflito de horário — já existe um agendamento nesse intervalo.</span>
+                </div>
+              )}
+            </div>
+
+            {/* ── Coluna fixa: Quando + ações — nunca rola ─────────────── */}
+            <div className="w-full sm:w-72 sm:shrink-0 border-t sm:border-t-0 sm:border-l border-border flex flex-col">
+              <div className="p-5 space-y-4 flex-1">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">Quando</Label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="apt-date-drawer" className="text-[10px] text-text-secondary">Data</Label>
+                      <Input
+                        id="apt-date-drawer"
+                        type="date"
+                        value={novoForm.data}
+                        onChange={(e) => setNovoForm((f) => ({ ...f, data: e.target.value }))}
+                        className="rounded-xl bg-surface-alt border-border text-text-primary"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="apt-time-drawer" className="text-[10px] text-text-secondary">Hora</Label>
+                      <Input
+                        id="apt-time-drawer"
+                        type="time"
+                        value={novoForm.hora}
+                        onChange={(e) => setNovoForm((f) => ({ ...f, hora: e.target.value }))}
+                        className="rounded-xl bg-surface-alt border-border text-text-primary"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Duração — os chips são atalho, não limite (pedido 21/07); o campo
+                    livre abaixo cobre qualquer valor, os dois leem o mesmo estado. */}
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">Duração</Label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[
+                      { value: '30',  label: '30min' },
+                      { value: '45',  label: '45min' },
+                      { value: '60',  label: '1h' },
+                      { value: '90',  label: '1h30' },
+                      { value: '120', label: '2h' },
+                      { value: '180', label: '3h' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setNovoForm((f) => ({ ...f, duracao: opt.value }))}
+                        className={`py-2 rounded-lg border text-xs font-bold transition-all ${
+                          novoForm.duracao === opt.value
+                            ? 'bg-teal/10 border-teal text-teal-ink'
+                            : 'border-border text-text-secondary hover:border-teal/40 hover:text-teal-ink bg-surface-alt'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="apt-duracao-livre" className="text-xs text-text-secondary shrink-0">Ou:</Label>
+                    <Input
+                      id="apt-duracao-livre"
+                      type="number"
+                      min={5}
+                      max={600}
+                      step={5}
+                      inputMode="numeric"
+                      value={novoForm.duracao}
+                      onChange={(e) => setNovoForm((f) => ({ ...f, duracao: e.target.value }))}
+                      className="rounded-lg bg-surface-alt border-border text-text-primary text-sm h-8"
+                      aria-label="Duração personalizada em minutos"
+                    />
+                    <span className="text-xs text-text-secondary shrink-0">min</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Rodapé da coluna de ação ────────────────────────────── */}
+              <div className="p-5 border-t border-border space-y-2.5">
+                {saveError && !conflitoServidor && (
+                  <p className="text-xs text-coral-ink bg-coral-pale rounded-lg p-2">{saveError}</p>
+                )}
+
+                {/* Conflito do DENTISTA — recuperável. Aviso, não erro: a recepção
+                    decide. O conflito do PACIENTE nunca chega aqui, cai no bloco
+                    coral acima e continua sem saída. */}
+                {conflitoServidor && (
+                  <div className="rounded-xl border border-warning/30 bg-warning-pale p-3">
+                    <div className="flex items-start gap-2 mb-2.5">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-warning-ink" />
+                      <p className="text-xs text-warning-ink">
+                        {saveError} Marcar mesmo assim vai <b>sobrepor</b> os dois na agenda.
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => void handleCriarAgendamento(true)}
+                      disabled={isSaving}
+                      size="sm"
+                      /* `text-white` sobre `bg-warning` reprova no escuro: warning vira
+                         #fbbf24 (âmbar claro) lá, e branco em cima piora, não melhora.
+                         Par warning-pale/warning-ink é o que garante contraste nos 2 temas. */
+                      className="w-full rounded-lg text-xs bg-warning-pale border border-warning text-warning-ink hover:bg-warning/20 disabled:opacity-50"
+                    >
+                      {isSaving ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-2" /> Salvando...</> : 'Marcar mesmo assim'}
+                    </Button>
+                  </div>
+                )}
+
+                <Button
+                  onClick={() => void handleCriarAgendamento()}
+                  disabled={isSaving}
+                  className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl font-bold disabled:opacity-50"
+                >
+                  {isSaving ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Salvando...</> : 'Salvar agendamento'}
+                </Button>
+                <button
+                  onClick={() => { setIsNewModalOpen(false); resetForm(); }}
+                  className="w-full py-1.5 text-sm font-medium text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Cancel with motivo dialog ──────────────────────────────── */}
       <Dialog open={!!cancelDialog} onOpenChange={(open) => { if (!open) setCancelDialog(null); }}>
@@ -1814,7 +1768,17 @@ export function AgendamentosClient({
           setIsDetailModalOpen(open);
         }}
       >
-        <DialogContent className="max-w-lg rounded-2xl bg-surface border-border p-0 gap-0 overflow-hidden">
+        {/*
+          R-27a/b: 512px (max-w-lg) não cabia o conteúdo real — transbordava mesmo no caso
+          típico (medido no artefato: +28px só com o campo de observação). O X do Dialog
+          por padrão fica `absolute top-2 right-2` sem reservar espaço, e "Ver Ficha" também
+          se ancorava no canto direito — colidiam por construção. showCloseButton={false}
+          tira o X flutuante; o header abaixo desenha o seu próprio, com espaço reservado.
+        */}
+        <DialogContent
+          showCloseButton={false}
+          className="max-w-lg sm:max-w-[720px] rounded-2xl bg-surface border-border p-0 gap-0 overflow-hidden"
+        >
           {selectedApt && (
             <AnimatePresence mode="wait">
 
@@ -1827,150 +1791,171 @@ export function AgendamentosClient({
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.15 }}
                 >
-                  <div className="px-6 pt-6 pb-4">
-                    <div className="flex items-start justify-between gap-3 mb-4">
+                  {/* ── Cabeçalho (R-27b) ─────────────────────────────────
+                      Canto direito reservado: Ver Ficha + ✕ nunca colidem — X próprio no
+                      layout, não o absolute do DialogContent (showCloseButton={false}
+                      acima). Antes, os dois disputavam o mesmo canto por construção. */}
+                  <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-border">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <DialogTitle className="font-heading font-semibold text-xl text-text-primary leading-tight truncate">
+                        {selectedApt.paciente?.nome ?? '—'}
+                      </DialogTitle>
                       <StatusBadge status={selectedApt.status as AgendamentoStatus} />
+                      <DialogDescription className="sr-only">Detalhes do agendamento clínico.</DialogDescription>
+                    </div>
+                    <div className="flex items-center gap-4 shrink-0">
                       {selectedApt.paciente && (
                         <button
                           onClick={() => router.push(`/dashboard/pacientes/${selectedApt.paciente?.id}`)}
-                          className="text-teal text-xs font-semibold flex items-center gap-1 hover:opacity-80 transition-opacity shrink-0"
+                          className="text-teal-ink text-xs font-semibold flex items-center gap-1 hover:opacity-80 transition-opacity"
                         >
                           Ver Ficha <ExternalLink className="w-3 h-3" />
                         </button>
                       )}
+                      <button
+                        onClick={() => setIsDetailModalOpen(false)}
+                        aria-label="Fechar"
+                        className="p-1.5 rounded-lg text-text-secondary hover:bg-surface-alt hover:text-text-primary transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
-                    <DialogTitle className="font-heading font-semibold text-xl text-text-primary leading-tight">
-                      {selectedApt.paciente?.nome ?? '—'}
-                    </DialogTitle>
-                    <DialogDescription className="sr-only">Detalhes do agendamento clínico.</DialogDescription>
                   </div>
 
-                  <div className="px-6 pb-4 space-y-3">
-                    {/* Data e Hora */}
-                    <div className="flex items-center gap-3 px-4 py-3 bg-surface-alt rounded-xl border border-border">
-                      <CalendarIcon className="w-4 h-4 text-teal shrink-0" />
-                      <div>
-                        <p className="text-[10px] text-text-secondary font-bold uppercase tracking-wider mb-0.5">Data e Hora</p>
-                        <p className="text-sm font-semibold text-text-primary">
-                          {format(parseISO(selectedApt.data_hora), "dd/MM/yyyy 'às' HH:mm")}
-                          <span className="text-text-secondary font-normal ml-2">· {selectedApt.duracao_minutos} min</span>
-                        </p>
-                      </div>
+                  {/* ── Faixa de números ──────────────────────────────────
+                      Substitui os cards "Data e Hora" / "Dentista" empilhados — mesma
+                      informação, uma linha só, no lugar comum às 3 superfícies do R-27. */}
+                  <div className={`grid gap-px border-b border-border bg-border ${
+                    isSecretaria && selectedApt.dentista ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'
+                  }`}>
+                    <div className="bg-surface px-4 py-3">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Data</p>
+                      <p className="font-mono text-sm font-semibold text-text-primary mt-0.5">
+                        {format(parseISO(selectedApt.data_hora), 'dd/MM/yyyy')}
+                      </p>
                     </div>
-
-                    {/* Dentista — secretária */}
+                    <div className="bg-surface px-4 py-3">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Hora</p>
+                      <p className="font-mono text-sm font-semibold text-text-primary mt-0.5">
+                        {format(parseISO(selectedApt.data_hora), 'HH:mm')}
+                      </p>
+                    </div>
+                    <div className="bg-surface px-4 py-3">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Duração</p>
+                      <p className="font-mono text-sm font-semibold text-text-primary mt-0.5">{selectedApt.duracao_minutos} min</p>
+                    </div>
                     {isSecretaria && selectedApt.dentista && (
-                      <div className="flex items-center gap-3 px-4 py-3 bg-surface-alt rounded-xl border border-border">
-                        <UserCog className="w-4 h-4 text-teal shrink-0" />
+                      <div className="bg-surface px-4 py-3">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Dentista</p>
+                        <p className="text-sm font-medium text-text-primary mt-0.5 truncate">{selectedApt.dentista.nome}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Corpo: 2 colunas ──────────────────────────────────── */}
+                  <div className="flex flex-col sm:flex-row">
+                    <div className="flex-1 min-w-0 p-6 space-y-4">
+                      {selectedApt.observacoes && (
                         <div>
-                          <p className="text-[10px] text-text-secondary font-bold uppercase tracking-wider mb-0.5">Dentista</p>
-                          <p className="text-sm font-semibold text-text-primary">{selectedApt.dentista.nome}</p>
+                          <p className="text-xs font-bold uppercase tracking-widest text-teal-ink mb-1.5">Observações</p>
+                          <p className="text-sm text-text-primary">{selectedApt.observacoes}</p>
                         </div>
+                      )}
+
+                      {/* Alterar Status — botões rotulados pras transições comuns; o
+                          dropdown abaixo cobre os casos raros (reverter, forçar manualmente). */}
+                      <div className="space-y-2">
+                        <Label className="text-xs font-bold uppercase tracking-widest text-teal-ink">Alterar status</Label>
+                        {(() => {
+                          const st = selectedApt.status;
+                          const isTerminal = ['cancelled', 'no_show', 'completed'].includes(st);
+                          const quickActions = [
+                            {
+                              key: 'confirm', show: st === 'scheduled', label: 'Confirmar', Icon: ThumbsUp,
+                              onClick: () => void handleStatusChange(selectedApt.id, 'confirmed'),
+                              cls: 'bg-teal/15 text-teal border border-teal/30 hover:bg-teal/25',
+                            },
+                            {
+                              key: 'checkin', show: st === 'scheduled' || st === 'confirmed', label: 'Chegou', Icon: CheckCircle2,
+                              onClick: () => void handleStatusChange(selectedApt.id, 'checked_in'),
+                              cls: 'bg-teal text-white border border-teal hover:bg-teal-lt',
+                            },
+                            {
+                              key: 'noshow', show: st === 'scheduled' || st === 'confirmed', label: 'Faltou', Icon: AlertTriangle,
+                              onClick: () => void handleNoShow(selectedApt.id),
+                              cls: 'bg-coral-pale text-coral-ink border border-coral/30 hover:bg-coral/20',
+                            },
+                            {
+                              key: 'cancel', show: !isTerminal, label: 'Cancelar', Icon: X,
+                              onClick: () => { setCancelDialog({ aptId: selectedApt.id, aptNome: selectedApt.paciente?.nome ?? '' }); setCancelMotivo(''); setIsDetailModalOpen(false); },
+                              cls: 'bg-surface-alt text-text-secondary border border-border hover:text-text-primary',
+                            },
+                          ].filter(a => a.show);
+
+                          return quickActions.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {quickActions.map(a => (
+                                <button
+                                  key={a.key}
+                                  onClick={a.onClick}
+                                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold transition-colors ${a.cls}`}
+                                >
+                                  <a.Icon className="w-4 h-4 shrink-0" />
+                                  {a.label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null;
+                        })()}
+                        <Select
+                          value={selectedApt.status}
+                          onValueChange={(val) => val && void handleStatusChange(selectedApt.id, val)}
+                        >
+                          <SelectTrigger className="rounded-xl bg-surface-alt border-border text-text-secondary text-xs h-9">
+                            <SelectValue>Outro status: {STATUS_PT[selectedApt.status] ?? selectedApt.status}</SelectValue>
+                          </SelectTrigger>
+                          <SelectContent className="bg-surface border-border">
+                            <SelectItem value="scheduled">Agendado</SelectItem>
+                            <SelectItem value="confirmed">Confirmado</SelectItem>
+                            <SelectItem value="checked_in">Na Recepção</SelectItem>
+                            <SelectItem value="in_progress">Em Atendimento</SelectItem>
+                            <SelectItem value="completed">Realizado</SelectItem>
+                            <SelectItem value="cancelled">Cancelado</SelectItem>
+                            <SelectItem value="no_show">Faltou</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
-                    )}
 
-                    {/* Criado por — apenas se diferente do dentista */}
-                    {selectedApt.criador && selectedApt.criador.id !== selectedApt.dentista_id && (
-                      <div className="flex items-center gap-2 px-1 text-text-secondary">
-                        <UserCheck className="w-3.5 h-3.5 shrink-0 opacity-60" />
-                        <span className="text-xs">
-                          Criado por <span className="font-semibold text-text-primary">{selectedApt.criador.nome}</span>
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Observações */}
-                    {selectedApt.observacoes && (
-                      <div className="px-4 py-3 bg-surface-alt rounded-xl border border-border">
-                        <p className="text-[10px] text-text-secondary font-bold uppercase tracking-wider mb-1">Observações</p>
-                        <p className="text-sm text-text-primary">{selectedApt.observacoes}</p>
-                      </div>
-                    )}
-
-                    {/* Alterar Status — botões rotulados pras transições comuns; o
-                        dropdown abaixo cobre os casos raros (reverter, forçar manualmente). */}
-                    <div className="space-y-2 pt-1">
-                      <Label className="text-xs font-semibold uppercase tracking-wider text-text-secondary">Alterar Status</Label>
-                      {(() => {
-                        const st = selectedApt.status;
-                        const isTerminal = ['cancelled', 'no_show', 'completed'].includes(st);
-                        const quickActions = [
-                          {
-                            key: 'confirm', show: st === 'scheduled', label: 'Confirmar', Icon: ThumbsUp,
-                            onClick: () => void handleStatusChange(selectedApt.id, 'confirmed'),
-                            cls: 'bg-teal/15 text-teal border border-teal/30 hover:bg-teal/25',
-                          },
-                          {
-                            key: 'checkin', show: st === 'scheduled' || st === 'confirmed', label: 'Chegou', Icon: CheckCircle2,
-                            onClick: () => void handleStatusChange(selectedApt.id, 'checked_in'),
-                            cls: 'bg-teal text-white border border-teal hover:bg-teal-lt',
-                          },
-                          {
-                            key: 'noshow', show: st === 'scheduled' || st === 'confirmed', label: 'Faltou', Icon: AlertTriangle,
-                            onClick: () => void handleNoShow(selectedApt.id),
-                            cls: 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 hover:bg-red-500/20',
-                          },
-                          {
-                            key: 'cancel', show: !isTerminal, label: 'Cancelar', Icon: X,
-                            onClick: () => { setCancelDialog({ aptId: selectedApt.id, aptNome: selectedApt.paciente?.nome ?? '' }); setCancelMotivo(''); setIsDetailModalOpen(false); },
-                            cls: 'bg-surface-alt text-text-secondary border border-border hover:text-text-primary',
-                          },
-                        ].filter(a => a.show);
-
-                        return quickActions.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {quickActions.map(a => (
-                              <button
-                                key={a.key}
-                                onClick={a.onClick}
-                                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold transition-colors ${a.cls}`}
-                              >
-                                <a.Icon className="w-4 h-4 shrink-0" />
-                                {a.label}
-                              </button>
-                            ))}
-                          </div>
-                        ) : null;
-                      })()}
-                      <Select
-                        value={selectedApt.status}
-                        onValueChange={(val) => val && void handleStatusChange(selectedApt.id, val)}
-                      >
-                        <SelectTrigger className="rounded-xl bg-surface-alt border-border text-text-secondary text-xs h-9">
-                          <SelectValue>Outro status: {STATUS_PT[selectedApt.status] ?? selectedApt.status}</SelectValue>
-                        </SelectTrigger>
-                        <SelectContent className="bg-surface border-border">
-                          <SelectItem value="scheduled">Agendado</SelectItem>
-                          <SelectItem value="confirmed">Confirmado</SelectItem>
-                          <SelectItem value="checked_in">Na Recepção</SelectItem>
-                          <SelectItem value="in_progress">Em Atendimento</SelectItem>
-                          <SelectItem value="completed">Realizado</SelectItem>
-                          <SelectItem value="cancelled">Cancelado</SelectItem>
-                          <SelectItem value="no_show">Faltou</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      {/* Criado por — apenas se diferente do dentista */}
+                      {selectedApt.criador && selectedApt.criador.id !== selectedApt.dentista_id && (
+                        <div className="flex items-center gap-2 text-text-secondary">
+                          <UserCheck className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                          <span className="text-xs">
+                            Criado por <span className="font-semibold text-text-primary">{selectedApt.criador.nome}</span>
+                          </span>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Assinatura do paciente — secretária */}
-                    {isSecretaria && (selectedApt.status === 'checked_in' || selectedApt.status === 'in_progress' || selectedApt.status === 'completed') && selectedApt.paciente && (
-                      assinadosLocal.has(selectedApt.id) ? (
-                        <div className="flex items-center gap-2 text-sm font-semibold text-teal bg-teal/10 rounded-xl px-4 py-3 border border-teal/20">
-                          <CheckCircle2 className="w-4 h-4" /> Assinatura registrada
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setAssinaturaModal({ pacienteId: selectedApt.paciente!.id, pacienteNome: selectedApt.paciente!.nome, aptId: selectedApt.id })}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-border text-sm font-semibold text-text-secondary hover:bg-teal/5 hover:text-teal hover:border-teal/30 transition-all"
-                        >
-                          <PenLine className="w-4 h-4" />
-                          Solicitar Assinatura do Paciente
-                        </button>
-                      )
-                    )}
+                    {/* ── Coluna de ação — Assinatura, IA, Consulta ────────── */}
+                    <div className="w-full sm:w-64 sm:shrink-0 border-t sm:border-t-0 sm:border-l border-border p-5 space-y-2.5">
+                      {isSecretaria && (selectedApt.status === 'checked_in' || selectedApt.status === 'in_progress' || selectedApt.status === 'completed') && selectedApt.paciente && (
+                        assinadosLocal.has(selectedApt.id) ? (
+                          <div className="flex items-center gap-2 text-sm font-semibold text-teal-ink bg-teal/10 rounded-xl px-4 py-3 border border-teal/20">
+                            <CheckCircle2 className="w-4 h-4" /> Assinatura registrada
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setAssinaturaModal({ pacienteId: selectedApt.paciente!.id, pacienteNome: selectedApt.paciente!.nome, aptId: selectedApt.id })}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-border text-sm font-semibold text-text-secondary hover:bg-teal/5 hover:text-teal-ink hover:border-teal/30 transition-all"
+                          >
+                            <PenLine className="w-4 h-4" />
+                            Solicitar assinatura
+                          </button>
+                        )
+                      )}
 
-                    {/* Mensagem via IA */}
-                    {!['cancelled', 'no_show'].includes(selectedApt.status) && selectedApt.paciente && (
-                      <div className="space-y-2.5">
+                      {!['cancelled', 'no_show'].includes(selectedApt.status) && selectedApt.paciente && (
                         <BotaoMensagemIA
                           variant="full"
                           pacienteNome={selectedApt.paciente.nome}
@@ -1982,41 +1967,45 @@ export function AgendamentosClient({
                             : 'confirmacao'
                           }
                         />
-                      </div>
-                    )}
+                      )}
+
+                      {!isSecretaria && selectedApt.paciente && !['cancelled', 'no_show', 'completed'].includes(selectedApt.status) && (
+                        <Button
+                          onClick={() => router.push(`/consulta/${selectedApt.id}`)}
+                          className="w-full rounded-xl flex items-center justify-center gap-1.5 bg-gradient-to-r from-teal to-teal-lt text-white shadow-[0_4px_16px_rgba(47,156,133,0.3)] hover:-translate-y-0.5 transition-all"
+                        >
+                          <Stethoscope className="w-4 h-4" />
+                          {selectedApt.status === 'in_progress' ? 'Continuar atendimento' : 'Iniciar consulta'}
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="px-6 py-4 border-t border-border flex flex-col sm:flex-row gap-2">
+                  {/* ── Rodapé único ──────────────────────────────────────── */}
+                  <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-border">
                     <button
                       onClick={() => setDetailMode('confirm-delete')}
-                      className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-red-500 hover:bg-red-500/10 rounded-xl transition-colors sm:mr-auto"
+                      className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-coral-ink hover:bg-coral-pale rounded-xl transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
                       Excluir
                     </button>
-                    <Button
-                      variant="outline"
-                      onClick={() => setIsDetailModalOpen(false)}
-                      className="rounded-xl border-border text-text-primary hover:bg-surface-alt"
-                    >
-                      Fechar
-                    </Button>
-                    <Button
-                      onClick={enterEditMode}
-                      className="bg-teal/10 text-teal hover:bg-teal/20 border border-teal/30 rounded-xl flex items-center gap-1.5"
-                    >
-                      <Pencil className="w-4 h-4" />
-                      Editar
-                    </Button>
-                    {!isSecretaria && selectedApt.paciente && !['cancelled', 'no_show', 'completed'].includes(selectedApt.status) && (
+                    <div className="flex items-center gap-2">
                       <Button
-                        onClick={() => router.push(`/consulta/${selectedApt.id}`)}
-                        className="rounded-xl flex items-center gap-1.5 bg-gradient-to-r from-teal to-teal-lt text-white shadow-[0_4px_16px_rgba(47,156,133,0.3)] hover:-translate-y-0.5 transition-all"
+                        variant="outline"
+                        onClick={() => setIsDetailModalOpen(false)}
+                        className="rounded-xl border-border text-text-primary hover:bg-surface-alt"
                       >
-                        <Stethoscope className="w-4 h-4" />
-                        {selectedApt.status === 'in_progress' ? 'Continuar atendimento' : 'Iniciar consulta'}
+                        Fechar
                       </Button>
-                    )}
+                      <Button
+                        onClick={enterEditMode}
+                        className="bg-teal/10 text-teal-ink hover:bg-teal/20 border border-teal/30 rounded-xl flex items-center gap-1.5"
+                      >
+                        <Pencil className="w-4 h-4" />
+                        Editar
+                      </Button>
+                    </div>
                   </div>
                 </motion.div>
               )}
