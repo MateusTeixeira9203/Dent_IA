@@ -125,6 +125,51 @@ pra servir os dois — o risco de quebrar o que já funciona e é usado em todo 
 Reuso é de vocabulário (constantes de dentes, tokens, padrão de tabela densa do `endo-form`),
 não de componente.
 
+## I9 — Margem gengival é por SUPERFÍCIE, não por sítio
+
+`ps` e `ss` são por **sítio** (6 por dente). `mg` é por **superfície** — 2 por dente (vestibular e
+lingual/palatina) — e se aplica aos 3 sítios daquela superfície no cálculo do NIC.
+
+Sancionado pelo [SDCEP](https://www.periodontalcare.sdcep.org.uk/guidance/assessment/special-tests/full-periodontal-examination/what-should-be-recorded/periodontal-parameters/):
+recessão aceita por superfície. Além de ser a norma, medir recessão interproximal é menos
+confiável — a papila esconde a JCE.
+
+Efeito: 6 medidas de `mg` por dente viram 2. Sozinho, corta 128 entradas do exame de boca toda.
+
+## I10 — Registro por exceção: a ficha periodontal é quase toda zero
+
+Dois grupos, com regras de entrada opostas:
+
+| Grupo | Campos | Entrada |
+|---|---|---|
+| **Sempre preenchido** | `ps` (6/dente) · `mg` (2/dente) | Valor numérico obrigatório em cada posição |
+| **Esparso — por exceção** | `ss` · supuração · placa · mobilidade · furca | Só se registra **o que existe**. Ausência = ausência de marca, nunca um "não" digitado |
+
+Exigir os esparsos como campo obrigatório é pedir ao dentista **192 "nãos"**. Supuração é
+opcional na própria norma (SDCEP), placa é ferramenta de motivação (não de diagnóstico), e
+mobilidade/furca são majoritariamente grau 0.
+
+**Resultado no exame de boca toda:** ~1.024 entradas obrigatórias caem para **~256**
+(6 `ps` + 2 `mg` por dente). É o que tira a grade da faixa "tela que ninguém abre".
+
+> Isto é regra de **entrada**, não de modelo: o dado continua existindo por sítio na leitura
+> (um sítio sem marca de sangramento é um sítio que não sangrou). O que muda é que o dentista
+> nunca digita o normal.
+
+## I11 — O exame anterior fica visível durante o registro
+
+Periodontista em consulta de manutenção precisa ver que aquele sítio era 5mm e sangrava. Registrar
+sem isso é trabalhar cego.
+
+Isto é invariante de **fluxo**, não campo. Vale a partir do R-08c e é o motivo de I7 (append-only)
+existir desde o primeiro dia — a tela de comparação (R-08e) espera, a capacidade de comparar não.
+
+> **Correção de enquadramento (28/07):** a comparação temporal tinha sido classificada como
+> "feature bônus, vem por último". Operacionalmente ela vem depois mesmo (ninguém tem 2 exames no
+> dia 1), mas **para o especialista comparar É o trabalho** — o periograma completo acontece 2–3×
+> por ano, enquanto a manutenção (a cada 3–6 meses) é essencialmente *"o que ainda sangra"*.
+> Adia-se a tela, não a importância.
+
 ## Onde cada invariante é cobrada
 
 | Invariante | Cobrado em |
@@ -137,3 +182,6 @@ não de componente.
 | I6 (zero LLM no número) | R-08b (enum do Gemini só pro evento) · R-08f (parser) |
 | I7 (append-only) | R-08c (constraint) — habilita R-08e |
 | I8 (visualização própria) | R-08c |
+| I9 (mg por superfície) | R-08c (modelo de dado) |
+| I10 (registro por exceção) | R-08c (UI de entrada) |
+| I11 (exame anterior visível) | R-08c (fluxo) — habilita R-08e |
