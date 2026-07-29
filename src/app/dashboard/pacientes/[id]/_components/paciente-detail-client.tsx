@@ -67,6 +67,7 @@ import {
   atualizarStatusOrcamento,
   registrarPagamento,
   editarPagamento,
+  marcarPagamentoPago,
   excluirPagamento,
   criarOrcamento,
   editarOrcamento,
@@ -260,6 +261,10 @@ export function PacienteDetailClient({
   const [pagSaving, setPagSaving] = useState(false);
   const [orcError, setOrcError] = useState<string | null>(null);
   const [pagError, setPagError] = useState<string | null>(null);
+
+  // R-28 — fechar uma parcela pendente específica via a aba Registrar pagamento
+  // (em vez de abrir um pagamento novo e duplicar o recebimento).
+  const [closingPagamentoId, setClosingPagamentoId] = useState<string | null>(null);
 
   // Edição / exclusão de pagamento já registrado
   const [editingPagId, setEditingPagId] = useState<string | null>(null);
@@ -680,6 +685,66 @@ export function PacienteDetailClient({
         data: new Date().toISOString().split('T')[0],
         dataVencimento: '',
       });
+    }
+    setPagSaving(false);
+  };
+
+  const handleIniciarFechamentoPagamento = (pg: Pagamento) => {
+    setClosingPagamentoId(pg.id);
+    setParcelasMode(false);
+    setPagForm({
+      valor: formatValorBR(pg.valor),
+      formaPagamento: 'pix',
+      data: new Date().toISOString().split('T')[0],
+      dataVencimento: '',
+    });
+    setPagError(null);
+  };
+
+  const handleCancelarFechamentoPagamento = () => {
+    setClosingPagamentoId(null);
+    setPagForm({
+      valor: '',
+      formaPagamento: 'pix',
+      data: new Date().toISOString().split('T')[0],
+      dataVencimento: '',
+    });
+    setPagError(null);
+  };
+
+  const handleFecharPagamento = async () => {
+    if (!closingPagamentoId) return;
+    setPagError(null);
+    setPagSaving(true);
+
+    const result = await marcarPagamentoPago(closingPagamentoId, {
+      formaPagamento: pagForm.formaPagamento,
+      data: pagForm.data,
+    });
+
+    if (result.error) {
+      setPagError(result.error);
+    } else {
+      const fechadoId = closingPagamentoId;
+      setOrcamentosState((prev) =>
+        prev.map((o) =>
+          o.id === detalheOrcId
+            ? {
+                ...o,
+                pagamentos: o.pagamentos.map((p) =>
+                  p.id === fechadoId
+                    ? { ...p, status: 'pago', forma_pagamento: pagForm.formaPagamento, data_pagamento: pagForm.data }
+                    : p
+                ),
+              }
+            : o
+        )
+      );
+      handleCancelarFechamentoPagamento();
+      toast.success('Parcela marcada como paga.');
+      // marcado_por e autoAprovado do orçamento são derivados no servidor —
+      // busca de novo em vez de aproximar no client, mesma disciplina do handleStatusChange.
+      router.refresh();
     }
     setPagSaving(false);
   };
@@ -1737,6 +1802,7 @@ export function PacienteDetailClient({
           setOrcEditMode(false);
           setOrcEditError(null);
           setPagForm({ valor: '', formaPagamento: 'pix', data: new Date().toISOString().split('T')[0], dataVencimento: '' });
+          setClosingPagamentoId(null);
           setEditingPagId(null);
           setEditPagError(null);
           setConfirmDeletePagId(null);
@@ -1765,7 +1831,10 @@ export function PacienteDetailClient({
         onOpenEditOrc={handleOpenEditOrc}
         onSalvarEdicaoOrc={handleSalvarEdicaoOrc}
         onStatusChange={handleStatusChange}
-        onRegistrarPagamento={handleRegistrarPagamento}
+        onRegistrarPagamento={closingPagamentoId ? handleFecharPagamento : handleRegistrarPagamento}
+        closingPagamentoId={closingPagamentoId}
+        onIniciarFechamentoPagamento={handleIniciarFechamentoPagamento}
+        onCancelarFechamentoPagamento={handleCancelarFechamentoPagamento}
         onDeleteClick={setConfirmDeleteOrcId}
         editingPagId={editingPagId}
         editPagForm={editPagForm}

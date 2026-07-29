@@ -115,6 +115,10 @@ interface Props {
   onSalvarEdicaoOrc: () => void;
   onStatusChange: (id: string, status: StatusOrcamento) => void;
   onRegistrarPagamento: () => void;
+  /** R-28 — id da parcela pendente sendo fechada; null = Registrar pagamento em modo criar novo. */
+  closingPagamentoId: string | null;
+  onIniciarFechamentoPagamento: (pg: Pagamento) => void;
+  onCancelarFechamentoPagamento: () => void;
   onDeleteClick: (id: string | null) => void;
   editingPagId: string | null;
   editPagForm: EditPagForm;
@@ -141,7 +145,9 @@ export function DetalheOrcamentoModal({
   orcEditMode, setOrcEditMode, orcEditItens, setOrcEditItens,
   orcEditSaving, orcEditError, setOrcEditError,
   onOpenEditOrc, onSalvarEdicaoOrc,
-  onStatusChange, onRegistrarPagamento, onDeleteClick,
+  onStatusChange, onRegistrarPagamento,
+  closingPagamentoId, onIniciarFechamentoPagamento, onCancelarFechamentoPagamento,
+  onDeleteClick,
   editingPagId, editPagForm, setEditPagForm, editPagSaving, editPagError,
   onIniciarEdicaoPagamento, onCancelarEdicaoPagamento, onSalvarEdicaoPagamento,
   confirmDeletePagId, setConfirmDeletePagId, pagDeleteSaving, onExcluirPagamento,
@@ -470,12 +476,20 @@ export function DetalheOrcamentoModal({
                           {totalParcelas ? `${totalParcelas}×` : '—'}
                         </p>
                       </div>
-                      <div className="bg-surface px-4 py-3">
+                      <button
+                        type="button"
+                        disabled={restante <= 0}
+                        onClick={() => {
+                          setPagForm(f => ({ ...f, valor: formatValorBR(restante), dataVencimento: '' }));
+                          setTab('registrar');
+                        }}
+                        className="bg-surface px-4 py-3 text-left enabled:hover:bg-surface-alt/60 transition-colors disabled:cursor-default"
+                      >
                         <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Falta receber</p>
                         <p className={`font-mono text-base font-semibold mt-0.5 ${restante > 0 ? 'text-warning-ink' : 'text-teal-ink'}`}>
                           R$ {fmt(restante)}
                         </p>
-                      </div>
+                      </button>
                     </div>
 
                     <div className="space-y-1.5">
@@ -606,22 +620,43 @@ export function DetalheOrcamentoModal({
                               </p>
                             </div>
                             <div className="text-right shrink-0">
-                              <p className={`font-mono text-sm font-semibold ${isPago ? 'text-teal' : isVencido ? 'text-coral-ink' : 'text-text-secondary'}`}>
-                                R$ {fmt(pg.valor)}
-                              </p>
+                              {isPago ? (
+                                <p className="font-mono text-sm font-semibold text-teal">
+                                  R$ {fmt(pg.valor)}
+                                </p>
+                              ) : (
+                                // R-28 — clicar no valor pendente vai pra "Registrar pagamento" já
+                                // vinculado a ESTA parcela (fecha por UPDATE, não cria linha nova).
+                                <button
+                                  onClick={() => { onIniciarFechamentoPagamento(pg); setTab('registrar'); }}
+                                  className={`font-mono text-sm font-semibold underline decoration-dotted underline-offset-2 transition-colors ${isVencido ? 'text-coral-ink hover:text-coral' : 'text-text-secondary hover:text-teal-ink'}`}
+                                >
+                                  R$ {fmt(pg.valor)}
+                                </button>
+                              )}
                               {isPago
                                 ? <CheckCircle2 className="w-3 h-3 text-teal ml-auto mt-0.5" />
                                 : <Clock className="w-3 h-3 text-text-secondary ml-auto mt-0.5" />
                               }
                             </div>
                             <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={() => onIniciarEdicaoPagamento(pg)}
-                                className="p-1.5 rounded-lg hover:bg-surface-alt text-text-secondary hover:text-text-primary transition-colors"
-                                aria-label="Editar pagamento"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
+                              {isPago ? (
+                                <button
+                                  onClick={() => onIniciarEdicaoPagamento(pg)}
+                                  className="p-1.5 rounded-lg hover:bg-surface-alt text-text-secondary hover:text-text-primary transition-colors"
+                                  aria-label="Editar pagamento"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => { onIniciarFechamentoPagamento(pg); setTab('registrar'); }}
+                                  className="p-1.5 rounded-lg hover:bg-teal/10 text-text-secondary hover:text-teal-ink transition-colors"
+                                  aria-label="Marcar como pago"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                               <button
                                 onClick={() => setConfirmDeletePagId(pg.id)}
                                 className="p-1.5 rounded-lg hover:bg-coral/10 text-text-secondary hover:text-coral transition-colors"
@@ -708,6 +743,22 @@ export function DetalheOrcamentoModal({
               <TabsContent value="registrar" className="mt-0 flex-1 min-h-0 overflow-y-auto p-6">
                 <div className="max-w-md mx-auto space-y-5">
 
+                  {closingPagamentoId && (
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-teal/25 bg-teal/5 px-4 py-3">
+                      <p className="text-xs text-text-secondary">
+                        Fechando parcela de{' '}
+                        <span className="font-mono font-semibold text-teal-ink">R$ {pagForm.valor}</span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => { onCancelarFechamentoPagamento(); setTab('pagamentos'); }}
+                        className="text-[11px] font-semibold text-text-secondary hover:text-text-primary transition-colors shrink-0"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  )}
+
                   {orcEditMode ? (
                     <div className="rounded-2xl border border-teal/25 p-5 text-center">
                       <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">Novo total</p>
@@ -753,18 +804,20 @@ export function DetalheOrcamentoModal({
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">
-                          {parcelasMode ? 'Dividir em parcelas' : 'Registrar pagamento'}
+                          {closingPagamentoId ? 'Marcar parcela como paga' : parcelasMode ? 'Dividir em parcelas' : 'Registrar pagamento'}
                         </p>
-                        <button
-                          onClick={() => setParcelasMode(!parcelasMode)}
-                          className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary hover:text-teal-ink transition-colors"
-                        >
-                          <Layers className="w-3 h-3" />
-                          {parcelasMode ? 'Pagamento único' : 'Dividir em parcelas'}
-                        </button>
+                        {!closingPagamentoId && (
+                          <button
+                            onClick={() => setParcelasMode(!parcelasMode)}
+                            className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary hover:text-teal-ink transition-colors"
+                          >
+                            <Layers className="w-3 h-3" />
+                            {parcelasMode ? 'Pagamento único' : 'Dividir em parcelas'}
+                          </button>
+                        )}
                       </div>
 
-                      {parcelasMode ? (
+                      {parcelasMode && !closingPagamentoId ? (
                         <div className="space-y-2">
                           <div className="grid grid-cols-2 gap-2">
                             <div className="space-y-1.5">
@@ -816,6 +869,7 @@ export function DetalheOrcamentoModal({
                             <Input
                               type="text" inputMode="decimal" placeholder="0,00"
                               value={pagForm.valor}
+                              disabled={!!closingPagamentoId}
                               onChange={e => setPagForm(f => ({ ...f, valor: e.target.value }))}
                               onBlur={e => {
                                 const parsed = parseValorBR(e.target.value);
@@ -824,18 +878,20 @@ export function DetalheOrcamentoModal({
                               className="rounded-xl bg-surface-alt border-border text-text-primary font-mono"
                             />
                           </div>
-                          <div className="space-y-1.5">
-                            <Label className="text-xs text-text-secondary flex items-center gap-1.5">
-                              Vencimento <span className="text-text-secondary/60 font-normal">(deixe vazio se já recebeu)</span>
-                            </Label>
-                            <Input
-                              type="date" min={hoje}
-                              value={pagForm.dataVencimento}
-                              onChange={e => setPagForm(f => ({ ...f, dataVencimento: e.target.value }))}
-                              className="rounded-xl bg-surface-alt border-border text-text-primary"
-                            />
-                          </div>
-                          {pagForm.dataVencimento && pagForm.dataVencimento > hoje ? (
+                          {!closingPagamentoId && (
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-text-secondary flex items-center gap-1.5">
+                                Vencimento <span className="text-text-secondary/60 font-normal">(deixe vazio se já recebeu)</span>
+                              </Label>
+                              <Input
+                                type="date" min={hoje}
+                                value={pagForm.dataVencimento}
+                                onChange={e => setPagForm(f => ({ ...f, dataVencimento: e.target.value }))}
+                                className="rounded-xl bg-surface-alt border-border text-text-primary"
+                              />
+                            </div>
+                          )}
+                          {!closingPagamentoId && pagForm.dataVencimento && pagForm.dataVencimento > hoje ? (
                             <div className="flex items-center gap-2 bg-warning-pale border border-warning/40 rounded-xl px-3 py-2.5">
                               <CalendarClock className="w-3.5 h-3.5 text-warning-ink shrink-0" />
                               <p className="text-xs text-warning-ink">
@@ -883,7 +939,9 @@ export function DetalheOrcamentoModal({
                           >
                             {pagSaving
                               ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</>
-                              : (pagForm.dataVencimento && pagForm.dataVencimento > hoje) ? 'Agendar Parcela' : 'Confirmar Pagamento'
+                              : closingPagamentoId
+                                ? 'Marcar como Pago'
+                                : (pagForm.dataVencimento && pagForm.dataVencimento > hoje) ? 'Agendar Parcela' : 'Confirmar Pagamento'
                             }
                           </Button>
                         </div>

@@ -209,11 +209,16 @@ export async function gerarParcelas(dados: {
   return { parcelas: (data ?? []) as unknown as ParcelaGerada[] };
 }
 
+/**
+ * R-28 — fecha uma parcela pendente já existente (UPDATE), nunca insere linha nova.
+ * `data` é livre (não hardcoda hoje) — é o que faltava pra fechar em data diferente de hoje
+ * sem duplicar via "Registrar pagamento".
+ */
 export async function marcarPagamentoPago(
   pagamentoId: string,
-  formaPagamento: FormaPagamento
-): Promise<{ error?: string }> {
-  const { supabase, user, clinicId } = await requireClinicContext();
+  dados: { formaPagamento: FormaPagamento; data: string },
+): Promise<{ error?: string; autoAprovado?: boolean }> {
+  const { supabase, user, clinicId, role } = await requireClinicContext();
 
   const { data: dentistaPerfil } = await supabase
     .from("dentistas")
@@ -224,14 +229,26 @@ export async function marcarPagamentoPago(
 
   if (!dentistaPerfil) redirect("/onboarding");
 
-  const hoje = new Date().toISOString().split("T")[0];
+  const { data: pagAtual } = await supabase
+    .from("pagamentos")
+    .select("id, status, valor, orcamento_id, paciente_id, dentista_id")
+    .eq("id", pagamentoId)
+    .eq("clinica_id", clinicId)
+    .maybeSingle();
+
+  if (!pagAtual) {
+    return { error: "Pagamento não encontrado." };
+  }
+  if (pagAtual.status === "pago") {
+    return { error: "Este pagamento já está marcado como pago." };
+  }
 
   const { error } = await supabase
     .from("pagamentos")
     .update({
       status:          "pago",
-      forma_pagamento: formaPagamento,
-      data_pagamento:  hoje,
+      forma_pagamento: dados.formaPagamento,
+      data_pagamento:  dados.data,
       marcado_por_id:  dentistaPerfil.id,
     })
     .eq("id", pagamentoId)
@@ -242,8 +259,64 @@ export async function marcarPagamentoPago(
     return { error: 'Não foi possível registrar o pagamento. Tente novamente.' };
   }
 
+  // D6 — mesma regra de auto-aprovação do registrarPagamento (paridade, não a
+  // reconciliação da parte 3 do achado — essa fica pra decisão de negócio separada).
+  let autoAprovado = false;
+  const { data: orcRow } = await supabase
+    .from("orcamentos")
+    .select("total, status")
+    .eq("id", pagAtual.orcamento_id)
+    .eq("clinica_id", clinicId)
+    .single();
+
+  if (orcRow && orcRow.status === "enviado") {
+    const { data: pagamentos } = await supabase
+      .from("pagamentos")
+      .select("valor")
+      .eq("orcamento_id", pagAtual.orcamento_id)
+      .eq("status", "pago");
+
+    const totalPago = (pagamentos ?? []).reduce((s, p) => s + p.valor, 0);
+    if (totalPago >= (orcRow.total ?? 0)) {
+      await supabase
+        .from("orcamentos")
+        .update({ status: "aprovado" })
+        .eq("id", pagAtual.orcamento_id)
+        .eq("clinica_id", clinicId);
+      autoAprovado = true;
+    }
+  }
+
+  if (role === 'secretaria' && pagAtual.dentista_id) {
+    const { data: pac } = await supabase
+      .from('pacientes').select('nome').eq('id', pagAtual.paciente_id).maybeSingle();
+    const pacNome = (pac as { nome: string } | null)?.nome ?? 'paciente';
+    const valorFmt = Number(pagAtual.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    await inserirNotificacao(supabase, {
+      clinicaId:      clinicId,
+      paraRole:       'dentista',
+      paraDentistaId: pagAtual.dentista_id,
+      deDentistaId:   dentistaPerfil.id,
+      tipo:           'pagamento_confirmado',
+      titulo:         `Pagamento recebido — ${pacNome}`,
+      mensagem:       `Secretária registrou ${valorFmt} (${dados.formaPagamento.replace(/_/g, ' ')}) do paciente ${pacNome}.`,
+      href:           '/dashboard/orcamentos',
+    });
+  }
+
+  registrarLog(supabase, {
+    clinicaId:   clinicId,
+    actorId:     dentistaPerfil.id,
+    pacienteId:  pagAtual.paciente_id,
+    entityType:  'pagamento',
+    entityId:    pagamentoId,
+    action:      'pagamento.registrado',
+    metadata:    { valor: pagAtual.valor, forma: dados.formaPagamento, orcamento_id: pagAtual.orcamento_id },
+  });
+
+  revalidatePath("/dashboard/orcamentos");
   revalidatePath('/dashboard/financeiro');
-  return {};
+  return { autoAprovado };
 }
 
 export async function criarOrcamento(dados: {
@@ -374,6 +447,7 @@ export async function registrarPagamento(dados: {
       forma_pagamento: isAgendado ? null : dados.formaPagamento,
       data_pagamento:  isAgendado ? null : dados.data,
       data_vencimento: dados.dataVencimento ?? null,
+      marcado_por_id:  isAgendado ? null : dentistaPerfil.id,
     })
     .select("id")
     .single();
@@ -621,6 +695,7 @@ export async function registrarPagamentoRapido(dados: {
       status:          "pago",
       forma_pagamento: dados.formaPagamento,
       data_pagamento:  hoje,
+      marcado_por_id:  dentistaPerfil.id,
     })
     .select("id")
     .single();
