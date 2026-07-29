@@ -1,5 +1,6 @@
 "use server";
 
+import { z } from "zod";
 import { requireClinicContext } from "@/server/auth/clinic";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -672,6 +673,20 @@ export async function excluirOrcamento(
     return { error: 'Este orçamento possui pagamentos registrados. Altere o status antes de excluir.' };
   }
 
+  // R-03c-1: orçamento com aceite assinado é a prova de que o paciente concordou em pagar —
+  // apagar o orçamento apagaria a prova junto. A FK RESTRICT (migration 113) é a rede de
+  // segurança de verdade; esta checagem só existe pra dar uma mensagem legível ao usuário.
+  const { count: aceiteCount } = await supabase
+    .from('assinaturas')
+    .select('id', { count: 'exact', head: true })
+    .eq('orcamento_id', orcamentoId)
+    .eq('clinica_id', clinicId)
+    .eq('tipo', 'orcamento');
+
+  if ((aceiteCount ?? 0) > 0) {
+    return { error: 'Este orçamento tem aceite assinado pelo paciente e não pode ser excluído.' };
+  }
+
   await supabase
     .from("pagamentos")
     .delete()
@@ -760,4 +775,86 @@ export async function criarProcedimentoRapido(dados: {
 
   revalidatePath("/dashboard/configuracoes");
   return { id: (data as { id: string }).id };
+}
+
+// Não exportar o schema em si — arquivo "use server" só pode exportar funções async.
+// Só o tipo derivado sai (apagado em runtime), mesmo padrão de assinarProcedimentosSchema.
+const aceitarOrcamentoSchema = z.object({
+  orcamentoId: z.string().uuid(),
+  assinadoPor: z.string().trim().min(2).max(120),
+  assinaturaDataUrl: z.string().startsWith('data:image/png;base64,'),
+});
+export type AceitarOrcamentoInput = z.infer<typeof aceitarOrcamentoSchema>;
+
+/**
+ * R-03c-1 — aceite assinado do orçamento (prova comercial: o paciente concordou em pagar
+ * nestes termos; distinto da assinatura clínica do R-03a, que prova que o procedimento foi
+ * feito). Wrapper fino da RPC aceitar_orcamento (migration 113, SECURITY DEFINER): quem pode
+ * coletar é decisão travada na spec — autor do orçamento ou secretária da mesma clínica,
+ * validado NO BANCO. O snapshot dos termos é montado dentro da RPC a partir do banco, nunca
+ * a partir do que este wrapper envia — se o client mandasse os termos, a prova não provaria nada.
+ */
+export async function aceitarOrcamento(
+  params: AceitarOrcamentoInput,
+): Promise<{ ok: boolean; error?: string }> {
+  const parsed = aceitarOrcamentoSchema.safeParse(params);
+  if (!parsed.success) return { ok: false, error: 'Dados inválidos.' };
+  const { orcamentoId, assinadoPor, assinaturaDataUrl } = parsed.data;
+
+  const { supabase, clinicId } = await requireClinicContext();
+
+  // Resolve paciente_id só pro path do storage — a RPC valida tudo de novo por dentro
+  // (este read não é a autorização, é só pra montar o nome do arquivo).
+  const { data: orcRef } = await supabase
+    .from('orcamentos')
+    .select('paciente_id')
+    .eq('id', orcamentoId)
+    .eq('clinica_id', clinicId)
+    .maybeSingle();
+
+  if (!orcRef) return { ok: false, error: 'Orçamento não encontrado.' };
+
+  const base64 = assinaturaDataUrl.split(',')[1];
+  if (!base64) return { ok: false, error: 'Assinatura inválida.' };
+  const buffer = Buffer.from(base64, 'base64');
+  const storagePath = `${clinicId}/${orcRef.paciente_id}/aceite_${orcamentoId}_${Date.now()}.png`;
+
+  const { error: storageErr } = await supabase.storage
+    .from('fichas')
+    .upload(storagePath, buffer, { contentType: 'image/png', upsert: true });
+
+  if (storageErr) {
+    console.error('[aceitarOrcamento] storage:', storageErr.message);
+    return { ok: false, error: 'Erro ao salvar a assinatura.' };
+  }
+
+  const { error } = await supabase.rpc('aceitar_orcamento', {
+    p_orcamento_id: orcamentoId,
+    p_assinado_por: assinadoPor,
+    p_assinatura_ref: storagePath,
+  });
+
+  if (error) {
+    // PNG já subiu mas a RPC rejeitou — remove o órfão antes de devolver o erro (mesmo
+    // cuidado que assinarProcedimentos já toma).
+    await supabase.storage.from('fichas').remove([storagePath]);
+    if (error.message.includes('sem_permissao')) {
+      return { ok: false, error: 'Você não tem permissão para registrar o aceite deste orçamento.' };
+    }
+    if (error.message.includes('ja_aceito')) {
+      return { ok: false, error: 'Este orçamento já tem aceite assinado.' };
+    }
+    if (error.message.includes('status_invalido')) {
+      return { ok: false, error: 'Não é possível coletar aceite de um orçamento recusado.' };
+    }
+    if (error.message.includes('sem_responsavel')) {
+      return { ok: false, error: 'Este orçamento não tem dentista responsável. Atribua um antes de coletar o aceite.' };
+    }
+    console.error('[aceitarOrcamento]', error.message);
+    return { ok: false, error: 'Não foi possível registrar o aceite.' };
+  }
+
+  revalidatePath(`/dashboard/pacientes/${orcRef.paciente_id}`);
+  revalidatePath('/dashboard/orcamentos');
+  return { ok: true };
 }

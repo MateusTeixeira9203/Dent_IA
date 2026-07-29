@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import type { ClinicRole } from '@/server/auth/clinic';
 import type { Paciente } from '@/types/database';
+import type { AceiteOrcamento, TermosSnapshot } from '@/types/orcamento';
 import { getVisibleTimelineEvents, type TimelineEvent } from './get-visible-timeline-events';
 
 export type FichaRecente = {
@@ -52,6 +53,19 @@ export type OrcamentoComItens = {
   pagamentos: Pagamento[];
   aprovado_por: { nome: string } | null;
   aprovado_em: string | null;
+  /** R-03c-1 — aceite assinado pelo paciente. null = ainda não coletado. */
+  aceite: AceiteOrcamento | null;
+};
+
+/** Shape bruto de `assinaturas` embedado na query — 1 linha no máximo (índice único parcial
+ * garante isso), mas o PostgREST sempre devolve array em relação reversa por FK. */
+type AssinaturaOrcamentoRaw = {
+  id: string;
+  assinado_por: string;
+  cro_no_ato: string | null;
+  assinatura_ref: string;
+  assinado_em: string;
+  termos_snapshot: TermosSnapshot | null;
 };
 
 export type PatientWorkspaceData = {
@@ -104,7 +118,7 @@ export async function getPatientWorkspaceData({
         supabase
           .from('orcamentos')
           .select(
-            'id, status, total, created_at, validade_dias, condicoes_pagamento, dentista_id, aprovado_em, aprovado_por:dentistas!orcamentos_aprovado_por_id_fkey(nome), itens:orcamento_itens(id, descricao, preco_total, quantidade), pagamentos(id, valor, status, forma_pagamento, data_pagamento, data_vencimento, parcela_numero, total_parcelas, marcado_por:dentistas!pagamentos_marcado_por_id_fkey(nome))'
+            'id, status, total, created_at, validade_dias, condicoes_pagamento, dentista_id, aprovado_em, aprovado_por:dentistas!orcamentos_aprovado_por_id_fkey(nome), itens:orcamento_itens(id, descricao, preco_total, quantidade), pagamentos(id, valor, status, forma_pagamento, data_pagamento, data_vencimento, parcela_numero, total_parcelas, marcado_por:dentistas!pagamentos_marcado_por_id_fkey(nome)), aceite:assinaturas!assinaturas_orcamento_id_fkey(id, assinado_por, cro_no_ato, assinatura_ref, assinado_em, termos_snapshot)'
           )
           .eq('paciente_id', patientId)
           .eq('clinica_id', clinicId)
@@ -130,10 +144,33 @@ export async function getPatientWorkspaceData({
 
   if (!pacienteResult.data) return null;
 
+  // O embed reverso por FK (assinaturas ← orcamentos) sempre vem como array no PostgREST,
+  // mesmo com o índice único parcial (migration 113) garantindo no máximo 1 linha — a
+  // constraint é condicional (`where tipo='orcamento'`), e o PostgREST só infere to-one a
+  // partir de unique constraint incondicional. Achata pra objeto|null aqui.
+  type OrcamentoRaw = Omit<OrcamentoComItens, 'aceite'> & { aceite: AssinaturaOrcamentoRaw[] | null };
+  const orcamentosRaw = (orcamentosResult.data as unknown as OrcamentoRaw[]) ?? [];
+  const orcamentos: OrcamentoComItens[] = orcamentosRaw.map((orc) => {
+    const raw = orc.aceite?.[0] ?? null;
+    return {
+      ...orc,
+      aceite: raw && raw.termos_snapshot
+        ? {
+            id: raw.id,
+            assinadoPor: raw.assinado_por,
+            croNoAto: raw.cro_no_ato,
+            assinadoEm: raw.assinado_em,
+            assinaturaRef: raw.assinatura_ref,
+            termos: raw.termos_snapshot,
+          }
+        : null,
+    };
+  });
+
   return {
     paciente: pacienteResult.data as Paciente,
     agendamentoProximo: (agendamentoResult.data as AgendamentoProximo | null) ?? null,
-    orcamentos: (orcamentosResult.data as unknown as OrcamentoComItens[]) ?? [],
+    orcamentos,
     fichasRecentes: isClinical
       ? ((fichasResult.data as unknown as FichaRecente[]) ?? [])
       : [],

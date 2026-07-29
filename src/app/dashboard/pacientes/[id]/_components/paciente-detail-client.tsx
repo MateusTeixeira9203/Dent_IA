@@ -1011,6 +1011,7 @@ export function PacienteDetailClient({
         pagamentos: [],
         aprovado_por: null,
         aprovado_em: null,
+        aceite: null,
       };
       setOrcamentosState((prev) => [novoOrc, ...prev]);
       setIsNovoOrcOpen(false);
@@ -1778,6 +1779,12 @@ export function PacienteDetailClient({
         setConfirmDeletePagId={setConfirmDeletePagId}
         pagDeleteSaving={pagDeleteSaving}
         onExcluirPagamento={handleExcluirPagamento}
+        onAceiteRegistrado={() => {
+          // R-03c-1: o snapshot real (cro_no_ato, termos exatos) é montado no servidor —
+          // busca de novo em vez de aproximar no client, mesma disciplina do handleStatusChange.
+          toast.success('Aceite do paciente registrado.');
+          router.refresh();
+        }}
       />
 
       <ConfirmarDeleteOrcModal

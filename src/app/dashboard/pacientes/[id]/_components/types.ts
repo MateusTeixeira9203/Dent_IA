@@ -1,3 +1,5 @@
+import type { AceiteOrcamento } from '@/types/orcamento';
+
 export type OrcamentoItem = {
   id: string;
   descricao: string | null;
@@ -29,6 +31,8 @@ export type OrcamentoComItens = {
   pagamentos: Pagamento[];
   aprovado_por: { nome: string } | null;
   aprovado_em: string | null;
+  /** R-03c-1 — aceite assinado pelo paciente. null = ainda não coletado. */
+  aceite: AceiteOrcamento | null;
 };
 
 export type FichaParaOrc = {
