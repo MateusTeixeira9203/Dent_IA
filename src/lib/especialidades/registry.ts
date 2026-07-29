@@ -14,6 +14,7 @@ import type { TipoRegistroOdontograma } from '@/types/odontograma';
 import { ortoPlugin } from './orto';
 import { endoPlugin } from './endo';
 import { implantePlugin } from './implante';
+import { periodontiaPlugin } from './perio';
 
 // ── Os 7 plugins de metadados mínimos (A0). Cada um ganha detalheSchema/
 //    extractor/Form/Card na sua fatia. `render.camadas` é a intenção de pintura;
@@ -57,19 +58,8 @@ const proteseFixaPlugin: EspecialidadePlugin = {
   render: { pinta: true, camadas: ['coroa'] },
 };
 
-const periodontiaPlugin: EspecialidadePlugin = {
-  id: 'periodontia',
-  label: 'Periodontia',
-  // O selo âmbar deriva do exame (periograma — R-08); o motor determinístico entra lá.
-  // R-07: raspagem é tratamento perio (nível quadrante) — dono aqui (D6 da spec R-06-07).
-  tiposEvento: ['raspagem'],
-  persistencia: { forma: 'tabela-satelite', tabela: 'perio_exames' },
-  detalheSchema: null,
-  extractor: null, // A2: motor determinístico (zero LLM — I6)
-  Form: null,
-  Card: null,
-  render: { pinta: true, camadas: ['selo'] },
-};
+// R-08b: periodontia saiu deste arquivo pra ./perio (mesmo padrão de endo/implante/orto) —
+// agora tem detalheSchema/Form/Card reais e reivindica também 'exame_periodontal'.
 
 const odontopediatriaPlugin: EspecialidadePlugin = {
   id: 'odontopediatria',

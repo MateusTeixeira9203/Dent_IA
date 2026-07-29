@@ -48,6 +48,9 @@ import { endoDetalheSchema, type EndoDetalhe } from '@/lib/especialidades/endo';
 import { EndoCard } from '@/components/fichas/endo-card';
 import { EndoForm } from '@/components/fichas/endo-form';
 import { implanteDetalheSchema, type ImplanteDetalhe } from '@/lib/especialidades/implante';
+import { psrDetalheSchema, PSR_VAZIO, type PsrDetalhe } from '@/lib/especialidades/perio';
+import { PsrForm } from '@/components/fichas/psr-form';
+import { PsrCard } from '@/components/fichas/psr-card';
 import { ImplanteCard } from '@/components/fichas/implante-card';
 import { ImplanteForm } from '@/components/fichas/implante-form';
 import { TIPO_LABEL, corDoRegistro } from '@/types/odontograma';
@@ -393,6 +396,11 @@ function corpoEspecialidadeEditavel(
   if (tipo === 'implante') {
     return <ImplanteForm valor={(detalhe ?? null) as ImplanteDetalhe | null} onChange={onChange} />;
   }
+  // R-08b — rastreio PSR. Único de nível 'boca' com detalhe: o form nasce em PSR_VAZIO
+  // (6 sextantes não avaliados), não em null, pra a grade já aparecer clicável.
+  if (tipo === 'exame_periodontal') {
+    return <PsrForm valor={(detalhe ?? PSR_VAZIO) as PsrDetalhe} onChange={onChange} />;
+  }
   return null;
 }
 
@@ -533,6 +541,10 @@ function corpoEspecialidade(tipo: TipoRegistroOdontograma, detalhe: unknown): Re
   if (tipo === 'implante') {
     const r = implanteDetalheSchema.safeParse(detalhe);
     return r.success ? <ImplanteCard valor={r.data} /> : null;
+  }
+  if (tipo === 'exame_periodontal') {
+    const r = psrDetalheSchema.safeParse(detalhe);
+    return r.success ? <PsrCard valor={r.data} /> : null;
   }
   return null;
 }
@@ -834,7 +846,8 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     const { key, idxs, data } = card;
     // Só registro de UM evento tem tabela de especialidade — grupo multi-dente não tem "o"
     // detalhe pra editar (mesma regra do ToothDetailPanel).
-    const temDetalhe = idxs.length === 1 && (data.tipo === 'endodontia' || data.tipo === 'implante');
+    const temDetalhe = idxs.length === 1
+      && (data.tipo === 'endodontia' || data.tipo === 'implante' || data.tipo === 'exame_periodontal');
     const destacado = grupoDestacado === key;
     return (
       <div
