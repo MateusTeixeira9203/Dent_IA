@@ -2,11 +2,13 @@
 
 > **ROADMAP** · **Odonto.IA** · atualizado 2026-07-29
 > **Ativo:** nenhum · **Fila:** 11 · **Concluídos:** 23 · **Congelados:** 1 ·
+> **Próximo:** R-29, decidido 29/07 à frente do R-03c-2.
 > **R-27 ✅ fechado 29/07** — redesign do padrão de modal/painel (orçamento + agendamento),
 > verificado ao vivo por ele no browser. Achado de carona virou **R-28 🟡** (pagamento pendente
 > fecha sem duplicar + `marcado_por_id` — partes 1+2 codadas e verificadas na `Teste01` 29/07,
-> falta o gate final em prod). **R-03c-1 🟡 pushado 29/07**
-> (migration 113 + RPC + UI, verificado com 1 conta — falta 2ª conta pra virar ✅).
+> falta o gate final em prod). **R-03c-1 🟡 pushado 29/07** (migration 113 + RPC + UI; 2 dos 4
+> cenários de permissão confirmados na tarde de 29/07 — faltam os que exigem login).
+> **R-29 aberto 29/07** — restos do silo pré-3.1, achados montando esse teste.
 > **Fechados 27-28/07:** **R-05·R-06·R-07** (verificados em prod 27/07) + **R-03a·R-03b**
 > (assinatura por procedimento — modelo/backend + captura nos 3 fluxos legados, verificado ao
 > vivo com 2 contas 28/07, **no ar em produção**). Migrations 111/112 aplicadas em prod. Deploys:
