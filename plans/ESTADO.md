@@ -1,12 +1,13 @@
 # Estado — Odonto.IA
 
 > **ESTADO** · atualizado 2026-07-29 (sessão da tarde)
-> **Item ativo:** R-28 (commitado, falta push)
+> **Item ativo:** nenhum — R-28 no ar 🟡 · R-29 especificado, não codado
 > Handoff anterior: `handoffs/handoff-2026-07-29-0300.md`.
 
 ## Agora
 
-**R-28 (pagamento fecha sem duplicar) — codado, verificado na `Teste01` e commitado. Falta push.**
+**R-28 (pagamento fecha sem duplicar) — codado, verificado na `Teste01`, pushado (`c37107e..f2804b8`).**
+🟡 até rodar em prod ou você confirmar visualmente.
 Partes (1) `marcado_por_id` e (2) fechar parcela pendente sem duplicar, ver
 [spec](specs/R-28-pagamento-fecha-sem-duplicar.md). `tsc`/`eslint` limpos (só warnings
 pré-existentes). Testado ao vivo na `Teste01`: fechar parcela em data diferente de hoje → 1
@@ -25,36 +26,34 @@ schema vivo.
 
 **No ar, verificado com 1 conta, falta a 2ª:** R-03c-1. Fluxo completo testado — assinatura, RPC,
 PNG no bucket, snapshot batendo item a item, FK `RESTRICT` e índice único confirmados no banco.
-**Falta:** secretária coleta (deve funcionar) · outro dentista da mesma clínica tenta coletar
-(deve falhar `sem_permissao`) · dentista de outra clínica não vê o orçamento nem o aceite. Exige
-segunda conta real logada — cogitamos usar a clínica `QA TESTE - apagar (financeiro)`, que já tem
-os 3 papéis prontos (`qa-teste-admin@`, `qa-teste-dentista2@`, `qa-teste-secretaria@`), mas a
-sessão desviou pro R-28 antes de logar nelas.
+**Já coberto nesta sessão:** outro dentista da mesma clínica **não enxerga** o orçamento (a conta
+`teste`, como dentista na Império, recebeu 0 orçamentos) e dentista de outra clínica não vê nada.
+**Ainda falta:** o **autor coletando com sucesso** e a **secretária coletando** — as duas exigem
+login que eu não posso fazer. As contas `qa-teste-*@odontoia-test.local` existem, mas **ninguém
+tem a senha**; o caminho que sobrou foi o Mateus pôr as duas contas dele na mesma clínica
+(Império), o que já está feito.
+
+**Achado grande de carona → R-29.** Ao montar esse teste apareceu que a lista de pacientes some
+pro dentista agregado enquanto a RLS deixa passar, e que `get_my_dentista_id()` ignora a clínica
+ativa. São restos do modelo pré-3.1. Diagnóstico completo e decisão do Mateus (paciente é da
+clínica, todo dentista vê todos) na [spec R-29](specs/R-29-silo-resto-modelo-antigo.md).
 
 ## Travado
 
-**Nada travado tecnicamente.** O R-03c-1 só espera uma segunda conta pra fechar o gate — não é
-bloqueio, é a próxima ação concreta.
+**Nada travado tecnicamente.** O R-03c-1 espera só um login que eu não posso fazer — não é
+bloqueio de código, é a próxima ação concreta, e é do Mateus.
 
-Aprendizados de ferramenta pra próxima sessão:
-- `computer.left_click` não basta pra componentes Base UI (`Tabs`, possivelmente outros) — eles
-  escutam `PointerEvent`, não só `click` sintético. Precisa disparar a sequência completa
-  (`pointerdown`→`mousedown`→`pointerup`→`mouseup`→`click`) via `javascript_tool`.
-- Dev server (webpack) pode acusar erro de sintaxe em conteúdo que já não existe no arquivo depois
-  de muitas edições seguidas na mesma sessão — comparar com `tsc`/`next build` (releem do zero)
-  antes de desconfiar do código; se eles passam limpo, é cache do servidor, reinicia.
-- `tsc --noEmit` e `next build` **não pegam** violação de export em arquivo `"use server"`
-  (só função async pode ser exportada) — isso só aparece na chamada real em runtime.
+Aprendizados de ferramenta ficam no handoff, não aqui.
 
 ## Esperando você
 
-- [ ] **Push do R-28** — commitado localmente, nada subiu ainda. Sem migration (só
-      `actions.ts` + os 2 componentes do paciente).
-- [ ] **Segunda conta logada** pro teste de permissão do R-03c-1 (secretária · outro dentista ·
-      idealmente outra clínica `QA TESTE - apagar (financeiro)`, já com os 3 papéis prontos) — é o
-      único gate que falta pra virar ✅.
+- [ ] **Confirmar o R-28 rodando** (prod ou olhada sua) pra promover 🟡 → ✅.
+- [ ] **Logar com a conta principal** (`mateusteixeira9203@`) pra fechar o R-03c-1 — falta só o
+      autor coletando o aceite com sucesso. Eu não logo (regra: não digito senha).
 - [ ] **Decisão da parte (3) do R-28** — 5 orçamentos com pagamento mas sem `aprovado`; regra de
       auto-aprovação across os 5 caminhos que marcam `aprovado` é decisão de negócio, não ajuste.
+- [ ] **Quando atacar o R-29** — é o item com maior risco parado na fila (autorização), mas o raio
+      hoje é 1 conta de teste. Antes de qualquer usuário real virar multi-clínica, precisa entrar.
 - [ ] **Disposição das chips de rotina na ficha** — pendência de sessões anteriores, você ia
       perguntar aos outros dentistas. `Q1–Q4` duplicado (chips "Região" × chips de raspagem)
       continua sem uso nos dois formatos (0 de 73 fichas / 0 eventos).
@@ -66,11 +65,13 @@ Aprendizados de ferramenta pra próxima sessão:
 
 ## Próximo da fila
 
-Com o R-28 esperando só push e o R-03c-1 esperando só a 2ª conta, os próximos candidatos
-reais são:
+Ordem decidida com o Mateus em 29/07 — **o R-29 passa na frente do R-03c-2**:
 
+- **R-29** — restos do silo pré-3.1 (spec escrita, não codada). Migration 114 + 3 linhas na lista.
+  Passa na frente porque mexe em autorização e tem janela: hoje o raio é 1 conta de teste, e vira
+  incidente com dado inconsistente no dia em que um dentista real entrar em 2 clínicas.
 - **R-03c-2** — congelamento/gate de edição do orçamento assinado (agora que R-03c-1 entrega a
   prova, R-03c-2 decide se/como bloquear edição — "Revisar" travado como saída, R-03c-3).
 - **R-08c** — periograma completo (grade 6×32), G de verdade — migration+RLS+2 contas.
 
-Fila completa no `ROADMAP.md` (10 itens · 24 concluídos · 1 congelado).
+Fila completa no `ROADMAP.md` (11 itens · 24 concluídos · 1 congelado).
