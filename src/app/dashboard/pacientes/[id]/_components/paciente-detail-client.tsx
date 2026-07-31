@@ -1964,6 +1964,8 @@ export function PacienteDetailClient({
       <DetalheOrcamentoModal
         detalheOrc={detalheOrc}
         detalheOrcId={detalheOrcId}
+        pacienteTelefone={displayTelefone}
+        pacienteNome={displayNome}
         onClose={() => {
           setDetalheOrcId(null);
           setPagError(null);

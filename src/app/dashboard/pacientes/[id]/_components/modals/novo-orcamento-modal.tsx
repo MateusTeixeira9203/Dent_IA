@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, Trash2, CircleDollarSign, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, AlertTriangle, X, Loader2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -103,36 +103,56 @@ export function NovoOrcamentoModal({
     ? Math.round(((novoOrcSubtotal - novoOrcValorFinal!) / novoOrcSubtotal) * 100 * 10) / 10
     : 0;
 
+  // R-39a — campo único: digitar e escolher da sugestão do catálogo (datalist nativo)
+  // substitui o par Select + Input de antes. Mesmo dado, mesma capacidade — ver spec §3.
+  function handleDescricaoChange(idx: number, valorDigitado: string) {
+    const match = procedimentosClinica.find((p) => p.nome === valorDigitado);
+    setNovoOrcItens((prev) =>
+      prev.map((it, i) => {
+        if (i !== idx) return it;
+        if (!match) return { ...it, descricao: valorDigitado, procedimentoId: '' };
+        return {
+          ...it,
+          descricao: valorDigitado,
+          procedimentoId: match.id,
+          // Só pré-preenche se ainda não tem preço — não sobrescreve valor já digitado.
+          preco: it.preco ? it.preco : (match.preco_padrao != null ? formatValorBR(match.preco_padrao) : it.preco),
+        };
+      })
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="rounded-3xl bg-surface border-border p-0 overflow-hidden gap-0 w-[94vw] sm:w-[78vw]"
-        style={{ maxWidth: 'none', maxHeight: '90vh', left: '50%' }}
+        className="flex flex-col rounded-3xl bg-surface border-border p-0 overflow-hidden gap-0 w-[94vw] sm:w-[82vw]"
+        style={{ maxWidth: '1280px', maxHeight: '90vh', left: '50%' }}
         showCloseButton={false}
       >
-        {/* Banner teal */}
-        <div className="relative px-8 pt-6 pb-5 shrink-0" style={{ background: 'linear-gradient(135deg, #2f9c85 0%, #1a7a65 100%)' }}>
-          <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent pointer-events-none" />
-          <div className="relative flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.15)' }}>
-              <CircleDollarSign className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <DialogTitle className="font-heading font-semibold text-xl text-white leading-tight">
-                {etapaNovoOrc === 'selecionar' ? 'Selecionar Ficha' : 'Novo Orçamento'}
-              </DialogTitle>
-              <DialogDescription className="text-white/70 text-xs mt-0.5">
-                {etapaNovoOrc === 'selecionar'
-                  ? 'Escolha qual registro clínico vai gerar o orçamento.'
-                  : 'Selecione procedimentos e defina os valores.'}
-              </DialogDescription>
-            </div>
+        {/* ── Cabeçalho calmo (R-39a) — mesmo esqueleto do detalhe, sem gradiente ── */}
+        <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-border shrink-0">
+          <div className="min-w-0">
+            <DialogTitle className="font-heading font-semibold text-xl text-text-primary leading-tight">
+              {etapaNovoOrc === 'selecionar' ? 'Selecionar Ficha' : 'Novo Orçamento'}
+            </DialogTitle>
+            <DialogDescription className="text-text-muted text-xs truncate">
+              {etapaNovoOrc === 'selecionar'
+                ? 'Escolha qual registro clínico vai gerar o orçamento.'
+                : 'Selecione procedimentos e defina os valores.'}
+            </DialogDescription>
           </div>
+          <button
+            onClick={() => onOpenChange(false)}
+            aria-label="Fechar"
+            className="p-1.5 rounded-lg text-text-secondary hover:bg-surface-alt hover:text-text-primary transition-colors shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {/* ── Etapa 1: seleção de ficha (coluna única) ── */}
         {etapaNovoOrc === 'selecionar' && (
-          <div className="flex-1 overflow-y-auto p-6 space-y-3" style={{ height: 'calc(90vh - 92px)' }}>
+          <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-3">
             {fichasParaOrc.map((ficha) => {
               const denteCount = (ficha.dentes_afetados ?? []).length;
               const dataFormatada = format(parseISO(ficha.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
@@ -168,11 +188,11 @@ export function NovoOrcamentoModal({
           </div>
         )}
 
-        {/* ── Etapa 2: edição de itens (duas colunas) ── */}
+        {/* ── Etapa 2: procedimentos à esquerda, dinheiro à direita (R-39a) ── */}
         {etapaNovoOrc === 'itens' && (
-          <div className="flex flex-col sm:flex-row" style={{ height: 'calc(90vh - 92px)', minHeight: 0 }}>
+          <div className="flex-1 min-h-0 flex flex-col-reverse sm:flex-row">
 
-            {/* Coluna esquerda — itens */}
+            {/* Coluna clínica — procedimentos */}
             <div className="flex-1 min-w-0 overflow-y-auto p-6 space-y-4">
               {isSecretaria && (
                 <div className="space-y-1">
@@ -189,72 +209,32 @@ export function NovoOrcamentoModal({
                   </Select>
                 </div>
               )}
-              {novoOrcItens.map((item, idx) => (
-                <div key={idx} className={`bg-surface-alt rounded-2xl border p-4 space-y-3 transition-all duration-200 ${
-                  parseValorBR(item.preco) > 0 ? 'border-l-2 border-l-teal/50 border-t-border border-r-border border-b-border' : 'border-border'
-                }`}>
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[10px] text-text-secondary uppercase tracking-widest">
-                      Procedimento {idx + 1}
-                    </span>
-                    {novoOrcItens.length > 1 && (
-                      <button
-                        onClick={() => setNovoOrcItens((prev) => prev.filter((_, i) => i !== idx))}
-                        className="p-1 text-red-400 hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
 
-                  <Select
-                    value={item.procedimentoId}
-                    onValueChange={(v) => {
-                      if (!v) return;
-                      const proc = procedimentosClinica.find((p) => p.id === v);
-                      setNovoOrcItens((prev) =>
-                        prev.map((it, i) =>
-                          i === idx
-                            ? { ...it, procedimentoId: v, descricao: proc?.nome ?? it.descricao, preco: proc?.preco_padrao != null ? formatValorBR(proc.preco_padrao) : it.preco }
-                            : it
-                        )
-                      );
-                    }}
-                  >
-                    <SelectTrigger className="rounded-xl bg-surface border-border text-text-primary">
-                      <SelectValue>
-                        {(v: string | null) =>
-                          v ? (procedimentosClinica.find((p) => p.id === v)?.nome ?? v) : 'Vincular ao catálogo (preenche preço)...'
-                        }
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent className="bg-surface border-border">
-                      {procedimentosClinica.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              <datalist id="catalogo-procedimentos">
+                {procedimentosClinica.map((p) => <option key={p.id} value={p.nome} />)}
+              </datalist>
 
-                  <Input
-                    placeholder="Descrição do procedimento *"
-                    value={item.descricao}
-                    onChange={(e) => setNovoOrcItens((prev) => prev.map((it, i) => i === idx ? { ...it, descricao: e.target.value } : it))}
-                    className="rounded-xl bg-surface border-border text-text-primary"
-                  />
-
-                  <div className="grid grid-cols-[80px_1fr] gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs text-text-secondary">Qtd</Label>
+              <div className="rounded-2xl border border-border overflow-hidden">
+                {novoOrcItens.map((item, idx) => (
+                  <div key={idx}>
+                    <div className={`grid grid-cols-[24px_1fr_64px_112px_28px] items-center gap-2 px-3 py-2.5 ${idx > 0 ? 'border-t border-border/60' : ''}`}>
+                      <span className="w-6 h-6 rounded-lg bg-teal/10 text-teal text-xs font-bold flex items-center justify-center shrink-0">
+                        {idx + 1}
+                      </span>
+                      <Input
+                        list="catalogo-procedimentos"
+                        placeholder="Nome do procedimento *"
+                        value={item.descricao}
+                        onChange={(e) => handleDescricaoChange(idx, e.target.value)}
+                        className="rounded-lg bg-surface-alt border-border text-text-primary text-sm h-9"
+                      />
                       <Input
                         type="number"
                         min="1"
                         value={item.quantidade}
                         onChange={(e) => setNovoOrcItens((prev) => prev.map((it, i) => i === idx ? { ...it, quantidade: parseInt(e.target.value) || 1 } : it))}
-                        className="rounded-xl bg-surface border-border text-text-primary font-mono"
+                        className="rounded-lg bg-surface-alt border-border text-text-primary text-sm font-mono h-9 text-center"
                       />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs text-text-secondary">Valor unitário (R$)</Label>
                       <Input
                         type="text"
                         inputMode="decimal"
@@ -265,38 +245,39 @@ export function NovoOrcamentoModal({
                           const parsed = parseValorBR(e.target.value);
                           setNovoOrcItens((prev) => prev.map((it, i) => i === idx ? { ...it, preco: parsed > 0 ? formatValorBR(parsed) : it.preco } : it));
                         }}
-                        className="rounded-xl bg-surface border-border text-text-primary font-mono"
+                        className="rounded-lg bg-surface-alt border-border text-text-primary text-sm font-mono h-9"
                       />
+                      {novoOrcItens.length > 1 ? (
+                        <button
+                          onClick={() => setNovoOrcItens((prev) => prev.filter((_, i) => i !== idx))}
+                          className="p-1.5 rounded-lg hover:bg-coral-pale text-coral-ink transition-colors"
+                          aria-label="Remover procedimento"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      ) : <span />}
                     </div>
+
+                    {!item.procedimentoId && item.descricao.trim() && (
+                      <div className="mx-3 mb-2.5 flex items-center justify-between gap-2 rounded-lg bg-warning-pale border border-warning/30 px-2.5 py-1.5">
+                        <span className="flex items-center gap-1.5 text-[11px] font-medium text-warning-ink">
+                          <AlertTriangle className="w-3 h-3 shrink-0" />
+                          Fora do catálogo
+                        </span>
+                        <button
+                          onClick={() => onCadastrarProcedimento(idx)}
+                          disabled={registeringProcIdx === idx}
+                          className="text-[11px] font-bold text-warning-ink hover:underline disabled:opacity-50 shrink-0"
+                        >
+                          {registeringProcIdx === idx
+                            ? 'Cadastrando...'
+                            : `Cadastrar "${stripDenteDoNome(item.descricao)}"${parseValorBR(item.preco) > 0 ? ` a R$ ${formatValorBR(parseValorBR(item.preco))}` : ''}`}
+                        </button>
+                      </div>
+                    )}
                   </div>
-
-                  {parseValorBR(item.preco) > 0 && (
-                    <div className="flex justify-end pt-1 border-t border-border/40">
-                      <span className="text-xs font-mono font-semibold text-teal">
-                        = R$ {(item.quantidade * parseValorBR(item.preco)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  )}
-
-                  {!item.procedimentoId && item.descricao.trim() && (
-                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2.5 space-y-2">
-                      <span className="flex items-center gap-1.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                        Não cadastrado no catálogo
-                      </span>
-                      <button
-                        onClick={() => onCadastrarProcedimento(idx)}
-                        disabled={registeringProcIdx === idx}
-                        className="w-full py-2 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-[11px] font-bold text-amber-700 dark:text-amber-300 transition-colors disabled:opacity-50"
-                      >
-                        {registeringProcIdx === idx
-                          ? 'Cadastrando...'
-                          : `Cadastrar "${stripDenteDoNome(item.descricao)}"${parseValorBR(item.preco) > 0 ? ` a R$ ${formatValorBR(parseValorBR(item.preco))}` : ''} no catálogo`}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                ))}
+              </div>
 
               <button
                 onClick={() => setNovoOrcItens((prev) => [...prev, { procedimentoId: '', descricao: '', quantidade: 1, preco: '' }])}
@@ -307,14 +288,11 @@ export function NovoOrcamentoModal({
               </button>
             </div>
 
-            {/* Coluna direita — total + ações */}
-            <div className="w-full sm:w-64 sm:shrink-0 overflow-y-auto border-t sm:border-t-0 sm:border-l border-border flex flex-col" style={{ background: 'rgba(47,156,133,0.04)' }}>
-              <div className="flex-1 p-6 space-y-4">
-                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#2f9c85' }}>
-                  Resumo
-                </p>
+            {/* Coluna do dinheiro — resumo, valor negociado, forma de pagamento (R-39a) */}
+            <div className="w-full sm:w-[416px] sm:shrink-0 border-t sm:border-t-0 sm:border-l border-border flex flex-col min-h-0 bg-teal/[0.04]">
+              <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
+                <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">Resumo</p>
 
-                {/* Subtotal */}
                 <div className="space-y-1">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">
                     Total dos procedimentos
@@ -324,7 +302,6 @@ export function NovoOrcamentoModal({
                   </p>
                 </div>
 
-                {/* Campo valor final negociado */}
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">
                     Valor final negociado (R$)
@@ -342,19 +319,18 @@ export function NovoOrcamentoModal({
                     className="rounded-xl bg-surface border-border text-text-primary font-mono"
                   />
                   {temDesconto && (
-                    <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    <p className="text-[11px] font-semibold text-teal-ink">
                       Desconto de {pctDesconto}% aplicado
                     </p>
                   )}
                   {novoOrcValorFinal !== null && novoOrcValorFinal > novoOrcSubtotal && (
-                    <p className="text-[11px] text-amber-500">
+                    <p className="text-[11px] text-warning-ink">
                       Valor maior que o total
                     </p>
                   )}
                 </div>
 
-                {/* Card de total final */}
-                <div className="rounded-2xl p-4 space-y-2 border border-teal/15" style={{ background: 'rgba(47,156,133,0.07)' }}>
+                <div className="rounded-2xl p-4 space-y-2 border border-teal/15 bg-teal/[0.07]">
                   {temDesconto && (
                     <>
                       <div className="flex items-center justify-between">
@@ -365,15 +341,15 @@ export function NovoOrcamentoModal({
                       </div>
                       <div className="flex items-center justify-between">
                         <p className="text-[10px] text-text-secondary font-mono">Desconto ({pctDesconto}%)</p>
-                        <p className="text-xs font-mono font-semibold text-red-400">
+                        <p className="text-xs font-mono font-semibold text-coral-ink">
                           − R$ {(novoOrcSubtotal - novoOrcTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </p>
                       </div>
                       <div className="h-px bg-teal/20" />
                     </>
                   )}
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-teal/70">Total</p>
-                  <p className="font-mono text-3xl font-bold text-teal leading-none">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-teal-ink/70">Total</p>
+                  <p className="font-mono text-3xl font-bold text-teal-ink leading-none">
                     R$ {novoOrcTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </p>
                   <p className="text-[10px] text-text-secondary font-mono">
@@ -385,7 +361,7 @@ export function NovoOrcamentoModal({
                     nada aqui, o orçamento nasce exatamente como hoje (sem plano). */}
                 <div className="space-y-1.5 pt-1">
                   <Label className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">
-                    Forma de pagamento
+                    Forma de pagamento <span className="normal-case font-normal text-text-muted">(opcional)</span>
                   </Label>
                   <div className="grid grid-cols-2 gap-1.5">
                     <button
@@ -393,8 +369,8 @@ export function NovoOrcamentoModal({
                       onClick={() => setPlanoForma(planoForma === 'avista' ? null : 'avista')}
                       className={`py-2 rounded-xl text-xs font-semibold border transition-colors ${
                         planoForma === 'avista'
-                          ? 'bg-teal/10 border-teal/40 text-teal'
-                          : 'border-border text-text-secondary hover:border-teal/30 hover:text-teal'
+                          ? 'bg-teal/10 border-teal/40 text-teal-ink'
+                          : 'border-border text-text-secondary hover:border-teal/30 hover:text-teal-ink'
                       }`}
                     >
                       À vista
@@ -404,8 +380,8 @@ export function NovoOrcamentoModal({
                       onClick={() => setPlanoForma(planoForma === 'parcelado' ? null : 'parcelado')}
                       className={`py-2 rounded-xl text-xs font-semibold border transition-colors ${
                         planoForma === 'parcelado'
-                          ? 'bg-teal/10 border-teal/40 text-teal'
-                          : 'border-border text-text-secondary hover:border-teal/30 hover:text-teal'
+                          ? 'bg-teal/10 border-teal/40 text-teal-ink'
+                          : 'border-border text-text-secondary hover:border-teal/30 hover:text-teal-ink'
                       }`}
                     >
                       Parcelado
@@ -461,16 +437,17 @@ export function NovoOrcamentoModal({
                 </div>
               </div>
 
-              <div className="p-5 border-t border-border space-y-2">
+              {/* ── Ação fixa no pé da coluna (R-39a) ── */}
+              <div className="shrink-0 border-t border-border p-4 space-y-2">
                 {orcError && (
-                  <p className="text-xs text-red-500 bg-red-500/10 rounded-lg px-3 py-2">{orcError}</p>
+                  <p className="text-xs text-coral-ink bg-coral-pale rounded-xl px-3 py-2">{orcError}</p>
                 )}
                 <Button
                   onClick={onCriarOrcamento}
                   disabled={orcSaving}
                   className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl disabled:opacity-50 font-bold"
                 >
-                  {orcSaving ? 'Salvando...' : 'Criar Orçamento'}
+                  {orcSaving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</> : 'Criar Orçamento'}
                 </Button>
                 {fichasParaOrc.length > 1 && (
                   <Button

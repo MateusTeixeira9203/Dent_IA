@@ -4,10 +4,12 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import {
   Edit2, Trash2, CircleDollarSign, Plus, CheckCircle2,
-  XCircle, Loader2, CreditCard, Clock, Banknote, Smartphone,
+  XCircle, Loader2, CreditCard, Banknote, Smartphone,
   Receipt, User, Send, CalendarClock, Layers, MoreHorizontal, X, PenLine,
 } from 'lucide-react';
 import { AceiteOrcamentoModal } from '@/components/orcamentos/aceite-orcamento-modal';
+import { BotaoDownloadPDF } from '@/components/orcamentos/botao-download-pdf';
+import { BotaoEnviarWhatsApp } from '@/components/orcamentos/botao-enviar-whatsapp';
 import {
   Dialog, DialogContent, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -93,6 +95,11 @@ interface Props {
   detalheOrc: OrcamentoComItens | null;
   detalheOrcId: string | null;
   onClose: () => void;
+  /** R-39a — carona nos 2 itens da R-33 que o Mateus pediu antes da hora: PDF e WhatsApp
+   *  já existiam em botao-download-pdf.tsx/botao-enviar-whatsapp.tsx (zero backend), só
+   *  não estavam pendurados nesta tela ainda. */
+  pacienteTelefone: string | null | undefined;
+  pacienteNome: string;
   pagForm: PagForm;
   setPagForm: React.Dispatch<React.SetStateAction<PagForm>>;
   pagSaving: boolean;
@@ -140,6 +147,7 @@ interface Props {
 
 export function DetalheOrcamentoModal({
   detalheOrc, detalheOrcId, onClose,
+  pacienteTelefone, pacienteNome,
   pagForm, setPagForm, pagSaving, pagError,
   parcelasMode, setParcelasMode, parcelasForm, setParcelasForm, parcelasSaving, parcelasError, onGerarParcelas,
   orcEditMode, setOrcEditMode, orcEditItens, setOrcEditItens,
@@ -155,12 +163,8 @@ export function DetalheOrcamentoModal({
 }: Props) {
   const hoje = new Date().toISOString().split('T')[0];
   const [isChangingStatus, setIsChangingStatus] = useState(false);
-  /** R-27a: a informação vira abas em vez de duas colunas roláveis. */
-  const [tab, setTab] = useState<'procedimentos' | 'pagamentos' | 'atividade'>('procedimentos');
-  // R-34 §7.0 — "Registrar pagamento" é gesto de balcão, não consulta: sai da aba e vira
-  // ação persistente (diálogo próprio), alcançável de qualquer aba — não só quando a aba
-  // "Registrar pagamento" está ativa. Abas continuam só pro que se consulta.
-  const [registrarOpen, setRegistrarOpen] = useState(false);
+  /** R-39a: só Procedimentos e Atividade — Pagamentos virou a coluna do dinheiro. */
+  const [tab, setTab] = useState<'procedimentos' | 'atividade'>('procedimentos');
   const [showAceiteModal, setShowAceiteModal] = useState(false);
   const [activityLogs, setActivityLogs] = useState<{ id: string; actor_nome: string | null; action: string; created_at: string }[]>([]);
 
@@ -217,25 +221,31 @@ export function DetalheOrcamentoModal({
   }, [detalheOrc]);
 
   /**
-   * R-27a: quantidade de pagamentos recebidos e formas distintas usadas — é o que a aba
-   * "Pagamentos" resume. Derivado do mesmo array, sem query nova.
+   * R-27a: quantidade de pagamentos recebidos e formas distintas usadas — é o que a
+   * coluna do dinheiro resume (era a aba "Pagamentos", virou a R-39a).
    */
-  const { pagosCount, formasUsadas, totalParcelas } = useMemo(() => {
+  const { pagosCount, formasUsadas } = useMemo(() => {
     const pgs = detalheOrc?.pagamentos ?? [];
     const pagos = pgs.filter(p => p.status === 'pago');
     const formas = [...new Set(pagos.map(p => p.forma_pagamento).filter(Boolean) as string[])];
     return {
       pagosCount:    pagos.length,
       formasUsadas:  formas,
-      totalParcelas: pgs.find(p => p.total_parcelas)?.total_parcelas ?? null,
     };
   }, [detalheOrc]);
+
+  // R-39a — clicar em "Falta receber" preenche o valor da coluna do dinheiro com o
+  // saldo restante, igual ao atalho que existia na antiga aba Pagamentos.
+  function preencherRestante() {
+    if (restante <= 0) return;
+    setPagForm(f => ({ ...f, valor: formatValorBR(restante), dataVencimento: '' }));
+  }
 
   return (
     <Dialog open={!!detalheOrcId} onOpenChange={open => { if (!open) onClose(); }}>
       <DialogContent
-        className="rounded-3xl bg-surface border-border p-0 overflow-hidden gap-0 w-[94vw] sm:w-[78vw]"
-        style={{ maxWidth: 'none', maxHeight: '90vh', left: '50%' }}
+        className="flex flex-col rounded-3xl bg-surface border-border p-0 overflow-hidden gap-0 w-[94vw] sm:w-[82vw]"
+        style={{ maxWidth: '1280px', maxHeight: '90vh', left: '50%' }}
         showCloseButton={false}
       >
         {detalheOrc && (
@@ -308,73 +318,57 @@ export function DetalheOrcamentoModal({
               </div>
             </div>
 
-            {/* ── Corpo em abas (R-27a) ──────────────────────────────────
-                Substitui as duas colunas com rolagem independente. A aba ativa ocupa a
-                área toda: no caso típico (2 procedimentos, até 3 pagamentos) nada rola. */}
-            <Tabs
-              value={tab}
-              onValueChange={(v) => setTab(v as typeof tab)}
-              className="flex flex-col gap-0 min-h-0"
-              style={{ height: 'calc(90vh - 137px)' }}
-            >
-              <TabsList className="h-auto shrink-0 justify-start gap-1 rounded-none border-b border-border bg-transparent px-6 py-0 overflow-x-auto">
-                {([
-                  { value: 'procedimentos', label: 'Procedimentos', count: detalheOrc.itens.length },
-                  { value: 'pagamentos',    label: 'Pagamentos',    count: detalheOrc.pagamentos.length },
-                  { value: 'atividade',     label: 'Atividade',     count: null },
-                ] as const).map(t => (
-                  <TabsTrigger
-                    key={t.value}
-                    value={t.value}
-                    className="rounded-none border-b-2 border-transparent px-3 py-2.5 font-semibold data-[selected]:bg-transparent data-[selected]:shadow-none data-[selected]:border-teal data-[selected]:text-teal-ink"
-                  >
-                    {t.label}
-                    {t.count !== null && (
-                      <span className="ml-1.5 font-mono text-[11px] text-text-muted">{t.count}</span>
-                    )}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
+            {/* ── Corpo: procedimentos à esquerda, dinheiro à direita (R-39a) ──────
+                Empilha com o dinheiro ACIMA no celular (flex-col-reverse): é a
+                pergunta que se responde primeiro num gesto de balcão. */}
+            <div className="flex-1 min-h-0 flex flex-col-reverse sm:flex-row">
 
-              {/* ── Aba: procedimentos ─────────────────────────────────── */}
-              <TabsContent value="procedimentos" className="mt-0 flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
+              {/* ── Coluna clínica ─────────────────────────────────────── */}
+              <div className="flex-1 min-w-0 flex flex-col min-h-0">
+                <Tabs
+                  value={tab}
+                  onValueChange={(v) => setTab(v as typeof tab)}
+                  className="flex flex-col flex-1 min-h-0 gap-0"
+                >
+                  <TabsList className="h-auto shrink-0 justify-start gap-1 rounded-none border-b border-border bg-transparent px-6 py-0 overflow-x-auto">
+                    {([
+                      { value: 'procedimentos', label: 'Procedimentos', count: detalheOrc.itens.length },
+                      { value: 'atividade',     label: 'Atividade',     count: null },
+                    ] as const).map(t => (
+                      <TabsTrigger
+                        key={t.value}
+                        value={t.value}
+                        className="rounded-none border-b-2 border-transparent px-3 py-2.5 font-semibold data-[selected]:bg-transparent data-[selected]:shadow-none data-[selected]:border-teal data-[selected]:text-teal-ink"
+                      >
+                        {t.label}
+                        {t.count !== null && (
+                          <span className="ml-1.5 font-mono text-[11px] text-text-muted">{t.count}</span>
+                        )}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
 
-                {/* Procedimentos */}
-                <div className="space-y-2">
-                  <p className="text-xs font-bold uppercase tracking-widest text-teal">
-                    Procedimentos
-                    <span className="ml-2 text-text-secondary font-normal normal-case">({detalheOrc.itens.length})</span>
-                  </p>
-
-                  {orcEditMode ? (
-                    <div className="space-y-3">
-                      {orcEditItens.map((item, idx) => (
-                        <div key={idx} className="bg-surface-alt rounded-2xl border border-border p-4 space-y-2">
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="Descrição do procedimento"
-                              value={item.descricao}
-                              onChange={e => setOrcEditItens(prev => prev.map((it, i) => i === idx ? { ...it, descricao: e.target.value } : it))}
-                              className="rounded-xl bg-surface border-border text-text-primary text-sm flex-1"
-                            />
-                            <button
-                              onClick={() => setOrcEditItens(prev => prev.filter((_, i) => i !== idx))}
-                              className="p-2 rounded-xl hover:bg-coral-pale text-coral-ink transition-colors"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                          <div className="flex gap-2">
-                            <div className="space-y-1 w-20">
-                              <label className="text-xs text-text-secondary">Qtd</label>
+                  {/* ── Aba: procedimentos ─────────────────────────────────── */}
+                  <TabsContent value="procedimentos" className="mt-0 flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
+                    <div className="space-y-2">
+                      {orcEditMode ? (
+                        <div className="space-y-2">
+                          {orcEditItens.map((item, idx) => (
+                            <div key={idx} className="grid grid-cols-[24px_1fr_64px_112px_28px] items-center gap-2 rounded-xl border border-border bg-surface-alt px-3 py-2.5">
+                              <span className="w-6 h-6 rounded-lg bg-teal/10 text-teal text-xs font-bold flex items-center justify-center shrink-0">
+                                {idx + 1}
+                              </span>
+                              <Input
+                                placeholder="Descrição do procedimento"
+                                value={item.descricao}
+                                onChange={e => setOrcEditItens(prev => prev.map((it, i) => i === idx ? { ...it, descricao: e.target.value } : it))}
+                                className="rounded-lg bg-surface border-border text-text-primary text-sm h-9"
+                              />
                               <Input
                                 type="number" min="1" value={item.quantidade}
                                 onChange={e => setOrcEditItens(prev => prev.map((it, i) => i === idx ? { ...it, quantidade: parseInt(e.target.value) || 1 } : it))}
-                                className="rounded-xl bg-surface border-border text-text-primary text-sm font-mono"
+                                className="rounded-lg bg-surface border-border text-text-primary text-sm font-mono h-9 text-center"
                               />
-                            </div>
-                            <div className="space-y-1 flex-1">
-                              <label className="text-xs text-text-secondary">Preço unitário (R$)</label>
                               <Input
                                 type="text" inputMode="decimal" placeholder="0,00"
                                 value={item.preco_unitario}
@@ -383,394 +377,138 @@ export function DetalheOrcamentoModal({
                                   const parsed = parseValorBR(e.target.value);
                                   setOrcEditItens(prev => prev.map((it, i) => i === idx ? { ...it, preco_unitario: parsed > 0 ? formatValorBR(parsed) : it.preco_unitario } : it));
                                 }}
-                                className="rounded-xl bg-surface border-border text-text-primary text-sm font-mono"
+                                className="rounded-lg bg-surface border-border text-text-primary text-sm font-mono h-9"
                               />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      <button
-                        onClick={() => setOrcEditItens(prev => [...prev, { descricao: '', quantidade: 1, preco_unitario: '' }])}
-                        className="w-full py-3 border border-dashed border-border rounded-xl text-sm text-text-secondary hover:bg-surface-alt hover:text-text-primary transition-colors flex items-center justify-center gap-2"
-                      >
-                        <Plus className="w-4 h-4" /> Adicionar procedimento
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-border overflow-hidden">
-                      {detalheOrc.itens.length === 0 ? (
-                        <div className="p-6 text-center text-sm text-text-secondary">Nenhum procedimento registrado.</div>
-                      ) : (
-                        <>
-                          {detalheOrc.itens.map((item, idx) => (
-                            <div
-                              key={item.id}
-                              className="flex items-center gap-3 px-4 py-3 border-b border-border/60 last:border-b-0 hover:bg-surface-alt/40 transition-colors"
-                            >
-                              <span className="w-6 h-6 rounded-lg bg-teal/10 text-teal text-xs font-bold flex items-center justify-center shrink-0">
-                                {idx + 1}
-                              </span>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-text-primary truncate">
-                                  {item.descricao ?? '—'}
-                                </p>
-                                {item.quantidade > 1 && (
-                                  <p className="text-[11px] text-text-secondary font-mono">
-                                    {item.quantidade} unidades × R$ {fmt((item.preco_total ?? 0) / item.quantidade)}
-                                  </p>
-                                )}
-                              </div>
-                              <span className="font-mono text-sm font-semibold text-text-primary shrink-0">
-                                R$ {fmt(item.preco_total ?? 0)}
-                              </span>
-                            </div>
-                          ))}
-                          <div className="flex items-center justify-between px-4 py-3 bg-teal/5">
-                            <span className="text-sm font-bold text-text-primary">Total</span>
-                            <span className="font-mono text-lg font-bold text-teal">
-                              R$ {fmt(detalheOrc.total ?? 0)}
-                            </span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-              </TabsContent>
-
-              {/* ── Aba: pagamentos ───────────────────────────────────────
-                  Responde as 4 perguntas do briefing: quantos recebidos, de quais formas,
-                  em quantas vezes, e quanto falta. */}
-              <TabsContent value="pagamentos" className="mt-0 flex-1 min-h-0 overflow-y-auto p-6 space-y-4">
-                {detalheOrc.pagamentos.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-border p-8 text-center">
-                    <p className="text-sm text-text-secondary">Nenhum pagamento registrado ainda.</p>
-                    <button
-                      onClick={() => setRegistrarOpen(true)}
-                      className="mt-3 text-xs font-semibold text-teal-ink hover:underline"
-                    >
-                      Registrar o primeiro pagamento
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-px rounded-2xl border border-border bg-border overflow-hidden">
-                      <div className="bg-surface px-4 py-3">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Recebidos</p>
-                        <p className="font-mono text-base font-semibold text-text-primary mt-0.5">
-                          {pagosCount}
-                          <span className="ml-1 font-sans text-[11px] font-normal text-text-muted">
-                            de {detalheOrc.pagamentos.length}
-                          </span>
-                        </p>
-                      </div>
-                      <div className="bg-surface px-4 py-3">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Formas</p>
-                        <p className="text-sm font-medium text-text-primary mt-0.5 truncate">
-                          {formasUsadas.length > 0
-                            ? formasUsadas.map(f => FORMA_LABEL[f] ?? f).join(', ')
-                            : '—'}
-                        </p>
-                      </div>
-                      <div className="bg-surface px-4 py-3">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Dividido em</p>
-                        <p className="font-mono text-base font-semibold text-text-primary mt-0.5">
-                          {totalParcelas ? `${totalParcelas}×` : '—'}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        disabled={restante <= 0}
-                        onClick={() => {
-                          setPagForm(f => ({ ...f, valor: formatValorBR(restante), dataVencimento: '' }));
-                          setRegistrarOpen(true);
-                        }}
-                        className="bg-surface px-4 py-3 text-left enabled:hover:bg-surface-alt/60 transition-colors disabled:cursor-default"
-                      >
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Falta receber</p>
-                        <p className={`font-mono text-base font-semibold mt-0.5 ${restante > 0 ? 'text-warning-ink' : 'text-teal-ink'}`}>
-                          R$ {fmt(restante)}
-                        </p>
-                      </button>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      {detalheOrc.pagamentos.map(pg => {
-                        const Icon = FORMA_ICON[pg.forma_pagamento ?? 'outro'] ?? CircleDollarSign;
-                        const isPago = pg.status === 'pago';
-                        const isVencido = !isPago && !!pg.data_vencimento && pg.data_vencimento < hoje;
-                        const parcelaLabel = pg.parcela_numero && pg.total_parcelas
-                          ? `Parcela ${pg.parcela_numero}/${pg.total_parcelas}`
-                          : null;
-
-                        if (editingPagId === pg.id) {
-                          return (
-                            <div key={pg.id} className="rounded-xl border border-teal/30 bg-surface-alt p-3 space-y-2">
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-1">
-                                  <Label className="text-[10px] text-text-secondary">Valor (R$)</Label>
-                                  <Input
-                                    type="text" inputMode="decimal" placeholder="0,00"
-                                    value={editPagForm.valor}
-                                    onChange={e => setEditPagForm(f => ({ ...f, valor: e.target.value }))}
-                                    className="rounded-lg bg-surface border-border text-text-primary text-sm font-mono h-8"
-                                  />
-                                </div>
-                                <div className="space-y-1">
-                                  <Label className="text-[10px] text-text-secondary">Data</Label>
-                                  <Input
-                                    type="date" value={editPagForm.data}
-                                    onChange={e => setEditPagForm(f => ({ ...f, data: e.target.value }))}
-                                    className="rounded-lg bg-surface border-border text-text-primary text-sm h-8"
-                                  />
-                                </div>
-                              </div>
-                              <Select
-                                value={editPagForm.formaPagamento}
-                                onValueChange={(v) => setEditPagForm(f => ({ ...f, formaPagamento: v as FormaPagamento }))}
-                              >
-                                <SelectTrigger className="rounded-lg bg-surface border-border text-text-primary text-sm h-8">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {Object.entries(FORMA_LABEL).map(([value, label]) => (
-                                    <SelectItem key={value} value={value}>{label}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              {editPagError && <p className="text-xs text-coral-ink">{editPagError}</p>}
-                              <div className="flex gap-2">
-                                <Button
-                                  size="sm" variant="outline" onClick={onCancelarEdicaoPagamento} disabled={editPagSaving}
-                                  className="flex-1 rounded-lg h-8 text-xs"
-                                >
-                                  Cancelar
-                                </Button>
-                                <Button
-                                  size="sm" onClick={onSalvarEdicaoPagamento} disabled={editPagSaving}
-                                  className="flex-1 rounded-lg h-8 text-xs bg-teal hover:bg-teal/90 text-white"
-                                >
-                                  {editPagSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Salvar'}
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        if (confirmDeletePagId === pg.id) {
-                          return (
-                            <div key={pg.id} className="rounded-xl border border-coral/30 bg-coral/5 p-3 flex items-center justify-between gap-2">
-                              <p className="text-xs text-text-primary">Excluir pagamento de R$ {fmt(pg.valor)}?</p>
-                              <div className="flex gap-1.5 shrink-0">
-                                <Button
-                                  size="sm" variant="outline" onClick={() => setConfirmDeletePagId(null)} disabled={pagDeleteSaving}
-                                  className="rounded-lg h-7 text-xs px-2"
-                                >
-                                  Cancelar
-                                </Button>
-                                <Button
-                                  size="sm" onClick={() => onExcluirPagamento(pg.id)} disabled={pagDeleteSaving}
-                                  /* `text-white` sobre `bg-coral` reprova no escuro: coral vira
-                                     #ef9a9a (rosa claro) e branco em cima dá ~1,9:1. Par
-                                     coral-ink/coral-pale funciona nos dois temas. */
-                                  className="rounded-lg h-7 text-xs px-2 bg-coral-pale border border-coral text-coral-ink hover:bg-coral/20"
-                                >
-                                  {pagDeleteSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Excluir'}
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <div
-                            key={pg.id}
-                            className={`group flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors ${
-                              isPago
-                                ? 'border-teal/20 bg-teal/5'
-                                : isVencido
-                                  ? 'border-coral/40 bg-coral-pale'
-                                  : 'border-border bg-surface-alt/40'
-                            }`}
-                          >
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                              isPago ? 'bg-teal/15 text-teal' : isVencido ? 'bg-coral/15 text-coral-ink' : 'bg-surface-alt text-text-secondary'
-                            }`}>
-                              <Icon className="w-4 h-4" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-text-primary flex items-center gap-1.5 flex-wrap">
-                                {parcelaLabel && (
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-teal bg-teal/10 px-1.5 py-0.5 rounded-md shrink-0">
-                                    {parcelaLabel}
-                                  </span>
-                                )}
-                                {isPago ? (FORMA_LABEL[pg.forma_pagamento ?? 'outro'] ?? 'Pagamento') : 'A receber'}
-                              </p>
-                              <p className={`text-[11px] ${isVencido ? 'text-coral-ink font-semibold' : 'text-text-secondary'}`}>
-                                {isPago
-                                  ? <>Pago em {pg.data_pagamento ? format(parseISO(pg.data_pagamento), 'dd/MM/yyyy', { locale: ptBR }) : '—'}</>
-                                  : pg.data_vencimento
-                                    ? <>{isVencido ? 'Venceu' : 'Vence'} em {format(parseISO(pg.data_vencimento), 'dd/MM/yyyy', { locale: ptBR })}</>
-                                    : 'Pendente'
-                                }
-                                {/* R-27a: quem registrou aparece SEMPRE que o pagamento está pago,
-                                    inclusive como "—". Hoje `marcado_por_id` está vazio em 83 de 83
-                                    pagamentos — só `marcarPagamentoPago` grava. Esconder o campo
-                                    faria a lacuna parecer inexistente; o R-28 conserta a escrita. */}
-                                {isPago && ` · registrado por ${pg.marcado_por?.nome.split(' ')[0] ?? '—'}`}
-                              </p>
-                            </div>
-                            <div className="text-right shrink-0">
-                              {isPago ? (
-                                <p className="font-mono text-sm font-semibold text-teal">
-                                  R$ {fmt(pg.valor)}
-                                </p>
-                              ) : (
-                                // R-28 — clicar no valor pendente vai pra "Registrar pagamento" já
-                                // vinculado a ESTA parcela (fecha por UPDATE, não cria linha nova).
-                                <button
-                                  onClick={() => { onIniciarFechamentoPagamento(pg); setRegistrarOpen(true); }}
-                                  className={`font-mono text-sm font-semibold underline decoration-dotted underline-offset-2 transition-colors ${isVencido ? 'text-coral-ink hover:text-coral' : 'text-text-secondary hover:text-teal-ink'}`}
-                                >
-                                  R$ {fmt(pg.valor)}
-                                </button>
-                              )}
-                              {isPago
-                                ? <CheckCircle2 className="w-3 h-3 text-teal ml-auto mt-0.5" />
-                                : <Clock className="w-3 h-3 text-text-secondary ml-auto mt-0.5" />
-                              }
-                            </div>
-                            <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                              {isPago ? (
-                                <button
-                                  onClick={() => onIniciarEdicaoPagamento(pg)}
-                                  className="p-1.5 rounded-lg hover:bg-surface-alt text-text-secondary hover:text-text-primary transition-colors"
-                                  aria-label="Editar pagamento"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => { onIniciarFechamentoPagamento(pg); setRegistrarOpen(true); }}
-                                  className="p-1.5 rounded-lg hover:bg-teal/10 text-text-secondary hover:text-teal-ink transition-colors"
-                                  aria-label="Marcar como pago"
-                                >
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
                               <button
-                                onClick={() => setConfirmDeletePagId(pg.id)}
-                                className="p-1.5 rounded-lg hover:bg-coral/10 text-text-secondary hover:text-coral transition-colors"
-                                aria-label="Excluir pagamento"
+                                onClick={() => setOrcEditItens(prev => prev.filter((_, i) => i !== idx))}
+                                className="p-1.5 rounded-lg hover:bg-coral-pale text-coral-ink transition-colors"
+                                aria-label="Remover procedimento"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-              </TabsContent>
-
-              {/* ── Aba: atividade ────────────────────────────────────────
-                  Ganha lugar próprio: antes era um rodapé espremido no fim da coluna
-                  esquerda, junto da auditoria de aprovação. */}
-              <TabsContent value="atividade" className="mt-0 flex-1 min-h-0 overflow-y-auto p-6 space-y-4">
-                {/* R-03c-1 — aceite assinado: prova de que o paciente concordou em pagar
-                    (distinta da aprovação de status acima, que não afirma nada em 4 dos 5
-                    caminhos que a disparam). */}
-                {detalheOrc.aceite ? (
-                  <div className="flex items-start gap-2 bg-teal/5 border border-teal/15 rounded-xl px-3 py-2.5">
-                    <PenLine className="w-3.5 h-3.5 text-teal-ink shrink-0 mt-0.5" />
-                    <p className="text-xs text-text-secondary">
-                      Aceite assinado por <span className="font-semibold text-text-primary">{detalheOrc.aceite.assinadoPor}</span>
-                      {' '}em {format(parseISO(detalheOrc.aceite.assinadoEm), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                      {detalheOrc.aceite.croNoAto && <> · CRO {detalheOrc.aceite.croNoAto}</>}
-                    </p>
-                  </div>
-                ) : detalheOrc.status !== 'recusado' && (
-                  <button
-                    onClick={() => setShowAceiteModal(true)}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-border text-sm font-semibold text-text-secondary hover:bg-teal/5 hover:text-teal-ink hover:border-teal/30 transition-all"
-                  >
-                    <PenLine className="w-4 h-4" />
-                    Coletar aceite do paciente
-                  </button>
-                )}
-
-                {detalheOrc.status === 'aprovado' && (detalheOrc.aprovado_por || detalheOrc.aprovado_em) && (
-                  <div className="flex items-center gap-2 bg-teal/5 border border-teal/15 rounded-xl px-3 py-2.5">
-                    <User className="w-3.5 h-3.5 text-teal shrink-0" />
-                    <p className="text-xs text-text-secondary">
-                      {detalheOrc.aprovado_por && (
-                        <span>Aprovado por <span className="font-semibold text-text-primary">{detalheOrc.aprovado_por.nome}</span></span>
-                      )}
-                      {detalheOrc.aprovado_em && (
-                        <span> em {format(parseISO(detalheOrc.aprovado_em), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
-                      )}
-                    </p>
-                  </div>
-                )}
-
-                {activityLogs.length === 0 ? (
-                  <p className="text-sm text-text-secondary text-center py-8">Nenhuma atividade registrada ainda.</p>
-                ) : (
-                  <div className="space-y-0">
-                      {activityLogs.map(log => (
-                        <div key={log.id} className="flex items-center gap-2 py-1.5 border-b border-border/30 last:border-0">
-                          <div className="w-1.5 h-1.5 rounded-full bg-teal/40 shrink-0" />
-                          <p className="text-xs flex-1 min-w-0">
-                            <span className="font-medium text-text-primary">{ACTION_LABEL[log.action] ?? log.action}</span>
-                            {log.actor_nome && (
-                              <span className="ml-1 text-text-secondary/60">por {log.actor_nome.split(' ')[0]}</span>
-                            )}
-                          </p>
-                          <span className="font-mono text-xs text-text-secondary shrink-0">
-                            {format(parseISO(log.created_at), 'dd/MM HH:mm', { locale: ptBR })}
-                          </span>
+                          ))}
+                          <button
+                            onClick={() => setOrcEditItens(prev => [...prev, { descricao: '', quantidade: 1, preco_unitario: '' }])}
+                            className="w-full py-3 border border-dashed border-border rounded-xl text-sm text-text-secondary hover:bg-surface-alt hover:text-text-primary transition-colors flex items-center justify-center gap-2"
+                          >
+                            <Plus className="w-4 h-4" /> Adicionar procedimento
+                          </button>
                         </div>
-                      ))}
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
-
-            {/* ── Registrar pagamento (R-34 §7.0) — diálogo próprio, não aba ──────────
-                Gesto de balcão, não consulta: alcançável de qualquer aba via o botão fixo
-                no rodapé. Porcentagem, não o valor total de novo — o total já vive no
-                cabeçalho e na linha de Total da aba de procedimentos. A 100%, o formulário
-                sai e entra o resumo do que foi recebido. */}
-            <Dialog open={registrarOpen} onOpenChange={setRegistrarOpen}>
-              <DialogContent className="rounded-3xl bg-surface border-border max-w-md">
-                <DialogTitle className="font-heading text-lg text-text-primary">
-                  {closingPagamentoId ? 'Marcar parcela como paga' : 'Registrar pagamento'}
-                </DialogTitle>
-                <DialogDescription className="sr-only">
-                  Registrar ou agendar um pagamento para este orçamento.
-                </DialogDescription>
-                <div className="space-y-5">
-
-                  {closingPagamentoId && (
-                    <div className="flex items-center justify-between gap-3 rounded-xl border border-teal/25 bg-teal/5 px-4 py-3">
-                      <p className="text-xs text-text-secondary">
-                        Fechando parcela de{' '}
-                        <span className="font-mono font-semibold text-teal-ink">R$ {pagForm.valor}</span>
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => { onCancelarFechamentoPagamento(); setRegistrarOpen(false); }}
-                        className="text-[11px] font-semibold text-text-secondary hover:text-text-primary transition-colors shrink-0"
-                      >
-                        Cancelar
-                      </button>
+                      ) : (
+                        <div className="rounded-2xl border border-border overflow-hidden">
+                          {detalheOrc.itens.length === 0 ? (
+                            <div className="p-6 text-center text-sm text-text-secondary">Nenhum procedimento registrado.</div>
+                          ) : (
+                            <>
+                              {detalheOrc.itens.map((item, idx) => (
+                                <div
+                                  key={item.id}
+                                  className="flex items-center gap-3 px-4 py-3 border-b border-border/60 last:border-b-0 hover:bg-surface-alt/40 transition-colors"
+                                >
+                                  <span className="w-6 h-6 rounded-lg bg-teal/10 text-teal text-xs font-bold flex items-center justify-center shrink-0">
+                                    {idx + 1}
+                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-text-primary truncate">
+                                      {item.descricao ?? '—'}
+                                    </p>
+                                    {item.quantidade > 1 && (
+                                      <p className="text-[11px] text-text-secondary font-mono">
+                                        {item.quantidade} unidades × R$ {fmt((item.preco_total ?? 0) / item.quantidade)}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <span className="font-mono text-sm font-semibold text-text-primary shrink-0">
+                                    R$ {fmt(item.preco_total ?? 0)}
+                                  </span>
+                                </div>
+                              ))}
+                              <div className="flex items-center justify-between px-4 py-3 bg-teal/5">
+                                <span className="text-sm font-bold text-text-primary">Total</span>
+                                <span className="font-mono text-lg font-bold text-teal">
+                                  R$ {fmt(detalheOrc.total ?? 0)}
+                                </span>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </TabsContent>
 
+                  {/* ── Aba: atividade ────────────────────────────────────────
+                      Ganha lugar próprio: antes era um rodapé espremido no fim da coluna
+                      esquerda, junto da auditoria de aprovação. */}
+                  <TabsContent value="atividade" className="mt-0 flex-1 min-h-0 overflow-y-auto p-6 space-y-4">
+                    {/* R-03c-1 — aceite assinado: prova de que o paciente concordou em pagar
+                        (distinta da aprovação de status acima, que não afirma nada em 4 dos 5
+                        caminhos que a disparam). */}
+                    {detalheOrc.aceite ? (
+                      <div className="flex items-start gap-2 bg-teal/5 border border-teal/15 rounded-xl px-3 py-2.5">
+                        <PenLine className="w-3.5 h-3.5 text-teal-ink shrink-0 mt-0.5" />
+                        <p className="text-xs text-text-secondary">
+                          Aceite assinado por <span className="font-semibold text-text-primary">{detalheOrc.aceite.assinadoPor}</span>
+                          {' '}em {format(parseISO(detalheOrc.aceite.assinadoEm), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                          {detalheOrc.aceite.croNoAto && <> · CRO {detalheOrc.aceite.croNoAto}</>}
+                        </p>
+                      </div>
+                    ) : detalheOrc.status !== 'recusado' && (
+                      <button
+                        onClick={() => setShowAceiteModal(true)}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-border text-sm font-semibold text-text-secondary hover:bg-teal/5 hover:text-teal-ink hover:border-teal/30 transition-all"
+                      >
+                        <PenLine className="w-4 h-4" />
+                        Coletar aceite do paciente
+                      </button>
+                    )}
+
+                    {detalheOrc.status === 'aprovado' && (detalheOrc.aprovado_por || detalheOrc.aprovado_em) && (
+                      <div className="flex items-center gap-2 bg-teal/5 border border-teal/15 rounded-xl px-3 py-2.5">
+                        <User className="w-3.5 h-3.5 text-teal shrink-0" />
+                        <p className="text-xs text-text-secondary">
+                          {detalheOrc.aprovado_por && (
+                            <span>Aprovado por <span className="font-semibold text-text-primary">{detalheOrc.aprovado_por.nome}</span></span>
+                          )}
+                          {detalheOrc.aprovado_em && (
+                            <span> em {format(parseISO(detalheOrc.aprovado_em), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                          )}
+                        </p>
+                      </div>
+                    )}
+
+                    {activityLogs.length === 0 ? (
+                      <p className="text-sm text-text-secondary text-center py-8">Nenhuma atividade registrada ainda.</p>
+                    ) : (
+                      <div className="space-y-0">
+                          {activityLogs.map(log => (
+                            <div key={log.id} className="flex items-center gap-2 py-1.5 border-b border-border/30 last:border-0">
+                              <div className="w-1.5 h-1.5 rounded-full bg-teal/40 shrink-0" />
+                              <p className="text-xs flex-1 min-w-0">
+                                <span className="font-medium text-text-primary">{ACTION_LABEL[log.action] ?? log.action}</span>
+                                {log.actor_nome && (
+                                  <span className="ml-1 text-text-secondary/60">por {log.actor_nome.split(' ')[0]}</span>
+                                )}
+                              </p>
+                              <span className="font-mono text-xs text-text-secondary shrink-0">
+                                {format(parseISO(log.created_at), 'dd/MM HH:mm', { locale: ptBR })}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </TabsContent>
+                </Tabs>
+              </div>
+
+              {/* ── Coluna do dinheiro (R-39a) ─────────────────────────────
+                  % pago → falta receber → parcelas → formulário, sempre visível. O
+                  diálogo aninhado de "Registrar pagamento" (R-34 §7.0) deixa de existir:
+                  é gesto de balcão, não cabe atrás de um segundo clique. */}
+              <div
+                className="w-full sm:w-[416px] sm:shrink-0 border-t sm:border-t-0 sm:border-l border-border flex flex-col min-h-0 bg-teal/[0.04]"
+              >
+                <div className="flex-1 min-h-0 overflow-y-auto p-5">
                   {orcEditMode ? (
                     <div className="rounded-2xl border border-teal/25 p-5 text-center">
                       <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">Novo total</p>
@@ -792,29 +530,239 @@ export function DetalheOrcamentoModal({
                       <p className="text-xs text-text-secondary pt-2">Nada mais a receber.</p>
                     </div>
                   ) : (
-                    <div className="space-y-5">
-                      <div className="space-y-2">
-                        <div className="flex items-baseline justify-between">
-                          <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">Quanto já foi pago</p>
-                          <p className="font-mono text-3xl font-semibold text-teal-ink leading-tight">
-                            {pctPago.toFixed(0)}<span className="text-lg">%</span>
-                          </p>
-                        </div>
-                        <div className="w-full h-2.5 bg-surface-alt rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-teal rounded-full transition-all duration-700"
-                            style={{ width: `${pctPago}%` }}
-                          />
-                        </div>
-                        {totalPendente > 0 && (
-                          <p className="text-[11px] font-mono text-warning-ink">
-                            R$ {fmt(totalPendente)} agendado, ainda não recebido
-                          </p>
-                        )}
+                    <div className="space-y-2">
+                      <div className="flex items-baseline justify-between">
+                        <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">Quanto já foi pago</p>
+                        <p className="font-mono text-3xl font-semibold text-teal-ink leading-tight">
+                          {pctPago.toFixed(0)}<span className="text-lg">%</span>
+                        </p>
                       </div>
+                      <div className="w-full h-2.5 bg-surface-alt rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-teal rounded-full transition-all duration-700"
+                          style={{ width: `${pctPago}%` }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        disabled={restante <= 0}
+                        onClick={preencherRestante}
+                        className="w-full flex items-baseline justify-between pt-1 enabled:hover:opacity-80 transition-opacity disabled:cursor-default"
+                      >
+                        <span className="text-xs text-text-secondary">Falta receber</span>
+                        <span className={`font-mono text-sm font-semibold ${restante > 0 ? 'text-warning-ink' : 'text-teal-ink'}`}>
+                          R$ {fmt(restante)}
+                        </span>
+                      </button>
+                      {totalPendente > 0 && (
+                        <p className="text-[11px] font-mono text-warning-ink">
+                          R$ {fmt(totalPendente)} agendado, ainda não recebido
+                        </p>
+                      )}
+                    </div>
+                  )}
 
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
+                  {detalheOrc.pagamentos.length > 0 && (
+                    <>
+                      <div className="h-px bg-border my-4" />
+                      <div className="space-y-1.5">
+                        {detalheOrc.pagamentos.map(pg => {
+                          const Icon = FORMA_ICON[pg.forma_pagamento ?? 'outro'] ?? CircleDollarSign;
+                          const isPago = pg.status === 'pago';
+                          const isVencido = !isPago && !!pg.data_vencimento && pg.data_vencimento < hoje;
+                          const parcelaLabel = pg.parcela_numero && pg.total_parcelas
+                            ? `Parcela ${pg.parcela_numero}/${pg.total_parcelas}`
+                            : null;
+
+                          if (editingPagId === pg.id) {
+                            return (
+                              <div key={pg.id} className="rounded-xl border border-teal/30 bg-surface-alt p-3 space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] text-text-secondary">Valor (R$)</Label>
+                                    <Input
+                                      type="text" inputMode="decimal" placeholder="0,00"
+                                      value={editPagForm.valor}
+                                      onChange={e => setEditPagForm(f => ({ ...f, valor: e.target.value }))}
+                                      className="rounded-lg bg-surface border-border text-text-primary text-sm font-mono h-8"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] text-text-secondary">Data</Label>
+                                    <Input
+                                      type="date" value={editPagForm.data}
+                                      onChange={e => setEditPagForm(f => ({ ...f, data: e.target.value }))}
+                                      className="rounded-lg bg-surface border-border text-text-primary text-sm h-8"
+                                    />
+                                  </div>
+                                </div>
+                                <Select
+                                  value={editPagForm.formaPagamento}
+                                  onValueChange={(v) => setEditPagForm(f => ({ ...f, formaPagamento: v as FormaPagamento }))}
+                                >
+                                  <SelectTrigger className="rounded-lg bg-surface border-border text-text-primary text-sm h-8">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {Object.entries(FORMA_LABEL).map(([value, label]) => (
+                                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {editPagError && <p className="text-xs text-coral-ink">{editPagError}</p>}
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm" variant="outline" onClick={onCancelarEdicaoPagamento} disabled={editPagSaving}
+                                    className="flex-1 rounded-lg h-8 text-xs"
+                                  >
+                                    Cancelar
+                                  </Button>
+                                  <Button
+                                    size="sm" onClick={onSalvarEdicaoPagamento} disabled={editPagSaving}
+                                    className="flex-1 rounded-lg h-8 text-xs bg-teal hover:bg-teal/90 text-white"
+                                  >
+                                    {editPagSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Salvar'}
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          if (confirmDeletePagId === pg.id) {
+                            return (
+                              <div key={pg.id} className="rounded-xl border border-coral/30 bg-coral/5 p-3 flex items-center justify-between gap-2">
+                                <p className="text-xs text-text-primary">Excluir pagamento de R$ {fmt(pg.valor)}?</p>
+                                <div className="flex gap-1.5 shrink-0">
+                                  <Button
+                                    size="sm" variant="outline" onClick={() => setConfirmDeletePagId(null)} disabled={pagDeleteSaving}
+                                    className="rounded-lg h-7 text-xs px-2"
+                                  >
+                                    Cancelar
+                                  </Button>
+                                  <Button
+                                    size="sm" onClick={() => onExcluirPagamento(pg.id)} disabled={pagDeleteSaving}
+                                    /* `text-white` sobre `bg-coral` reprova no escuro: coral vira
+                                       #ef9a9a (rosa claro) e branco em cima dá ~1,9:1. Par
+                                       coral-ink/coral-pale funciona nos dois temas. */
+                                    className="rounded-lg h-7 text-xs px-2 bg-coral-pale border border-coral text-coral-ink hover:bg-coral/20"
+                                  >
+                                    {pagDeleteSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Excluir'}
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div
+                              key={pg.id}
+                              className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors ${
+                                isPago
+                                  ? 'border-teal/20 bg-teal/5'
+                                  : isVencido
+                                    ? 'border-coral/40 bg-coral-pale'
+                                    : 'border-border bg-surface-alt/40'
+                              }`}
+                            >
+                              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                                isPago ? 'bg-teal/15 text-teal' : isVencido ? 'bg-coral/15 text-coral-ink' : 'bg-surface-alt text-text-secondary'
+                              }`}>
+                                <Icon className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium text-text-primary flex items-center gap-1.5 flex-wrap">
+                                  {parcelaLabel && (
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-teal bg-teal/10 px-1.5 py-0.5 rounded-md shrink-0">
+                                      {parcelaLabel}
+                                    </span>
+                                  )}
+                                  {isPago ? (FORMA_LABEL[pg.forma_pagamento ?? 'outro'] ?? 'Pagamento') : 'A receber'}
+                                </p>
+                                <p className={`text-[11px] ${isVencido ? 'text-coral-ink font-semibold' : 'text-text-secondary'}`}>
+                                  {isPago
+                                    ? <>Pago em {pg.data_pagamento ? format(parseISO(pg.data_pagamento), 'dd/MM/yyyy', { locale: ptBR }) : '—'}</>
+                                    : pg.data_vencimento
+                                      ? <>{isVencido ? 'Venceu' : 'Vence'} em {format(parseISO(pg.data_vencimento), 'dd/MM/yyyy', { locale: ptBR })}</>
+                                      : 'Pendente'
+                                  }
+                                  {/* R-27a: quem registrou aparece SEMPRE que o pagamento está pago,
+                                      inclusive como "—". Hoje `marcado_por_id` está vazio em 83 de 83
+                                      pagamentos — só `marcarPagamentoPago` grava. Esconder o campo
+                                      faria a lacuna parecer inexistente; o R-28 conserta a escrita. */}
+                                  {isPago && ` · registrado por ${pg.marcado_por?.nome.split(' ')[0] ?? '—'}`}
+                                </p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                {isPago ? (
+                                  <p className="font-mono text-xs font-semibold text-teal">
+                                    R$ {fmt(pg.valor)}
+                                  </p>
+                                ) : (
+                                  // R-28 — clicar no valor pendente preenche o formulário abaixo já
+                                  // vinculado a ESTA parcela (fecha por UPDATE, não cria linha nova).
+                                  <button
+                                    onClick={() => onIniciarFechamentoPagamento(pg)}
+                                    className={`font-mono text-xs font-semibold underline decoration-dotted underline-offset-2 transition-colors ${isVencido ? 'text-coral-ink hover:text-coral' : 'text-text-secondary hover:text-teal-ink'}`}
+                                  >
+                                    R$ {fmt(pg.valor)}
+                                  </button>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {isPago ? (
+                                  <button
+                                    onClick={() => onIniciarEdicaoPagamento(pg)}
+                                    className="p-1 rounded-lg hover:bg-surface-alt text-text-secondary hover:text-text-primary transition-colors"
+                                    aria-label="Editar pagamento"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => onIniciarFechamentoPagamento(pg)}
+                                    className="p-1 rounded-lg hover:bg-teal/10 text-text-secondary hover:text-teal-ink transition-colors"
+                                    aria-label="Marcar como pago"
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => setConfirmDeletePagId(pg.id)}
+                                  className="p-1 rounded-lg hover:bg-coral/10 text-text-secondary hover:text-coral transition-colors"
+                                  aria-label="Excluir pagamento"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+
+                  {/* ── Formulário — sempre visível, nunca dentro de modal (R-34 §7.0) ── */}
+                  {!orcEditMode && !quitado && (
+                    <>
+                      <div className="h-px bg-border my-4" />
+
+                      {closingPagamentoId && (
+                        <div className="flex items-center justify-between gap-3 rounded-xl border border-teal/25 bg-teal/5 px-3 py-2.5 mb-3">
+                          <p className="text-xs text-text-secondary">
+                            Fechando parcela de{' '}
+                            <span className="font-mono font-semibold text-teal-ink">R$ {pagForm.valor}</span>
+                          </p>
+                          <button
+                            type="button"
+                            onClick={onCancelarFechamentoPagamento}
+                            className="text-[11px] font-semibold text-text-secondary hover:text-text-primary transition-colors shrink-0"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between mb-2">
                         <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">
                           {closingPagamentoId ? 'Marcar parcela como paga' : parcelasMode ? 'Dividir em parcelas' : 'Registrar pagamento'}
                         </p>
@@ -838,7 +786,7 @@ export function DetalheOrcamentoModal({
                                 type="number" min={2} max={24}
                                 value={parcelasForm.numero}
                                 onChange={e => setParcelasForm(f => ({ ...f, numero: e.target.value }))}
-                                className="rounded-xl bg-surface-alt border-border text-text-primary font-mono"
+                                className="rounded-xl bg-surface border-border text-text-primary font-mono"
                               />
                             </div>
                             <div className="space-y-1.5">
@@ -847,7 +795,7 @@ export function DetalheOrcamentoModal({
                                 type="date" min={hoje}
                                 value={parcelasForm.primeiroVencimento}
                                 onChange={e => setParcelasForm(f => ({ ...f, primeiroVencimento: e.target.value }))}
-                                className="rounded-xl bg-surface-alt border-border text-text-primary"
+                                className="rounded-xl bg-surface border-border text-text-primary"
                               />
                             </div>
                           </div>
@@ -855,7 +803,7 @@ export function DetalheOrcamentoModal({
                             const n = parseInt(parcelasForm.numero, 10);
                             if (!n || n < 2 || !restante) return null;
                             return (
-                              <p className="text-[11px] text-text-secondary bg-surface-alt rounded-xl px-3 py-2">
+                              <p className="text-[11px] text-text-secondary bg-surface rounded-xl px-3 py-2">
                                 Saldo restante: R$ {fmt(restante)} — {n}x de R$ {fmt(restante / n)}, vencimentos no mesmo dia, mês a mês.
                               </p>
                             );
@@ -863,16 +811,6 @@ export function DetalheOrcamentoModal({
                           {parcelasError && (
                             <p className="text-xs text-coral-ink bg-coral-pale rounded-xl px-3 py-2">{parcelasError}</p>
                           )}
-                          <Button
-                            onClick={onGerarParcelas}
-                            disabled={parcelasSaving || !parcelasForm.primeiroVencimento}
-                            className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl disabled:opacity-50 font-semibold"
-                          >
-                            {parcelasSaving
-                              ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Gerando...</>
-                              : 'Gerar Parcelas'
-                            }
-                          </Button>
                         </div>
                       ) : (
                         <div className="space-y-2">
@@ -887,7 +825,7 @@ export function DetalheOrcamentoModal({
                                 const parsed = parseValorBR(e.target.value);
                                 setPagForm(f => ({ ...f, valor: parsed > 0 ? formatValorBR(parsed) : f.valor }));
                               }}
-                              className="rounded-xl bg-surface-alt border-border text-text-primary font-mono"
+                              className="rounded-xl bg-surface border-border text-text-primary font-mono"
                             />
                           </div>
                           {!closingPagamentoId && (
@@ -899,7 +837,7 @@ export function DetalheOrcamentoModal({
                                 type="date" min={hoje}
                                 value={pagForm.dataVencimento}
                                 onChange={e => setPagForm(f => ({ ...f, dataVencimento: e.target.value }))}
-                                className="rounded-xl bg-surface-alt border-border text-text-primary"
+                                className="rounded-xl bg-surface border-border text-text-primary"
                               />
                             </div>
                           )}
@@ -917,7 +855,7 @@ export function DetalheOrcamentoModal({
                                 <Input
                                   type="date" value={pagForm.data}
                                   onChange={e => setPagForm(f => ({ ...f, data: e.target.value }))}
-                                  className="rounded-xl bg-surface-alt border-border text-text-primary"
+                                  className="rounded-xl bg-surface border-border text-text-primary"
                                 />
                               </div>
                               <div className="space-y-1.5">
@@ -926,7 +864,7 @@ export function DetalheOrcamentoModal({
                                   value={pagForm.formaPagamento}
                                   onValueChange={v => v && setPagForm(f => ({ ...f, formaPagamento: v as FormaPagamento }))}
                                 >
-                                  <SelectTrigger className="rounded-xl bg-surface-alt border-border text-text-primary">
+                                  <SelectTrigger className="rounded-xl bg-surface border-border text-text-primary">
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent className="bg-surface border-border">
@@ -944,28 +882,49 @@ export function DetalheOrcamentoModal({
                           {pagError && (
                             <p className="text-xs text-coral-ink bg-coral-pale rounded-xl px-3 py-2">{pagError}</p>
                           )}
-                          <Button
-                            onClick={onRegistrarPagamento}
-                            disabled={pagSaving || !pagForm.valor}
-                            className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl disabled:opacity-50 font-semibold"
-                          >
-                            {pagSaving
-                              ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</>
-                              : closingPagamentoId
-                                ? 'Marcar como Pago'
-                                : (pagForm.dataVencimento && pagForm.dataVencimento > hoje) ? 'Agendar Parcela' : 'Confirmar Pagamento'
-                            }
-                          </Button>
                         </div>
                       )}
-                      </div>
-                    </div>
+                    </>
                   )}
                 </div>
-              </DialogContent>
-            </Dialog>
 
-            {/* ── Rodapé único (R-27a) — fora das abas ─────────────────── */}
+                {/* ── Ação fixa no pé da coluna — nunca sai da tela, mesmo com muitas
+                    parcelas (a lista acima rola; o botão não). ── */}
+                {!orcEditMode && !quitado && (
+                  <div className="shrink-0 border-t border-border p-4">
+                    {parcelasMode && !closingPagamentoId ? (
+                      <Button
+                        onClick={onGerarParcelas}
+                        disabled={parcelasSaving || !parcelasForm.primeiroVencimento}
+                        className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl disabled:opacity-50 font-semibold"
+                      >
+                        {parcelasSaving
+                          ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Gerando...</>
+                          : 'Gerar Parcelas'
+                        }
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={onRegistrarPagamento}
+                        disabled={pagSaving || !pagForm.valor}
+                        className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl disabled:opacity-50 font-semibold"
+                      >
+                        {pagSaving
+                          ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</>
+                          : closingPagamentoId
+                            ? 'Marcar como Pago'
+                            : (pagForm.dataVencimento && pagForm.dataVencimento > hoje) ? 'Agendar Parcela' : 'Confirmar Pagamento'
+                        }
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── Rodapé único (R-27a) — fora das colunas ─────────────────
+                "Registrar pagamento" saiu daqui — a coluna do dinheiro já é
+                permanente, não precisa de atalho pra abrir nada. */}
             <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-6 py-4 border-t border-border">
               {orcEditMode ? (
                 <>
@@ -1010,15 +969,16 @@ export function DetalheOrcamentoModal({
                       <Edit2 className="w-4 h-4 mr-1.5" />
                       Editar
                     </Button>
-                    {!quitado && (
-                      <Button
-                        onClick={() => setRegistrarOpen(true)}
-                        className="rounded-xl bg-teal text-white hover:bg-teal-lt font-semibold"
-                      >
-                        <CircleDollarSign className="w-4 h-4 mr-1.5" />
-                        Registrar pagamento
-                      </Button>
-                    )}
+                    <div className="flex items-center gap-0.5 border border-border rounded-xl px-0.5">
+                      <BotaoDownloadPDF orcamentoId={detalheOrc.id} />
+                      <BotaoEnviarWhatsApp
+                        orcamentoId={detalheOrc.id}
+                        pacienteTelefone={pacienteTelefone}
+                        pacienteNome={pacienteNome}
+                        valorTotal={detalheOrc.total}
+                        statusAtual={detalheOrc.status}
+                      />
+                    </div>
                     <Button
                       variant="outline"
                       onClick={onClose}
