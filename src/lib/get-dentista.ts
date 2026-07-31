@@ -86,6 +86,16 @@ export const getDentistaCached = cache(async (): Promise<DentistaCache | null> =
 
   const row = data as unknown as DentistaRow;
 
+  // avatar_url guarda o caminho no storage (bucket privado, migration 117) — gera URL
+  // assinada de curta duração na leitura. Falha de assinatura não deve derrubar a página.
+  let avatarUrl: string | null = null;
+  if (row.avatar_url) {
+    const { data: signedData } = await supabase.storage
+      .from("avatars")
+      .createSignedUrl(row.avatar_url, 60 * 60);
+    avatarUrl = signedData?.signedUrl ?? null;
+  }
+
   type ClinicaFields = {
     nome: string;
     plano: string;
@@ -110,7 +120,7 @@ export const getDentistaCached = cache(async (): Promise<DentistaCache | null> =
     clinica: clinica?.nome ?? "",
     especialidade: row.especialidade ?? [],
     role: (row.role ?? "dentista") as DentistaRole,
-    avatar_url: row.avatar_url,
+    avatar_url: avatarUrl,
     status_convite: row.status_convite as "pendente" | "aceito" | null,
     foco_principal: (row.foco_principal as FocoPrincipal | null) ?? null,
     plano: (clinica?.plano as PlanoId) ?? "CLINICA",

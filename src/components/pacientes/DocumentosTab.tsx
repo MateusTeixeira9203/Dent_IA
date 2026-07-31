@@ -261,12 +261,25 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
       const supabase = createClient();
       const { storagePath } = doc;
 
-      await Promise.all([
-        supabase.from('paciente_documentos').delete().eq('id', docId),
-        storagePath
-          ? supabase.storage.from('fichas').remove([storagePath])
-          : Promise.resolve(),
-      ]);
+      // R-35 item 4 — apaga a linha primeiro e confere .select(): RLS pode barrar sem
+      // devolver erro (0 linhas). Só remove do storage se a linha realmente saiu, senão o
+      // documento de outro autor ficava listado com URL morta (arquivo já apagado, linha não).
+      const { data: apagado, error: deleteErr } = await supabase
+        .from('paciente_documentos')
+        .delete()
+        .eq('id', docId)
+        .select('id');
+
+      if (deleteErr) throw deleteErr;
+
+      if (!apagado?.length) {
+        toast.error('Sem permissão para apagar este documento.');
+        return;
+      }
+
+      if (storagePath) {
+        await supabase.storage.from('fichas').remove([storagePath]);
+      }
 
       setDocuments(prev => prev.filter(d => d.id !== docId));
       setSelecionados(prev => prev.filter(id => id !== docId));

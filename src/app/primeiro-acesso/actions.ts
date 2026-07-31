@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { requireUser } from '@/server/auth/user';
+import { requireClinicContext } from '@/server/auth/clinic';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export async function alterarSenhaPrimeiroAcesso(
@@ -11,7 +11,7 @@ export async function alterarSenhaPrimeiroAcesso(
     return { error: 'A senha deve ter pelo menos 8 caracteres.' };
   }
 
-  const { supabase, user } = await requireUser();
+  const { supabase, user, clinicId } = await requireClinicContext();
   const db = createServiceClient();
 
   // 1. Trocar senha — falha aqui aborta tudo
@@ -27,10 +27,13 @@ export async function alterarSenhaPrimeiroAcesso(
   // 3. Limpar flag de troca obrigatória — falha aqui bloqueia o redirect.
   //    Sem esse passo o guard do dashboard detectaria must_change_password = true
   //    e criaria um loop infinito silencioso.
+  // R-35 item 10 — secretarias tem UNIQUE (usuario_id, clinica_id): sem escopar por
+  // clínica, uma secretária de 2 clínicas trocando a senha numa limpava o flag nas duas.
   const { error: dbError } = await db
     .from('secretarias')
     .update({ must_change_password: false })
-    .eq('usuario_id', user.id);
+    .eq('usuario_id', user.id)
+    .eq('clinica_id', clinicId);
 
   if (dbError) {
     // Não liberar o dashboard com estado inconsistente.

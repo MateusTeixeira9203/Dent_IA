@@ -15,13 +15,19 @@ function createOAuth2Client() {
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
-/** Gera a URL de autorização OAuth2 do Google. O dentistaId é passado via state. */
-export function getGoogleAuthUrl(dentistaId: string): string {
+/**
+ * Gera a URL de autorização OAuth2 do Google.
+ * R-35 item 7 — `state` é opaco pro provider (não é mais só o dentistaId): o caller monta
+ * `nonce:dentistaId` e guarda o nonce num cookie httpOnly pra conferir no callback (anti-CSRF
+ * de login OAuth — sem isso, um atacante que soubesse o dentistaId da vítima podia induzi-la
+ * a completar o callback com um code da conta Google dele).
+ */
+export function getGoogleAuthUrl(state: string): string {
   const oauth2Client = createOAuth2Client();
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: ['https://www.googleapis.com/auth/calendar.events'],
-    state: dentistaId,
+    state,
     prompt: 'consent', // garante refresh_token mesmo que já tenha autorizado antes
   });
 }
@@ -29,7 +35,8 @@ export function getGoogleAuthUrl(dentistaId: string): string {
 /** Troca o código OAuth2 pelos tokens e salva na tabela google_tokens. */
 export async function exchangeCodeForTokens(
   code: string,
-  dentistaId: string
+  dentistaId: string,
+  clinicaId: string
 ): Promise<void> {
   const oauth2Client = createOAuth2Client();
   const { tokens } = await oauth2Client.getToken(code);
@@ -46,6 +53,7 @@ export async function exchangeCodeForTokens(
   const { error } = await supabase.from('google_tokens').upsert(
     {
       dentista_id: dentistaId,
+      clinica_id: clinicaId,
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token ?? null,
       expires_at: expiresAt,

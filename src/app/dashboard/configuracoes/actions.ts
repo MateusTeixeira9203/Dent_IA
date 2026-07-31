@@ -218,12 +218,14 @@ export async function criarProcedimento(
   return {};
 }
 
-export async function salvarLogoUrl(logoUrl: string): Promise<{ error?: string }> {
+// logo_url guarda o caminho no storage (bucket privado desde a migration 117), não mais
+// a URL pública — a leitura gera URL assinada em configuracoes/page.tsx.
+export async function salvarLogoUrl(logoPath: string): Promise<{ error?: string }> {
   const { supabase, clinicId } = await requireRole(['admin']);
 
   const { error } = await supabase
     .from('configuracoes_clinica')
-    .upsert({ clinica_id: clinicId, logo_url: logoUrl }, { onConflict: 'clinica_id' });
+    .upsert({ clinica_id: clinicId, logo_url: logoPath }, { onConflict: 'clinica_id' });
 
   if (error) return { error: error.message };
   return {};

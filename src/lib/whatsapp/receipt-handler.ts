@@ -150,12 +150,15 @@ export async function matchReceiptToOrcamento(
   }
 
   // Busca orçamentos pendentes do paciente
+  // R-35 item 11 — CHECK de orcamentos.status só admite rascunho|enviado|aprovado|recusado;
+  // 'pendente' nunca existiu como status e nunca casava. 'enviado' é o equivalente real
+  // (orçamento mandado pro paciente, aguardando pagamento/decisão).
   const { data: orcamentos } = await db
     .from('orcamentos')
     .select('id, total, status')
     .eq('clinica_id', clinicaId)
     .eq('paciente_id', paciente.id)
-    .in('status', ['pendente', 'aprovado'])
+    .in('status', ['enviado', 'aprovado'])
     .order('created_at', { ascending: false })
     .limit(5);
 

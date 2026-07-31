@@ -5,18 +5,30 @@ import { createClient } from '@/lib/supabase/server';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? '';
 
 /**
- * GET /api/calendar/auth/callback?code=...&state=<dentistaId>
- * Recebe o código OAuth2 do Google, valida que o dentistaId pertence ao
- * usuário autenticado + clínica ativa, troca pelos tokens e redireciona.
+ * GET /api/calendar/auth/callback?code=...&state=<nonce>:<dentistaId>
+ * Confere o nonce do state contra o cookie httpOnly gravado em /api/calendar/auth
+ * (anti-CSRF), valida que o dentistaId pertence ao usuário autenticado + clínica ativa,
+ * troca pelos tokens e redireciona.
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = request.nextUrl;
 
   const code = searchParams.get('code');
-  const dentistaId = searchParams.get('state');
+  const state = searchParams.get('state');
   const error = searchParams.get('error');
 
-  if (error || !code || !dentistaId) {
+  if (error || !code || !state) {
+    return NextResponse.redirect(`${APP_URL}/dashboard/agendamentos?calendar=denied`);
+  }
+
+  // R-35 item 7 — sem essa checagem, o state era só o dentistaId (previsível): um
+  // atacante que soubesse o dentistaId da vítima podia induzi-la a completar o callback
+  // com um code da conta Google dele, sobrescrevendo o token dela.
+  const [stateNonce, dentistaId] = state.split(':');
+  const cookieNonce = request.cookies.get('google_oauth_state')?.value;
+
+  if (!stateNonce || !dentistaId || !cookieNonce || stateNonce !== cookieNonce) {
+    console.error('[calendar/callback] state inválido — nonce ausente ou não confere');
     return NextResponse.redirect(`${APP_URL}/dashboard/agendamentos?calendar=denied`);
   }
 
@@ -56,11 +68,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.redirect(`${APP_URL}/dashboard/agendamentos?calendar=error`);
   }
 
+  let response: NextResponse;
   try {
-    await exchangeCodeForTokens(code, dentistaId);
-    return NextResponse.redirect(`${APP_URL}/dashboard/agendamentos?calendar=connected`);
+    await exchangeCodeForTokens(code, dentistaId, userRecord.active_clinica_id);
+    response = NextResponse.redirect(`${APP_URL}/dashboard/agendamentos?calendar=connected`);
   } catch (err) {
     console.error('[calendar/callback] Erro ao trocar código:', err);
-    return NextResponse.redirect(`${APP_URL}/dashboard/agendamentos?calendar=error`);
+    response = NextResponse.redirect(`${APP_URL}/dashboard/agendamentos?calendar=error`);
   }
+
+  // Nonce é de uso único — some do cookie tenha o exchange dado certo ou não.
+  response.cookies.delete('google_oauth_state');
+  return response;
 }

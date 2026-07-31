@@ -170,20 +170,22 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
     try {
       const supabase = createClient();
       const ext = file.name.split('.').pop() ?? 'png';
-      const path = `clinicas/${config?.clinica_id ?? 'logo'}/logo.${ext}`;
+      const path = `clinicas/${clinicId}/logo.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(path, file, { upsert: true, contentType: file.type });
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
-      const urlComCache = `${publicUrl}?t=${Date.now()}`;
+      const { data: signedData, error: signError } = await supabase.storage
+        .from('avatars')
+        .createSignedUrl(path, 60 * 60);
+      if (signError) throw signError;
 
-      const result = await salvarLogoUrl(urlComCache);
+      const result = await salvarLogoUrl(path);
       if (result.error) throw new Error(result.error);
 
-      setLogoUrl(urlComCache);
+      setLogoUrl(signedData.signedUrl);
       setSuccessMsg('Logo atualizada com sucesso!');
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Erro ao fazer upload da logo');

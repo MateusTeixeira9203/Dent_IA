@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useTransition, useRef, useMemo } from 'react';
+import { useState, useTransition, useMemo } from 'react';
 import {
-  Loader2, User, Upload, X, AlertCircle,
+  Loader2, User, AlertCircle,
   Phone, Mail, MapPin, FileText, UserCheck, Users, Baby,
 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -27,7 +26,6 @@ import {
 interface Props {
   isSecretaria: boolean;
   dentistas: { id: string; nome: string }[];
-  clinicaId: string;
 }
 
 function formatCpf(v: string): string {
@@ -76,12 +74,10 @@ function SectionHeader({ icon: Icon, title, badge }: { icon: React.ElementType; 
   );
 }
 
-export default function NovoPacienteForm({ isSecretaria, dentistas, clinicaId }: Props) {
+export default function NovoPacienteForm({ isSecretaria, dentistas }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
     nome: '',
@@ -93,7 +89,6 @@ export default function NovoPacienteForm({ isSecretaria, dentistas, clinicaId }:
     cidade: '',
     estado: '',
     observacoes: '',
-    avatar_url: '',
     responsavel_nome: '',
     responsavel_telefone: '',
     responsavel_parentesco: '',
@@ -108,29 +103,6 @@ export default function NovoPacienteForm({ isSecretaria, dentistas, clinicaId }:
     (field: keyof typeof form) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setForm((prev) => ({ ...prev, [field]: e.target.value }));
-
-  const handleAvatarSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-    if (!file.type.startsWith('image/')) { setError('Selecione apenas imagens (JPG, PNG, WEBP).'); return; }
-    if (file.size > 5 * 1024 * 1024) { setError('Imagem muito grande. Máximo 5 MB.'); return; }
-    setIsUploadingAvatar(true);
-    setError(null);
-    try {
-      const supabase = createClient();
-      const storagePath = `pacientes/${clinicaId}/${Date.now()}_${file.name}`;
-      const { error: storageErr } = await supabase.storage.from('avatars').upload(storagePath, file, { upsert: false });
-      if (storageErr) throw storageErr;
-      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(storagePath);
-      setForm((prev) => ({ ...prev, avatar_url: urlData.publicUrl }));
-    } catch (err) {
-      console.error('Erro ao fazer upload da foto:', err);
-      setError('Erro ao fazer upload da foto. Tente novamente.');
-    } finally {
-      setIsUploadingAvatar(false);
-    }
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,7 +130,6 @@ export default function NovoPacienteForm({ isSecretaria, dentistas, clinicaId }:
         cidade:          form.cidade.trim() || null,
         estado:          form.estado.trim() || null,
         observacoes:     form.observacoes.trim() || null,
-        avatar_url:      form.avatar_url.trim() || null,
         dentistaId:      isSecretaria ? dentistaId : undefined,
         responsavel_nome:       eMenor ? (form.responsavel_nome.trim() || null) : null,
         responsavel_telefone:   eMenor ? (form.responsavel_telefone.trim() || null) : null,
@@ -231,32 +202,6 @@ export default function NovoPacienteForm({ isSecretaria, dentistas, clinicaId }:
             transition={{ delay: 0.05 }}
             className="bg-surface rounded-2xl border border-border shadow-sm p-6 space-y-5"
           >
-            {/* Avatar */}
-            <div className="flex items-center gap-5">
-              <div className="w-20 h-20 rounded-2xl bg-surface-alt border border-border flex items-center justify-center overflow-hidden shrink-0">
-                {form.avatar_url ? (
-                  <img src={form.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
-                ) : (
-                  <User className="w-8 h-8 text-text-muted" />
-                )}
-              </div>
-              <div className="flex-1 space-y-2">
-                <AppLabel optional>Foto de Perfil</AppLabel>
-                <input ref={avatarInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => void handleAvatarSelect(e)} />
-                {form.avatar_url ? (
-                  <button type="button" onClick={() => setForm((prev) => ({ ...prev, avatar_url: '' }))} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border bg-surface-alt text-sm font-medium text-text-secondary hover:text-coral hover:border-coral/30 transition-colors">
-                    <X className="w-4 h-4" /> Remover foto
-                  </button>
-                ) : (
-                  <button type="button" onClick={() => avatarInputRef.current?.click()} disabled={isUploadingAvatar} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-dashed border-border bg-surface-alt text-sm font-medium text-text-secondary hover:border-teal hover:text-teal transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                    {isUploadingAvatar ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando...</> : <><Upload className="w-4 h-4" /> Selecionar foto</>}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="h-px bg-border" />
-
             <SectionHeader icon={User} title="Dados Pessoais" />
 
             <AppFormField label="Nome Completo" htmlFor="nome" required>
@@ -444,7 +389,7 @@ export default function NovoPacienteForm({ isSecretaria, dentistas, clinicaId }:
           </button>
           <button
             type="submit"
-            disabled={isPending || isUploadingAvatar}
+            disabled={isPending}
             className="inline-flex items-center gap-2.5 px-8 py-3.5 rounded-2xl text-[15px] font-bold text-white hover:-translate-y-0.5 active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
             style={{
               background: 'linear-gradient(135deg, #2f9c85 0%, #1d7a65 100%)',

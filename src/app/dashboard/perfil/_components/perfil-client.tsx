@@ -74,13 +74,15 @@ export function PerfilClient({ nome, email, role, clinica, avatarUrl: initialAva
         .upload(path, file, { upsert: true, contentType: file.type });
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
-      const urlComCache = `${publicUrl}?t=${Date.now()}`;
+      const { data: signedData, error: signError } = await supabase.storage
+        .from('avatars')
+        .createSignedUrl(path, 60 * 60);
+      if (signError) throw signError;
 
-      const result = await salvarAvatarUrl(urlComCache);
+      const result = await salvarAvatarUrl(path);
       if (result.error) throw new Error(result.error);
 
-      setAvatarUrl(urlComCache);
+      setAvatarUrl(signedData.signedUrl);
       toast.success('Foto de perfil atualizada!');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao fazer upload');

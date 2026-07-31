@@ -72,8 +72,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const service = createServiceClient();
 
   // ── 3. IDENTIFICAÇÃO DE CONVITE ────────────────────────────────────────────
-  // Busca na tabela convites pelo email — fonte de verdade independente do JWT.
-  // Metadados do JWT servem de fallback caso o registro em convites não exista.
+  // Busca na tabela convites pelo email — única fonte de verdade. R-35 item 3:
+  // role/clinica_id NUNCA vêm de user_metadata — é gravável pelo próprio usuário via
+  // auth.updateUser({ data }) com a chave anon, então seria porta pra se autoconceder
+  // vínculo em qualquer clínica. Sem convite pendente válido, cai pro fluxo de onboarding
+  // (passo 4/5 abaixo).
   if (user.email) {
     const { data: convite } = await service
       .from("convites")
@@ -85,8 +88,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       .limit(1)
       .maybeSingle();
 
-    const role       = (convite?.role ?? user.user_metadata?.role) as string | undefined;
-    const clinica_id = (convite?.clinica_id ?? user.user_metadata?.clinica_id) as string | undefined;
+    const role       = convite?.role as string | undefined;
+    const clinica_id = convite?.clinica_id as string | undefined;
 
     if (role && clinica_id) {
       // Todo convidado entra diretamente com status aceito

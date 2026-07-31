@@ -54,6 +54,16 @@ export default async function ConfiguracoesPage({
 
   const meuRole = ((dentistaPerfil as unknown as { role?: DentistaRole } | null)?.role) ?? 'dentista';
 
+  // logo_url guarda o caminho no storage (bucket privado, migration 117) — gera URL
+  // assinada de curta duração na leitura, igual ao avatar em getDentistaCached().
+  const config = (configRaw as ConfiguracaoClinica | null) ?? null;
+  if (config?.logo_url) {
+    const { data: signedData } = await supabase.storage
+      .from('avatars')
+      .createSignedUrl(config.logo_url, 60 * 60);
+    config.logo_url = signedData?.signedUrl ?? null;
+  }
+
   return (
     <PageTransition>
       <ConfiguracoesClient
@@ -69,7 +79,7 @@ export default async function ConfiguracoesPage({
           role: meuRole as DentistaRole,
           clinica: (dentistaPerfil?.clinica as unknown as { nome: string } | null)?.nome ?? '',
         }}
-        config={(configRaw as ConfiguracaoClinica | null) ?? null}
+        config={config}
         horarios={(horariosRaw as HorarioDisponivel[]) ?? []}
         procedimentos={(procedimentosRaw as Procedimento[]) ?? []}
         abaInicial={abaInicial}
