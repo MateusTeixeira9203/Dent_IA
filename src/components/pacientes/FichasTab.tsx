@@ -707,6 +707,11 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   // eventos (edição sem reorganizar preserva os eventos existentes — no-opa em lista vazia).
   const [eventosDraft, setEventosDraft] = React.useState<OdontogramaEventoDraft[]>([]);
 
+  // R-47 (achado 6, 31/07) — alerta_novo detectado pelo Organizar com Dex nesta sessão.
+  // null = nada detectado agora, omite do payload do save; o servidor preserva o que já
+  // estava salvo em vez de sobrescrever com null (era o bug: reeditar apagava o alerta real).
+  const [alertaNovoDetectado, setAlertaNovoDetectado] = React.useState<string | null>(null);
+
   // R-05b (D3) — origem do bloco orto quando veio do atalho. Quem salva assina, então o autor
   // e a data da manutenção herdada aparecem ANTES do save, não depois. null = digitado agora.
   const [ortoHerdadaDe, setOrtoHerdadaDe] = React.useState<{ data: string; autorNome: string } | null>(null);
@@ -1179,7 +1184,10 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     formData.conduta.trim() ||
     // R-05b: sem isto, o form aberto pelo atalho é considerado limpo e o guard de saída
     // o descarta em silêncio — o bloco orto herdado É conteúdo.
-    formData.ortoManutencao != null
+    formData.ortoManutencao != null ||
+    // R-47 (achado 2, 31/07) — lançamento manual no odontograma (clique no dente, chip de
+    // rotina) não passava por nenhum campo acima: o Organizar sobrescrevia sem confirmar.
+    eventosDraft.length > 0
   );
 
   // Mapeamento IA → form (§5): "Organizar com Dex" preenche o form existente — o
@@ -1202,15 +1210,39 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       conduta: data.conduta,
       ortoManutencao: data.orto_manutencao,
     }));
+    // R-47 (achado 6, 31/07) — só grava no campo estruturado; a linha de observation acima
+    // segue mostrando o aviso em texto também (não removida — é o que já era visível).
+    // Verificação adversarial 31/07: `data.alerta_novo` vazio numa 2ª chamada do Organizar
+    // (sem repetir o alerta) não pode apagar o que a 1ª já detectou nesta sessão — só
+    // atualiza quando vem algo novo, nunca limpa por omissão (mesmo princípio do achado 6).
+    if (data.alerta_novo) setAlertaNovoDetectado(data.alerta_novo);
     // Camada 2: os eventos viram rascunho, com realizado_em pela mesma regra da consulta
     // (§1.10, invariante #13: só realizado+clínica ganha a data; IA nunca preenche data).
-    setEventosDraft(
-      (data.odontograma_eventos ?? []).map((ev) => ({
+    // R-47 (achado 1, 31/07; corrigido de novo 31/07 após verificação adversarial) — antes
+    // SUBSTITUÍA eventosDraft inteiro: reabrir uma ficha salva e reorganizar apagava do banco
+    // (RPC 107 deleta por omissão de id) todo evento que a nova extração não recriasse. A 1ª
+    // correção fundia com dedupEventosDraft, mas o desempate de colisão ali é "menor id" —
+    // arbitrário entre um id REAL do banco e um id novo aleatório, ~50% de chance de apagar
+    // o antigo (com detalhe/observação já preenchidos) mesmo assim. Regra segura: o que já
+    // existe NUNCA perde pra uma reextração — se a chave já está em `prev`, o novo é
+    // ignorado (reextrair algo já lançado é no-op). dedupEventosDraft só limpa duplicata
+    // DENTRO da extração nova (seu propósito original, R-30 Parte 2 — a IA emitir o mesmo
+    // evento 2x na mesma leitura). Trade-off aceito e documentado: se o Dex extrai o MESMO
+    // procedimento com status diferente (ex.: indicado → realizado), a chave muda (status
+    // entra na chave) e os dois convivem como cards visíveis — duplicata visível antes de
+    // salvar, não perda silenciosa. Fica pro R-46d resolver com desenho de verdade (merge
+    // de status em vez de ignorar).
+    setEventosDraft((prev) => {
+      const chavesExistentes = new Set(prev.map(chaveDedupEvento));
+      const novos = (data.odontograma_eventos ?? []).map((ev) => ({
         ...ev,
         id: crypto.randomUUID(), // R-01 — id estável nasce aqui, na entrada do rascunho
         realizado_em: ev.status === 'realizado' && ev.origem === 'clinica' ? formData.dataAtendimento : null,
-      })),
-    );
+      }));
+      const novosSemColisao = dedupEventosDraft(novos)
+        .filter((ev) => !chavesExistentes.has(chaveDedupEvento(ev)));
+      return [...prev, ...novosSemColisao];
+    });
     // Mesmo critério do handleEdit (linha 666): sentinela de arcada entre os dentes
     // afetados põe o modo em 'arch' — mantém os botões de seleção coerentes com o
     // que a IA de fato preencheu.    setSharedTeeth([]);
@@ -1435,6 +1467,9 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
         dentesObservacoes,
         procedimentos:      procedimentosFinais,
         conduta:            formData.conduta,
+        // R-47 (achado 6) — só manda a chave se o Organizar detectou algo NESTA sessão;
+        // omitir preserva o que já estava salvo (fix espelhado em salvar-ficha.ts).
+        ...(alertaNovoDetectado !== null && { alertaNovo: alertaNovoDetectado }),
         ortoManutencao:     formData.ortoManutencao,
         odontogramaEventos: eventosParaSalvar,
       });
@@ -1561,6 +1596,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     setEventosDraft([]);
     setDenteAberto(null);
     setOrtoHerdadaDe(null);
+    setAlertaNovoDetectado(null);
   };
 
   const updateProcStatus = async (fichaId: string, currentStatus: Record<string, ProcStatus>, procKey: string, newStatus: ProcStatus) => {
@@ -1613,6 +1649,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     );
     setEditingId(evolution.id);
     setOrtoHerdadaDe(null); // editar ficha salva: o orto é o dela, não herdado (R-05b)
+    setAlertaNovoDetectado(null); // idem — nada detectado nesta sessão até reorganizar
     setFormData({
       dataAtendimento: evolution.dataAtendimento,
       type: evolution.type,
@@ -1649,6 +1686,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     setSharedNotes(['']);
     setSelectedTeeth([]);
     setEventosDraft([]);
+    setAlertaNovoDetectado(null);
     setFormData({
       dataAtendimento: hojeBRT(),
       type: 'Evolução',

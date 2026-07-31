@@ -54,7 +54,9 @@ export function CapturaLivreCard({ pacienteNome, formDirty, onOrganizado }: Capt
     const relato = texto.trim();
     if (!relato) return;
     // §8 passo 4 — form já preenchido pede confirmação antes de sobrescrever.
-    if (formDirty && !window.confirm('Substituir o que já está no formulário?')) return;
+    // R-47 (31/07): eventos do odontograma agora se SOMAM aos existentes (não substituem
+    // mais — era o achado 1), só o texto/campos do form são substituídos de fato.
+    if (formDirty && !window.confirm('Isso substitui o texto e os campos do formulário. Os registros já lançados no odontograma são mantidos — os novos se somam a eles.')) return;
 
     setIsOrganizando(true);
     setOrganizarLabel(ETAPAS[0].label);

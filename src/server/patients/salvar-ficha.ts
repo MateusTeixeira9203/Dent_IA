@@ -166,7 +166,11 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
         dentes_observacoes:  data.dentesObservacoes,
         procedimentos:       data.procedimentos,
         conduta:             data.conduta || null,
-        alerta_novo:         data.alertaNovo ?? null,
+        // R-47 (achado 6, 31/07) — `alertaNovo` é opcional no schema; omitido (undefined)
+        // preserva o valor já salvo, só `null`/string explícitos mudam. Antes gravava
+        // `?? null` sempre — a ficha rápida nunca mandava a chave, então reeditar por ela
+        // uma ficha que tinha alerta real (ex.: vindo do modo consulta) apagava o alerta.
+        ...(data.alertaNovo !== undefined && { alerta_novo: data.alertaNovo }),
         orto_manutencao:     data.ortoManutencao ?? null,
         updated_at:          new Date().toISOString(),
       })
