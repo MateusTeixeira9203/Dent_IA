@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { createPaciente } from '../actions';
 import type { CandidatoDuplicata } from '@/server/patients/buscar-duplicatas';
+import { calcularIdade, PARENTESCO_OPTIONS, formatCpf } from '@/lib/paciente-form-helpers';
 import { AppInput } from '@/components/ui/app-input';
 import { AppTextarea } from '@/components/ui/app-textarea';
 import { AppLabel } from '@/components/ui/app-label';
@@ -31,14 +32,6 @@ interface Props {
   dentistas: { id: string; nome: string }[];
 }
 
-function formatCpf(v: string): string {
-  const d = v.replace(/\D/g, '').slice(0, 11);
-  if (d.length <= 3) return d;
-  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
-  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
-  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
-}
-
 function formatPhone(v: string): string {
   const d = v.replace(/\D/g, '').slice(0, 11);
   if (d.length <= 2) return d.length ? `(${d}` : '';
@@ -46,24 +39,6 @@ function formatPhone(v: string): string {
   if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
   return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
 }
-
-function calcularIdade(dataNasc: string): number | null {
-  if (!dataNasc) return null;
-  const nasc = new Date(dataNasc);
-  const hoje = new Date();
-  let idade = hoje.getFullYear() - nasc.getFullYear();
-  const m = hoje.getMonth() - nasc.getMonth();
-  if (m < 0 || (m === 0 && hoje.getDate() < nasc.getDate())) idade--;
-  return idade;
-}
-
-const PARENTESCO_OPTIONS = [
-  { value: 'mae',   label: 'Mãe' },
-  { value: 'pai',   label: 'Pai' },
-  { value: 'avo',   label: 'Avó / Avô' },
-  { value: 'tutor', label: 'Tutor Legal' },
-  { value: 'outro', label: 'Outro' },
-];
 
 function SectionHeader({ icon: Icon, title, badge }: { icon: React.ElementType; title: string; badge?: React.ReactNode }) {
   return (
