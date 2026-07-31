@@ -1235,7 +1235,9 @@ export function PacienteDetailClient({
         created_at: new Date().toISOString(),
         validade_dias: 30,
         condicoes_pagamento: null,
-        mostrar_valor_por_item: true,
+        // Espelha o default novo do criarOrcamento (actions.ts) — orçamento nasce
+        // sem valor por item, só o total.
+        mostrar_valor_por_item: false,
         dentista_id: role === 'secretaria' ? novoOrcDentistaAlvoId : dentistaId,
         itens: itensValidos.map((i, idx) => ({
           id: `temp-${idx}`,

@@ -467,6 +467,10 @@ export async function criarOrcamento(dados: {
       total,
       desconto,
       validade_dias: 30,
+      // Pedido do Mateus 31/07: orçamento novo nasce sem valor por item — só o total.
+      // Dentista ainda pode ligar por orçamento (toggle no detalhe, R-38); o default
+      // da coluna (migration 124) continua true, então aqui é explícito.
+      mostrar_valor_por_item: false,
     })
     .select("id")
     .single();
