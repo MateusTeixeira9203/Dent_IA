@@ -8,6 +8,7 @@ import {
   Users,
   Settings,
   Calendar,
+  CalendarClock,
   ChevronsLeft,
   LogOut,
   User,
@@ -93,6 +94,8 @@ export function SidebarContent({
       label: 'ATENDIMENTO',
       items: [
         { href: '/dashboard',              icon: LayoutDashboard, label: 'Início',        id: 'dashboard-link',    visible: true,       locked: false },
+        // R-46a (D2) — "algo ativo, fácil de ver": item próprio, não só o CTA do hero.
+        { href: '/dashboard/meu-dia',      icon: CalendarClock,   label: 'Meu dia',       id: 'meu-dia-link',      visible: role !== 'secretaria', locked: false },
         { href: '/dashboard/pacientes',    icon: Users,           label: 'Pacientes',     id: 'pacientes-link',    visible: true,       locked: false },
         { href: '/dashboard/agendamentos', icon: Calendar,        label: 'Agenda',        id: 'agendamentos-link', visible: true,       locked: false },
       ],

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { format, parseISO, differenceInMinutes } from 'date-fns';
-import { Clock, AlertCircle, FileText, ArrowRight } from 'lucide-react';
+import { Clock, AlertCircle, FileText, ArrowRight, CalendarClock } from 'lucide-react';
 import { motion } from 'motion/react';
 import { ConsultaCtaButton } from './consulta-cta-button';
 import { MarkAttendedButton } from './mark-attended-button';
@@ -269,6 +269,14 @@ export function NextAppointmentHero({ agendamento, now, allConcluded, orcamentos
                   Novo agendamento
                 </Link>
               )}
+              {/* R-46a (D2) — porta v1 pro Meu dia, mesmo peso visual do "Já foi atendido". */}
+              <Link
+                href="/dashboard/meu-dia"
+                className="inline-flex items-center justify-center gap-2.5 px-8 py-3.5 rounded-2xl text-sm font-bold text-text-primary bg-surface border border-border hover:border-teal/50 hover:bg-surface-alt transition-all active:scale-[0.98]"
+              >
+                <CalendarClock className="w-[18px] h-[18px] text-teal shrink-0" />
+                Ver meu dia
+              </Link>
             </div>
           </div>
         </div>
@@ -495,6 +503,14 @@ export function NextAppointmentHero({ agendamento, now, allConcluded, orcamentos
             <ConsultaCtaButton agendamentoId={agendamento.id} />
           </motion.div>
           <MarkAttendedButton agendamentoId={agendamento.id} />
+          {/* R-46a (D2) — porta v1 pro Meu dia, mesmo peso visual do "Já foi atendido". */}
+          <Link
+            href="/dashboard/meu-dia"
+            className="w-full inline-flex items-center justify-center gap-2.5 px-8 py-3.5 rounded-2xl text-sm font-bold text-text-primary bg-surface border border-border hover:border-teal/50 hover:bg-surface-alt transition-all active:scale-[0.98]"
+          >
+            <CalendarClock className="w-[18px] h-[18px] text-teal shrink-0" />
+            Ver meu dia
+          </Link>
           <Link
             href={`/dashboard/pacientes/${paciente.id}`}
             className="text-center text-xs font-semibold text-text-secondary hover:text-text-primary transition-colors"
