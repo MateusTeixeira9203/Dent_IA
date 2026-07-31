@@ -1102,11 +1102,15 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   );
 
   // Fichas visíveis: some da timeline quando nenhum registro seu passa o filtro (#8).
+  // Também some a ficha em edição — o painel de edição já é essa ficha inteira, aberta no
+  // topo; manter o card de leitura embaixo mostrava a mesma ficha duas vezes na tela ao
+  // mesmo tempo (achado relatado 30/07). Card volta assim que salvar ou cancelar.
   const evolutionsVisiveis = React.useMemo(
     () => evolutions.filter((evo) =>
+      evo.id !== editingId &&
       fichaVisivel({ autorId: evo.dentistaId, autorNome: evo.professional, eventos: evo.eventos }, filtroResponsavel, dentistaId),
     ),
-    [evolutions, filtroResponsavel, dentistaId],
+    [evolutions, filtroResponsavel, dentistaId, editingId],
   );
 
   // ── R-04 Fase 3 / R-03b: ficha em modo seleção + seus cards elegíveis VISÍVEIS ──
