@@ -1075,13 +1075,13 @@ export function OrcamentosClient({
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    {!editMode && <BotaoDownloadPDF orcamentoId={selected.id} />}
                     {!editMode && !isSecretaria && (
                       <>
                         <button onClick={() => void handleTraduzir()} disabled={traduzirLoading}
                           className="p-2 rounded-xl text-white/70 hover:text-white hover:bg-white/15 transition-colors" title="DEX: Traduzir">
                           <Languages className="w-4 h-4" />
                         </button>
-                        <BotaoDownloadPDF orcamentoId={selected.id} />
                         <BotaoMensagemIA
                           pacienteNome={selected.paciente?.nome ?? ''}
                           dentistaNome={selected.dentista?.nome ?? dentistas[0]?.nome ?? ''}
