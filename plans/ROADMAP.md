@@ -1,8 +1,8 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · atualizado **2026-07-30** · reorganizado por **importância pro dentista**
-> **Ativo:** nenhum · **Fila:** 25 · **🟡 no ar não verificado:** 6 · **Concluídos:** 23 · **Congelado:** 1
-> **Próximo:** commit das 8 migrations → gate de 2 contas → commit do código → Bloco 1
+> **ROADMAP** · atualizado **2026-07-30** (noite) · reorganizado por **importância pro dentista**
+> **Ativo:** R-39a · **Fila:** 25 · **🟡 no ar não verificado:** 6 · **Concluídos:** 23 · **Congelado:** 1
+> **Próximo:** commit do R-39a → gate de 2 contas → Bloco 1 (ficha)
 
 **Status:** ⏳ fila · 🔵 ativo (máx 1) · 🟡 no ar **não** verificado · ✅ no ar **e** verificado ·
 🧊 congelado · ✂️ cortado · 💡 ideia sem spec.
@@ -51,7 +51,7 @@ migrations 120 e 121, que já mudaram RLS ao vivo.
 
 | ID | Item | Estado | Peso |
 |---|---|---|---|
-| [R-30](specs/R-30-ficha-fonte-unica-procedimento.md) | Ficha: fonte única de procedimento — mata a divergência entre `dentes_observacoes` e `odontograma_eventos` | 🟡 **7/7 gates rodados**, falta commit. **Parte 1 destrava 24 de 87 fichas (27,6%)** que hoje rejeitam o save ao editar | G |
+| [R-30](specs/R-30-ficha-fonte-unica-procedimento.md) | Ficha: fonte única de procedimento — mata a divergência entre `dentes_observacoes` e `odontograma_eventos` | 🟡 **commitado e em produção** (30/07 noite), bug relatado por ele **confirmado corrigido em produção**. **Parte 1 destrava 24 de 87 fichas (27,6%)** que rejeitavam o save ao editar. Falta o gate de 2 contas pra virar ✅ | G |
 | [R-31a](specs/R-31a-paciente-unico-prevencao.md) | Paciente único: **prevenção** — parar de criar duplicata | ⏳ aprovada. Começa pela **busca sem acento** e pela seleção que não pega no celular | M |
 | [R-31b](specs/R-31b-paciente-unico-unificacao.md) | Paciente único: **unificação** dos 16 grupos existentes | ⏳ aprovada, depende da R-31a no ar. Nunca `DELETE` — `merged_into_id` reversível | M |
 | [R-29](specs/R-29-silo-resto-modelo-antigo.md) | Paciente é da clínica: identidade multi-clínica + lista sem filtro por dentista | 🟡 aplicado (migration 120), falta o gate de 2 dentistas comuns | M |
@@ -64,8 +64,8 @@ migrations 120 e 121, que já mudaram RLS ao vivo.
 
 | ID | Item | Estado | Peso |
 |---|---|---|---|
-| [R-39](specs/R-39-orcamento-dinheiro-esqueleto-unico.md) | **Orçamento e dinheiro: um esqueleto só** — criar e criado com o mesmo layout, coluna do dinheiro, funil no financeiro | ⏳ spec 30/07, [artefato **aprovado**](artefatos/R-39-orcamento-painel-unico.html). **R-39a** (referência) · **R-39b** · **R-39c** | G |
-| [R-34](specs/R-34-plano-de-pagamento.md) | Plano de pagamento: registrar o acordo (à vista / parcelado / `valor_acordado`) | 🟡 3 commits codados e testados, falta gate de 2 contas e clicar PDF | M |
+| [R-39](specs/R-39-orcamento-dinheiro-esqueleto-unico.md) | **Orçamento e dinheiro: um esqueleto só** — criar e criado com o mesmo layout, coluna do dinheiro, funil no financeiro | 🔵 **R-39a codado e aprovado por ele em localhost** (30/07 noite) — PDF/WhatsApp adiantados do R-33. **Sem commit ainda.** Faltam: gate de 2 contas, mobile completo, commit+push. R-39b/R-39c não iniciados | G |
+| [R-34](specs/R-34-plano-de-pagamento.md) | Plano de pagamento: registrar o acordo (à vista / parcelado / `valor_acordado`) | 🟡 3 commits codados e testados, commitado e em produção. **Achado 30/07 noite: a rota do PDF tinha bug próprio (404 sempre), corrigido — mas ainda sem commit**, só verificado em localhost. Falta: subir esse fix, gate de 2 contas, e conferir `condicoes_pagamento` num PDF de orçamento parcelado especificamente | M |
 | [R-33](specs/R-33-orcamento-tela-unica.md) | Orçamento: uma tela só — mata o painel de `/dashboard/orcamentos`, porta 15 itens | ⏳ espera R-34 e **R-39a** (que define a forma onde os 15 pousam) | G |
 | [R-32](specs/R-32-orcamento-visivel-autor-admin-secretaria.md) | Orçamento visível para autor, admin e secretária | 🟡 aplicado (migration 121), falta o gate — G4/G5 são a prova anti-vazamento | P |
 | [R-28](specs/R-28-pagamento-fecha-sem-duplicar.md) | Pagamento: grava quem registrou + fecha parcela sem duplicar recebimento | 🟡 partes 1+2 verificadas na Teste01, falta confirmar em prod | M |

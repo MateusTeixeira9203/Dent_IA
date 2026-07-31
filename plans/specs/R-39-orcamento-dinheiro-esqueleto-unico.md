@@ -187,9 +187,11 @@ referência é a **R-39a**, e nada replica antes dela estar aprovada em localhos
 | **R-39c** | Funil no Financeiro (§5) + sheets de recebimento/saída no mesmo esqueleto | M | médio — inclui a correção de janela do §5.1 |
 
 **Dependência com a [R-33](R-33-orcamento-tela-unica.md):** a R-39a define a forma onde os
-15 itens da R-33 vão pousar. O rodapé já reserva o lugar de PDF · WhatsApp · Dex, mas
-**este item não implementa nenhum deles**. Executar R-39a **antes** da R-33 evita
-redesenhar duas vezes.
+15 itens da R-33 vão pousar. **Atualizado 30/07 à noite:** 2 desses itens entraram antes
+da hora, a pedido do Mateus testando ao vivo — **PDF (item 1)** e **WhatsApp (item 2)**
+foram pendurados no rodapé do R-39a, reusando `BotaoDownloadPDF`/`BotaoEnviarWhatsApp`
+sem alteração (zero backend, como o inventário da R-33 já previa). Ficam de fora ainda:
+DEX Traduzir, DEX Gerar mensagem, e os outros 11 itens — esses continuam com a R-33.
 
 ## 8. Gates de aceite
 

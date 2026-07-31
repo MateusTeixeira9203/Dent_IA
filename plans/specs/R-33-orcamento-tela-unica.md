@@ -52,8 +52,8 @@ Ordem: os que não têm dependência primeiro.
 
 | # | O que | De (linha) | Custo |
 |---|---|---|---|
-| 1 | **PDF do orçamento** (`FileDown` → `/api/orcamentos/{id}/pdf`) | `orcamentos-client.tsx:1083` + `botao-download-pdf.tsx` | zero backend. **Se não portar, o app perde a única entrada para o PDF** |
-| 2 | **Enviar por WhatsApp** (`wa.me` + link do PDF + rascunho→enviado) | `:1091-1097` + `botao-enviar-whatsapp.tsx:38-72` | precisa `paciente.telefone`/`nome` — já existem no pai |
+| 1 | ✅ **PDF do orçamento** (`FileDown` → `/api/orcamentos/{id}/pdf`) — **já portado, R-39a, 30/07** | `orcamentos-client.tsx:1083` + `botao-download-pdf.tsx` | zero backend. Pendurado no rodapé do `detalhe-orcamento-modal.tsx`, sem alteração no componente |
+| 2 | ✅ **Enviar por WhatsApp** (`wa.me` + link do PDF + rascunho→enviado) — **já portado, R-39a, 30/07** | `:1091-1097` + `botao-enviar-whatsapp.tsx:38-72` | precisa `paciente.telefone`/`nome` — vêm de `displayTelefone`/`displayNome` do pai |
 | 3 | **DEX Traduzir** (ícone + dialog + textarea readOnly + "Copiar texto" + `DexLoader`) | `:1079-1082`, `:405-430`, `:1714-1751` | zero backend — a rota só recebe `orcamentoId` |
 | 4 | **DEX Gerar mensagem** (5 tipos, copiar) | `:1084-1090` + `botao-mensagem-ia.tsx` | precisa `dentistaNome` → mesma dependência do item 9 |
 | 5 | **Registrar Dinheiro** (secretária, gesto de balcão) | `:1124-1131` → `:727-763` | **não portar como está** — ver §5 |
