@@ -58,13 +58,20 @@ export default async function OrcamentosPage() {
   const temSecretaria = (secretariaCount ?? 0) > 0;
 
   // Busca orçamentos com joins de paciente e dentista
-  const { data: orcamentosRaw } = await supabase
+  // orcamentos tem 3 FKs pra dentistas (dentista_id, aprovado_por_id, plano_definido_por_id
+  // — R-34) — sem desambiguar, o Postgrest devolve 300 (Multiple Choices) em vez do erro
+  // real, e `data` vem null. Mesmo bug (e mesmo fix) da rota do PDF, achado 30/07 — R-44.
+  const { data: orcamentosRaw, error: orcamentosError } = await supabase
     .from('orcamentos')
     .select(
-      'id, created_at, status, total, desconto, validade_dias, condicoes_pagamento, paciente:pacientes(id, nome, telefone), dentista:dentistas(id, nome)'
+      'id, created_at, status, total, desconto, validade_dias, condicoes_pagamento, paciente:pacientes(id, nome, telefone), dentista:dentistas!orcamentos_dentista_id_fkey(id, nome)'
     )
     .eq('clinica_id', dentista.clinica_id)
     .order('created_at', { ascending: false });
+
+  if (orcamentosError) {
+    throw new Error(`Erro ao carregar orçamentos: ${orcamentosError.message}`);
+  }
 
   // Busca dentistas da clínica para as abas da secretária
   let dentistasClinica: { id: string; nome: string }[] = [];
