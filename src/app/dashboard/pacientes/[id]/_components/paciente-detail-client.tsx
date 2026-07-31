@@ -75,6 +75,7 @@ import {
   criarProcedimentoRapido,
   gerarParcelas,
   definirPlanoAvista,
+  atualizarMostrarValorPorItem,
   type FormaPagamento,
   type StatusOrcamento,
 } from '@/app/dashboard/orcamentos/actions';
@@ -647,6 +648,22 @@ export function PacienteDetailClient({
     }
   }, [router]);
 
+  const handleToggleMostrarValorPorItem = useCallback(async (orcId: string, mostrar: boolean) => {
+    try {
+      const result = await atualizarMostrarValorPorItem(orcId, mostrar);
+      if (!result.error) {
+        setOrcamentosState((prev) =>
+          prev.map((o) => (o.id === orcId ? { ...o, mostrar_valor_por_item: mostrar } : o))
+        );
+      } else {
+        toast.error(result.error);
+      }
+    } catch (err) {
+      console.error('[paciente] handleToggleMostrarValorPorItem:', err);
+      toast.error('Não foi possível atualizar. Tente novamente.');
+    }
+  }, []);
+
   const handleRegistrarPagamento = async () => {
     if (!detalheOrcId) return;
     const valor = parseValorBR(pagForm.valor);
@@ -1203,6 +1220,7 @@ export function PacienteDetailClient({
         created_at: new Date().toISOString(),
         validade_dias: 30,
         condicoes_pagamento: null,
+        mostrar_valor_por_item: true,
         dentista_id: role === 'secretaria' ? novoOrcDentistaAlvoId : dentistaId,
         itens: itensValidos.map((i, idx) => ({
           id: `temp-${idx}`,
@@ -2001,6 +2019,7 @@ export function PacienteDetailClient({
         onOpenEditOrc={handleOpenEditOrc}
         onSalvarEdicaoOrc={handleSalvarEdicaoOrc}
         onStatusChange={handleStatusChange}
+        onToggleMostrarValorPorItem={handleToggleMostrarValorPorItem}
         onRegistrarPagamento={closingPagamentoId ? handleFecharPagamento : handleRegistrarPagamento}
         closingPagamentoId={closingPagamentoId}
         onIniciarFechamentoPagamento={handleIniciarFechamentoPagamento}

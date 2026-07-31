@@ -304,6 +304,8 @@ export type OrcamentoHtmlData = {
   desconto: number;
   validade_dias: number;
   condicoes_pagamento: string | null;
+  /** R-38 — false esconde preço por item e Subtotal; Total/Desconto/condição continuam. */
+  mostrar_valor_por_item: boolean;
   paciente: { nome: string; telefone: string | null } | null;
   dentista: { nome: string } | null;
   itens: Array<{
@@ -531,18 +533,20 @@ export function buildOrcamentoHTML(o: OrcamentoHtmlData): string {
     cartao_debito: '💳', boleto: '📄', outro: '💰',
   };
 
+  const mostrarValor = o.mostrar_valor_por_item;
+
   const itensHtml = o.itens.map((item, idx) => `
     <div class="orc-item">
       <div class="orc-item-num">${idx + 1}</div>
-      <div class="orc-item-desc">${esc(item.descricao ?? '—')}${item.quantidade > 1 ? `<div class="orc-item-qty">${item.quantidade} unid. × ${fmtMoney(item.preco_unitario)}</div>` : ''}</div>
-      <div class="orc-item-price">${fmtMoney(item.preco_total)}</div>
+      <div class="orc-item-desc">${esc(item.descricao ?? '—')}${mostrarValor && item.quantidade > 1 ? `<div class="orc-item-qty">${item.quantidade} unid. × ${fmtMoney(item.preco_unitario)}</div>` : ''}</div>
+      ${mostrarValor ? `<div class="orc-item-price">${fmtMoney(item.preco_total)}</div>` : ''}
     </div>`).join('');
 
   const totalsHtml = `
     <div class="orc-totals">
       <div class="orc-totals-box">
+        ${mostrarValor && temDesconto ? `<div class="orc-totals-row"><span>Subtotal</span><span class="val">${fmtMoney(subtotal)}</span></div>` : ''}
         ${temDesconto ? `
-          <div class="orc-totals-row"><span>Subtotal</span><span class="val">${fmtMoney(subtotal)}</span></div>
           <div class="orc-totals-row"><span>Desconto</span><span class="val" style="color:#ef4444">− ${fmtMoney(o.desconto)}</span></div>
           <hr class="orc-divider">
         ` : ''}

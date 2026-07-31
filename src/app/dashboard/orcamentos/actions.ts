@@ -129,6 +129,28 @@ export async function atualizarStatusOrcamento(
   return {};
 }
 
+/** R-38 — controle "mostrar valor por procedimento" no momento de gerar/enviar o PDF.
+ *  Só apresentação: `orcamento_itens` continua gravando os valores de sempre. */
+export async function atualizarMostrarValorPorItem(
+  orcamentoId: string,
+  mostrar: boolean
+): Promise<{ error?: string }> {
+  const { supabase, clinicId } = await requireClinicContext();
+
+  const { error } = await supabase
+    .from("orcamentos")
+    .update({ mostrar_valor_por_item: mostrar })
+    .eq("id", orcamentoId)
+    .eq("clinica_id", clinicId);
+
+  if (error) {
+    console.error("Erro ao atualizar exibição de valores do orçamento:", error);
+    return { error: 'Não foi possível atualizar. Tente novamente.' };
+  }
+
+  return {};
+}
+
 export interface ParcelaGerada {
   id: string;
   valor: number;

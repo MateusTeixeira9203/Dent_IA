@@ -9,6 +9,9 @@ export interface TermosSnapshot {
   total: number;
   validadeDias: number;
   condicoesPagamento: string | null;
+  /** R-38 — flag vigente no momento do aceite. A re-renderização do aceite respeita
+   *  este valor, não o `orcamentos.mostrar_valor_por_item` corrente. */
+  mostrarValorPorItem: boolean;
   /** Status do orçamento no momento do aceite — o aceite não muda status. */
   statusNoAto: 'rascunho' | 'enviado' | 'aprovado';
   itens: Array<{

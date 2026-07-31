@@ -10,6 +10,7 @@ import {
 import { AceiteOrcamentoModal } from '@/components/orcamentos/aceite-orcamento-modal';
 import { BotaoDownloadPDF } from '@/components/orcamentos/botao-download-pdf';
 import { BotaoEnviarWhatsApp } from '@/components/orcamentos/botao-enviar-whatsapp';
+import { ToggleSwitch } from '@/components/ui/toggle-switch';
 import {
   Dialog, DialogContent, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -141,6 +142,8 @@ interface Props {
   onExcluirPagamento: (id: string) => void;
   /** R-03c-1 — chamado depois que o servidor confirma o aceite (o pai decide como refletir). */
   onAceiteRegistrado: () => void;
+  /** R-38 — liga/desliga o valor por procedimento no PDF deste orçamento. */
+  onToggleMostrarValorPorItem: (id: string, mostrar: boolean) => void;
 }
 
 // ─── component ───────────────────────────────────────────────────────────────
@@ -160,6 +163,7 @@ export function DetalheOrcamentoModal({
   onIniciarEdicaoPagamento, onCancelarEdicaoPagamento, onSalvarEdicaoPagamento,
   confirmDeletePagId, setConfirmDeletePagId, pagDeleteSaving, onExcluirPagamento,
   onAceiteRegistrado,
+  onToggleMostrarValorPorItem,
 }: Props) {
   const hoje = new Date().toISOString().split('T')[0];
   const [isChangingStatus, setIsChangingStatus] = useState(false);
@@ -969,6 +973,16 @@ export function DetalheOrcamentoModal({
                       <Edit2 className="w-4 h-4 mr-1.5" />
                       Editar
                     </Button>
+                    <div
+                      className="hidden sm:flex items-center gap-1.5 text-xs text-text-secondary"
+                      title="Mostrar o valor de cada procedimento no PDF"
+                    >
+                      <span>Valor por item</span>
+                      <ToggleSwitch
+                        checked={detalheOrc.mostrar_valor_por_item}
+                        onCheckedChange={(checked) => onToggleMostrarValorPorItem(detalheOrc.id, checked)}
+                      />
+                    </div>
                     <div className="flex items-center gap-0.5 border border-border rounded-xl px-0.5">
                       <BotaoDownloadPDF orcamentoId={detalheOrc.id} />
                       <BotaoEnviarWhatsApp
