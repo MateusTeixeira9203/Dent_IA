@@ -9,7 +9,9 @@ export async function extractTextFromFile(buffer: ArrayBuffer, ext: string): Pro
     return result.value;
   }
   if (ext === 'pdf') {
-    const pdfParse = (await import('pdf-parse')).default;
+    // 'pdf-parse/lib/pdf-parse.js', não 'pdf-parse' — o index.js da lib tem um bug conhecido
+    // que quebra o import inteiro sob bundler (ver src/types/pdf-parse-lib.d.ts).
+    const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default;
     const result = await pdfParse(Buffer.from(buffer));
     return result.text;
   }

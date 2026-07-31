@@ -33,7 +33,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (ext === "txt" || file.type.startsWith("text/")) {
       text = buffer.toString("utf-8");
     } else if (ext === "pdf" || file.type === "application/pdf") {
-      const pdfParse = (await import("pdf-parse")).default;
+      // 'pdf-parse/lib/pdf-parse.js', não 'pdf-parse' — o index.js da lib tem um bug
+      // conhecido que quebra o import inteiro sob bundler (ver src/types/pdf-parse-lib.d.ts).
+      const pdfParse = (await import("pdf-parse/lib/pdf-parse.js")).default;
       const parsed = await pdfParse(buffer);
       text = parsed.text;
     } else if (
