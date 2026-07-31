@@ -1,53 +1,56 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-07-31 11:10 · sessão #8
-> **Item ativo:** nenhum · **Modo da última sessão:** execução
+> **ESTADO** · atualizado 2026-07-31 22:00 · sessão #9
+> **Item ativo:** R-46 (Meu dia) · **Modo da última sessão:** discussão → planejamento → execução
 
 ## Agora
 
-Nenhum item em código no momento — a sessão #8 fechou **4 itens inteiros** (R-38, R-39b,
-R-31a, R-41), todos codados, testados ao vivo, commitados e **no ar** (push 31/07). A bola
-está com você: gate de 2 contas e algumas decisões pequenas (ver "Esperando você").
+R-46 em execução. R-46a (esqueleto + rail + contexto do Meu dia) codado. Fase 0 (diagnóstico
+do Organizar com Dex) e R-47 (os 3 bugs de perda de dado que ela achou) corrigidos. Próxima
+fatia planejada: R-46c (colar do Word, nível 1).
 
 ### Feito nesta sessão
-- [x] **R-38** — orçamento sem preço por item no PDF. Migration 124 aplicada, toggle no
-      rodapé, snapshot do aceite confirmado gravando o flag certo
-- [x] **R-39b** — aceite visual alinhado + coluna "Pago" em `/dashboard/orcamentos`
-- [x] **R-31a** — previne duplicata de paciente (as 4 partes: seleção, busca sem acento,
-      aviso de nome, CPF único). 2 bugs reais achados e corrigidos testando ao vivo
-- [x] **R-41** — item novo (mapeado e codado na mesma sessão): editar paciente ganhou
-      CPF, nascimento e responsável de menor — fecha a lacuna do cadastro rápido
-- [x] 8 commits organizados (nenhum misturando assuntos — 4 arquivos que tocavam 2
-      itens cada foram separados por reconstrução manual)
+- [x] R-46 — discussão de atrito da ficha virou spec aprovada; R-15 absorvido e arquivado
+- [x] Fase 0 — diagnóstico do pipeline Dex da ficha rápida, 6 achados confirmados
+- [x] R-47 — 3 bugs de perda silenciosa de dado corrigidos (2 rodadas de correção)
+- [x] R-46a — rota `/dashboard/meu-dia` codada (rail + contexto), zero escrita nova
+- [x] `pdf-parse` — import quebrado corrigido (campo mágico + importar-procedimentos)
+- [x] Orçamentos — download liberado pra secretária; PDF sem cor de fundo e sem quebra de
+      página corrigidos; orçamento novo nasce sem valor por item
+- [x] 9 commits, todos pushados (`main` em `4331e61`)
 
 ### Falta
-- [ ] Gate de 2 contas (cobre R-29/R-32/R-34 — ainda não rodado, precisa do seu login)
-- [ ] R-31a G3 (seleção no toque, celular real) e G5 (toast do cadastro rápido não
-      renderizou em nenhuma tentativa — ver handoff, pode ser ambiente ou bug real)
-- [ ] R-39c (funil no Financeiro) — não iniciado, mas a spec já ganhou o contrato da
-      Receita Prevista (§5.4) pronto pra quando começar
+- [ ] Testar ao vivo R-47 e R-46a — verificados só estaticamente (2 rodadas de verificação
+      adversarial cada + typecheck/lint/build). O browser pane ficou fora do ar quase a
+      sessão inteira; voltou a funcionar mais tarde e não foram retestados
+- [ ] R-46c (colar do Word, nível 1 sem IA) — próxima fatia, não iniciada
+- [ ] Abertas da spec do R-46: A1 (revisão do Dex em lista escala pra cirurgia longa? decide
+      a fase 3 de aposentar `/consulta`), pendência de colega (executa direto ou confirma),
+      ordem de construção das próximas fatias
 
 ## Travado
 
-Nada travado por código. O toast do R-31a G5 (aviso de duplicata no cadastro rápido via
-agendamento) não apareceu na tela em nenhum teste — a lógica em si foi confirmada correta
-(paciente não duplicou quando devia bloquear), mas não consegui ver o toast renderizar
-mesmo com servidor reiniciado do zero. Não travou o trabalho, só ficou sem confirmação
-visual. Ver handoff de 31/07 pra hipóteses.
+Nada travado por código.
 
 ## Esperando você
 
-- [ ] **[Gate de 2 contas](auditorias/2026-07-30-gate-2-contas.md)** — ainda não rodado.
-- [ ] **R-40: qual contrato?** Termo de consentimento clínico ou contrato de prestação —
-      ainda sem decisão.
-- [ ] **R-44 — incluir as 2 telas extras agora?** Achei que `command-palette.tsx` e
-      `atender-agora-modal.tsx` também têm busca sensível a acento (a spec do R-31a só
-      previa 5 telas, são 7 reais). Não corrigi — pode ser dentro do R-44 (já é varredura
-      dedicada) ou esperar.
-- [ ] **R-45 (recall automático)** — você disse que ia mexer no WhatsApp amanhã de manhã.
+- [ ] **R-28 Parte 3 — pagamento duplicado ("saldo pendente fantasma").** Achei 2 ocorrências
+      reais com dinheiro errado na tela (orçamento da Gessica, R$250; orçamento do "marcos",
+      R$5.360 fantasma) testando outra coisa — já era decisão de negócio em aberto desde o
+      R-28. Vira item ⏳ agora, ou resolve manualmente o caso da Gessica primeiro? Ver
+      hipótese da causa no handoff de 31/07 22:00.
+- [ ] **[Gate de 2 contas](auditorias/2026-07-30-gate-2-contas.md)** — segue sem rodar,
+      precisa do seu login (cobre R-29/R-32/R-34).
+- [ ] **R-40** — termo de consentimento clínico ou contrato de prestação? Ainda sem decisão.
+- [ ] **R-44 (2 telas extras)** — `command-palette.tsx` e `atender-agora-modal.tsx` também
+      têm busca sensível a acento. Inclui agora ou espera.
+- [ ] **R-45 (recall automático)** — ideia capturada em 30/07, não iniciado.
+- [ ] **Lista interna de orçamentos** não esconde valor por item mesmo com o novo default —
+      é intencional (R-38 sempre foi só sobre o PDF pro paciente), mas confirma se você quer
+      isso também na visão interna de gestão.
 
 ## Próximo da fila
 
-Depois das decisões acima: R-39c (funil, spec já pronta) ou Bloco 1 (R-31b depende do
-R-31a estar no ar; R-41 acabou de destravar; R-29/R-30 esperam o mesmo gate). Fila
-completa no [ROADMAP](ROADMAP.md).
+R-46c (colar do Word, nível 1) é a próxima fatia planejada do item ativo — a menos que a
+decisão do R-28 Parte 3 fure a fila primeiro, por ser dinheiro errado na tela de um cliente
+real. Fila completa no [ROADMAP](ROADMAP.md).
