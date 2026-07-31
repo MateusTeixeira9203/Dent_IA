@@ -6,8 +6,8 @@
 ## Agora
 
 Nenhum item em código no momento — a sessão #8 fechou **4 itens inteiros** (R-38, R-39b,
-R-31a, R-41), todos codados, testados ao vivo e commitados. A bola está com você: push,
-gate de 2 contas, e algumas decisões pequenas (ver "Esperando você").
+R-31a, R-41), todos codados, testados ao vivo, commitados e **no ar** (push 31/07). A bola
+está com você: gate de 2 contas e algumas decisões pequenas (ver "Esperando você").
 
 ### Feito nesta sessão
 - [x] **R-38** — orçamento sem preço por item no PDF. Migration 124 aplicada, toggle no
@@ -21,7 +21,6 @@ gate de 2 contas, e algumas decisões pequenas (ver "Esperando você").
       itens cada foram separados por reconstrução manual)
 
 ### Falta
-- [ ] **Push de tudo** — 8 commits locais, nada no remoto ainda
 - [ ] Gate de 2 contas (cobre R-29/R-32/R-34 — ainda não rodado, precisa do seu login)
 - [ ] R-31a G3 (seleção no toque, celular real) e G5 (toast do cadastro rápido não
       renderizou em nenhuma tentativa — ver handoff, pode ser ambiente ou bug real)
@@ -38,8 +37,6 @@ visual. Ver handoff de 31/07 pra hipóteses.
 
 ## Esperando você
 
-- [ ] **Sinal pra dar push** nos 8 commits desta sessão (R-38, R-39b, R-31a, R-41, fix
-      do R-44 parcial, migrations 124-126).
 - [ ] **[Gate de 2 contas](auditorias/2026-07-30-gate-2-contas.md)** — ainda não rodado.
 - [ ] **R-40: qual contrato?** Termo de consentimento clínico ou contrato de prestação —
       ainda sem decisão.
