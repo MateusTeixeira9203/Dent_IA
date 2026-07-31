@@ -1,53 +1,56 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-07-30 23:15 · sessão #7
-> **Item ativo:** R-39a · **Modo da última sessão:** execução
+> **ESTADO** · atualizado 2026-07-31 11:10 · sessão #8
+> **Item ativo:** nenhum · **Modo da última sessão:** execução
 
 ## Agora
 
-**R-39a — Orçamento e dinheiro: esqueleto único** · 🔵 ativo desde 30/07
-Spec: `plans/specs/R-39-orcamento-dinheiro-esqueleto-unico.md` (fase: contrato, sub-item
-R-39a aprovado)
+Nenhum item em código no momento — a sessão #8 fechou **4 itens inteiros** (R-38, R-39b,
+R-31a, R-41), todos codados, testados ao vivo e commitados. A bola está com você: push,
+gate de 2 contas, e algumas decisões pequenas (ver "Esperando você").
 
-**Objetivo:** tela de criar e tela de orçamento criado com o mesmo esqueleto —
-procedimentos à esquerda, coluna do dinheiro à direita, sem diálogo aninhado para
-registrar pagamento.
-
-### Feito
-- [x] `detalhe-orcamento-modal.tsx` e `novo-orcamento-modal.tsx` reescritos, aprovados por
-      ele em localhost após 3 rodadas de ajuste
-- [x] `aceite-orcamento-modal.tsx` — bug pré-existente de altura corrigido (cortava em
-      notebook real), erro de validação agora limpa ao digitar
-- [x] PDF e WhatsApp adiantados do R-33 pro rodapé do R-39a, a pedido dele
-- [x] Bug real achado e corrigido na rota do PDF (FK ambígua fazia devolver 404 sempre)
-- [x] Tudo acima testado ao vivo em localhost com dado real (não só typecheck)
+### Feito nesta sessão
+- [x] **R-38** — orçamento sem preço por item no PDF. Migration 124 aplicada, toggle no
+      rodapé, snapshot do aceite confirmado gravando o flag certo
+- [x] **R-39b** — aceite visual alinhado + coluna "Pago" em `/dashboard/orcamentos`
+- [x] **R-31a** — previne duplicata de paciente (as 4 partes: seleção, busca sem acento,
+      aviso de nome, CPF único). 2 bugs reais achados e corrigidos testando ao vivo
+- [x] **R-41** — item novo (mapeado e codado na mesma sessão): editar paciente ganhou
+      CPF, nascimento e responsável de menor — fecha a lacuna do cadastro rápido
+- [x] 8 commits organizados (nenhum misturando assuntos — 4 arquivos que tocavam 2
+      itens cada foram separados por reconstrução manual)
 
 ### Falta
-- [ ] **Commit e push** — 9 arquivos modificados, nada commitado desde o push das ~21h
-- [ ] Confirmação visual do mobile (empilhamento confirmado por DOM, largura não —
-      rede do sandbox caiu no meio do teste)
-- [ ] Gate de 2 contas (G9 da spec)
-- [ ] R-39b (aceite no esqueleto novo + coluna "Pago" na lista) e R-39c (funil) — não iniciados
+- [ ] **Push de tudo** — 8 commits locais, nada no remoto ainda
+- [ ] Gate de 2 contas (cobre R-29/R-32/R-34 — ainda não rodado, precisa do seu login)
+- [ ] R-31a G3 (seleção no toque, celular real) e G5 (toast do cadastro rápido não
+      renderizou em nenhuma tentativa — ver handoff, pode ser ambiente ou bug real)
+- [ ] R-39c (funil no Financeiro) — não iniciado, mas a spec já ganhou o contrato da
+      Receita Prevista (§5.4) pronto pra quando começar
 
 ## Travado
 
-Nada travado por código.
+Nada travado por código. O toast do R-31a G5 (aviso de duplicata no cadastro rápido via
+agendamento) não apareceu na tela em nenhum teste — a lógica em si foi confirmada correta
+(paciente não duplicou quando devia bloquear), mas não consegui ver o toast renderizar
+mesmo com servidor reiniciado do zero. Não travou o trabalho, só ficou sem confirmação
+visual. Ver handoff de 31/07 pra hipóteses.
 
 ## Esperando você
 
-- [ ] **Sinal pra commitar e subir o R-39a** (+ fix da ficha duplicada, pendente da sessão
-      anterior).
+- [ ] **Sinal pra dar push** nos 8 commits desta sessão (R-38, R-39b, R-31a, R-41, fix
+      do R-44 parcial, migrations 124-126).
 - [ ] **[Gate de 2 contas](auditorias/2026-07-30-gate-2-contas.md)** — ainda não rodado.
-- [ ] **R-40: qual contrato?** Termo de consentimento clínico ou contrato de prestação.
-- [ ] **R-38: aprova a spec?** Já relida, alinhada com seu pedido mais recente (total ou
-      parcela, nunca preço por item). Dependências (R-34, rota do PDF) prontas — falta só
-      seu sinal pra codar. Migration pequena, mas mexe no snapshot do aceite.
-- [ ] **Bug de FK ambígua em `agendamentos`** — mesmo padrão do bug do PDF, confirmado
-      acontecendo ao vivo em pelo menos 3 arquivos (`get-patient-workspace-data.ts`,
-      `get-visible-timeline-events.ts`, `prontuario/route.ts`). Conserto é mecânico e
-      barato — decidir se vira item (tipo o R-43) ou se corrijo direto na próxima sessão.
+- [ ] **R-40: qual contrato?** Termo de consentimento clínico ou contrato de prestação —
+      ainda sem decisão.
+- [ ] **R-44 — incluir as 2 telas extras agora?** Achei que `command-palette.tsx` e
+      `atender-agora-modal.tsx` também têm busca sensível a acento (a spec do R-31a só
+      previa 5 telas, são 7 reais). Não corrigi — pode ser dentro do R-44 (já é varredura
+      dedicada) ou esperar.
+- [ ] **R-45 (recall automático)** — você disse que ia mexer no WhatsApp amanhã de manhã.
 
 ## Próximo da fila
 
-R-39a (commit) → gate de 2 contas → R-39b/R-39c → depois Bloco 1 (ficha: atrito e
-navegação). Fila completa no [ROADMAP](ROADMAP.md).
+Depois das decisões acima: R-39c (funil, spec já pronta) ou Bloco 1 (R-31b depende do
+R-31a estar no ar; R-41 acabou de destravar; R-29/R-30 esperam o mesmo gate). Fila
+completa no [ROADMAP](ROADMAP.md).
