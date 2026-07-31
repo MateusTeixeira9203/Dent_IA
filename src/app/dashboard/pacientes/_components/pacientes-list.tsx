@@ -33,9 +33,9 @@ export async function PacientesList({ canCreate, params }: PacientesListProps) {
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
-  // Dentista vê apenas os seus pacientes. Admin e secretária vêem todos da clínica.
-  const isDentista = dentista.role === 'dentista';
-
+  // R-29 — paciente é da clínica, todo dentista vê todos (decisão do Mateus 29/07).
+  // Sem filtro por dentista_id: a RLS de pacientes já libera a clínica inteira, e um
+  // filtro extra aqui só criava divergência entre a lista (vazia) e a URL direta (abre).
   let query = supabase
     .from('pacientes')
     .select(
@@ -44,11 +44,6 @@ export async function PacientesList({ canCreate, params }: PacientesListProps) {
       { count: 'exact' },
     )
     .eq('clinica_id', dentista.clinica_id);
-
-  if (isDentista) {
-    // Filtro estrito: Dentistas convidados veem apenas os próprios pacientes
-    query = query.eq('dentista_id', dentista.id);
-  }
 
   if (q) {
     query = query.or(
