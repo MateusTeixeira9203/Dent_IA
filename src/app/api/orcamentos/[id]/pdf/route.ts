@@ -13,12 +13,16 @@ export async function GET(
 
   const supabase = await createClient();
 
-  const { data: raw } = await supabase
+  // orcamentos tem 3 FKs pra dentistas (dentista_id, aprovado_por_id,
+  // plano_definido_por_id — R-34) — sem desambiguar, o Postgrest devolve 300 (Multiple
+  // Choices) em vez do erro real, e `data` vem null. Achado 30/07: a rota nunca gerou um
+  // PDF de verdade, mascarado como "não encontrado".
+  const { data: raw, error } = await supabase
     .from('orcamentos')
     .select(`
       id, status, total, desconto, validade_dias, condicoes_pagamento, created_at,
       paciente:pacientes(nome, telefone),
-      dentista:dentistas(nome),
+      dentista:dentistas!orcamentos_dentista_id_fkey(nome),
       itens:orcamento_itens(descricao, quantidade, preco_unitario, preco_total),
       pagamentos(valor, status, forma_pagamento, data_pagamento)
     `)
@@ -26,6 +30,7 @@ export async function GET(
     .eq('clinica_id', dentista.clinica_id)
     .maybeSingle();
 
+  if (error) return new Response(`Erro ao carregar orçamento: ${error.message}`, { status: 500 });
   if (!raw) return new Response('Orçamento não encontrado', { status: 404 });
 
   const html = buildOrcamentoHTML(raw as unknown as OrcamentoHtmlData);
