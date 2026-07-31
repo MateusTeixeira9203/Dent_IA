@@ -339,13 +339,13 @@ body{background:#fafafa;margin:0;padding:0}
 .orc-meta-val{font-size:13px;font-weight:600;color:#fff}
 .orc-body{padding:32px 40px}
 .orc-section{margin-bottom:32px}
-.orc-section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.18em;color:#2f9c85;margin-bottom:14px}
-.orc-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;margin-bottom:6px;background:#f9fafb;border:1px solid #f0f0f0}
+.orc-section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.18em;color:#2f9c85;margin-bottom:14px;page-break-after:avoid}
+.orc-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;margin-bottom:6px;background:#f9fafb;border:1px solid #f0f0f0;page-break-inside:avoid}
 .orc-item-num{width:24px;height:24px;border-radius:6px;background:rgba(47,156,133,0.12);color:#2f9c85;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .orc-item-desc{flex:1;font-size:14px;color:#1a1a1a;font-weight:500}
 .orc-item-qty{font-size:11px;color:#999;font-family:ui-monospace,monospace;white-space:nowrap}
 .orc-item-price{font-size:14px;font-weight:700;color:#1a1a1a;font-family:ui-monospace,monospace;white-space:nowrap}
-.orc-totals{display:flex;justify-content:flex-end;margin-top:16px}
+.orc-totals{display:flex;justify-content:flex-end;margin-top:16px;page-break-inside:avoid}
 .orc-totals-box{background:linear-gradient(135deg,rgba(47,156,133,0.08) 0%,rgba(47,156,133,0.04) 100%);border:1px solid rgba(47,156,133,0.2);border-radius:14px;padding:18px 22px;width:280px}
 .orc-totals-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13px;color:#666}
 .orc-totals-row .val{font-family:ui-monospace,monospace;font-weight:600}
@@ -353,7 +353,7 @@ body{background:#fafafa;margin:0;padding:0}
 .orc-grand-total{display:flex;justify-content:space-between;align-items:baseline;padding:6px 0 2px}
 .orc-grand-total .lbl{font-size:15px;font-weight:700;color:#0d0d0d}
 .orc-grand-total .val{font-size:22px;font-weight:800;color:#2f9c85;font-family:ui-monospace,monospace}
-.orc-payment-card{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;margin-bottom:8px;border:1px solid}
+.orc-payment-card{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;margin-bottom:8px;border:1px solid;page-break-inside:avoid}
 .orc-payment-pago{background:rgba(47,156,133,0.05);border-color:rgba(47,156,133,0.2)}
 .orc-payment-pendente{background:#fafafa;border-color:#ebebeb}
 .orc-payment-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
@@ -366,12 +366,17 @@ body{background:#fafafa;margin:0;padding:0}
 .orc-payment-amount-pendente{color:#999}
 .orc-progress{background:#ebebeb;border-radius:99px;height:6px;overflow:hidden;margin:12px 0 6px}
 .orc-progress-bar{height:100%;background:linear-gradient(90deg,#2f9c85,#1a7a65);border-radius:99px;transition:width 0.5s}
-.orc-cond{background:#f9fafb;border:1px solid #ebebeb;border-radius:10px;padding:14px 16px;font-size:13px;color:#555;line-height:1.6}
+.orc-cond{background:#f9fafb;border:1px solid #ebebeb;border-radius:10px;padding:14px 16px;font-size:13px;color:#555;line-height:1.6;page-break-inside:avoid}
 .orc-footer-note{font-size:11px;color:#bbb;margin-top:24px;padding-top:16px;border-top:1px solid #f0f0f0;font-style:italic;text-align:center}
 .orc-footer{background:#f9fafb;border-top:1px solid #f0f0f0;padding:16px 40px;display:flex;justify-content:space-between;align-items:center}
 .orc-footer-brand{font-size:12px;font-weight:700;color:#2f9c85}
 .orc-footer-meta{font-size:10px;color:#bbb}
-@media print{body{background:#fff}.no-print{display:none!important}.orc-page{max-width:none}}
+@media print{
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
+  body{background:#fff}
+  .no-print{display:none!important}
+  .orc-page{max-width:none}
+}
 `;
 
 // ── Builders públicos ──────────────────────────────────────────────────────────
