@@ -2,6 +2,7 @@
 
 import { requireClinicContext } from "@/server/auth/clinic";
 import { revalidatePath } from "next/cache";
+import { buscarPossiveisDuplicatas, type CandidatoDuplicata } from "@/server/patients/buscar-duplicatas";
 
 export async function atualizarPaciente(
   pacienteId: string,
@@ -126,11 +127,24 @@ export async function criarPacienteRapido(dados: {
   nome: string;
   telefone: string | null;
   dentistaId?: string;
-}): Promise<{ error?: string; id?: string }> {
+  /** R-31a §3.1 — mesmo campo de `createPaciente`: true depois que o dentista já viu o
+   *  aviso de nome duplicado e quer cadastrar mesmo assim. */
+  confirmarMesmoAssim?: boolean;
+}): Promise<{ error?: string; id?: string; duplicatas?: CandidatoDuplicata[] }> {
   const { supabase, user, clinicId, role } = await requireClinicContext();
 
   const nome = dados.nome.trim();
   if (!nome) return { error: "Informe o nome do paciente." };
+
+  // R-31a §3.1 — hoje este caminho não checava nada; passa a chamar a mesma função do
+  // cadastro completo. Sem CPF/data de nascimento aqui, então "cpf"/"nome_e_nascimento"
+  // nunca aparecem — mas nome exato e nome+telefone sim.
+  if (!dados.confirmarMesmoAssim) {
+    const duplicatas = await buscarPossiveisDuplicatas(supabase, clinicId, {
+      nome, telefone: dados.telefone,
+    });
+    if (duplicatas.length > 0) return { duplicatas };
+  }
 
   const { data: dentistaPerfil } = await supabase
     .from("dentistas")

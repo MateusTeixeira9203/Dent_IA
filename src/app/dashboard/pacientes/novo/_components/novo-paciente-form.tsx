@@ -9,12 +9,15 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { createPaciente } from '../actions';
+import type { CandidatoDuplicata } from '@/server/patients/buscar-duplicatas';
 import { AppInput } from '@/components/ui/app-input';
 import { AppTextarea } from '@/components/ui/app-textarea';
 import { AppLabel } from '@/components/ui/app-label';
 import { AppFormField } from '@/components/ui/app-form-field';
 import { BackHeader } from '@/components/ui/back-header';
 import { DateInputDMY } from '@/components/ui/date-input-dmy';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -78,6 +81,8 @@ export default function NovoPacienteForm({ isSecretaria, dentistas }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  /** R-31a §3.1 — aviso de nome duplicado; nunca bloqueia, só pede confirmação. */
+  const [duplicatas, setDuplicatas] = useState<CandidatoDuplicata[] | null>(null);
 
   const [form, setForm] = useState({
     nome: '',
@@ -104,21 +109,7 @@ export default function NovoPacienteForm({ isSecretaria, dentistas }: Props) {
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setForm((prev) => ({ ...prev, [field]: e.target.value }));
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    if (!form.nome.trim()) { setError('O nome do paciente é obrigatório.'); return; }
-    if (isSecretaria && !dentistaId) { setError('Selecione o dentista responsável pelo paciente.'); return; }
-    if (eMenor && !form.responsavel_nome.trim()) { setError('Paciente menor de idade requer nome do responsável.'); return; }
-    if (form.cpf) {
-      const digits = form.cpf.replace(/\D/g, '');
-      if (digits.length !== 11) { setError('CPF inválido. Digite os 11 dígitos.'); return; }
-    }
-    if (form.telefone) {
-      const digits = form.telefone.replace(/\D/g, '');
-      if (digits.length < 10) { setError('Telefone inválido. Digite DDD + número (mínimo 10 dígitos).'); return; }
-    }
-
+  const enviar = (confirmarMesmoAssim: boolean) => {
     startTransition(async () => {
       const result = await createPaciente({
         nome:            form.nome.trim(),
@@ -134,14 +125,34 @@ export default function NovoPacienteForm({ isSecretaria, dentistas }: Props) {
         responsavel_nome:       eMenor ? (form.responsavel_nome.trim() || null) : null,
         responsavel_telefone:   eMenor ? (form.responsavel_telefone.trim() || null) : null,
         responsavel_parentesco: eMenor ? (form.responsavel_parentesco || null) : null,
+        confirmarMesmoAssim,
       });
       if (result.success) {
         toast.success('Paciente cadastrado com sucesso!');
         router.push('/dashboard/pacientes');
+      } else if (result.duplicatas?.length) {
+        setDuplicatas(result.duplicatas);
       } else {
         setError(result.error ?? 'Erro ao cadastrar paciente.');
       }
     });
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!form.nome.trim()) { setError('O nome do paciente é obrigatório.'); return; }
+    if (isSecretaria && !dentistaId) { setError('Selecione o dentista responsável pelo paciente.'); return; }
+    if (eMenor && !form.responsavel_nome.trim()) { setError('Paciente menor de idade requer nome do responsável.'); return; }
+    if (form.cpf) {
+      const digits = form.cpf.replace(/\D/g, '');
+      if (digits.length !== 11) { setError('CPF inválido. Digite os 11 dígitos.'); return; }
+    }
+    if (form.telefone) {
+      const digits = form.telefone.replace(/\D/g, '');
+      if (digits.length < 10) { setError('Telefone inválido. Digite DDD + número (mínimo 10 dígitos).'); return; }
+    }
+    enviar(false);
   };
 
   return (
@@ -404,6 +415,56 @@ export default function NovoPacienteForm({ isSecretaria, dentistas }: Props) {
           </button>
         </div>
       </form>
+
+      {/* R-31a §3.1 — nome igual avisa, nunca bloqueia. */}
+      <Dialog open={!!duplicatas} onOpenChange={(v) => { if (!v) setDuplicatas(null); }}>
+        <DialogContent className="rounded-3xl border-border max-w-md">
+          <DialogTitle className="font-heading font-semibold text-xl text-text-primary leading-tight">
+            Já existe um paciente com este nome
+          </DialogTitle>
+          <DialogDescription className="text-text-muted text-sm">
+            É a mesma pessoa, ou é outro paciente com nome parecido?
+          </DialogDescription>
+
+          <div className="space-y-2 py-2">
+            {duplicatas?.map((d) => (
+              <div key={d.id} className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-text-primary truncate">{d.nome}</p>
+                  <p className="text-xs text-text-secondary">
+                    {d.tem_ficha ? 'Já tem prontuário' : 'Sem prontuário ainda'}
+                    {d.telefone ? ` · ${d.telefone}` : ''}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  className="rounded-xl border-border text-text-primary hover:bg-surface-alt shrink-0"
+                  onClick={() => router.push(`/dashboard/pacientes/${d.id}`)}
+                >
+                  Usar este
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => setDuplicatas(null)}
+              className="flex-1 rounded-xl border-border text-text-primary hover:bg-surface-alt"
+            >
+              Cancelar
+            </Button>
+            <Button
+              disabled={isPending}
+              onClick={() => { setDuplicatas(null); enviar(true); }}
+              className="flex-1 rounded-xl bg-teal text-white hover:bg-teal-lt font-semibold"
+            >
+              {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Cadastrar outro'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -33,6 +33,7 @@ import type {
 import { criarDespesa, excluirDespesa, criarReceita, excluirReceita, exportarFinanceiroCsv, buscarOrcamentosPendentesPorPaciente, registrarRecebimento } from '../actions';
 import { downloadCsv } from '@/lib/export/csv';
 import { parseValorBR, formatValorBR } from '@/lib/valor-br';
+import { normalizarNome } from '@/lib/normalizar-nome';
 import type { DentistaRole } from '@/types/database';
 import type { PlanoId } from '@/lib/planos';
 import { PlanGuard } from '@/components/plan-guard';
@@ -163,7 +164,7 @@ export function FinanceiroClient({
     const { data } = await supabaseClient
       .from('pacientes')
       .select('id, nome')
-      .ilike('nome', `%${nome}%`)
+      .ilike('nome_busca', `%${normalizarNome(nome)}%`)
       .limit(6);
     setRecSugestoes(data ?? []);
   }, [supabaseClient]);

@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { getDentistaCached } from '@/lib/get-dentista';
 import { PacientesTable } from '@/components/pacientes/pacientes-table';
+import { normalizarNome } from '@/lib/normalizar-nome';
 
 export const PAGE_SIZE = 25;
 
@@ -46,8 +47,9 @@ export async function PacientesList({ canCreate, params }: PacientesListProps) {
     .eq('clinica_id', dentista.clinica_id);
 
   if (q) {
+    // R-31a §3.3 — nome_busca é insensível a acento; email/telefone continuam como antes.
     query = query.or(
-      `nome.ilike.%${q}%,email.ilike.%${q}%,telefone.ilike.%${q}%`,
+      `nome_busca.ilike.%${normalizarNome(q)}%,email.ilike.%${q}%,telefone.ilike.%${q}%`,
     );
   }
 

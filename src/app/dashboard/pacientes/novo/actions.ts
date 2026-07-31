@@ -3,6 +3,7 @@
 import { requireClinicContext } from "@/server/auth/clinic";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { buscarPossiveisDuplicatas, type CandidatoDuplicata } from "@/server/patients/buscar-duplicatas";
 
 interface CreatePacienteInput {
   nome: string;
@@ -18,11 +19,14 @@ interface CreatePacienteInput {
   responsavel_nome?: string | null;
   responsavel_telefone?: string | null;
   responsavel_parentesco?: string | null;
+  /** R-31a §3.1 — true depois que o dentista já viu o aviso de nome duplicado e escolheu
+   *  "Cadastrar outro" mesmo assim. CPF continua bloqueando mesmo com isto marcado. */
+  confirmarMesmoAssim?: boolean;
 }
 
 export async function createPaciente(
   data: CreatePacienteInput
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; duplicatas?: CandidatoDuplicata[] }> {
   const { supabase, user, clinicId } = await requireClinicContext();
 
   const { data: dentistaPerfil } = await supabase
@@ -36,18 +40,22 @@ export async function createPaciente(
 
   const dentistaAlvo = data.dentistaId ?? dentistaPerfil.id;
 
-  if (data.cpf) {
-    const cpfFormatted = data.cpf.trim();
-    const cpfRaw = cpfFormatted.replace(/\D/g, '');
-    const { data: existente } = await supabase
-      .from('pacientes')
-      .select('id, nome')
-      .eq('clinica_id', clinicId)
-      .or(`cpf.eq.${cpfFormatted},cpf.eq.${cpfRaw}`)
-      .maybeSingle();
-    if (existente) {
-      return { success: false, error: `CPF já cadastrado para o paciente "${existente.nome}".` };
-    }
+  // R-31a §3.1 — checagem única, também usada por criarPacienteRapido. CPF sempre bloqueia
+  // (identificador de pessoa); nome igual só avisa, e só quando ainda não foi confirmado.
+  const duplicatas = await buscarPossiveisDuplicatas(supabase, clinicId, {
+    nome: data.nome,
+    cpf: data.cpf,
+    telefone: data.telefone,
+    dataNascimento: data.data_nascimento,
+  });
+
+  const duplicataCpf = duplicatas.find((d) => d.motivo === 'cpf');
+  if (duplicataCpf) {
+    return { success: false, error: `CPF já cadastrado para o paciente "${duplicataCpf.nome}".` };
+  }
+
+  if (duplicatas.length > 0 && !data.confirmarMesmoAssim) {
+    return { success: false, duplicatas };
   }
 
   const { error } = await supabase.from("pacientes").insert({

@@ -55,6 +55,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { createClient } from '@/lib/supabase/client';
 import { parseValorBR, formatValorBR } from '@/lib/valor-br';
+import { normalizarNome } from '@/lib/normalizar-nome';
 import type { OrcamentoRow, OrcamentoItemRow, PagamentoRow } from '../page';
 import { BotaoDownloadPDF } from '@/components/orcamentos/botao-download-pdf';
 import { BotaoEnviarWhatsApp } from '@/components/orcamentos/botao-enviar-whatsapp';
@@ -236,7 +237,7 @@ export function OrcamentosClient({
       const { data } = await supabase
         .from('pacientes')
         .select('id, nome')
-        .ilike('nome', `%${nome}%`)
+        .ilike('nome_busca', `%${normalizarNome(nome)}%`)
         .limit(6)
         .abortSignal(controller.signal);
       if (!controller.signal.aborted) setPacienteSugestoes(data ?? []);

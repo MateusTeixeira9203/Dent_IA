@@ -93,6 +93,7 @@ import {
 } from '../actions';
 import { criarPacienteRapido } from '@/app/dashboard/pacientes/[id]/actions';
 import { createClient } from '@/lib/supabase/client';
+import { normalizarNome } from '@/lib/normalizar-nome';
 import { HelpTooltip } from '@/components/ui/help-tooltip';
 import type { DentistaRole, AgendamentoStatus } from '@/types/database';
 import { toast } from 'sonner';
@@ -329,6 +330,9 @@ export function AgendamentosClient({
   const [pacienteSugestoes, setPacienteSugestoes] = useState<{ id: string; nome: string }[]>([]);
   const [showSugestoes, setShowSugestoes] = useState(false);
   const [criandoPacienteNovo, setCriandoPacienteNovo] = useState(false);
+  /** R-31a §3.2 — trava síncrona: pointerdown e o click de fallback (teclado) podem
+   *  disparar o mesmo handler em sequência antes do re-render desabilitar o botão. */
+  const criandoPacienteNovoRef = useRef(false);
   /** O servidor recusou por conflito do DENTISTA — libera o "marcar mesmo assim". */
   const [conflitoServidor, setConflitoServidor] = useState(false);
 
@@ -359,6 +363,8 @@ export function AgendamentosClient({
   const [encaixeError, setEncaixeError] = useState<string | null>(null);
   const [encaixeConflito, setEncaixeConflito] = useState(false);
   const [criandoPacienteEncaixe, setCriandoPacienteEncaixe] = useState(false);
+  /** R-31a §3.2 — mesma trava síncrona do fluxo de novo agendamento. */
+  const criandoPacienteEncaixeRef = useRef(false);
 
   // Agendamentos filtrados pelo dentista selecionado (somente secretária)
   const agendamentosFiltrados = useMemo(() => {
@@ -557,7 +563,7 @@ export function AgendamentosClient({
       const { data } = await supabase
         .from('pacientes')
         .select('id, nome')
-        .ilike('nome', `%${nome}%`)
+        .ilike('nome_busca', `%${normalizarNome(nome)}%`)
         .limit(6)
         .abortSignal(controller.signal);
       if (!controller.signal.aborted) setPacienteSugestoes(data ?? []);
@@ -567,13 +573,25 @@ export function AgendamentosClient({
   // Cadastro rápido — busca não achou; cria só com o nome e já seleciona pro
   // agendamento. Vincula ao dentista-alvo (não a quem está logado) pra secretária
   // conseguir agendar pra outro profissional e ele achar o paciente depois.
-  const handleCriarPacienteRapidoNovo = async () => {
+  const handleCriarPacienteRapidoNovo = async (confirmarMesmoAssim = false) => {
+    if (criandoPacienteNovoRef.current) return;
     const nome = novoForm.pacienteSearch.trim();
     if (!nome) return;
+    criandoPacienteNovoRef.current = true;
     setCriandoPacienteNovo(true);
     const dentistaAlvo = isSecretaria ? novoForm.dentistaId : dentistaAtualId;
-    const res = await criarPacienteRapido({ nome, telefone: null, dentistaId: dentistaAlvo || undefined });
+    const res = await criarPacienteRapido({ nome, telefone: null, dentistaId: dentistaAlvo || undefined, confirmarMesmoAssim });
+    criandoPacienteNovoRef.current = false;
     setCriandoPacienteNovo(false);
+    // R-31a §3.1 — avisa, não bloqueia: mesma checagem do cadastro completo (G5).
+    if (res.duplicatas?.length) {
+      const d = res.duplicatas[0];
+      toast(`Já existe um paciente chamado "${d.nome}"`, {
+        description: 'É a mesma pessoa? Selecione-o na busca, ou confirme pra cadastrar outro.',
+        action: { label: 'Cadastrar mesmo assim', onClick: () => void handleCriarPacienteRapidoNovo(true) },
+      });
+      return;
+    }
     if (res.error || !res.id) {
       toast.error(res.error ?? 'Não foi possível cadastrar o paciente.');
       return;
@@ -845,19 +863,31 @@ export function AgendamentosClient({
       encaixeAbortRef.current = controller;
       const supabase = createClient();
       const { data } = await supabase
-        .from('pacientes').select('id, nome').ilike('nome', `%${nome}%`).limit(6)
+        .from('pacientes').select('id, nome').ilike('nome_busca', `%${normalizarNome(nome)}%`).limit(6)
         .abortSignal(controller.signal);
       if (!controller.signal.aborted) setEncaixeSugestoes(data ?? []);
     }, 300);
   }, []);
 
-  const handleCriarPacienteRapidoEncaixe = async () => {
+  const handleCriarPacienteRapidoEncaixe = async (confirmarMesmoAssim = false) => {
+    if (criandoPacienteEncaixeRef.current) return;
     const nome = encaixeForm.pacienteSearch.trim();
     if (!nome) return;
+    criandoPacienteEncaixeRef.current = true;
     setCriandoPacienteEncaixe(true);
     const dentistaAlvo = isSecretaria ? encaixeForm.dentistaId : dentistaAtualId;
-    const res = await criarPacienteRapido({ nome, telefone: null, dentistaId: dentistaAlvo || undefined });
+    const res = await criarPacienteRapido({ nome, telefone: null, dentistaId: dentistaAlvo || undefined, confirmarMesmoAssim });
+    criandoPacienteEncaixeRef.current = false;
     setCriandoPacienteEncaixe(false);
+    // R-31a §3.1 — mesma checagem do cadastro completo (G5).
+    if (res.duplicatas?.length) {
+      const d = res.duplicatas[0];
+      toast(`Já existe um paciente chamado "${d.nome}"`, {
+        description: 'É a mesma pessoa? Selecione-o na busca, ou confirme pra cadastrar outro.',
+        action: { label: 'Cadastrar mesmo assim', onClick: () => void handleCriarPacienteRapidoEncaixe(true) },
+      });
+      return;
+    }
     if (res.error || !res.id) {
       toast.error(res.error ?? 'Não foi possível cadastrar o paciente.');
       return;
@@ -1314,38 +1344,51 @@ export function AgendamentosClient({
                     autoComplete="off"
                     onChange={(e) => {
                       const v = e.target.value;
-                      setNovoForm((f) => ({ ...f, pacienteSearch: v, pacienteId: '', pacienteNome: '' }));
+                      setNovoForm((f) => (
+                        // R-31a §3.2 — digitar só invalida a seleção se o texto mudar de
+                        // fato em relação ao nome confirmado; não zera a cada tecla.
+                        f.pacienteId && v === f.pacienteNome
+                          ? { ...f, pacienteSearch: v }
+                          : { ...f, pacienteSearch: v, pacienteId: '', pacienteNome: '' }
+                      ));
                       setShowSugestoes(true);
                       void buscarPacientes(v);
                     }}
-                    onBlur={() => setTimeout(() => setShowSugestoes(false), 150)}
+                    onBlur={() => setShowSugestoes(false)}
                     className="rounded-xl bg-surface-alt border-border text-text-primary pl-10 focus:border-teal/40 transition-all"
                   />
                 </div>
                 {showSugestoes && novoForm.pacienteSearch.trim().length >= 2 && (pacienteSugestoes.length > 0 || !novoForm.pacienteId) && (
                   <div className="absolute z-50 w-full bg-surface border border-border rounded-xl shadow-lg mt-1 overflow-hidden">
-                    {pacienteSugestoes.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => {
-                          setNovoForm((f) => ({
-                            ...f,
-                            pacienteSearch: p.nome,
-                            pacienteId: p.id,
-                            pacienteNome: p.nome,
-                          }));
-                          setShowSugestoes(false);
-                          setPacienteSugestoes([]);
-                        }}
-                        className="w-full px-4 py-2.5 text-sm text-left hover:bg-surface-alt transition-colors text-text-primary"
-                      >
-                        {p.nome}
-                      </button>
-                    ))}
+                    {pacienteSugestoes.map((p) => {
+                      const selecionar = () => {
+                        setNovoForm((f) => ({
+                          ...f,
+                          pacienteSearch: p.nome,
+                          pacienteId: p.id,
+                          pacienteNome: p.nome,
+                        }));
+                        setShowSugestoes(false);
+                        setPacienteSugestoes([]);
+                      };
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          // R-31a §3.2 — confirma no pointerdown (antes do blur fechar a
+                          // lista), não no click; onClick fica só de fallback pro teclado.
+                          onPointerDown={(e) => { e.preventDefault(); selecionar(); }}
+                          onClick={selecionar}
+                          className="w-full px-4 py-2.5 text-sm text-left hover:bg-surface-alt transition-colors text-text-primary"
+                        >
+                          {p.nome}
+                        </button>
+                      );
+                    })}
                     {!novoForm.pacienteId && (
                       <button
                         type="button"
+                        onPointerDown={(e) => { e.preventDefault(); void handleCriarPacienteRapidoNovo(); }}
                         onClick={() => void handleCriarPacienteRapidoNovo()}
                         disabled={criandoPacienteNovo}
                         className={`w-full px-4 py-2.5 text-sm text-left flex items-center gap-2 font-semibold text-teal-ink hover:bg-teal/5 transition-colors disabled:opacity-60 ${pacienteSugestoes.length > 0 ? 'border-t border-border' : ''}`}
@@ -1637,24 +1680,38 @@ export function AgendamentosClient({
                 autoComplete="off"
                 onChange={e => {
                   const v = e.target.value;
-                  setEncaixeForm(f => ({ ...f, pacienteSearch: v, pacienteId: '', pacienteNome: '' }));
+                  setEncaixeForm(f => (
+                    // R-31a §3.2 — mesma regra do fluxo de novo agendamento: só invalida
+                    // a seleção se o texto realmente mudou.
+                    f.pacienteId && v === f.pacienteNome
+                      ? { ...f, pacienteSearch: v }
+                      : { ...f, pacienteSearch: v, pacienteId: '', pacienteNome: '' }
+                  ));
                   setShowEncaixeSugestoes(true);
                   void buscarEncaixePacientes(v);
                 }}
-                onBlur={() => setTimeout(() => setShowEncaixeSugestoes(false), 150)}
+                onBlur={() => setShowEncaixeSugestoes(false)}
                 className="rounded-xl bg-surface-alt border-border text-text-primary"
               />
               {showEncaixeSugestoes && encaixeForm.pacienteSearch.trim().length >= 2 && (encaixeSugestoes.length > 0 || !encaixeForm.pacienteId) && (
                 <div className="absolute z-50 w-full bg-surface border border-border rounded-xl shadow-lg mt-1 overflow-hidden">
-                  {encaixeSugestoes.map(p => (
-                    <button key={p.id} type="button"
-                      onClick={() => { setEncaixeForm(f => ({ ...f, pacienteSearch: p.nome, pacienteId: p.id, pacienteNome: p.nome })); setShowEncaixeSugestoes(false); }}
-                      className="w-full px-4 py-2.5 text-sm text-left hover:bg-surface-alt transition-colors text-text-primary"
-                    >{p.nome}</button>
-                  ))}
+                  {encaixeSugestoes.map(p => {
+                    const selecionar = () => {
+                      setEncaixeForm(f => ({ ...f, pacienteSearch: p.nome, pacienteId: p.id, pacienteNome: p.nome }));
+                      setShowEncaixeSugestoes(false);
+                    };
+                    return (
+                      <button key={p.id} type="button"
+                        onPointerDown={e => { e.preventDefault(); selecionar(); }}
+                        onClick={selecionar}
+                        className="w-full px-4 py-2.5 text-sm text-left hover:bg-surface-alt transition-colors text-text-primary"
+                      >{p.nome}</button>
+                    );
+                  })}
                   {!encaixeForm.pacienteId && (
                     <button
                       type="button"
+                      onPointerDown={e => { e.preventDefault(); void handleCriarPacienteRapidoEncaixe(); }}
                       onClick={() => void handleCriarPacienteRapidoEncaixe()}
                       disabled={criandoPacienteEncaixe}
                       className={`w-full px-4 py-2.5 text-sm text-left flex items-center gap-2 font-semibold text-teal hover:bg-teal/5 transition-colors disabled:opacity-60 ${encaixeSugestoes.length > 0 ? 'border-t border-border' : ''}`}
