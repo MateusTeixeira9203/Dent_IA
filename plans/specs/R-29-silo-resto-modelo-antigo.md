@@ -1,9 +1,11 @@
 # R-29 — Restos do modelo antigo de silo: identidade multi-clínica e lista de pacientes
 
-> **SPEC** · **R-29** · fase **plano** — escrita 29/07, **não codada** · **Modelo:** Sonnet na
-> execução (o diagnóstico está fechado; a ambiguidade de produto foi resolvida pelo Mateus).
-> **Aberto:** 2026-07-29 · **Depende de:** nada. **Encosta na** hierarquia 3.1 (Spec 1 + Fatia A,
-> aplicadas 18/07) — este item é a **dívida que ficou** dessa migração.
+> **SPEC** · **R-29** · fase **aprovada** — escrita 29/07, 2 defeitos corrigidos 30/07 (índice
+> que já existia, gate do admin desatualizado — ver Escopo e Gates), **não codada** ·
+> **Modelo:** Sonnet na execução (o diagnóstico está fechado; a ambiguidade de produto foi
+> resolvida pelo Mateus). **Aberto:** 2026-07-29 · **Depende de:** nada. **Encosta na**
+> hierarquia 3.1 (Spec 1 + Fatia A, aplicadas 18/07) — este item é a **dívida que ficou**
+> dessa migração.
 
 ## Por que existe
 
@@ -79,9 +81,13 @@ por dentista. Os outros `.eq('dentista_id', …)` do código são agenda, financ
 
 ## Escopo
 
-**Cobre:** A (função de RLS) · B (filtro da lista) · índice único `(user_id, clinica_id)` em
-`dentistas` como trava (hoje **não existe** — sem ele, nem a função corrigida fica determinística
-se alguém duplicar o vínculo; hoje há 0 duplicatas, então é barato travar agora).
+**Cobre:** A (função de RLS) · B (filtro da lista).
+
+**Correção 30/07:** esta spec afirmava que o índice único `(user_id, clinica_id)` em
+`dentistas` "hoje não existe" e propunha criá-lo. **Existe** — `idx_dentistas_clinica_user`,
+`UNIQUE (clinica_id, user_id)` (ordem de coluna trocada, mesma trava). Confirmado por query
+direta contra `pg_indexes`. A função corrigida abaixo já é determinística por causa dele —
+nada a criar nesta parte.
 
 **Não cobre:** agenda e financeiro (privados por design, e o Mateus reafirmou) · unificar
 `clinica_usuarios` × `dentistas` como fonte de papel (`get_my_role` já lê os dois, com fallback —
@@ -97,9 +103,6 @@ se alguém duplicar o vínculo; hoje há 0 duplicatas, então é barato travar a
 ### Migration (risco **alto** — toca autorização de tudo)
 
 ```sql
-create unique index if not exists idx_dentistas_user_clinica
-  on public.dentistas(user_id, clinica_id);
-
 create or replace function public.get_my_dentista_id()
 returns uuid language sql stable security definer set search_path = public as $$
   select d.id
@@ -125,15 +128,71 @@ vez de abrir, que é a direção certa — mas é justamente por isso que o gate
 - [ ] Lista de pacientes e RLS de pacientes concordam: **mesma clínica → mesmo conjunto**, por qualquer caminho (lista ou URL direta).
 - [ ] Agenda e financeiro **não mudam** — continuam privados por dentista, secretária vê tudo.
 
+## Status — 🟡 codado e aplicado 30/07, gates de conta única verificados 30/07 — falta o par de 2 dentistas
+
+**Feito:** migration 120 (função corrigida) aplicada por Mateus, confirmada por
+`pg_get_functiondef`. `pacientes-list.tsx` sem o filtro `isDentista`. `typecheck`/`build`
+limpos. **Verificação por dado real** (não substitui o gate, mas prova a lógica): a única
+conta multi-clínica (`teste`) tem `active_clinica_id` = Império e dois perfis (`dentistas`),
+um em Império e um em Teste01 — a função nova resolve deterministicamente pro perfil de
+Império (o que o app já esperava); a antiga podia devolver qualquer um dos dois.
+
+**Verificado ao vivo 30/07** (conta `mateusteixeira834@gmail.com`, multi-clínica real —
+Império + Teste01): lista de pacientes troca de 5→1 ao trocar clínica ativa; URL direta pra
+paciente da clínica A enquanto ativa é B devolve 404 (não vaza dado, não é só lista vazia);
+`POST /api/user/switch-clinic` pra clínica sem membership devolve 403. Os 3 bullets de conta
+única abaixo estão cobertos.
+
+**Falta:** o par de **2 dentistas comuns diferentes** (não a mesma conta trocando de
+clínica) — isso exige login real, que eu não posso fazer (não digito senha de conta alheia).
+
+## Resto ainda aberto — `get_my_role()` (achado 30/07, 3ª ocorrência da mesma classe)
+
+Achado ao medir o risco de deixar a R-32 no ar sem gate. `get_my_role()` tem **o mesmo furo**
+que esta spec corrigiu no `get_my_dentista_id()` e que o item 9 da
+[R-35](R-35-riscos-nao-reportados.md) corrigiu no `has_active_membership()` — e passou batido
+nas duas:
+
+```sql
+COALESCE(
+  ( SELECT cu.role FROM clinica_usuarios cu ...
+    WHERE cu.clinica_id = u.active_clinica_id AND cu.status='ativo' ),  -- escopado
+  ( SELECT role FROM dentistas
+    WHERE user_id = auth.uid() AND ativo = true LIMIT 1 )               -- SEM clinica
+)
+```
+
+**Por que importa:** `get_my_role()` gateia `can_see_orcamento` (migration 121, R-32) — se o
+fallback disparar devolvendo `admin` de outra clínica, a pessoa vê **todos** os orçamentos da
+clínica ativa.
+
+**Não é alcançável hoje:** os 12 usuários têm vínculo ativo em `clinica_usuarios` casado com
+`active_clinica_id`, então o 1º ramo sempre resolve e o fallback nunca roda (conferido por query
+30/07). Some de vez com a [R-36](R-36-um-login-uma-clinica.md), mas a correção é de 1 linha e não
+precisa esperar por ela.
+
+**Correção:** o fallback ganha `AND clinica_id = (select active_clinica_id from users where
+id = auth.uid())`, igual ao que a migration 118 fez no `has_active_membership`.
+
+**O padrão é o achado de verdade:** três funções `SECURITY DEFINER` de autorização, três com
+fallback agnóstico de clínica. Vale varrer **todas** as helpers de RLS atrás do mesmo formato em
+vez de corrigir uma por vez conforme aparecem.
+
 ## Gates de aceite (exigem **2 contas logadas** — script não pega furo de policy)
 
 - [ ] Dentista agregado (não-admin) abre a lista → vê **todos** os pacientes da clínica; abrir por
       URL direta dá o mesmo resultado.
-- [ ] Esse mesmo dentista **não** vê orçamento/pagamento de outro dentista (a 3.1 continua de pé).
+- [ ] Esse mesmo dentista **não** vê orçamento/pagamento de **outro dentista não-admin** (a 3.1
+      continua de pé). **Admin e secretária vêem todos** — isso é esperado, não é furo: a
+      [R-32](R-32-orcamento-visivel-autor-admin-secretaria.md) mudou essa regra e já está
+      aplicada (migration 121, 30/07). O par de teste deste gate tem que ser dois dentistas
+      comuns; testar com a conta admin não prova o invariante da R-29 (visibilidade de admin é
+      regra da R-32, não desta spec).
 - [ ] Conta multi-clínica: cria um orçamento na clínica B → **enxerga e edita** o que acabou de
       criar (é o que está quebrado hoje).
 - [ ] Conta multi-clínica: salva uma ficha na clínica B → grava de verdade (conferir a linha no
       banco, não a mensagem da tela — UPDATE barrado por RLS mente).
-- [ ] Trocar de clínica no seletor e repetir: nenhum dado da clínica A aparece na B.
+- [x] Trocar de clínica no seletor e repetir: nenhum dado da clínica A aparece na B. — **verificado
+      30/07**, lista 5→1, URL direta 404.
 - [ ] Dentista de **outra** clínica continua sem ver nada — o silo entre clínicas não afrouxou.
 - [ ] Secretária: comportamento inalterado nas 3 telas (pacientes, agenda, financeiro).
