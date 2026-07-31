@@ -8,6 +8,7 @@ import { PenLine, RotateCcw, CheckCircle2, Loader2, AlertCircle, X } from 'lucid
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import { aceitarOrcamento } from '@/app/dashboard/orcamentos/actions';
 
 const SignaturePad = dynamic(
@@ -100,10 +101,10 @@ export function AceiteOrcamentoModal({
                     <PenLine className="w-4 h-4 text-teal-ink" />
                   </div>
                   <div>
-                    <DialogTitle className="font-heading text-lg text-text-primary leading-tight">
+                    <DialogTitle className="font-heading font-semibold text-xl text-text-primary leading-tight">
                       Aceite do orçamento
                     </DialogTitle>
-                    <DialogDescription className="text-xs text-text-secondary">
+                    <DialogDescription className="text-text-muted text-xs">
                       O paciente confirma que aceita pagar nestes termos.
                     </DialogDescription>
                   </div>
@@ -152,19 +153,20 @@ export function AceiteOrcamentoModal({
               </div>
 
               <div className="shrink-0 px-6 py-5 flex gap-3 border-t border-border">
-                <button
+                <Button
+                  variant="outline"
                   onClick={resetAndClose}
-                  className="flex-1 py-3 rounded-xl border border-border text-sm font-semibold text-text-secondary hover:bg-surface-alt transition-colors"
+                  className="flex-1 h-auto py-3 rounded-xl border-border text-text-primary hover:bg-surface-alt"
                 >
                   Cancelar
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={() => void handleConfirmar()}
-                  className="flex-1 py-3 rounded-xl bg-teal text-white text-sm font-semibold hover:bg-teal-lt transition-all flex items-center justify-center gap-2"
+                  className="flex-1 h-auto py-3 rounded-xl bg-teal text-white hover:bg-teal-lt font-semibold gap-2"
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   Confirmar aceite
-                </button>
+                </Button>
               </div>
             </motion.div>
           )}
@@ -198,13 +200,13 @@ export function AceiteOrcamentoModal({
                 <p className="font-semibold text-text-primary mb-1">Não foi possível registrar</p>
                 <p className="text-sm text-text-secondary">{erro}</p>
               </div>
-              <button
+              <Button
                 onClick={() => setStep('assinar')}
-                className="px-6 py-2.5 bg-teal text-white rounded-xl text-sm font-semibold hover:bg-teal-lt transition-colors flex items-center gap-1.5"
+                className="h-auto px-6 py-2.5 rounded-xl bg-teal text-white hover:bg-teal-lt font-semibold gap-1.5"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 Tentar novamente
-              </button>
+              </Button>
             </motion.div>
           )}
 

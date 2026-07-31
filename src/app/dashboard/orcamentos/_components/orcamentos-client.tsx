@@ -911,6 +911,9 @@ export function OrcamentosClient({
                   Valor Total
                 </th>
                 <th className="px-6 py-4 text-xs font-bold text-text-secondary uppercase tracking-[0.15em]">
+                  Pago
+                </th>
+                <th className="px-6 py-4 text-xs font-bold text-text-secondary uppercase tracking-[0.15em]">
                   Status
                 </th>
                 <th className="px-6 py-4 text-right" />
@@ -919,7 +922,7 @@ export function OrcamentosClient({
             <tbody className="divide-y divide-border">
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-sm text-text-secondary">
+                  <td colSpan={6} className="px-6 py-12 text-center text-sm text-text-secondary">
                     Nenhum orçamento encontrado.
                   </td>
                 </tr>
@@ -928,6 +931,12 @@ export function OrcamentosClient({
                 const s = STATUS_MAP[o.status] ?? STATUS_MAP.rascunho;
                 const Icon = s.icon;
                 const isNovo = isSecretaria && o.status === 'enviado' && !viewedIds.has(o.id);
+                // "Pago" — mesmo cálculo do resumo do painel lateral (:1182-1191).
+                const valorPagoRow = o.pagamentos
+                  .filter((p) => p.status === 'pago')
+                  .reduce((s2, p) => s2 + p.valor, 0);
+                const restanteRow = Math.max(0, Math.round(((o.total ?? 0) - valorPagoRow) * 100) / 100);
+                const quitadoRow = restanteRow <= 0 && valorPagoRow > 0;
                 return (
                   <motion.tr
                     initial={{ opacity: 0, x: -10 }}
@@ -983,6 +992,20 @@ export function OrcamentosClient({
                       <div className="font-mono text-sm font-semibold text-text-primary">
                         {formatCurrency(o.total)}
                       </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      {quitadoRow ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider bg-teal/10 text-teal">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Quitado
+                        </span>
+                      ) : valorPagoRow > 0 ? (
+                        <div className="font-mono text-xs text-text-secondary">
+                          {formatCurrency(valorPagoRow)} <span className="text-text-muted">de</span> {formatCurrency(o.total)}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-text-muted">—</span>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div
