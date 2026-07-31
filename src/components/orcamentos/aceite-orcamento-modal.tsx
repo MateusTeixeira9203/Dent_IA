@@ -82,12 +82,19 @@ export function AceiteOrcamentoModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v && step !== 'salvando') resetAndClose(); }}>
-      <DialogContent className="max-w-lg rounded-3xl p-0 overflow-hidden border-border" showCloseButton={false}>
+      {/* Cabe em qualquer altura de tela (achado 30/07: sem isto, num notebook real de
+          15-16", o conteúdo — 6 procedimentos + nome + assinatura + botões — passava da
+          tela e não tinha rolagem; o botão "Confirmar aceite" ficava inalcançável). */}
+      <DialogContent
+        className="flex flex-col max-w-lg rounded-3xl p-0 overflow-hidden border-border"
+        style={{ maxHeight: '90vh' }}
+        showCloseButton={false}
+      >
         <AnimatePresence mode="wait">
 
           {step === 'assinar' && (
-            <motion.div key="assinar" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+            <motion.div key="assinar" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col flex-1 min-h-0">
+              <div className="shrink-0 flex items-center justify-between px-6 py-4 border-b border-border">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-xl bg-teal/10 flex items-center justify-center">
                     <PenLine className="w-4 h-4 text-teal-ink" />
@@ -106,45 +113,45 @@ export function AceiteOrcamentoModal({
                 </button>
               </div>
 
-              {/* Resumo read-only — o paciente precisa ver o que está aceitando. O snapshot
-                  real é montado no servidor a partir do banco; isto é só a prévia. */}
-              <div className="mx-6 mt-4 rounded-2xl border border-border overflow-hidden">
-                {itens.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border/60 last:border-b-0 text-sm">
-                    <span className="text-text-primary truncate">
-                      {item.quantidade > 1 ? `${item.quantidade}× ` : ''}{item.descricao ?? '—'}
-                    </span>
-                    <span className="font-mono text-text-secondary shrink-0">R$ {fmt(item.preco_total ?? 0)}</span>
+              <div className="flex-1 min-h-0 overflow-y-auto px-6 pt-4 space-y-4">
+                {/* Resumo read-only — o paciente precisa ver o que está aceitando. O snapshot
+                    real é montado no servidor a partir do banco; isto é só a prévia. */}
+                <div className="rounded-2xl border border-border overflow-hidden">
+                  {itens.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border/60 last:border-b-0 text-sm">
+                      <span className="text-text-primary truncate">
+                        {item.quantidade > 1 ? `${item.quantidade}× ` : ''}{item.descricao ?? '—'}
+                      </span>
+                      <span className="font-mono text-text-secondary shrink-0">R$ {fmt(item.preco_total ?? 0)}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between px-4 py-2.5 bg-surface-alt">
+                    <span className="text-sm font-bold text-text-primary">Total</span>
+                    <span className="font-mono text-sm font-bold text-teal-ink">R$ {fmt(total ?? 0)}</span>
                   </div>
-                ))}
-                <div className="flex items-center justify-between px-4 py-2.5 bg-surface-alt">
-                  <span className="text-sm font-bold text-text-primary">Total</span>
-                  <span className="font-mono text-sm font-bold text-teal-ink">R$ {fmt(total ?? 0)}</span>
                 </div>
-              </div>
 
-              <div className="px-6 pt-4 space-y-1.5">
-                <Label htmlFor="aceite-assinado-por" className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">
-                  Nome de quem assina
-                </Label>
-                <Input
-                  id="aceite-assinado-por"
-                  value={assinadoPor}
-                  onChange={(e) => setAssinadoPor(e.target.value)}
-                  placeholder="Nome completo do paciente ou responsável"
-                  className="rounded-xl bg-surface-alt border-border text-text-primary"
-                />
-              </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="aceite-assinado-por" className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">
+                    Nome de quem assina
+                  </Label>
+                  <Input
+                    id="aceite-assinado-por"
+                    value={assinadoPor}
+                    onChange={(e) => { setAssinadoPor(e.target.value); setErro(null); }}
+                    placeholder="Nome completo do paciente ou responsável"
+                    className="rounded-xl bg-surface-alt border-border text-text-primary"
+                  />
+                </div>
 
-              <div className="px-6 pt-4">
                 <SignaturePad padRef={padRef} />
+
+                {erro && (
+                  <p className="text-xs text-coral-ink bg-coral-pale rounded-lg px-3 py-2">{erro}</p>
+                )}
               </div>
 
-              {erro && (
-                <p className="mx-6 mt-3 text-xs text-coral-ink bg-coral-pale rounded-lg px-3 py-2">{erro}</p>
-              )}
-
-              <div className="px-6 py-5 flex gap-3">
+              <div className="shrink-0 px-6 py-5 flex gap-3 border-t border-border">
                 <button
                   onClick={resetAndClose}
                   className="flex-1 py-3 rounded-xl border border-border text-sm font-semibold text-text-secondary hover:bg-surface-alt transition-colors"
