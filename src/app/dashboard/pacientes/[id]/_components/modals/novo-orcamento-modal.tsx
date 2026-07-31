@@ -23,6 +23,12 @@ import { ptBR } from 'date-fns/locale';
 import { parseValorBR, formatValorBR } from '@/lib/valor-br';
 import { stripDenteDoNome } from '@/lib/arcadas';
 import type { FichaParaOrc, ProcedimentoClinica, NovoOrcItem } from '../types';
+import type { FormaPagamento } from '@/app/dashboard/orcamentos/actions';
+
+const FORMA_LABEL: Record<FormaPagamento, string> = {
+  dinheiro: 'Dinheiro', pix: 'PIX', cartao_credito: 'Cartão de Crédito',
+  cartao_debito: 'Cartão de Débito', boleto: 'Boleto', outro: 'Outro',
+};
 
 interface NovoOrcamentoModalProps {
   open: boolean;
@@ -47,6 +53,14 @@ interface NovoOrcamentoModalProps {
   dentistasClinica: { id: string; nome: string }[];
   dentistaAlvoId: string;
   onDentistaAlvoChange: (id: string) => void;
+  planoForma: 'avista' | 'parcelado' | null;
+  setPlanoForma: (v: 'avista' | 'parcelado' | null) => void;
+  planoNumParcelas: string;
+  setPlanoNumParcelas: (v: string) => void;
+  planoPrimeiroVencimento: string;
+  setPlanoPrimeiroVencimento: (v: string) => void;
+  planoParcelasForma: FormaPagamento | '';
+  setPlanoParcelasForma: (v: FormaPagamento | '') => void;
 }
 
 export function NovoOrcamentoModal({
@@ -72,6 +86,14 @@ export function NovoOrcamentoModal({
   dentistasClinica,
   dentistaAlvoId,
   onDentistaAlvoChange,
+  planoForma,
+  setPlanoForma,
+  planoNumParcelas,
+  setPlanoNumParcelas,
+  planoPrimeiroVencimento,
+  setPlanoPrimeiroVencimento,
+  planoParcelasForma,
+  setPlanoParcelasForma,
 }: NovoOrcamentoModalProps) {
   const [valorFinalTexto, setValorFinalTexto] = useState(
     novoOrcValorFinal !== null ? formatValorBR(novoOrcValorFinal) : ''
@@ -357,6 +379,85 @@ export function NovoOrcamentoModal({
                   <p className="text-[10px] text-text-secondary font-mono">
                     {novoOrcItens.filter(i => i.descricao.trim()).length} item(s)
                   </p>
+                </div>
+
+                {/* R-34 — forma de pagamento, opcional, direto na criação. Sem escolher
+                    nada aqui, o orçamento nasce exatamente como hoje (sem plano). */}
+                <div className="space-y-1.5 pt-1">
+                  <Label className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">
+                    Forma de pagamento
+                  </Label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setPlanoForma(planoForma === 'avista' ? null : 'avista')}
+                      className={`py-2 rounded-xl text-xs font-semibold border transition-colors ${
+                        planoForma === 'avista'
+                          ? 'bg-teal/10 border-teal/40 text-teal'
+                          : 'border-border text-text-secondary hover:border-teal/30 hover:text-teal'
+                      }`}
+                    >
+                      À vista
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPlanoForma(planoForma === 'parcelado' ? null : 'parcelado')}
+                      className={`py-2 rounded-xl text-xs font-semibold border transition-colors ${
+                        planoForma === 'parcelado'
+                          ? 'bg-teal/10 border-teal/40 text-teal'
+                          : 'border-border text-text-secondary hover:border-teal/30 hover:text-teal'
+                      }`}
+                    >
+                      Parcelado
+                    </button>
+                  </div>
+
+                  {planoForma === 'parcelado' && (
+                    <div className="space-y-1.5 pt-0.5">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <div className="space-y-1">
+                          <Label className="text-[10px] text-text-secondary">Nº de parcelas</Label>
+                          <Input
+                            type="number" min={2} max={24}
+                            value={planoNumParcelas}
+                            onChange={(e) => setPlanoNumParcelas(e.target.value)}
+                            className="rounded-xl bg-surface border-border text-text-primary font-mono"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] text-text-secondary">1º vencimento</Label>
+                          <Input
+                            type="date"
+                            value={planoPrimeiroVencimento}
+                            onChange={(e) => setPlanoPrimeiroVencimento(e.target.value)}
+                            className="rounded-xl bg-surface border-border text-text-primary"
+                          />
+                        </div>
+                      </div>
+                      <Select
+                        value={planoParcelasForma || undefined}
+                        onValueChange={(v) => v && setPlanoParcelasForma(v as FormaPagamento)}
+                      >
+                        <SelectTrigger className="rounded-xl bg-surface border-border text-text-primary">
+                          <SelectValue placeholder="Forma das parcelas (opcional)..." />
+                        </SelectTrigger>
+                        <SelectContent className="bg-surface border-border">
+                          {(Object.keys(FORMA_LABEL) as FormaPagamento[]).map((f) => (
+                            <SelectItem key={f} value={f}>{FORMA_LABEL[f]}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {(() => {
+                        const n = parseInt(planoNumParcelas, 10);
+                        if (!n || n < 2 || novoOrcTotal <= 0) return null;
+                        return (
+                          <p className="text-[11px] text-text-secondary bg-surface rounded-xl px-3 py-2">
+                            {n}x de R$ {formatValorBR(novoOrcTotal / n)}
+                          </p>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
               </div>
 

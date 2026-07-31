@@ -156,7 +156,11 @@ export function DetalheOrcamentoModal({
   const hoje = new Date().toISOString().split('T')[0];
   const [isChangingStatus, setIsChangingStatus] = useState(false);
   /** R-27a: a informação vira abas em vez de duas colunas roláveis. */
-  const [tab, setTab] = useState<'procedimentos' | 'pagamentos' | 'registrar' | 'atividade'>('procedimentos');
+  const [tab, setTab] = useState<'procedimentos' | 'pagamentos' | 'atividade'>('procedimentos');
+  // R-34 §7.0 — "Registrar pagamento" é gesto de balcão, não consulta: sai da aba e vira
+  // ação persistente (diálogo próprio), alcançável de qualquer aba — não só quando a aba
+  // "Registrar pagamento" está ativa. Abas continuam só pro que se consulta.
+  const [registrarOpen, setRegistrarOpen] = useState(false);
   const [showAceiteModal, setShowAceiteModal] = useState(false);
   const [activityLogs, setActivityLogs] = useState<{ id: string; actor_nome: string | null; action: string; created_at: string }[]>([]);
 
@@ -317,7 +321,6 @@ export function DetalheOrcamentoModal({
                 {([
                   { value: 'procedimentos', label: 'Procedimentos', count: detalheOrc.itens.length },
                   { value: 'pagamentos',    label: 'Pagamentos',    count: detalheOrc.pagamentos.length },
-                  { value: 'registrar',     label: 'Registrar pagamento', count: null },
                   { value: 'atividade',     label: 'Atividade',     count: null },
                 ] as const).map(t => (
                   <TabsTrigger
@@ -444,7 +447,7 @@ export function DetalheOrcamentoModal({
                   <div className="rounded-2xl border border-dashed border-border p-8 text-center">
                     <p className="text-sm text-text-secondary">Nenhum pagamento registrado ainda.</p>
                     <button
-                      onClick={() => setTab('registrar')}
+                      onClick={() => setRegistrarOpen(true)}
                       className="mt-3 text-xs font-semibold text-teal-ink hover:underline"
                     >
                       Registrar o primeiro pagamento
@@ -481,7 +484,7 @@ export function DetalheOrcamentoModal({
                         disabled={restante <= 0}
                         onClick={() => {
                           setPagForm(f => ({ ...f, valor: formatValorBR(restante), dataVencimento: '' }));
-                          setTab('registrar');
+                          setRegistrarOpen(true);
                         }}
                         className="bg-surface px-4 py-3 text-left enabled:hover:bg-surface-alt/60 transition-colors disabled:cursor-default"
                       >
@@ -628,7 +631,7 @@ export function DetalheOrcamentoModal({
                                 // R-28 — clicar no valor pendente vai pra "Registrar pagamento" já
                                 // vinculado a ESTA parcela (fecha por UPDATE, não cria linha nova).
                                 <button
-                                  onClick={() => { onIniciarFechamentoPagamento(pg); setTab('registrar'); }}
+                                  onClick={() => { onIniciarFechamentoPagamento(pg); setRegistrarOpen(true); }}
                                   className={`font-mono text-sm font-semibold underline decoration-dotted underline-offset-2 transition-colors ${isVencido ? 'text-coral-ink hover:text-coral' : 'text-text-secondary hover:text-teal-ink'}`}
                                 >
                                   R$ {fmt(pg.valor)}
@@ -650,7 +653,7 @@ export function DetalheOrcamentoModal({
                                 </button>
                               ) : (
                                 <button
-                                  onClick={() => { onIniciarFechamentoPagamento(pg); setTab('registrar'); }}
+                                  onClick={() => { onIniciarFechamentoPagamento(pg); setRegistrarOpen(true); }}
                                   className="p-1.5 rounded-lg hover:bg-teal/10 text-text-secondary hover:text-teal-ink transition-colors"
                                   aria-label="Marcar como pago"
                                 >
@@ -735,13 +738,22 @@ export function DetalheOrcamentoModal({
                   </div>
                 )}
               </TabsContent>
+            </Tabs>
 
-              {/* ── Aba: registrar pagamento ──────────────────────────────
-                  Porcentagem, não o valor total de novo — o total já vive no cabeçalho e
-                  na linha de Total da aba de procedimentos. A 100%, o formulário sai e
-                  entra o resumo do que foi recebido. */}
-              <TabsContent value="registrar" className="mt-0 flex-1 min-h-0 overflow-y-auto p-6">
-                <div className="max-w-md mx-auto space-y-5">
+            {/* ── Registrar pagamento (R-34 §7.0) — diálogo próprio, não aba ──────────
+                Gesto de balcão, não consulta: alcançável de qualquer aba via o botão fixo
+                no rodapé. Porcentagem, não o valor total de novo — o total já vive no
+                cabeçalho e na linha de Total da aba de procedimentos. A 100%, o formulário
+                sai e entra o resumo do que foi recebido. */}
+            <Dialog open={registrarOpen} onOpenChange={setRegistrarOpen}>
+              <DialogContent className="rounded-3xl bg-surface border-border max-w-md">
+                <DialogTitle className="font-heading text-lg text-text-primary">
+                  {closingPagamentoId ? 'Marcar parcela como paga' : 'Registrar pagamento'}
+                </DialogTitle>
+                <DialogDescription className="sr-only">
+                  Registrar ou agendar um pagamento para este orçamento.
+                </DialogDescription>
+                <div className="space-y-5">
 
                   {closingPagamentoId && (
                     <div className="flex items-center justify-between gap-3 rounded-xl border border-teal/25 bg-teal/5 px-4 py-3">
@@ -751,7 +763,7 @@ export function DetalheOrcamentoModal({
                       </p>
                       <button
                         type="button"
-                        onClick={() => { onCancelarFechamentoPagamento(); setTab('pagamentos'); }}
+                        onClick={() => { onCancelarFechamentoPagamento(); setRegistrarOpen(false); }}
                         className="text-[11px] font-semibold text-text-secondary hover:text-text-primary transition-colors shrink-0"
                       >
                         Cancelar
@@ -950,8 +962,8 @@ export function DetalheOrcamentoModal({
                     </div>
                   )}
                 </div>
-              </TabsContent>
-            </Tabs>
+              </DialogContent>
+            </Dialog>
 
             {/* ── Rodapé único (R-27a) — fora das abas ─────────────────── */}
             <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-6 py-4 border-t border-border">
@@ -998,6 +1010,15 @@ export function DetalheOrcamentoModal({
                       <Edit2 className="w-4 h-4 mr-1.5" />
                       Editar
                     </Button>
+                    {!quitado && (
+                      <Button
+                        onClick={() => setRegistrarOpen(true)}
+                        className="rounded-xl bg-teal text-white hover:bg-teal-lt font-semibold"
+                      >
+                        <CircleDollarSign className="w-4 h-4 mr-1.5" />
+                        Registrar pagamento
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       onClick={onClose}

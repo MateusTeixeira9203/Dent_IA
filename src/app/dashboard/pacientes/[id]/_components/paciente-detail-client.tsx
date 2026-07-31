@@ -74,6 +74,7 @@ import {
   excluirOrcamento,
   criarProcedimentoRapido,
   gerarParcelas,
+  definirPlanoAvista,
   type FormaPagamento,
   type StatusOrcamento,
 } from '@/app/dashboard/orcamentos/actions';
@@ -287,6 +288,12 @@ export function PacienteDetailClient({
   const [fichaOrcId, setFichaOrcId] = useState<string | null>(null);
   const [etapaNovoOrc, setEtapaNovoOrc] = useState<'selecionar' | 'itens'>('itens');
   const [novoOrcValorFinal, setNovoOrcValorFinal] = useState<number | null>(null);
+  // R-34 — forma de pagamento já na criação (feedback do Mateus testando localhost: parcelar
+  // só existia depois de reabrir o orçamento criado; reduz a fricção de ter os dois passos).
+  const [novoOrcPlanoForma, setNovoOrcPlanoForma] = useState<'avista' | 'parcelado' | null>(null);
+  const [novoOrcNumParcelas, setNovoOrcNumParcelas] = useState('3');
+  const [novoOrcPrimeiroVencimento, setNovoOrcPrimeiroVencimento] = useState('');
+  const [novoOrcParcelasForma, setNovoOrcParcelasForma] = useState<FormaPagamento | ''>('');
 
   // Edição de orçamento
   const [orcEditMode, setOrcEditMode] = useState(false);
@@ -757,9 +764,9 @@ export function PacienteDetailClient({
   const handleGerarParcelas = async () => {
     if (!detalheOrcId) return;
     const numero = parseInt(parcelasForm.numero, 10);
-    // Divide o SALDO RESTANTE, não o total — senão duplica o que já foi pago.
+    // Aviso local só de UX — quem soma "já pago" de verdade agora é a RPC (server).
     const pago = (detalheOrc?.pagamentos ?? []).filter((p) => p.status === 'pago').reduce((s, p) => s + p.valor, 0);
-    const valorTotal = Math.max(0, (detalheOrc?.total ?? 0) - pago);
+    const saldoAproximado = Math.max(0, (detalheOrc?.total ?? 0) - pago);
     if (!numero || numero < 2 || numero > 24) {
       setParcelasError('Informe entre 2 e 24 parcelas.');
       return;
@@ -768,7 +775,7 @@ export function PacienteDetailClient({
       setParcelasError('Informe o primeiro vencimento.');
       return;
     }
-    if (!valorTotal || valorTotal <= 0) {
+    if (!saldoAproximado || saldoAproximado <= 0) {
       setParcelasError('Não há saldo restante para parcelar.');
       return;
     }
@@ -777,11 +784,8 @@ export function PacienteDetailClient({
 
     const result = await gerarParcelas({
       orcamentoId: detalheOrcId,
-      pacienteId: paciente.id,
-      valorTotal,
       numeroParcelas: numero,
       primeiroVencimento: parcelasForm.primeiroVencimento,
-      dentistaId: detalheOrc?.dentista_id ?? undefined,
     });
 
     if (result.error || !result.parcelas) {
@@ -1158,6 +1162,15 @@ export function PacienteDetailClient({
       setOrcError('Selecione o dentista responsável.');
       return;
     }
+    const numeroParcelas = parseInt(novoOrcNumParcelas, 10);
+    if (novoOrcPlanoForma === 'parcelado' && (!numeroParcelas || numeroParcelas < 2 || numeroParcelas > 24)) {
+      setOrcError('Informe entre 2 e 24 parcelas.');
+      return;
+    }
+    if (novoOrcPlanoForma === 'parcelado' && !novoOrcPrimeiroVencimento) {
+      setOrcError('Informe o primeiro vencimento das parcelas.');
+      return;
+    }
     setOrcError(null);
     setOrcSaving(true);
 
@@ -1181,10 +1194,12 @@ export function PacienteDetailClient({
     if (result.error) {
       setOrcError(result.error);
     } else {
+      const novoTotal = Math.max(0, subtotalValido - descontoValor);
       const novoOrc: OrcamentoComItens = {
         id: result.id ?? crypto.randomUUID(),
         status: 'rascunho',
-        total: Math.max(0, subtotalValido - descontoValor),
+        total: novoTotal,
+        desconto: descontoValor,
         created_at: new Date().toISOString(),
         validade_dias: 30,
         condicoes_pagamento: null,
@@ -1203,6 +1218,37 @@ export function PacienteDetailClient({
       setOrcamentosState((prev) => [novoOrc, ...prev]);
       setIsNovoOrcOpen(false);
       setNovoOrcItens([{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
+
+      // R-34 — plano de pagamento definido junto da criação (opcional). Roda depois do
+      // orçamento existir de verdade (precisa do id real, não do temp/otimista acima).
+      let precisaAtualizar = false;
+      if (result.id && novoOrcPlanoForma === 'parcelado') {
+        const planoResult = await gerarParcelas({
+          orcamentoId: result.id,
+          numeroParcelas,
+          primeiroVencimento: novoOrcPrimeiroVencimento,
+          valorAcordado: novoTotal,
+          parcelasForma: novoOrcParcelasForma || undefined,
+        });
+        if (planoResult.error) {
+          toast.error(`Orçamento criado, mas o parcelamento falhou: ${planoResult.error}`);
+        } else {
+          precisaAtualizar = true;
+        }
+      } else if (result.id && novoOrcPlanoForma === 'avista') {
+        const planoResult = await definirPlanoAvista({ orcamentoId: result.id, valorAcordado: novoTotal });
+        if (planoResult.error) {
+          toast.error(`Orçamento criado, mas a forma de pagamento falhou: ${planoResult.error}`);
+        } else {
+          precisaAtualizar = true;
+        }
+      }
+      setNovoOrcPlanoForma(null);
+      setNovoOrcNumParcelas('3');
+      setNovoOrcPrimeiroVencimento('');
+      setNovoOrcParcelasForma('');
+      if (precisaAtualizar) router.refresh(); // pega condicoes_pagamento/parcelas reais do server
+
       toast.success('Orçamento criado como rascunho', {
         description: 'Revise os itens e envie para o paciente quando estiver pronto.',
         duration: 4000,
@@ -1235,7 +1281,7 @@ export function PacienteDetailClient({
       return;
     }
     setOrcEditSaving(true);
-    const result = await editarOrcamento(detalheOrc.id, itensValidos.map(i => ({ ...i, preco_unitario: parseValorBR(i.preco_unitario) })));
+    const result = await editarOrcamento(detalheOrc.id, itensValidos.map(i => ({ ...i, preco_unitario: parseValorBR(i.preco_unitario) })), detalheOrc.desconto ?? 0);
     if (result.error) {
       setOrcEditError(result.error);
     } else {
@@ -2011,7 +2057,10 @@ export function PacienteDetailClient({
         open={isNovoOrcOpen}
         onOpenChange={(open) => {
           setIsNovoOrcOpen(open);
-          if (!open) { setEtapaNovoOrc('itens'); setFichasParaOrc([]); setOrcError(null); setNovoOrcValorFinal(null); }
+          if (!open) {
+            setEtapaNovoOrc('itens'); setFichasParaOrc([]); setOrcError(null); setNovoOrcValorFinal(null);
+            setNovoOrcPlanoForma(null); setNovoOrcNumParcelas('3'); setNovoOrcPrimeiroVencimento(''); setNovoOrcParcelasForma('');
+          }
         }}
         etapaNovoOrc={etapaNovoOrc}
         setEtapaNovoOrc={setEtapaNovoOrc}
@@ -2033,6 +2082,14 @@ export function PacienteDetailClient({
         dentistasClinica={dentistasClinica}
         dentistaAlvoId={novoOrcDentistaAlvoId}
         onDentistaAlvoChange={setNovoOrcDentistaAlvoId}
+        planoForma={novoOrcPlanoForma}
+        setPlanoForma={setNovoOrcPlanoForma}
+        planoNumParcelas={novoOrcNumParcelas}
+        setPlanoNumParcelas={setNovoOrcNumParcelas}
+        planoPrimeiroVencimento={novoOrcPrimeiroVencimento}
+        setPlanoPrimeiroVencimento={setNovoOrcPrimeiroVencimento}
+        planoParcelasForma={novoOrcParcelasForma}
+        setPlanoParcelasForma={setNovoOrcParcelasForma}
       />
     </PageContainer>
   );

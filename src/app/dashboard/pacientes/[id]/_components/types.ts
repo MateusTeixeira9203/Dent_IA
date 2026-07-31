@@ -27,6 +27,7 @@ export type OrcamentoComItens = {
   id: string;
   status: 'rascunho' | 'enviado' | 'aprovado' | 'recusado';
   total: number | null;
+  desconto: number | null;
   created_at: string;
   validade_dias: number;
   condicoes_pagamento: string | null;

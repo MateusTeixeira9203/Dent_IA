@@ -654,7 +654,7 @@ export async function buscarOrcamentosPendentesPorPaciente(
 
   const { data: orcamentosRaw } = await supabase
     .from('orcamentos')
-    .select('id, total, itens:orcamento_itens(descricao), pagamentos(id, valor, status)')
+    .select('id, total, valor_acordado, itens:orcamento_itens(descricao), pagamentos(id, valor, status)')
     .eq('clinica_id', clinicId)
     .eq('paciente_id', pacienteId)
     .eq('status', 'aprovado');
@@ -662,6 +662,7 @@ export async function buscarOrcamentosPendentesPorPaciente(
   const orcamentos: OrcamentoPendente[] = ((orcamentosRaw ?? []) as unknown as Array<{
     id: string;
     total: number | null;
+    valor_acordado: number | null;
     itens: { descricao: string | null }[];
     pagamentos: { valor: number; status: string }[];
   }>)
@@ -669,7 +670,8 @@ export async function buscarOrcamentosPendentesPorPaciente(
       const totalPago = o.pagamentos
         .filter((p) => p.status === 'pago')
         .reduce((s, p) => s + p.valor, 0);
-      const valorPendente = Math.max(0, (o.total ?? 0) - totalPago);
+      const valorDevido = o.valor_acordado ?? o.total ?? 0; // I1
+      const valorPendente = Math.max(0, valorDevido - totalPago);
       const descricao =
         o.itens
           .map((i) => i.descricao)
@@ -728,22 +730,6 @@ export async function registrarRecebimento(dados: {
   });
 
   if (pagError) return { error: pagError.message };
-
-  const formaReceita: 'pix' | 'dinheiro' | 'transferencia' | 'outro' =
-    ['pix', 'dinheiro', 'transferencia'].includes(dados.formaPagamento)
-      ? (dados.formaPagamento as 'pix' | 'dinheiro' | 'transferencia')
-      : 'outro';
-
-  const { error: recError } = await supabase.from('receitas_manuais').insert({
-    clinica_id:  clinicId,
-    dentista_id: dados.dentistaId ?? null,
-    valor:       dados.valor,
-    forma:       formaReceita,
-    data:        dados.data,
-    descricao:   'Recebimento registrado pela secretária',
-  });
-
-  if (recError) return { error: recError.message };
 
   revalidatePath('/dashboard/financeiro');
   revalidatePath('/dashboard/orcamentos');

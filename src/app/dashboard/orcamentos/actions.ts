@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { inserirNotificacao } from "@/lib/notificacoes";
 import { registrarLog } from "@/lib/activity-log";
-import { addMonths, format, parseISO } from "date-fns";
+import { hojeBRT } from "@/lib/hora-brt";
 
 export type FormaPagamento =
   | "dinheiro"
@@ -17,6 +17,14 @@ export type FormaPagamento =
   | "outro";
 
 export type StatusOrcamento = "rascunho" | "enviado" | "aprovado" | "recusado";
+
+const FORMA_LABEL: Record<FormaPagamento, string> = {
+  dinheiro: "dinheiro", pix: "PIX", cartao_credito: "cartão de crédito",
+  cartao_debito: "cartão de débito", boleto: "boleto", outro: "outro",
+};
+
+const fmtReal = (v: number): string =>
+  v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 export async function atualizarStatusOrcamento(
   orcamentoId: string,
@@ -53,7 +61,7 @@ export async function atualizarStatusOrcamento(
   if (status === 'enviado' || status === 'aprovado' || status === 'recusado') {
     const { data: orc } = await supabase
       .from('orcamentos')
-      .select('paciente_id, dentista_id, total, paciente:pacientes(nome)')
+      .select('paciente_id, dentista_id, total, valor_acordado, plano_forma, paciente:pacientes(nome)')
       .eq('id', orcamentoId)
       .maybeSingle();
 
@@ -89,24 +97,31 @@ export async function atualizarStatusOrcamento(
       href:         '/dashboard/orcamentos',
     });
 
-    if (status === 'aprovado' && orc && orc.total && orc.total > 0) {
-      const { count } = await supabase
-        .from('pagamentos')
-        .select('id', { count: 'exact', head: true })
-        .eq('orcamento_id', orcamentoId);
+    // R-34 §10.3 — com plano registrado, as parcelas (ou o valor_acordado) já representam
+    // a dívida; inserir mais uma linha pendente do `total` cru duplicaria ou cobraria a mais
+    // (I1/I2). Sem plano, comportamento de sempre: 1 linha pendente pra aprovar sem pagamento.
+    const orcComPlano = orc as unknown as { total: number | null; paciente_id: string; dentista_id: string; plano_forma: string | null; valor_acordado: number | null } | null;
+    if (status === 'aprovado' && orcComPlano && !orcComPlano.plano_forma) {
+      const valorDevido = orcComPlano.valor_acordado ?? orcComPlano.total;
+      if (valorDevido && valorDevido > 0) {
+        const { count } = await supabase
+          .from('pagamentos')
+          .select('id', { count: 'exact', head: true })
+          .eq('orcamento_id', orcamentoId);
 
-      if ((count ?? 0) === 0) {
-        await supabase.from('pagamentos').insert({
-          orcamento_id:    orcamentoId,
-          paciente_id:     orc.paciente_id as string,
-          dentista_id:     orc.dentista_id as string,
-          clinica_id:      clinicId,
-          valor:           orc.total as number,
-          status:          'pendente',
-          forma_pagamento: null,
-          data_pagamento:  null,
-          data_vencimento: null,
-        });
+        if ((count ?? 0) === 0) {
+          await supabase.from('pagamentos').insert({
+            orcamento_id:    orcamentoId,
+            paciente_id:     orcComPlano.paciente_id,
+            dentista_id:     orcComPlano.dentista_id,
+            clinica_id:      clinicId,
+            valor:           valorDevido,
+            status:          'pendente',
+            forma_pagamento: null,
+            data_pagamento:  null,
+            data_vencimento: null,
+          });
+        }
       }
     }
   }
@@ -124,28 +139,28 @@ export interface ParcelaGerada {
 
 /**
  * Gera N parcelas de uma vez (todas 'pendente'), em vez do dentista/secretária
- * repetir "Registrar Pagamento" uma por uma. Divide o valor em centavos pra não
- * gerar drift de arredondamento — a sobra de centavos (se houver) vai pra última
- * parcela. Vencimentos avançam por MÊS CALENDÁRIO (não +30 dias fixos), pra "todo
- * dia 10" continuar caindo dia 10 mesmo em fevereiro. Cada linha nasce com
- * parcela_numero/total_parcelas — é o que a UI usa pra rotular "2/3" e, no futuro,
- * o que os alertas de vencimento vão consultar (idx_pagamentos_data_vencimento).
+ * repetir "Registrar Pagamento" uma por uma. R-34 commit 3: a divisão em centavos,
+ * as datas por mês calendário e a gravação do plano viraram RPC (`gerar_parcelas_orcamento`,
+ * migration 122/123) — mesma transação, então plano e parcelas nunca ficam dessincronizados.
+ * A RPC soma o que já está pago e desconta antes de dividir: chamar isto num orçamento com
+ * pagamento avulso parcela o **saldo**, não o total (era o cálculo que o client fazia sozinho
+ * antes — agora é o banco que soma, não dá pra confiar em saldo calculado no browser).
+ * `valorAcordado` some quando não passado: mantém o que já está no orçamento (total ou o que
+ * já tiver sido negociado).
  */
 export async function gerarParcelas(dados: {
   orcamentoId: string;
-  pacienteId: string;
-  valorTotal: number;
   numeroParcelas: number;
   primeiroVencimento: string;
-  dentistaId?: string;
+  valorAcordado?: number;
+  entradaValor?: number;
+  entradaForma?: FormaPagamento;
+  parcelasForma?: FormaPagamento;
 }): Promise<{ error?: string; parcelas?: ParcelaGerada[] }> {
   const { supabase, user, clinicId } = await requireClinicContext();
 
   if (!Number.isInteger(dados.numeroParcelas) || dados.numeroParcelas < 2 || dados.numeroParcelas > 24) {
     return { error: "Número de parcelas deve ser entre 2 e 24." };
-  }
-  if (!dados.valorTotal || dados.valorTotal <= 0) {
-    return { error: "Informe um valor total válido." };
   }
   if (!dados.primeiroVencimento) {
     return { error: "Informe a data do primeiro vencimento." };
@@ -160,53 +175,102 @@ export async function gerarParcelas(dados: {
 
   if (!dentistaPerfil) redirect("/onboarding");
 
-  const dentistaId = dados.dentistaId ?? dentistaPerfil.id;
-
-  const totalCentavos = Math.round(dados.valorTotal * 100);
-  const baseCentavos = Math.floor(totalCentavos / dados.numeroParcelas);
-  const restoCentavos = totalCentavos - baseCentavos * dados.numeroParcelas;
-  const primeiraData = parseISO(dados.primeiroVencimento);
-
-  const linhas = Array.from({ length: dados.numeroParcelas }, (_, i) => {
-    const ultimaParcela = i === dados.numeroParcelas - 1;
-    const valorCentavos = baseCentavos + (ultimaParcela ? restoCentavos : 0);
-    return {
-      clinica_id:      clinicId,
-      orcamento_id:    dados.orcamentoId,
-      paciente_id:     dados.pacienteId,
-      dentista_id:     dentistaId,
-      valor:           valorCentavos / 100,
-      status:          "pendente" as const,
-      data_vencimento: format(addMonths(primeiraData, i), "yyyy-MM-dd"),
-      parcela_numero:  i + 1,
-      total_parcelas:  dados.numeroParcelas,
-    };
+  const { data: parcelas, error } = await supabase.rpc("gerar_parcelas_orcamento", {
+    p_orcamento_id:        dados.orcamentoId,
+    p_numero_parcelas:     dados.numeroParcelas,
+    p_primeiro_vencimento: dados.primeiroVencimento,
+    p_valor_acordado:      dados.valorAcordado ?? null,
+    p_entrada_valor:       dados.entradaValor ?? null,
+    p_entrada_forma:       dados.entradaForma ?? null,
+    p_parcelas_forma:      dados.parcelasForma ?? null,
   });
 
-  const { data, error } = await supabase
-    .from("pagamentos")
-    .insert(linhas)
-    .select("id, valor, data_vencimento, parcela_numero, total_parcelas");
-
   if (error) {
-    console.error("Erro ao gerar parcelas:", error);
+    if (error.message.includes("numero_parcelas_invalido")) return { error: "Número de parcelas deve ser entre 2 e 24." };
+    if (error.message.includes("valor_invalido")) return { error: "Não há valor pendente para parcelar." };
+    if (error.message.includes("vencimento_invalido")) return { error: "Informe a data do primeiro vencimento." };
+    if (error.message.includes("plano_ja_definido")) return { error: "Este orçamento já tem forma de pagamento definida." };
+    if (error.message.includes("sem_permissao")) return { error: "Orçamento não encontrado." };
+    console.error("[gerarParcelas]", error.message);
     return { error: "Não foi possível gerar as parcelas. Tente novamente." };
   }
+
+  const linhas = (parcelas ?? []) as unknown as ParcelaGerada[];
+
+  // I5 — condicoes_pagamento nasce só aqui, a partir do que a RPC acabou de gravar.
+  const partes: string[] = [];
+  if (dados.entradaValor) {
+    partes.push(`Entrada de ${fmtReal(dados.entradaValor)}${dados.entradaForma ? ` (${FORMA_LABEL[dados.entradaForma]})` : ""}`);
+  }
+  const valorPorParcela = linhas[0]?.valor ?? 0;
+  partes.push(`${dados.numeroParcelas}x de ${fmtReal(valorPorParcela)}${dados.parcelasForma ? ` (${FORMA_LABEL[dados.parcelasForma]})` : ""}`);
+  await supabase.from("orcamentos").update({ condicoes_pagamento: partes.join(" + ") })
+    .eq("id", dados.orcamentoId).eq("clinica_id", clinicId);
 
   registrarLog(supabase, {
     clinicaId:  clinicId,
     actorId:    dentistaPerfil.id,
     actorNome:  dentistaPerfil.nome,
-    pacienteId: dados.pacienteId,
     entityType: "orcamento",
     entityId:   dados.orcamentoId,
     action:     "pagamento.parcelado",
-    metadata:   { numero_parcelas: dados.numeroParcelas, valor_total: dados.valorTotal },
+    metadata:   { numero_parcelas: dados.numeroParcelas },
   });
 
   revalidatePath("/dashboard/orcamentos");
   revalidatePath("/dashboard/financeiro");
-  return { parcelas: (data ?? []) as unknown as ParcelaGerada[] };
+  return { parcelas: linhas };
+}
+
+/**
+ * Define o acordo à vista — só registra (§10.2: entrada nunca vira linha de pagamento
+ * sozinha, nasce quando o dinheiro entrar). Mutuamente exclusivo com `gerarParcelas`
+ * (RPC recusa se o orçamento já tem plano_forma).
+ */
+export async function definirPlanoAvista(dados: {
+  orcamentoId: string;
+  valorAcordado: number;
+  entradaValor?: number;
+  entradaForma?: FormaPagamento;
+}): Promise<{ error?: string }> {
+  const { supabase, user, clinicId } = await requireClinicContext();
+
+  const { data: dentistaPerfil } = await supabase
+    .from("dentistas")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("clinica_id", clinicId)
+    .maybeSingle();
+
+  if (!dentistaPerfil) redirect("/onboarding");
+
+  const { error } = await supabase.rpc("definir_plano_avista", {
+    p_orcamento_id:   dados.orcamentoId,
+    p_valor_acordado: dados.valorAcordado,
+    p_entrada_valor:  dados.entradaValor ?? null,
+    p_entrada_forma:  dados.entradaForma ?? null,
+  });
+
+  if (error) {
+    if (error.message.includes("valor_invalido")) return { error: "Informe um valor válido." };
+    if (error.message.includes("plano_ja_definido")) return { error: "Este orçamento já tem forma de pagamento definida." };
+    if (error.message.includes("sem_permissao")) return { error: "Orçamento não encontrado." };
+    console.error("[definirPlanoAvista]", error.message);
+    return { error: "Não foi possível registrar a forma de pagamento. Tente novamente." };
+  }
+
+  const partes: string[] = [];
+  if (dados.entradaValor) {
+    partes.push(`Entrada de ${fmtReal(dados.entradaValor)}${dados.entradaForma ? ` (${FORMA_LABEL[dados.entradaForma]})` : ""}`);
+    partes.push(`Restante à vista — ${fmtReal(dados.valorAcordado - dados.entradaValor)}`);
+  } else {
+    partes.push(`À vista — ${fmtReal(dados.valorAcordado)}`);
+  }
+  await supabase.from("orcamentos").update({ condicoes_pagamento: partes.join(" + ") })
+    .eq("id", dados.orcamentoId).eq("clinica_id", clinicId);
+
+  revalidatePath("/dashboard/orcamentos");
+  return {};
 }
 
 /**
@@ -264,7 +328,7 @@ export async function marcarPagamentoPago(
   let autoAprovado = false;
   const { data: orcRow } = await supabase
     .from("orcamentos")
-    .select("total, status")
+    .select("total, valor_acordado, status")
     .eq("id", pagAtual.orcamento_id)
     .eq("clinica_id", clinicId)
     .single();
@@ -277,7 +341,8 @@ export async function marcarPagamentoPago(
       .eq("status", "pago");
 
     const totalPago = (pagamentos ?? []).reduce((s, p) => s + p.valor, 0);
-    if (totalPago >= (orcRow.total ?? 0)) {
+    const valorDevido = orcRow.valor_acordado ?? orcRow.total ?? 0; // I1
+    if (totalPago >= valorDevido) {
       await supabase
         .from("orcamentos")
         .update({ status: "aprovado" })
@@ -459,7 +524,7 @@ export async function registrarPagamento(dados: {
   let autoAprovado = false;
   const { data: orcRow } = await supabase
     .from("orcamentos")
-    .select("total, status")
+    .select("total, valor_acordado, status")
     .eq("id", dados.orcamentoId)
     .eq("clinica_id", clinicId)
     .single();
@@ -472,7 +537,8 @@ export async function registrarPagamento(dados: {
       .eq("status", "pago");
 
     const totalPago = (pagamentos ?? []).reduce((s, p) => s + p.valor, 0);
-    if (totalPago >= (orcRow.total ?? 0)) {
+    const valorDevido = orcRow.valor_acordado ?? orcRow.total ?? 0; // I1
+    if (totalPago >= valorDevido) {
       await supabase
         .from("orcamentos")
         .update({ status: "aprovado" })
@@ -623,7 +689,10 @@ export async function editarOrcamento(
     preco_unitario: number;
     procedimento_id?: string | null;
   }>,
-  desconto = 0
+  // R-35 item 5 — sem default: os dois chamadores tinham que passar o desconto atual
+  // explícito, senão editar um item apagava silenciosamente o desconto do orçamento
+  // (recalculava total = subtotal). Compilador acusa qualquer chamador que esquecer.
+  desconto: number
 ): Promise<{ error?: string }> {
   const { supabase, clinicId } = await requireClinicContext();
 
@@ -663,13 +732,22 @@ export async function editarOrcamento(
   return {};
 }
 
+/**
+ * R-34 §7.1 — o atalho de 1 clique. Fecha a PRÓXIMA PARCELA ABERTA quando existe uma
+ * (delega ao UPDATE de `marcarPagamentoPago` — nunca insere linha nova por cima de parcela
+ * já gerada); sem parcela, cobra o que falta do valor acordado. Nunca quita "tudo de uma vez"
+ * por cima de um plano — cada clique fecha uma parcela ou o saldo, nunca mais que isso (I2).
+ *
+ * "Parcela aberta" = pagamento com status='pendente' deste orçamento, ordenado por
+ * coalesce(data_vencimento, created_at) e depois parcela_numero — a primeira da ordem é a
+ * que fecha. Um avulso pendente (sem parcela_numero, ex. o que `atualizarStatusOrcamento`
+ * insere ao aprovar sem plano) entra nessa mesma ordenação e conta como "aberta".
+ */
 export async function registrarPagamentoRapido(dados: {
   orcamentoId: string;
   pacienteId: string;
-  total: number;
   formaPagamento: FormaPagamento;
-  dentistaId?: string;
-}): Promise<{ error?: string; id?: string }> {
+}): Promise<{ error?: string; id?: string; autoAprovado?: boolean }> {
   const { supabase, user, clinicId, role } = await requireClinicContext();
 
   const { data: dentistaPerfil } = await supabase
@@ -681,17 +759,60 @@ export async function registrarPagamentoRapido(dados: {
 
   if (!dentistaPerfil) redirect("/onboarding");
 
-  const dentistaId = dados.dentistaId ?? dentistaPerfil.id;
-  const hoje = new Date().toISOString().split("T")[0];
+  // Regra 1 — lê o estado antes de decidir (hoje: zero leitura, insere às cegas).
+  const { data: orc } = await supabase
+    .from("orcamentos")
+    .select("id, dentista_id, status, total, valor_acordado")
+    .eq("id", dados.orcamentoId)
+    .eq("clinica_id", clinicId)
+    .maybeSingle();
+
+  if (!orc) return { error: "Orçamento não encontrado." };
+
+  const { data: pagamentosOrc } = await supabase
+    .from("pagamentos")
+    .select("id, status, valor, data_vencimento, parcela_numero, created_at")
+    .eq("orcamento_id", dados.orcamentoId)
+    .eq("clinica_id", clinicId);
+
+  const linhas = pagamentosOrc ?? [];
+  const totalPago = linhas.filter((p) => p.status === "pago").reduce((s, p) => s + p.valor, 0);
+  const valorDevido = orc.valor_acordado ?? orc.total ?? 0; // I1
+
+  const abertas = linhas
+    .filter((p) => p.status === "pendente")
+    .sort((a, b) => {
+      const da = a.data_vencimento ?? a.created_at;
+      const db = b.data_vencimento ?? b.created_at;
+      if (da !== db) return da < db ? -1 : 1;
+      return (a.parcela_numero ?? 0) - (b.parcela_numero ?? 0);
+    });
+
+  const hoje = hojeBRT(); // regra 7
+
+  if (abertas.length > 0) {
+    // Regra 2 — delega ao UPDATE existente: mesma auto-aprovação, mesmo log, mesma
+    // notificação por dentista_id da LINHA (regra 8, já é assim em marcarPagamentoPago).
+    const alvo = abertas[0];
+    const resultado = await marcarPagamentoPago(alvo.id, { formaPagamento: dados.formaPagamento, data: hoje });
+    return { error: resultado.error, id: alvo.id, autoAprovado: resultado.autoAprovado };
+  }
+
+  // Regras 3/4 — sem parcela aberta: cobra o que falta (tudo, se nada foi pago; o saldo, se
+  // já tem parte paga). Nunca `orc.total` cru fixo — sempre o que ainda falta de verdade.
+  const saldo = Math.round((valorDevido - totalPago) * 100) / 100;
+  if (saldo <= 0) {
+    return { error: "Este orçamento já está quitado." };
+  }
 
   const { data, error } = await supabase
     .from("pagamentos")
     .insert({
       orcamento_id:    dados.orcamentoId,
       paciente_id:     dados.pacienteId,
-      dentista_id:     dentistaId,
+      dentista_id:     orc.dentista_id, // regra 8 — do orçamento, não de um dentistaId vindo do client
       clinica_id:      clinicId,
-      valor:           dados.total,
+      valor:           saldo,
       status:          "pago",
       forma_pagamento: dados.formaPagamento,
       data_pagamento:  hoje,
@@ -700,34 +821,53 @@ export async function registrarPagamentoRapido(dados: {
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) {
+    console.error("[registrarPagamentoRapido]", error.message); // regra 9 — sanitizado
+    return { error: "Não foi possível registrar o pagamento. Tente novamente." };
+  }
 
-  await supabase
-    .from("orcamentos")
-    .update({ status: "aprovado" })
-    .eq("id", dados.orcamentoId)
-    .eq("clinica_id", clinicId);
+  // Regra 5 — auto-aprovação travada (nunca UPDATE incondicional), com autoria.
+  let autoAprovado = false;
+  if (orc.status === "enviado" && totalPago + saldo >= valorDevido) {
+    await supabase
+      .from("orcamentos")
+      .update({ status: "aprovado", aprovado_por_id: dentistaPerfil.id, aprovado_em: new Date().toISOString() })
+      .eq("id", dados.orcamentoId)
+      .eq("clinica_id", clinicId);
+    autoAprovado = true;
+  }
 
-  if (role === 'secretaria' && dados.dentistaId) {
+  if (role === 'secretaria' && orc.dentista_id) {
     const { data: pac } = await supabase
       .from('pacientes').select('nome').eq('id', dados.pacienteId).maybeSingle();
     const pacNome = (pac as { nome: string } | null)?.nome ?? 'paciente';
-    const valorFmt = dados.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const valorFmt = fmtReal(saldo);
     await inserirNotificacao(supabase, {
       clinicaId:      clinicId,
       paraRole:       'dentista',
-      paraDentistaId: dados.dentistaId,
+      paraDentistaId: orc.dentista_id,
       deDentistaId:   dentistaPerfil.id,
       tipo:           'pagamento_confirmado',
       titulo:         `Pagamento recebido — ${pacNome}`,
-      mensagem:       `Secretária registrou ${valorFmt} (${dados.formaPagamento.replace(/_/g, ' ')}) de ${pacNome}. Orçamento aprovado.`,
+      mensagem:       `Secretária registrou ${valorFmt} (${dados.formaPagamento.replace(/_/g, ' ')}) de ${pacNome}.${autoAprovado ? ' Orçamento aprovado.' : ''}`,
       href:           '/dashboard/orcamentos',
     });
   }
 
+  // Regra 6 — sempre loga (hoje: nunca loga).
+  registrarLog(supabase, {
+    clinicaId:   clinicId,
+    actorId:     dentistaPerfil.id,
+    pacienteId:  dados.pacienteId,
+    entityType:  'pagamento',
+    entityId:    data.id,
+    action:      'pagamento.registrado',
+    metadata:    { valor: saldo, forma: dados.formaPagamento, orcamento_id: dados.orcamentoId },
+  });
+
   revalidatePath("/dashboard/orcamentos");
   revalidatePath('/dashboard/financeiro');
-  return { id: data.id };
+  return { id: data.id, autoAprovado };
 }
 
 export async function excluirOrcamento(

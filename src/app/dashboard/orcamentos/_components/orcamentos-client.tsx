@@ -518,9 +518,10 @@ export function OrcamentosClient({
   const handleGerarParcelas = async () => {
     if (!selected) return;
     const numero = parseInt(parcelasForm.numero, 10);
-    // Mesma definição de "Preencher restante": total - pago (não é o total cheio).
+    // Aviso local só de UX — quem soma "já pago" de verdade agora é a RPC (server), pra não
+    // confiar em saldo calculado no browser.
     const pago = selected.pagamentos.filter((p) => p.status === 'pago').reduce((s, p) => s + p.valor, 0);
-    const valorTotal = Math.max(0, (selected.total ?? 0) - pago);
+    const saldoAproximado = Math.max(0, (selected.total ?? 0) - pago);
     if (!numero || numero < 2 || numero > 24) {
       setParcelasError('Informe entre 2 e 24 parcelas.');
       return;
@@ -529,7 +530,7 @@ export function OrcamentosClient({
       setParcelasError('Informe o primeiro vencimento.');
       return;
     }
-    if (!valorTotal || valorTotal <= 0) {
+    if (!saldoAproximado || saldoAproximado <= 0) {
       setParcelasError('Não há saldo restante para parcelar.');
       return;
     }
@@ -538,11 +539,8 @@ export function OrcamentosClient({
 
     const result = await gerarParcelas({
       orcamentoId: selected.id,
-      pacienteId: selected.paciente?.id ?? '',
-      valorTotal,
       numeroParcelas: numero,
       primeiroVencimento: parcelasForm.primeiroVencimento,
-      dentistaId: selected.dentista?.id,
     });
 
     if (result.error || !result.parcelas) {
@@ -697,7 +695,7 @@ export function OrcamentosClient({
       return;
     }
     setEditSaving(true);
-    const result = await editarOrcamento(selected.id, itensValidos.map(i => ({ ...i, preco_unitario: parseValorBR(i.preco_unitario) })));
+    const result = await editarOrcamento(selected.id, itensValidos.map(i => ({ ...i, preco_unitario: parseValorBR(i.preco_unitario) })), selected.desconto ?? 0);
     if (result.error) {
       setEditError(result.error);
     } else {
@@ -727,36 +725,15 @@ export function OrcamentosClient({
   const handlePagamentoRapido = async (formaPagamento: FormaPagamento) => {
     if (!selected) return;
     setPagRapidoSaving(true);
+    // R-34 — agora pode fechar uma parcela existente (UPDATE) em vez de sempre inserir
+    // linha nova; o valor exato e se aprovou vêm do server. Sem estado otimista aqui —
+    // o router.refresh() logo abaixo já busca o estado real.
     const result = await registrarPagamentoRapido({
       orcamentoId: selected.id,
       pacienteId: selected.paciente?.id ?? '',
-      total: selected.total ?? 0,
       formaPagamento,
-      dentistaId: selected.dentista?.id,
     });
     if (!result.error) {
-      const novoPag: PagamentoRow = {
-        id: result.id ?? crypto.randomUUID(),
-        orcamento_id: selected.id,
-        valor: selected.total ?? 0,
-        status: 'pago',
-        forma_pagamento: formaPagamento,
-        data_pagamento: hoje,
-        data_vencimento: null,
-        parcela_numero: null,
-        total_parcelas: null,
-        marcado_por: null,
-      };
-      setOrcamentos((prev) =>
-        prev.map((o) =>
-          o.id === selected.id
-            ? { ...o, status: 'aprovado', pagamentos: [...o.pagamentos, novoPag] }
-            : o
-        )
-      );
-      setSelected((prev) =>
-        prev ? { ...prev, status: 'aprovado', pagamentos: [...prev.pagamentos, novoPag] } : prev
-      );
       router.refresh();
     }
     setPagRapidoSaving(false);
