@@ -1,7 +1,7 @@
 # R-38 — Orçamento: como o paciente vê
 
 **Modelo:** Sonnet (apresentação + 1 coluna aditiva; nenhuma regra de dinheiro muda)
-**Status:** plano — aguardando aprovação
+**Status:** **aprovada** 30/07 — pronta pra execução
 **Origem:** pedido de um dentista real, trazido pelo Mateus em 30/07.
 **Relacionado:** [R-34](R-34-plano-de-pagamento.md) (a condição negociada que o PDF passa a
 mostrar nasce lá) · [R-33](R-33-orcamento-tela-unica.md) (o PDF é o item 1 dos 15 a portar)

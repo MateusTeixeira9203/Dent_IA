@@ -163,6 +163,27 @@ sem que alguém decida isso conscientemente.
 Hoje os 3 cards são `{!isSecretaria && …}` (`:792`) — **o dentista vê, a secretária não.**
 O funil herda exatamente esse gate. Não é este item que reabre a discussão.
 
+### 5.4 Receita Prevista — refina a lista que já existe, não cria uma nova
+
+A lista de pagamentos pendentes já existe no Financeiro, fora do funil
+(`financeiro-client.tsx:736-798`, dados de `listarPagamentosPendentes` em
+`financeiro/actions.ts:594-626`). Discutido com o Mateus 31/07 — continua existindo (é a
+única visão em **parcela**, não em orçamento, e isso importa pra saber exatamente quando o
+dinheiro entra), com 3 correções:
+
+| # | Hoje | Fica |
+|---|---|---|
+| 1 | Sem filtro de data — pega `status='pendente'` de qualquer época, inclusive sem `data_vencimento` (`:597-608`) | Filtra por `data_vencimento` dentro do **mês selecionado** — mesma janela do funil (§5.1), mesmo padrão de `listarPagamentosPagos` (`mesWindow(mesAtual)`, `:554`) |
+| 2 | Pendente sem `data_vencimento` entra na lista e na soma, ordenado por último, sem rótulo (`:758,776`) | Não cabe em nenhum filtro de mês — vira seção própria, **sempre visível** independente do mês selecionado: "Sem previsão de data" |
+| 3 | Linha não é clicável (`:760-786`) | Clica → abre o orçamento (`orcamento_id` já vem na query, `:598,618`) |
+
+**Contrato:** `listarPagamentosPendentes` passa a receber `mesISO` (mesmo parâmetro de
+`listarPagamentosPagos`). Uma leitura só de `status='pendente'` (sem filtro de data no
+banco — o filtro de clínica/dentista continua igual, `:600-606`), dividida em dois grupos
+na volta: `data_vencimento` dentro do mês → lista principal; `data_vencimento is null` →
+"Sem previsão de data". Pendente com data **fora** do mês selecionado não aparece em
+nenhum dos dois — está certo: ele aparece quando o dentista navegar pro mês dele.
+
 ## 6. Invariantes
 
 | # | Invariante |
@@ -205,6 +226,8 @@ DEX Traduzir, DEX Gerar mensagem, e os outros 11 itens — esses continuam com a
 - [ ] **G8** — Celular: coluna do dinheiro **acima** dos procedimentos, e a ação principal alcançável sem rolar até o fim
 - [ ] **G9** — **Gate de 2 contas** — dentista comum e admin: admin vê e não edita (R-32); a coluna do dinheiro não vaza orçamento de outro dentista
 - [ ] **G10** *(R-39c)* — Funil e "Receita Prevista" na mesma janela de mês; trocar o mês move os quatro números juntos
+- [ ] **G11** *(R-39c)* — Pendente sem `data_vencimento` nunca some: aparece em "Sem previsão de data" independente do mês selecionado
+- [ ] **G12** *(R-39c)* — Clicar numa linha da Receita Prevista (com ou sem data) abre o orçamento correspondente
 
 ## 9. Riscos
 

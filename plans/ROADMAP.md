@@ -1,7 +1,7 @@
 # Roadmap — Odonto.IA
 
 > **ROADMAP** · atualizado **2026-07-30** (noite) · reorganizado por **importância pro dentista**
-> **Ativo:** R-39a · **Fila:** 25 · **🟡 no ar não verificado:** 6 · **Concluídos:** 23 · **Congelado:** 1
+> **Ativo:** R-39a · **Fila:** 26 · **🟡 no ar não verificado:** 6 · **Concluídos:** 23 · **Congelado:** 1
 > **Próximo:** commit do R-39a → gate de 2 contas → Bloco 1 (ficha)
 
 **Status:** ⏳ fila · 🔵 ativo (máx 1) · 🟡 no ar **não** verificado · ✅ no ar **e** verificado ·
@@ -52,10 +52,10 @@ migrations 120 e 121, que já mudaram RLS ao vivo.
 | ID | Item | Estado | Peso |
 |---|---|---|---|
 | [R-30](specs/R-30-ficha-fonte-unica-procedimento.md) | Ficha: fonte única de procedimento — mata a divergência entre `dentes_observacoes` e `odontograma_eventos` | 🟡 **commitado e em produção** (30/07 noite), bug relatado por ele **confirmado corrigido em produção**. **Parte 1 destrava 24 de 87 fichas (27,6%)** que rejeitavam o save ao editar. Falta o gate de 2 contas pra virar ✅ | G |
-| [R-31a](specs/R-31a-paciente-unico-prevencao.md) | Paciente único: **prevenção** — parar de criar duplicata | ⏳ aprovada. Começa pela **busca sem acento** e pela seleção que não pega no celular | M |
+| [R-31a](specs/R-31a-paciente-unico-prevencao.md) | Paciente único: **prevenção** — parar de criar duplicata | 🟡 **codado e testado ao vivo** (31/07) — §3.2, §3.3, §3.1, §3.4 completos. G1/G2/G4 confirmados com bug real achado e corrigido em cada um (ver handoff). G3 (toque no celular) e G5 (toast do agendamento) só confirmados por lógica — dev tooling não deixou ver o toast renderizar. **Sem commit ainda** | M |
 | [R-31b](specs/R-31b-paciente-unico-unificacao.md) | Paciente único: **unificação** dos 16 grupos existentes | ⏳ aprovada, depende da R-31a no ar. Nunca `DELETE` — `merged_into_id` reversível | M |
 | [R-29](specs/R-29-silo-resto-modelo-antigo.md) | Paciente é da clínica: identidade multi-clínica + lista sem filtro por dentista | 🟡 aplicado (migration 120), falta o gate de 2 dentistas comuns | M |
-| **R-41** | **Cadastro e edição de paciente incompletos** — relatado 30/07, ainda **não mapeado** | ⏳ sem spec — precisa de investigação antes de escopo | ? |
+| [R-41](specs/R-41-editar-paciente-completa-cadastro.md) | **Editar paciente fecha o cadastro que o fluxo rápido deixa aberto** — CPF, data de nascimento e responsável de menor | 🟡 **codado e testado ao vivo** (31/07) — G3-G6 confirmados (CPF duplicado bloqueia com mensagem clara, não colide consigo mesmo, menor revela responsável sem bloquear salvar). G1/G2/G7/G8 só por leitura de código. **Sem commit ainda** | M |
 | **R-42** | 💡 **Odontograma geral do paciente**, só leitura, agregando todas as fichas, com a ficha como cursor no tempo | 💡 ideia em discussão 30/07. Depende do R-30. Aberto: o que o dente mostra (estado atual × histórico) e onde entra procedimento sem dente | ? |
 | [R-24](ROADMAP.md) | Indicador de "ficha em aberto" (usar o `status`, hoje gravado e nunca lido) | ⏳ sem spec — falta definir o que "em aberto" significa pro usuário | P |
 | R-07b | Chips de rotina (R-07) chegam ao modo consulta | ⏳ sem spec | P |
@@ -64,12 +64,12 @@ migrations 120 e 121, que já mudaram RLS ao vivo.
 
 | ID | Item | Estado | Peso |
 |---|---|---|---|
-| [R-39](specs/R-39-orcamento-dinheiro-esqueleto-unico.md) | **Orçamento e dinheiro: um esqueleto só** — criar e criado com o mesmo layout, coluna do dinheiro, funil no financeiro | 🔵 **R-39a codado e aprovado por ele em localhost** (30/07 noite) — PDF/WhatsApp adiantados do R-33. **Sem commit ainda.** Faltam: gate de 2 contas, mobile completo, commit+push. R-39b/R-39c não iniciados | G |
+| [R-39](specs/R-39-orcamento-dinheiro-esqueleto-unico.md) | **Orçamento e dinheiro: um esqueleto só** — criar e criado com o mesmo layout, coluna do dinheiro, funil no financeiro | 🔵 **R-39a e R-39b codados e testados ao vivo** (30/07–31/07 noite) — PDF/WhatsApp adiantados do R-33. **Sem commit ainda.** R-39b: consistência visual do aceite + coluna "Pago" em `/dashboard/orcamentos`. Faltam: gate de 2 contas, mobile completo, commit+push, R-39c | G |
 | [R-34](specs/R-34-plano-de-pagamento.md) | Plano de pagamento: registrar o acordo (à vista / parcelado / `valor_acordado`) | 🟡 3 commits codados e testados, commitado e em produção. **Achado 30/07 noite: a rota do PDF tinha bug próprio (404 sempre), corrigido — mas ainda sem commit**, só verificado em localhost. Falta: subir esse fix, gate de 2 contas, e conferir `condicoes_pagamento` num PDF de orçamento parcelado especificamente | M |
 | [R-33](specs/R-33-orcamento-tela-unica.md) | Orçamento: uma tela só — mata o painel de `/dashboard/orcamentos`, porta 15 itens | ⏳ espera R-34 e **R-39a** (que define a forma onde os 15 pousam) | G |
 | [R-32](specs/R-32-orcamento-visivel-autor-admin-secretaria.md) | Orçamento visível para autor, admin e secretária | 🟡 aplicado (migration 121), falta o gate — G4/G5 são a prova anti-vazamento | P |
 | [R-28](specs/R-28-pagamento-fecha-sem-duplicar.md) | Pagamento: grava quem registrou + fecha parcela sem duplicar recebimento | 🟡 partes 1+2 verificadas na Teste01, falta confirmar em prod | M |
-| [R-38](specs/R-38-orcamento-apresentacao-ao-paciente.md) | Orçamento: como o paciente vê — PDF sem preço por item, só total e condição | ⏳ aprovada. Depende da R-34 pra "condição negociada" | P |
+| [R-38](specs/R-38-orcamento-apresentacao-ao-paciente.md) | Orçamento: como o paciente vê — PDF sem preço por item, só total e condição | 🔵 **codado e testado ao vivo** (30/07–31/07 noite) — migration aplicada, toggle no rodapé, PDF respeita o flag, snapshot do aceite confirmado gravando o flag (G1-G6 verificados). **Sem commit ainda** | P |
 | [R-10](ROADMAP.md) | P2: tirar a observação clínica do documento que o paciente lê | ⏳ P1 ✅ em prod. P2 precisa de decisão — `dentes_observacoes` alimenta orçamento **e** prontuário | P |
 
 ## Bloco 3 — Assinatura e prova
@@ -87,6 +87,7 @@ migrations 120 e 121, que já mudaram RLS ao vivo.
 | [R-36](specs/R-36-um-login-uma-clinica.md) | Um login, uma clínica — fim do multi-clínica e do seletor | ⏳ planejada. **Ajuste 30/07:** admin fica como está, vira conta burocrática depois | G |
 | [R-35](specs/R-35-riscos-nao-reportados.md) | 14 riscos da auditoria de 29/07 | 🟡 10 codados/aplicados, **4 verificados ao vivo**. Faltam itens 4, 7, 10 | M |
 | **R-43** | Varredura de todas as `SECURITY DEFINER` de RLS com fallback sem casar clínica | ⏳ **3ª ocorrência achada** (`get_my_role`, `get_my_dentista_id`, `has_active_membership`). Achar de uma vez em vez de uma por acidente | P |
+| **R-44** | Varredura de embeds Postgrest com FK ambígua (`tabela:outra(...)` sem `!` desambiguando) — mesmo padrão do bug corrigido no PDF (R-34) | ⏳ **achado 30/07 à noite**, confirmado ao vivo (300 real nos logs do Supabase) em `agendamentos`: `get-patient-workspace-data.ts:110`, `get-visible-timeline-events.ts:66` e `:75`. **`orcamentos/page.tsx:64` — confirmado e corrigido 31/07** (lista de `/dashboard/orcamentos` voltava 0 orçamentos, silencioso). Seguem abertas as outras 3 | P |
 | [R-25](ROADMAP.md) | 24 `setState` síncronos dentro de `useEffect` (cascading renders) | ⏳ dívida de performance, não quebra runtime | M |
 
 ## Bloco 5 — Depois
@@ -95,6 +96,7 @@ migrations 120 e 121, que já mudaram RLS ao vivo.
 |---|---|---|---|
 | [R-08](specs/R-08-contrato-clinico-perio.md) | Periodontia: periograma — R-08c (tabela + grade 6×32) → d (PDF) → e (comparação) → f (ditado) | ⏳ R-08a e R-08b ✅. [Contrato clínico](specs/R-08-contrato-clinico-perio.md) travado | G |
 | [R-26](ROADMAP.md) | Dex vira hub de notificações operacionais — faltosos sem retorno | ⏳ sem spec. Precisa definir o que é "faltou e não voltou" | M |
+| **R-45** | 💡 Retorno automático por tipo de procedimento (recall) — profilaxia a cada 6 meses, orto mensal etc. — dispara aviso de WhatsApp antes do prazo vencer | 💡 ideia levantada 31/07. Proativo (antes de vencer), diferente do R-26 (reativo, depois que já faltou). Ele mexe no WhatsApp amanhã de manhã — ainda não mapeado, não é spec | ? |
 | [R-09](ROADMAP.md) | Voz nas especialidades — `/api/dex/extrair-especialidade` não tem um único chamador | ⏳ sem spec | M |
 | [R-15](specs/R-15-modo-consulta-cockpit.md) | Modo consulta: o cockpit do atendimento | ⏳ em debate. **Reposicionado 30/07:** a arquitetura (captura → estruturação) está certa, o dispositivo de entrada é que matou. Ver R-42 | G |
 
