@@ -105,7 +105,7 @@ export interface Ficha {
   alergias: string | null;
   medicamentos_em_uso: string | null;
   exame_fisico: string | null;
-  dentes_afetados: string[] | null;
+  dentes_afetados: number[] | null;
 }
 
 export interface Procedimento {
