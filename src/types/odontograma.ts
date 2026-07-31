@@ -232,4 +232,11 @@ export interface OdontogramaEventoDraft extends OdontogramaEventoInput {
    */
   id: string;
   realizado_em: string | null;
+  /**
+   * R-30 Parte 2 — presente só quando o draft veio de um evento já carregado do banco
+   * (`eventoViewParaDraft`); ausente em draft novo (IA/manual). Existe só pra o dedup de
+   * `eventosDraft` nunca colapsar nem descartar um evento assinado (invariante #2 da R-30) —
+   * não é enviado no payload de salvar (o servidor não aceita mudança de assinatura por aqui).
+   */
+  assinaturaId?: string | null;
 }

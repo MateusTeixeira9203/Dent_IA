@@ -29,6 +29,8 @@ export function registrarLog(supabase: SupabaseClient, data: LogData): void {
       metadata:    data.metadata ?? null,
     })
     .then(({ error }: { error: { message: string } | null }) => {
-      if (error) console.warn('[activity-log] insert failed:', error.message);
+      // R-30 Parte 6 — console.error, não warn: fire-and-forget não pode virar "morre em
+      // silêncio" também no log. error (não warn) é o que costuma disparar alerta/monitoramento.
+      if (error) console.error('[activity-log] insert failed:', error.message);
     });
 }

@@ -24,7 +24,7 @@ import {
   type PapelNoGrupo,
 } from '@/types/odontograma';
 import { TOOTH_CLASS, DIMS, occlusalContourPath, occlusalZonePoints, occlusalLabelPos } from './tooth-geometry';
-import { ToothSVG, buildResumos, TOOTH_NAMES, getQuadrantLabel, TEETH_UPPER, TEETH_LOWER } from './Odontograma';
+import { ToothSVG, buildResumos, TOOTH_NAMES, getQuadrantLabel, TEETH_UPPER, TEETH_LOWER, type ToothState } from './Odontograma';
 // Detalhe de especialidade (migration 106) — resolvido por tipo CONCRETO, não pelo
 // registry apagado (o registry só lê metadados; Form/Card são invocados com o tipo
 // real, mesma convenção do orto em FichasTab).
@@ -102,6 +102,14 @@ export interface ToothDetailPanelProps {
   tabelaContainer?: HTMLElement | null;
   readOnly?: boolean;
   className?: string;
+  /**
+   * R-30 Parte 7 (contrato 3) — estado do dente na arcada (selecionado/compartilhado/
+   * histórico), pro dente ampliado refletir o MESMO visual em vez de sempre 'default'.
+   * Sem isto, um dente sem evento próprio (sem `resumo`) mostrava neutro aqui e colorido
+   * na arcada — a inconsistência que ajudou a esconder o bug do "dente azul fantasma".
+   * `resumo` (derivado de `eventos`, abaixo) continua tendo prioridade quando presente.
+   */
+  state?: ToothState;
 }
 
 export function ToothDetailPanel({
@@ -114,6 +122,7 @@ export function ToothDetailPanel({
   tabelaContainer,
   readOnly = false,
   className,
+  state = 'default',
 }: ToothDetailPanelProps) {
   const superior = (dente >= 11 && dente <= 28) || (dente >= 51 && dente <= 65);
   const doDente = useMemo(
@@ -389,7 +398,7 @@ export function ToothDetailPanel({
             <ToothSVG
               num={dente}
               isUpper={superior}
-              state="default"
+              state={state}
               hovered={false}
               showCheckbox={false}
               resumo={resumo}

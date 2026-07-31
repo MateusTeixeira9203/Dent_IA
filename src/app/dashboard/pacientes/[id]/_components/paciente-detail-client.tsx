@@ -87,8 +87,13 @@ import { formatarDataFicha } from '@/lib/format-data-ficha';
 import { toast } from 'sonner';
 import { STATUS_ORCAMENTO } from '@/lib/constants/orcamento-status';
 import { parseValorBR, formatValorBR } from '@/lib/valor-br';
-import { stripDenteDoNome } from '@/lib/arcadas';
-import type { OrcamentoComItens, OrcamentoItem, Pagamento, FichaParaOrc, ProcedimentoClinica, NovoOrcItem, OrcEditItem } from './types';
+import {
+  stripDenteDoNome, denteLabel,
+  ARCH_SUPERIOR, ARCH_INFERIOR, ARCH_COMPLETA,
+  QUAD_SUP_DIREITO, QUAD_SUP_ESQUERDO, QUAD_INF_DIREITO, QUAD_INF_ESQUERDO,
+} from '@/lib/arcadas';
+import { TIPO_LABEL } from '@/types/odontograma';
+import type { OrcamentoComItens, OrcamentoItem, Pagamento, FichaParaOrc, EventoOdontogramaParaOrc, ProcedimentoClinica, NovoOrcItem, OrcEditItem } from './types';
 import { EditarPacienteModal } from './modals/editar-paciente-modal';
 import { DetalheOrcamentoModal } from './modals/detalhe-orcamento-modal';
 import { ConfirmarDeleteOrcModal } from './modals/confirmar-delete-orc-modal';
@@ -875,14 +880,64 @@ export function PacienteDetailClient({
     setPagDeleteSaving(false);
   };
 
-  // Converte dentes_afetados + dentes_observacoes de uma ficha em itens de orçamento.
-  // Suporta múltiplos procedimentos por dente (separados por '\n').
-  const fichaParaItens = (ficha: FichaParaOrc): NovoOrcItem[] => {
+  // R-30 Parte 4 — sentinela de arcada/quadrante equivalente à âncora do evento, só pra
+  // reusar ARCH_LABELS/denteLabel (AncoraClinica não guarda o número sentinela, guarda
+  // nivel+arcada+quadrante separados — a codificação por sentinela é exclusiva de
+  // fichas.dentes_afetados). null quando a âncora é por dente/face.
+  const sentinelDaAncora = (ev: EventoOdontogramaParaOrc): number | null => {
+    if (ev.nivel === 'boca') return ARCH_COMPLETA;
+    if (ev.nivel === 'arcada') {
+      if (ev.arcada === 'superior') return ARCH_SUPERIOR;
+      if (ev.arcada === 'inferior') return ARCH_INFERIOR;
+      return null;
+    }
+    if (ev.nivel === 'quadrante') {
+      switch (ev.quadrante) {
+        case 1: case 5: return QUAD_SUP_DIREITO;
+        case 2: case 6: return QUAD_SUP_ESQUERDO;
+        case 3: case 7: return QUAD_INF_ESQUERDO;
+        case 4: case 8: return QUAD_INF_DIREITO;
+        default: return null;
+      }
+    }
+    return null;
+  };
+
+  // Match no catálogo pelo RÓTULO CANÔNICO do tipo (TIPO_LABEL), nunca por texto livre —
+  // é o texto livre que fazia "Restauração - planejado (resina)" e "Restauração - planejado"
+  // virarem 2 itens de orçamento diferentes pro mesmo procedimento (a IA escreve diferente
+  // cada vez; o tipo do evento não muda).
+  const matchProcedimentoPorTipo = (tipo: EventoOdontogramaParaOrc['tipo']) => {
+    const rotulo = TIPO_LABEL[tipo].toLowerCase();
+    return procedimentosClinica.find(
+      (p) => p.nome.toLowerCase().includes(rotulo) || rotulo.includes(p.nome.toLowerCase()),
+    );
+  };
+
+  /**
+   * R-30 Parte 4 — FALLBACK de texto, e por que ele existe.
+   *
+   * A Parte 4 troca a fonte do orçamento de `dentes_observacoes` para
+   * `odontograma_eventos`. Medido em produção (30/07): das **87 fichas, 82 têm texto
+   * por dente (94%) e só 24 têm evento `indicado` (28%)**. Ler exclusivamente do evento
+   * tiraria o pré-preenchimento de **58 fichas** — trocaria "o orçamento gerou do
+   * procedimento errado" por "o orçamento não gerou nada", que é pior porque falha em
+   * silêncio, com o dentista na frente do paciente.
+   *
+   * Fonte única se faz por **precedência, não por exclusão**: o evento ganha quando
+   * existe, o texto entra **só** quando não há nenhum evento elegível. Nunca os dois
+   * somados — somar duplicaria o item nas fichas que têm as duas representações (que
+   * são justamente as que a Parte 3 passou a unir).
+   *
+   * Lógica idêntica à que está em produção hoje; não é código novo, é o caminho antigo
+   * preservado como rede.
+   */
+  const itensDoTexto = (ficha: FichaParaOrc): NovoOrcItem[] => {
     const dentes = ficha.dentes_afetados ?? [];
     const obs = ficha.dentes_observacoes ?? {};
     if (dentes.length === 0) return [{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }];
 
-    // Agrupa dentes por procedimento: mesmo texto em vários dentes → um item com quantidade N
+    // Mesmo texto em vários dentes → um item com quantidade N.
     const procToTeeth = new Map<string, number[]>();
     for (const tooth of dentes) {
       const procs = (obs[String(tooth)] ?? '').split('\n').filter(Boolean);
@@ -914,6 +969,73 @@ export function PacienteDetailClient({
     });
   };
 
+  /**
+   * R-30 Parte 4 — orçamento novo lê de `odontograma_eventos`, não mais de
+   * `dentes_observacoes`. Corrige a "correção central" da spec: procedimento em nível
+   * boca/arcada/quadrante (profilaxia, raspagem, clareamento, flúor) nunca chegava ao
+   * orçamento, porque `derivarV2DosEventos` (grava o texto) pula evento sem `dente`.
+   *
+   * Só `status='indicado'` entra (realizado já foi feito — incluir seria cobrar retroativo
+   * sem intenção; decisão confirmada 30/07). Evento com `assinatura_id` nunca é sugerido —
+   * já está congelado num orçamento aceito.
+   *
+   * Agrupa por PROCEDIMENTO, não por texto — chave `(tipo, grupo_id ?? id)`. `grupo_id`
+   * junta ponte/multi-dente num item só (mesma semântica de `agrupar-registros.ts`); sem
+   * `grupo_id`, cada evento vira seu próprio item — mesmo tipo em dentes diferentes NÃO se
+   * consolida automaticamente, porque era exatamente o casamento por texto livre (não o
+   * agrupamento em si) que causava itens duplicados.
+   */
+  const fichaParaItens = (ficha: FichaParaOrc): NovoOrcItem[] => {
+    const elegiveis = (ficha.odontograma_eventos ?? []).filter(
+      (ev) => ev.status === 'indicado' && ev.assinatura_id == null,
+    );
+
+    // Sem evento elegível, cai no texto — ver `itensDoTexto`.
+    if (elegiveis.length === 0) {
+      return itensDoTexto(ficha);
+    }
+
+    const grupos = new Map<string, EventoOdontogramaParaOrc[]>();
+    for (const ev of elegiveis) {
+      const chave = `${ev.tipo}|${ev.grupo_id ?? ev.id}`;
+      const arr = grupos.get(chave);
+      if (arr) arr.push(ev); else grupos.set(chave, [ev]);
+    }
+
+    return Array.from(grupos.values()).map((grupoEventos) => {
+      const primeiro = grupoEventos[0];
+      const match = matchProcedimentoPorTipo(primeiro.tipo);
+      const rotulo = TIPO_LABEL[primeiro.tipo];
+
+      const dentesDistintos = [
+        ...new Set(grupoEventos.map((ev) => ev.dente).filter((d): d is number => d != null)),
+      ];
+      const sentinel = sentinelDaAncora(primeiro);
+
+      // boca/arcada/quadrante: quantidade sempre 1 (é a correção central da Parte 4).
+      const quantidade = dentesDistintos.length > 0 ? dentesDistintos.length : 1;
+      const alcance =
+        sentinel != null
+          ? denteLabel(sentinel)
+          : dentesDistintos.length > 0
+            ? `D${dentesDistintos.join(', D')}`
+            : '';
+
+      return {
+        procedimentoId: match?.id ?? '',
+        descricao: alcance ? `${match?.nome ?? rotulo} — ${alcance}` : (match?.nome ?? rotulo),
+        quantidade,
+        preco: match?.preco_padrao != null ? formatValorBR(match.preco_padrao) : '',
+      };
+    });
+  };
+
+  // R-30 Parte 4 — embute odontograma_eventos na mesma query (FK ficha_id, sem ambiguidade:
+  // é a única FK de odontograma_eventos pra fichas). Evita 2º round-trip pra gerar os itens.
+  const SELECT_FICHA_PARA_ORC =
+    'id, created_at, data_atendimento, queixa_principal, dentes_afetados, dentes_observacoes, ' +
+    'odontograma_eventos(id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, assinatura_id)';
+
   const abrirNovoOrcamento = async () => {
     setOrcError(null);
     setIsLoadingFichaParaOrc(true);
@@ -921,7 +1043,7 @@ export function PacienteDetailClient({
       const supabase = createClient();
       const { data } = await supabase
         .from('fichas')
-        .select('id, created_at, data_atendimento, queixa_principal, dentes_afetados, dentes_observacoes')
+        .select(SELECT_FICHA_PARA_ORC)
         .eq('paciente_id', paciente.id)
         .eq('clinica_id', clinicaId)
         .order('data_atendimento', { ascending: false })
@@ -972,7 +1094,7 @@ export function PacienteDetailClient({
       const supabase = createClient();
       const { data } = await supabase
         .from('fichas')
-        .select('id, created_at, data_atendimento, queixa_principal, dentes_afetados, dentes_observacoes')
+        .select(SELECT_FICHA_PARA_ORC)
         .eq('id', fichaId)
         .eq('clinica_id', clinicaId)
         .single();

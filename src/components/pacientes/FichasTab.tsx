@@ -13,6 +13,7 @@ import {
   Circle,
   ChevronRight,
   Forward,
+  AlertTriangle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { DexLoader } from "@/components/ui/dex-loader";
@@ -29,7 +30,7 @@ import { createClient } from "@/lib/supabase/client";
 import { HelpTooltip } from "@/components/ui/help-tooltip";
 import { toast } from 'sonner';
 import type { PlanoId } from "@/lib/planos";
-import { Odontograma, type ToothStatus } from "@/components/odontograma/Odontograma";
+import { Odontograma, computeToothState, type ToothStatus } from "@/components/odontograma/Odontograma";
 import { ToothDetailPanel } from "@/components/odontograma/ToothDetailPanel";
 import { OdontogramaComPainel } from "@/components/odontograma/OdontogramaComPainel";
 import {
@@ -60,7 +61,7 @@ import type {
   NivelAncora, Arcada, FaceDental, QuadranteFDI, PapelNoGrupo,
 } from '@/types/odontograma';
 import { alternarStatusRegistro, encaminharProcedimento, atualizarStatusEncaminhado, preencherDetalheEncaminhado, assinarProcedimentos, assinarTodosRealizadosDaFicha } from '@/app/consulta/[agendamentoId]/actions';
-import { salvarFicha, deletarFicha } from '@/server/patients/salvar-ficha';
+import { salvarFicha, deletarFicha, contarVinculosFicha, type VinculosFicha } from '@/server/patients/salvar-ficha';
 import { derivarResponsaveis, eventosVisiveis, fichaVisivel, filtroAindaValido, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
 import { EncaminharBar } from '@/components/fichas/encaminhar-bar';
 import { AssinarBar } from '@/components/fichas/assinar-bar';
@@ -525,7 +526,57 @@ function eventoViewParaDraft(e: EventoView): OdontogramaEventoDraft {
     tipo: e.tipo, status: e.status, origem: e.origem, ancora: e.ancora,
     grupo_id: e.grupoId, papel_no_grupo: e.papelNoGrupo, observacao: e.observacao ?? '',
     detalhe: e.detalhe, realizado_em: e.realizadoEm,
+    assinaturaId: e.assinaturaId, // R-30 Parte 2 — dedup nunca colapsa evento assinado
   };
+}
+
+/**
+ * R-30 Parte 2 — colapsa eventos equivalentes antes de montar o payload de save. Entrada
+ * repetida do Dex (mesmo tipo/status/origem/âncora/papel) recebia `crypto.randomUUID()`
+ * distinto e virava duas linhas cobráveis (achado real: ficha do Renato 27/07, dente 15).
+ * Mantém o de menor `id` — determinístico, não depende de ordem de chegada. Evento assinado
+ * nunca é candidato a descarte (invariante #2 da R-30): sempre passa direto.
+ */
+function chaveDedupEvento(ev: OdontogramaEventoDraft): string {
+  return JSON.stringify([
+    ev.tipo, ev.status, ev.origem,
+    ev.ancora.nivel, ev.ancora.arcada ?? null, ev.ancora.quadrante ?? null, ev.ancora.dente ?? null,
+    [...(ev.ancora.faces ?? [])].sort(),
+    ev.papel_no_grupo,
+  ]);
+}
+
+/**
+ * R-30 Parte 3 — une duas notas do mesmo dente em vez de uma substituir a outra: derivada
+ * primeiro, texto do formulário depois, sem duplicar linha idêntica.
+ */
+function unirObservacoes(derivada: string, doFormulario: string): string {
+  const linhas = [...derivada.split('\n'), ...doFormulario.split('\n')]
+    .map((l) => l.trim())
+    .filter(Boolean);
+  return [...new Set(linhas)].join('\n');
+}
+
+function dedupEventosDraft(eventos: OdontogramaEventoDraft[]): OdontogramaEventoDraft[] {
+  const vencedorPorChave = new Map<string, OdontogramaEventoDraft>();
+  const resultado: OdontogramaEventoDraft[] = [];
+
+  for (const ev of eventos) {
+    if (ev.assinaturaId) { resultado.push(ev); continue; }
+
+    const chave = chaveDedupEvento(ev);
+    const atual = vencedorPorChave.get(chave);
+    if (!atual) {
+      vencedorPorChave.set(chave, ev);
+      resultado.push(ev);
+    } else if (ev.id < atual.id) {
+      resultado[resultado.indexOf(atual)] = ev;
+      vencedorPorChave.set(chave, ev);
+    }
+    // senão: `ev` é duplicata com id maior — descartado.
+  }
+
+  return resultado;
 }
 
 /**
@@ -603,10 +654,19 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   const [detalheRascunho, setDetalheRascunho] = React.useState<Record<string, unknown>>({});
   const [salvandoDetalheKey, setSalvandoDetalheKey] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
+  // R-30 Parte 5 — fail-closed: se odontograma_eventos falhar ao carregar, toda ficha
+  // recebia eventos:[] em silêncio; editar e salvar apagava por omissão o que já existia
+  // (a RPC delete-by-omission trata "não veio no payload" como "apague"). Bloqueia editar/
+  // salvar enquanto isto for true, em vez de arriscar apagar dado clínico.
+  const [eventosFalharamAoCarregar, setEventosFalharamAoCarregar] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isPanelOpen, setIsPanelOpen] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);  const [selectedTeeth, setSelectedTeeth] = React.useState<number[]>([]);
   const [sharedTeeth, setSharedTeeth] = React.useState<number[]>([]);  const [sharedNotes, setSharedNotes] = React.useState<string[]>(['']);  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState<string | null>(null);
+  // R-35 item 2 — conta orçamentos/pagamentos que a ficha leva junto (ON DELETE CASCADE)
+  // antes de deixar confirmar, em vez de apagar em silêncio.
+  const [vinculosFicha, setVinculosFicha] = React.useState<VinculosFicha | null>(null);
+  const [vinculosLoading, setVinculosLoading] = React.useState(false);
   const [signingTarget, setSigningTarget] = React.useState<SigningTarget | null>(null);
   const [assinadoPorInput, setAssinadoPorInput] = React.useState('');
   const [isSavingSignature, setIsSavingSignature] = React.useState(false);
@@ -769,11 +829,19 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   }, [destacarCard]);
 
   const abrirDenteEDestacarRegistro = React.useCallback((dente: number | null) => {
+    if (dente == null) { setDenteAberto(null); return; }
+    // R-30 Parte 7 (contrato 4) — clicar num dente "selecionado" sem evento real por trás
+    // (fantasma do texto/dentes_observacoes, eventosDraft vazio) desmarca em vez de abrir
+    // um painel sem nada pra mostrar. Com evento real, comportamento inalterado: abre.
+    if (eventosDraft.length === 0 && selectedTeeth.includes(dente)) {
+      setSelectedTeeth((prev) => prev.filter((t) => t !== dente));
+      setFormData((f) => ({ ...f, teethNotes: f.teethNotes.filter((tn) => tn.tooth !== dente) }));
+      return;
+    }
     setDenteAberto(dente);
-    if (dente == null) return;
     // R-21 Fase 3: abre a seção do dente na lista e rola até ela (antes só destacava o card).
     destacarDente(dente, 'A', setDentesAbertosA, cardsDraft);
-  }, [cardsDraft, destacarDente]);
+  }, [cardsDraft, destacarDente, eventosDraft, selectedTeeth]);
 
   /** Observação por procedimento (§03 do definitivo) — aplica a todo o grupo. */
   const atualizarObsGrupo = (idxs: number[], obs: string) => {
@@ -903,9 +971,15 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
         .eq("paciente_id", patientId)
         .eq("clinica_id", clinicaId);
 
-      // Falha na busca de eventos NUNCA pode ficar silenciosa — já esteve (bug real desta
-      // sessão): erro engolido = camada 2 sempre vazia, sem sinal nenhum de que algo quebrou.
-      if (evError) console.error("Erro ao buscar odontograma_eventos:", evError);
+      // R-30 Parte 5 — fail-closed: falha na busca de eventos NUNCA pode ficar silenciosa.
+      // Já esteve (bug real desta sessão): erro engolido = camada 2 sempre vazia, sem sinal
+      // nenhum de que algo quebrou — editar e salvar apagaria eventos reais por omissão.
+      if (evError) {
+        console.error("Erro ao buscar odontograma_eventos:", evError);
+        setEventosFalharamAoCarregar(true);
+      } else {
+        setEventosFalharamAoCarregar(false);
+      }
 
       const eventosPorFicha = new Map<string, EventoView[]>();
       for (const e of (evData ?? []) as unknown as EventoRow[]) {
@@ -1293,32 +1367,49 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   };
 
   const handleSave = async () => {
+    // R-30 Parte 5 — fail-closed: editar ficha existente sem os eventos reais carregados
+    // apagaria tudo por omissão no save. Ficha nova (sem editingId) não tem nada a perder.
+    if (editingId && eventosFalharamAoCarregar) {
+      toast.error('Não foi possível carregar os registros do odontograma. Recarregue a página antes de salvar — salvar agora apagaria dado clínico já salvo.');
+      return;
+    }
     setIsSaving(true);
 
     try {
       const validSharedNotes = sharedNotes.filter((n) => n.trim()).join('\n');
 
+      // R-30 Parte 2 — colapsa duplicata ANTES de derivar, pra derivado/payload concordarem.
+      const eventosParaSalvar = dedupEventosDraft(eventosDraft);
+
       // Design definitivo (21/07): o lançamento manual virou EVENTO (perfil do dente).
       // Derivamos os campos v2 pra que orçamento / PDF / progresso continuem alimentados.
-      const derivado = derivarV2DosEventos(eventosDraft);
+      const derivado = derivarV2DosEventos(eventosParaSalvar);
 
       // União: seleção de região (sentinelas de arcada/quadrante) + dentes dos eventos.
       const dentesAfetados = [...new Set([...selectedTeeth, ...sharedTeeth, ...derivado.dentes])];
 
-      const dentesObservacoes: Record<string, string> = {
-        // Base: o que veio dos eventos (perfil do dente ou Dex).
-        ...derivado.observacoes,
-        // Dentes individuais do form — PRECEDÊNCIA sobre a derivação (texto do Dex é mais rico).
-        ...Object.fromEntries(
-          formData.teethNotes
-            .map((tn) => [String(tn.tooth), tn.notes.filter((n) => n.trim()).join('\n')] as [string, string])
-            .filter(([, v]) => v.length > 0)
-        ),
-        // Grupo de dentes — todos compartilham as mesmas notas
-        ...(validSharedNotes
-          ? Object.fromEntries(sharedTeeth.map((t) => [String(t), validSharedNotes]))
-          : {}),
-      };
+      // R-30 Parte 3 — por dente, o valor final é a UNIÃO das fontes (derivada dos eventos +
+      // texto do formulário), nunca uma sobrescrevendo a outra. Antes, o form apagava a nota
+      // derivada do mesmo dente (achado real: dente 15 tinha 2 eventos e sobrava 1 linha).
+      const dentesObservacoes: Record<string, string> = { ...derivado.observacoes };
+
+      for (const tn of formData.teethNotes) {
+        const doForm = tn.notes.filter((n) => n.trim()).join('\n');
+        if (!doForm) continue;
+        const key = String(tn.tooth);
+        dentesObservacoes[key] = dentesObservacoes[key]
+          ? unirObservacoes(dentesObservacoes[key], doForm)
+          : doForm;
+      }
+
+      if (validSharedNotes) {
+        for (const t of sharedTeeth) {
+          const key = String(t);
+          dentesObservacoes[key] = dentesObservacoes[key]
+            ? unirObservacoes(dentesObservacoes[key], validSharedNotes)
+            : validSharedNotes;
+        }
+      }
 
       // Procedimentos: os do form primeiro; a derivação só acrescenta o que faltou.
       const procedimentosFinais = [
@@ -1341,7 +1432,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
         procedimentos:      procedimentosFinais,
         conduta:            formData.conduta,
         ortoManutencao:     formData.ortoManutencao,
-        odontogramaEventos: eventosDraft,
+        odontogramaEventos: eventosParaSalvar,
       });
 
       if (!result.ok) {
@@ -1490,6 +1581,12 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   };
 
   const handleEdit = (evolution: Evolution) => {
+    // R-30 Parte 5 — fail-closed: sem os eventos reais carregados, abrir pra editar e salvar
+    // apagaria tudo que já existe (delete-by-omissão da RPC). Bloqueia até recarregar.
+    if (eventosFalharamAoCarregar) {
+      toast.error('Não foi possível carregar os registros do odontograma. Recarregue a página antes de editar — editar agora poderia apagar dado clínico já salvo.');
+      return;
+    }
     // Detecta grupo compartilhado: dentes com exatamente as mesmas notas (≥2 dentes)
     const realTeeth = evolution.teethNotes.filter((tn) => !(tn.tooth in ARCH_LABELS));
     const byNotes = new Map<string, number[]>();
@@ -1575,6 +1672,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       toast.error("Erro ao apagar ficha. Tente novamente.");
     } finally {
       setShowDeleteConfirm(null);
+      setVinculosFicha(null);
     }
   };
 
@@ -1586,6 +1684,17 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
 
   return (
     <div className="space-y-6">
+      {/* R-30 Parte 5 — fail-closed visível: eventos não carregaram, edição bloqueada até
+          recarregar. Sem isto o único sinal seria um toast que passou e ninguém viu. */}
+      {eventosFalharamAoCarregar && (
+        <div className="flex items-center gap-3 bg-coral/5 border border-coral/20 rounded-xl px-4 py-3">
+          <AlertTriangle className="w-4 h-4 text-coral shrink-0" />
+          <p className="text-sm font-medium text-coral">
+            Não foi possível carregar o histórico do odontograma. Editar ou salvar fichas está
+            bloqueado até recarregar a página, pra não apagar dado clínico já salvo.
+          </p>
+        </div>
+      )}
       <div className="flex justify-between items-center">
         <h2 className="font-heading text-2xl text-text-primary">Histórico Clínico</h2>
         {!isPanelOpen && canWrite && (
@@ -1711,14 +1820,26 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
               {/* R-20: odontograma + perfil do dente lado-a-lado — encolhe ao abrir um dente */}
               <OdontogramaComPainel
                 odontograma={
-                  <Odontograma
-                    eventos={eventosDraft.length > 0 ? eventosDraft : undefined}
-                    selectedTeeth={selectedTeeth}
-                    sharedTeeth={sharedTeeth}
-                    historicalTeeth={editingId ? historicalTeeth : new Set<number>()}
-                    onToothToggle={abrirDenteEDestacarRegistro}
-                    hideFilters
-                  />
+                  <>
+                    {/* R-30 Parte 7 (contrato 2) — edição sempre mostra TODOS os registros,
+                        mesmo com filtro de responsável ativo na visualização (esconder
+                        registro de colega na edição arrisca apagá-lo por omissão no save,
+                        mesma classe de risco da Parte 5). Diferença fica explícita. */}
+                    {filtroResponsavel !== null && (
+                      <p className="text-[10px] text-text-secondary/70 -mb-1">
+                        Editando: mostrando os registros de todos os dentistas, mesmo com o
+                        filtro de responsável ativo na lista.
+                      </p>
+                    )}
+                    <Odontograma
+                      eventos={eventosDraft.length > 0 ? eventosDraft : undefined}
+                      selectedTeeth={selectedTeeth}
+                      sharedTeeth={sharedTeeth}
+                      historicalTeeth={editingId ? historicalTeeth : new Set<number>()}
+                      onToothToggle={abrirDenteEDestacarRegistro}
+                      hideFilters
+                    />
+                  </>
                 }
                 chips={
                   <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-border/40">
@@ -1757,6 +1878,14 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                       dataPadrao={formData.dataAtendimento}
                       gruposAbertos={gruposAbertos}
                       tabelaContainer={tabelaElA}
+                      // R-30 Parte 7 (contrato 3) — mesmo estado que a arcada calcularia
+                      // pra este dente, não mais 'default' fixo.
+                      state={computeToothState(denteAberto, {
+                        clinico: eventosDraft.length > 0,
+                        sharedTeeth,
+                        selectedTeeth,
+                        historicalTeeth: editingId ? historicalTeeth : new Set<number>(),
+                      })}
                     />
                   ) : null
                 }
@@ -2078,9 +2207,16 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                       </button>
                       {podeEditarFicha(evo) && (
                         <button
-                          onClick={() => setShowDeleteConfirm(evo.id)}
+                          onClick={() => {
+                            setShowDeleteConfirm(evo.id);
+                            setVinculosFicha(null);
+                            setVinculosLoading(true);
+                            void contarVinculosFicha(evo.id)
+                              .then(setVinculosFicha)
+                              .finally(() => setVinculosLoading(false));
+                          }}
                           title="Excluir"
-                          className="p-2 hover:bg-surface-alt rounded-lg transition-colors text-text-secondary hover:text-red-500"
+                          className="p-2 hover:bg-surface-alt rounded-lg transition-colors text-text-secondary hover:text-coral"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -2159,6 +2295,14 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                                   dataPadrao={evo.dataAtendimento}
                                   readOnly
                                   tabelaContainer={tabelaElB}
+                                  // R-30 Parte 7 (contrato 3) — mesmo cálculo do <Odontograma>
+                                  // logo acima nesta mesma visualização.
+                                  state={computeToothState(denteSalvoAberto.dente, {
+                                    clinico: eventosVis.length > 0,
+                                    sharedTeeth: [],
+                                    selectedTeeth: eventosVis.length > 0 ? [] : evo.teethNotes.map((tn) => tn.tooth),
+                                    historicalTeeth: new Set<number>(),
+                                  })}
                                 />
                               ) : null
                             }
@@ -2480,7 +2624,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setShowDeleteConfirm(null)}
+              onClick={() => { setShowDeleteConfirm(null); setVinculosFicha(null); }}
               className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             />
             <motion.div
@@ -2489,24 +2633,41 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
               exit={{ opacity: 0, scale: 0.95 }}
               className="relative bg-surface rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center border border-border/40"
             >
-              <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Trash2 className="w-8 h-8 text-red-500" />
+              <div className="w-16 h-16 bg-coral/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Trash2 className="w-8 h-8 text-coral" />
               </div>
               <h3 className="font-heading text-2xl text-text-primary mb-2">Excluir Evolução?</h3>
-              <p className="text-text-secondary text-sm mb-8">
+              <p className="text-text-secondary text-sm mb-4">
                 Esta ação não pode ser desfeita. O registro será removido permanentemente.
               </p>
+              {/* R-35 item 2 — orçamento e pagamento vinculados vão junto (cascade); mostra
+                  a consequência real antes de deixar confirmar, em vez de apagar em silêncio. */}
+              {vinculosLoading ? (
+                <p className="text-xs text-text-secondary/60 mb-8">Conferindo orçamentos vinculados...</p>
+              ) : vinculosFicha && vinculosFicha.orcamentos > 0 ? (
+                <div className="bg-coral/5 border border-coral/20 rounded-xl px-4 py-3 mb-8 text-left">
+                  <p className="text-xs font-medium text-coral">
+                    Vai junto: {vinculosFicha.orcamentos} orçamento{vinculosFicha.orcamentos > 1 ? 's' : ''}
+                    {vinculosFicha.pagamentos > 0 && (
+                      <> e {vinculosFicha.pagamentos} pagamento{vinculosFicha.pagamentos > 1 ? 's' : ''}</>
+                    )} vinculado{vinculosFicha.orcamentos > 1 ? 's' : ''} a esta ficha.
+                  </p>
+                </div>
+              ) : (
+                <div className="mb-8" />
+              )}
               <div className="flex gap-3">
                 <Button
                   variant="outline"
-                  onClick={() => setShowDeleteConfirm(null)}
+                  onClick={() => { setShowDeleteConfirm(null); setVinculosFicha(null); }}
                   className="flex-1 rounded-xl"
                 >
                   Cancelar
                 </Button>
                 <Button
                   onClick={() => void handleDelete(showDeleteConfirm)}
-                  className="flex-1 bg-red-500 text-white hover:bg-red-600 rounded-xl"
+                  disabled={vinculosLoading}
+                  className="flex-1 bg-coral text-white hover:bg-coral/90 rounded-xl disabled:opacity-60"
                 >
                   Excluir
                 </Button>

@@ -4,10 +4,6 @@ import { useMemo, useState, Fragment } from 'react';
 import { List } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
-  ARCH_SUPERIOR, ARCH_INFERIOR, ARCH_COMPLETA,
-  QUAD_SUP_DIREITO, QUAD_SUP_ESQUERDO, QUAD_INF_DIREITO, QUAD_INF_ESQUERDO,
-} from '@/lib/arcadas';
-import {
   TOOTH_CLASS, TOOTH_FAMILY, DIMS,
   crownPathOcclusalTop, crownPathOcclusalBottom, rootPathDown, rootPathUp, canalPaths,
 } from './tooth-geometry';
@@ -48,7 +44,24 @@ export function getQuadrantLabel(tooth: number): string {
 }
 
 // ─── State types ──────────────────────────────────────────────────────────────
-type ToothState = 'default' | 'historical' | 'shared' | 'selected' | 'detected';
+export type ToothState = 'default' | 'historical' | 'shared' | 'selected';
+
+/**
+ * R-30 Parte 7 (contrato 3) — mesma regra que `Odontograma` usa pra pintar a arcada,
+ * exportada pra quem precisa do estado de UM dente fora do grid (ex. `ToothDetailPanel`
+ * ampliado). Existia só como função interna `getState`; duplicar a lógica em vez de
+ * reusar foi o que deixou o dente ampliado sempre 'default', divergindo da arcada.
+ */
+export function computeToothState(
+  tooth: number,
+  args: { clinico: boolean; sharedTeeth: number[]; selectedTeeth: number[]; historicalTeeth: Set<number> },
+): ToothState {
+  if (args.clinico) return 'default'; // o visual clínico vem do resumo, não do state
+  if (args.sharedTeeth.includes(tooth)) return 'shared';
+  if (args.selectedTeeth.includes(tooth)) return 'selected';
+  if (args.historicalTeeth.has(tooth)) return 'historical';
+  return 'default';
+}
 
 /** Status de acompanhamento de tratamento (ficha unificada, #16 D3). */
 export type ToothStatus = 'nao_iniciado' | 'em_andamento' | 'concluido';
@@ -234,8 +247,6 @@ interface ToothSVGProps {
   state: ToothState;
   hovered: boolean;
   showCheckbox: boolean;
-  /** Anel de destaque independente do preenchimento — usado pra indicar filtro ativo em colorMode='status'. */
-  ringed?: boolean;
   /** v3: resumo clínico do dente — quando presente, dirige o visual (cores/marcas do catálogo). */
   resumo?: ResumoDente | null;
   /** R-06: continuidade da linha da ponte com os vizinhos DO MESMO grupo + altura comum da
@@ -274,7 +285,7 @@ function PonteMarks({ resumo, links, w, totalH, isUpper }: {
   );
 }
 
-export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = false, resumo = null, ponteLinks = null }: ToothSVGProps) {
+export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, resumo = null, ponteLinks = null }: ToothSVGProps) {
   const cls    = TOOTH_CLASS[num] ?? 'premolar';
   const family = TOOTH_FAMILY[cls];
   const { w, crownH, rootH } = DIMS[cls];
@@ -333,6 +344,13 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
   // dente inteiro" que o Mateus apontou). Implante e canal tingem a raiz de propósito.
   const rootTint = resumo?.implante ?? resumo?.canal ?? null;
 
+  // R-30 Parte 7 — cor de PREENCHIMENTO é exclusiva do estado clínico derivado de evento
+  // (resumo.cor). 'selected'/'historical' nunca pintam com a paleta teal — um dente "citado
+  // nesta ficha" ou "com registro em outra ficha" não é a mesma coisa que "procedimento
+  // realizado", e pintar os dois iguais foi o bug relatado ("dente já azul ao editar", sem
+  // nada marcado). Selecionado ganha CONTORNO sólido (sem preencher); histórico, contorno
+  // tracejado neutro. 'shared' (grupo de notas compartilhadas na ficha) segue como estava —
+  // fora do relato original, não mexido aqui.
   const crownFill = clinico
     ? (resumo.implante
         // Artefato: no implante a coroa é VAZADA (só contorno) e a raiz some — é isso que
@@ -341,34 +359,21 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
         : resumo.cor
         ? CROWN_FILL[resumo.cor]
         : 'var(--color-surface-alt)')
-    : state === 'selected'    ? 'var(--color-teal)'
-    : state === 'shared'    ? 'color-mix(in srgb, var(--color-teal) 25%, var(--color-surface-alt))'
-    : state === 'detected'  ? 'color-mix(in srgb, var(--color-warning) 18%, var(--color-surface-alt))'
-    : state === 'historical' ? 'color-mix(in srgb, var(--color-teal) 20%, var(--color-surface-alt))'
+    : state === 'shared' ? 'color-mix(in srgb, var(--color-teal) 25%, var(--color-surface-alt))'
     : 'var(--color-surface-alt)';
 
   const crownStroke = clinico
     ? (hovered ? 'var(--color-teal)' : resumo.implante ? COR_TOKEN[resumo.implante] : resumo.incluso ? 'var(--color-text-secondary)' : resumo.cor ? COR_TOKEN[resumo.cor] : 'var(--color-border)')
-    : ringed ? 'var(--color-teal)'
-    : hovered                   ? 'var(--color-teal)'
-    : state === 'selected'    ? 'var(--color-teal)'
-    : state === 'shared'      ? 'color-mix(in srgb, var(--color-teal) 70%, var(--color-border))'
-    : state === 'detected'    ? 'var(--color-warning)'
-    : state === 'historical'  ? 'color-mix(in srgb, var(--color-teal) 55%, var(--color-border))'
+    : hovered                  ? 'var(--color-teal)'
+    : state === 'selected'   ? 'var(--color-teal)'
+    : state === 'shared'     ? 'color-mix(in srgb, var(--color-teal) 70%, var(--color-border))'
+    : state === 'historical' ? 'var(--color-text-secondary)'
     : 'var(--color-border)';
 
-  const strokeW = ringed ? 2.5 : state === 'selected' && !clinico ? 2 : (state === 'shared' || state === 'detected' || hovered) ? 1.5 : clinico && resumo.cor ? 1.4 : 1;
-
-  const crownFilter = !clinico && state === 'selected'
-    ? 'drop-shadow(0 0 4px color-mix(in srgb, var(--color-teal) 45%, transparent))'
-    : !clinico && state === 'detected'
-    ? 'drop-shadow(0 0 3px color-mix(in srgb, var(--color-warning) 40%, transparent))'
-    : 'none';
+  const strokeW = state === 'selected' && !clinico ? 2 : (state === 'shared' || hovered) ? 1.5 : clinico && resumo.cor ? 1.4 : 1;
 
   const rootFill = clinico
     ? (rootTint ? COR_PALE[rootTint] : 'var(--color-surface-alt)')
-    : state === 'selected'
-    ? 'color-mix(in srgb, var(--color-teal) 18%, var(--color-surface-alt))'
     : hovered
     ? 'color-mix(in srgb, var(--color-teal) 12%, var(--color-surface-alt))'
     : 'var(--color-surface-alt)';
@@ -382,7 +387,6 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
   const rootOpacity = clinico ? 0.8
     : state === 'selected' ? 0.40
     : state === 'shared' ? 0.58
-    : state === 'detected' ? 0.58
     : 0.72;
 
   const cbX = w - 9;
@@ -391,7 +395,7 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
 
   const needsDots = clinico && (resumo.cor === 'slate' || resumo.coroa === 'slate');
   const dotsId = `odx-dots-${num}`;
-  const dash = clinico && resumo.incluso ? '4 3' : undefined;
+  const dash = (clinico && resumo.incluso) || (!clinico && state === 'historical') ? '4 3' : undefined;
 
   return (
     <svg
@@ -529,8 +533,7 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, ringed = 
           stroke: crownStroke,
           strokeWidth: strokeW,
           strokeDasharray: dash,
-          filter: crownFilter,
-          transition: 'fill 0.15s ease, stroke 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease',
+          transition: 'fill 0.15s ease, stroke 0.15s ease, stroke-width 0.15s ease',
         }}
       />
 
@@ -689,25 +692,15 @@ export interface OdontogramaProps {
   selectedTeeth: number[];
   sharedTeeth?: number[];
   historicalTeeth?: Set<number>;
-  /** Dentes detectados pela IA, pendentes de confirmação (estado amber). Ex: modo consulta. */
-  detectedTeeth?: number[];
   onToothToggle: (tooth: number) => void;
   showCheckbox?: boolean;
   className?: string;
   compact?: boolean;
   hideFilters?: boolean;
   /**
-   * Significado da cor (#16 D7). 'selection' (padrão) = seletor de dentes (teal=selecionado,
-   * amber=detectado). 'status' = mapa de progresso do tratamento (teal=concluído,
-   * amber=em andamento, cinza=não iniciado) — vem de `statusTeeth`, não de `selectedTeeth`.
-   */
-  colorMode?: 'selection' | 'status';
-  /** Status por dente/sentinela — só usado quando `colorMode='status'`. */
-  statusTeeth?: Partial<Record<number, ToothStatus>>;
-  /**
    * v3 — camada clínica: eventos de odontograma (propostos ou salvos). Quando presente,
    * o componente vira o "mapa pintado": cor dominante por dente + marcas do catálogo
-   * (canal, implante, coroa, X, ausente…). Ignora selection/status.
+   * (canal, implante, coroa, X, ausente…). Ignora selection.
    */
   eventos?: OdontogramaEventoDraft[];
 }
@@ -716,14 +709,11 @@ export function Odontograma({
   selectedTeeth,
   sharedTeeth = [],
   historicalTeeth = new Set(),
-  detectedTeeth = [],
   onToothToggle,
   showCheckbox = false,
   className,
   compact = false,
   hideFilters = false,
-  colorMode = 'selection',
-  statusTeeth = {},
   eventos,
 }: OdontogramaProps) {
   const [hoveredTooth, setHoveredTooth]   = useState<number | null>(null);
@@ -741,49 +731,14 @@ export function Odontograma({
   // Contagem de dentes ativos por dentição — indicador nas abas (torna decíduo detectado descobrível)
   const activeTeeth = clinico
     ? Array.from(resumos.keys())
-    : colorMode === 'status'
-    ? Object.keys(statusTeeth).map(Number)
-    : [...selectedTeeth, ...detectedTeeth];
+    : selectedTeeth;
   const tabCounts: Record<'permanent' | 'deciduous', number> = {
     permanent: activeTeeth.filter(t => TEETH_UPPER.includes(t) || TEETH_LOWER.includes(t)).length,
     deciduous: activeTeeth.filter(t => TEETH_UPPER_DEC.includes(t) || TEETH_LOWER_DEC.includes(t)).length,
   };
 
   function getState(tooth: number): ToothState {
-    if (clinico) return 'default'; // o visual clínico vem do resumo, não do state
-    if (colorMode === 'status') {
-      const st = statusTeeth[tooth];
-      if (st === 'concluido') return 'selected';
-      if (st === 'em_andamento') return 'detected';
-      return 'default';
-    }
-    if (sharedTeeth.includes(tooth)) return 'shared';
-    if (selectedTeeth.includes(tooth)) return 'selected';
-    if (detectedTeeth.includes(tooth)) return 'detected';
-    if (historicalTeeth.has(tooth)) return 'historical';
-    return 'default';
-  }
-
-  // #16 D6 — "destaque de região" pros rótulos de quadrante: agrega o status das
-  // sentinelas que afetam aquele canto (quadrante + arcada + boca toda), mesma
-  // regra de prioridade do computeToothStatusMap (concluído só se tudo concluído).
-  function regionStatus(...sentinels: number[]): ToothStatus | undefined {
-    const statuses = sentinels
-      .map((s) => statusTeeth[s])
-      .filter((s): s is ToothStatus => s != null);
-    if (statuses.length === 0) return undefined;
-    if (statuses.every((s) => s === 'concluido')) return 'concluido';
-    if (statuses.some((s) => s === 'concluido' || s === 'em_andamento')) return 'em_andamento';
-    return 'nao_iniciado';
-  }
-
-  function RegionDot({ status }: { status: ToothStatus | undefined }) {
-    if (colorMode !== 'status' || !status) return null;
-    const color =
-      status === 'concluido'     ? 'var(--color-teal)'
-      : status === 'em_andamento' ? 'var(--color-warning)'
-      : 'var(--color-text-muted)';
-    return <span className="inline-block w-1.5 h-1.5 rounded-full ml-1.5 align-middle" style={{ background: color }} aria-hidden="true" />;
+    return computeToothState(tooth, { clinico, sharedTeeth, selectedTeeth, historicalTeeth });
   }
 
   function renderArch(teeth: number[], isUpper: boolean) {
@@ -793,13 +748,12 @@ export function Odontograma({
       const resumo = clinico ? resumos.get(num) ?? null : null;
       const isHov  = hoveredTooth === num;
       const isActive = state === 'selected' || state === 'shared';
-      const numWeight = (state === 'selected' || state === 'shared' || state === 'detected' || resumo?.cor) ? 800 : 700;
+      const numWeight = (state === 'selected' || state === 'shared' || resumo?.cor) ? 800 : 700;
 
       const numColor = resumo?.cor
         ? COR_TOKEN[resumo.cor]
         : state === 'selected'    ? 'var(--color-teal)'
         : state === 'shared'    ? 'var(--color-teal)'
-        : state === 'detected'  ? 'var(--color-warning)'
         : state === 'historical' ? 'color-mix(in srgb, var(--color-teal) 70%, var(--color-text-secondary))'
         : isHov                 ? 'var(--color-text-primary)'
         : 'var(--color-text-secondary)';
@@ -876,7 +830,6 @@ export function Odontograma({
               state={state}
               hovered={isHov}
               showCheckbox={showCheckbox && !clinico}
-              ringed={colorMode === 'status' && !clinico && selectedTeeth.includes(num)}
               resumo={resumo}
               ponteLinks={ponteLinks}
             />
@@ -936,15 +889,17 @@ export function Odontograma({
           label: 'Sem registro', desc: 'Nenhum registro neste dente',
         },
         {
-          fill: 'color-mix(in srgb, var(--color-teal) 20%, var(--color-surface-alt))',
-          stroke: 'color-mix(in srgb, var(--color-teal) 55%, var(--color-border))', strokeW: 1, filter: 'none',
-          label: 'Histórico', desc: 'Dente com registros anteriores',
+          // R-30 Parte 7 — sem preenchimento teal: histórico não é procedimento realizado.
+          fill: 'var(--color-surface-alt)',
+          stroke: 'var(--color-text-secondary)', strokeW: 1.2, filter: 'none',
+          label: 'Histórico', desc: 'Citado em outro registro — contorno tracejado, não preenche',
         },
         {
-          fill: 'var(--color-teal)',
-          stroke: 'var(--color-teal)', strokeW: 2,
-          filter: 'drop-shadow(0 0 3px color-mix(in srgb, var(--color-teal) 45%, transparent))',
-          label: 'Selecionado', desc: 'Dente selecionado para esta consulta',
+          // R-30 Parte 7 — idem: selecionado é contorno, nunca preenchimento sólido (era
+          // visualmente idêntico a "realizado", origem do relato "dente já azul ao editar").
+          fill: 'var(--color-surface-alt)',
+          stroke: 'var(--color-teal)', strokeW: 2, filter: 'none',
+          label: 'Selecionado', desc: 'Selecionado nesta ficha — ainda não é procedimento confirmado',
         },
       ];
 
@@ -1020,7 +975,7 @@ export function Odontograma({
               <div key={label} className="flex items-start gap-2.5">
                 <svg width={12} height={12} viewBox="0 0 12 12" className="mt-0.5 shrink-0" style={{ overflow: 'visible' }}>
                   <rect x={0.75} y={0.75} width={10.5} height={10.5} rx={2.5}
-                    style={{ fill, stroke, strokeWidth: sw, filter, strokeDasharray: label === 'Ausente' ? '2 2' : undefined }}
+                    style={{ fill, stroke, strokeWidth: sw, filter, strokeDasharray: (label === 'Ausente' || label === 'Histórico') ? '2 2' : undefined }}
                   />
                 </svg>
                 <div className="flex flex-col gap-0.5">
@@ -1047,12 +1002,10 @@ export function Odontograma({
               <span className="text-[9px] uppercase tracking-[0.22em] font-semibold"
                 style={{ color: 'var(--color-text-muted)' }}>
                 Sup. Direito
-                <RegionDot status={regionStatus(QUAD_SUP_DIREITO, ARCH_SUPERIOR, ARCH_COMPLETA)} />
               </span>
               <span className="text-[9px] uppercase tracking-[0.22em] font-semibold"
                 style={{ color: 'var(--color-text-muted)' }}>
                 Sup. Esquerdo
-                <RegionDot status={regionStatus(QUAD_SUP_ESQUERDO, ARCH_SUPERIOR, ARCH_COMPLETA)} />
               </span>
             </div>
           )}
@@ -1088,12 +1041,10 @@ export function Odontograma({
               <span className="text-[9px] uppercase tracking-[0.22em] font-semibold"
                 style={{ color: 'var(--color-text-muted)' }}>
                 Inf. Direito
-                <RegionDot status={regionStatus(QUAD_INF_DIREITO, ARCH_INFERIOR, ARCH_COMPLETA)} />
               </span>
               <span className="text-[9px] uppercase tracking-[0.22em] font-semibold"
                 style={{ color: 'var(--color-text-muted)' }}>
                 Inf. Esquerdo
-                <RegionDot status={regionStatus(QUAD_INF_ESQUERDO, ARCH_INFERIOR, ARCH_COMPLETA)} />
               </span>
             </div>
           )}

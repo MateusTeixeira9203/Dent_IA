@@ -1,4 +1,8 @@
 import type { AceiteOrcamento } from '@/types/orcamento';
+import type {
+  TipoRegistroOdontograma, StatusRegistro, OrigemRegistro,
+  NivelAncora, Arcada, QuadranteFDI, FaceDental, PapelNoGrupo,
+} from '@/types/odontograma';
 
 export type OrcamentoItem = {
   id: string;
@@ -35,6 +39,23 @@ export type OrcamentoComItens = {
   aceite: AceiteOrcamento | null;
 };
 
+/** R-30 Parte 4 — linha crua de `odontograma_eventos` embutida na query de `fichas` (a
+ *  âncora vem achatada em colunas, não como objeto `AncoraClinica` — mesmo shape da tabela). */
+export type EventoOdontogramaParaOrc = {
+  id: string;
+  tipo: TipoRegistroOdontograma;
+  status: StatusRegistro;
+  origem: OrigemRegistro;
+  nivel: NivelAncora;
+  arcada: Arcada | null;
+  quadrante: QuadranteFDI | null;
+  dente: number | null;
+  faces: FaceDental[] | null;
+  papel_no_grupo: PapelNoGrupo | null;
+  grupo_id: string | null;
+  assinatura_id: string | null;
+};
+
 export type FichaParaOrc = {
   id: string;
   created_at: string;
@@ -42,6 +63,8 @@ export type FichaParaOrc = {
   queixa_principal: string | null;
   dentes_afetados: number[];
   dentes_observacoes: Record<string, string>;
+  /** R-30 Parte 4 — fonte real do orçamento gerado (dentes_observacoes vira só descritivo). */
+  odontograma_eventos: EventoOdontogramaParaOrc[];
 };
 
 export type ProcedimentoClinica = {

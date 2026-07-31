@@ -4,7 +4,24 @@ import { z } from 'zod';
 import { requireClinicContext } from '@/server/auth/clinic';
 import { revalidatePath } from 'next/cache';
 import { inserirNotificacao } from '@/lib/notificacoes';
+import { registrarLog } from '@/lib/activity-log';
+import { EVENTS, ENTITY_TYPES } from '@/lib/events';
+import { DENTES_FDI } from '@/lib/odonto-dictionary';
+import {
+  ARCH_SUPERIOR, ARCH_INFERIOR, ARCH_COMPLETA,
+  QUAD_SUP_DIREITO, QUAD_SUP_ESQUERDO, QUAD_INF_DIREITO, QUAD_INF_ESQUERDO,
+} from '@/lib/arcadas';
 import type { OdontogramaEventoDraft, OrtoManutencaoInfo } from '@/types/odontograma';
+
+// R-30 Parte 1 — dentesAfetados aceita dente FDI real ou âncora de região (arcada/quadrante/
+// boca toda). O schema antigo (min(11).max(85)) rejeitava os sentinelas 91-94 e 97-99, que a
+// tela já produz há tempo (arch-chips.tsx) — 25 fichas em produção têm sentinela gravado e
+// não abrem para editar.
+const DENTES_E_ANCORAS_VALIDOS = new Set<number>([
+  ...Object.keys(DENTES_FDI).map(Number),
+  ARCH_SUPERIOR, ARCH_INFERIOR, ARCH_COMPLETA,
+  QUAD_SUP_DIREITO, QUAD_SUP_ESQUERDO, QUAD_INF_DIREITO, QUAD_INF_ESQUERDO,
+]);
 
 /**
  * R-11 — contrato único de escrita da ficha (spec `plans/specs/R-11-unificar-gravacao-ficha.md`).
@@ -53,7 +70,11 @@ const salvarFichaSchema = z.object({
   dataAtendimento:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   queixaPrincipal:    z.string().trim().max(500),
   anotacoes:          z.string().trim().max(5000),
-  dentesAfetados:     z.array(z.number().int().min(11).max(85)),
+  dentesAfetados:     z.array(
+    z.number().int().refine((n) => DENTES_E_ANCORAS_VALIDOS.has(n), {
+      message: 'Dente FDI ou âncora de região inválida',
+    }),
+  ),
   dentesObservacoes:  z.record(z.string(), z.string()),
   procedimentos:      z.array(z.string()),
   conduta:            z.string().trim().max(2000),
@@ -119,7 +140,7 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
   if (isUpdate) {
     const { data: fichaAtual } = await supabase
       .from('fichas')
-      .select('id, dentista_id, assinado_em')
+      .select('id, dentista_id, assinado_em, dentes_afetados, procedimentos')
       .eq('id', data.fichaId as string)
       .eq('clinica_id', clinicId)
       .maybeSingle();
@@ -128,6 +149,12 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
     if (fichaAtual.assinado_em != null) {
       return { ok: false, error: 'Esta ficha já foi assinada e não pode mais ser alterada.' };
     }
+
+    // R-30 Parte 6 — "antes" do delta que vai pro log, capturado antes do UPDATE mudar tudo.
+    const { count: eventosAntes } = await supabase
+      .from('odontograma_eventos')
+      .select('id', { count: 'exact', head: true })
+      .eq('ficha_id', data.fichaId as string);
 
     const { error } = await supabase
       .from('fichas')
@@ -151,13 +178,41 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
       return { ok: false, error: 'Erro ao salvar a ficha. Tente novamente.' };
     }
 
-    return finalizarEventos(supabase, {
+    const resultado = await finalizarEventos(supabase, {
       fichaId: data.fichaId as string,
       clinicId,
       pacienteId: data.pacienteId,
       dentistaId,
       eventos: data.odontogramaEventos as OdontogramaEventoDraft[] | undefined,
     });
+
+    if (resultado.ok) {
+      const { count: eventosDepois } = await supabase
+        .from('odontograma_eventos')
+        .select('id', { count: 'exact', head: true })
+        .eq('ficha_id', data.fichaId as string);
+
+      const dentesAntes = new Set((fichaAtual.dentes_afetados ?? []) as number[]);
+      const dentesDepois = new Set(data.dentesAfetados);
+      registrarLog(supabase, {
+        clinicaId:  clinicId,
+        actorId:    dentistaId,
+        pacienteId: data.pacienteId,
+        entityType: ENTITY_TYPES.FICHA,
+        entityId:   data.fichaId as string,
+        action:     EVENTS.FICHA_EDITADA,
+        metadata: {
+          dentes_adicionados: [...dentesDepois].filter((d) => !dentesAntes.has(d)),
+          dentes_removidos:   [...dentesAntes].filter((d) => !dentesDepois.has(d)),
+          eventos_antes:      eventosAntes ?? 0,
+          eventos_depois:     eventosDepois ?? 0,
+          procedimentos_antes:  fichaAtual.procedimentos ?? [],
+          procedimentos_depois: data.procedimentos,
+        },
+      });
+    }
+
+    return resultado;
   }
 
   // Create — status derivado da origem, nunca do input.
@@ -198,6 +253,30 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
     dentistaId,
     eventos: data.odontogramaEventos as OdontogramaEventoDraft[] | undefined,
   });
+
+  if (resultado.ok) {
+    const { count: eventosDepois } = await supabase
+      .from('odontograma_eventos')
+      .select('id', { count: 'exact', head: true })
+      .eq('ficha_id', fichaId);
+
+    registrarLog(supabase, {
+      clinicaId:  clinicId,
+      actorId:    dentistaId,
+      pacienteId: data.pacienteId,
+      entityType: ENTITY_TYPES.FICHA,
+      entityId:   fichaId,
+      action:     EVENTS.FICHA_CRIADA,
+      metadata: {
+        dentes_adicionados: data.dentesAfetados,
+        dentes_removidos:   [],
+        eventos_antes:      0,
+        eventos_depois:     eventosDepois ?? 0,
+        procedimentos_antes:  [],
+        procedimentos_depois: data.procedimentos,
+      },
+    });
+  }
 
   // Side-effects de fim de consulta — só disparam quando veio de agendamento (modo_consulta).
   if (data.origem === 'modo_consulta' && data.agendamentoId) {
@@ -268,6 +347,36 @@ async function finalizarEventos(
   return { ok: true, fichaId: ctx.fichaId };
 }
 
+export interface VinculosFicha {
+  orcamentos: number;
+  pagamentos: number;
+}
+
+/**
+ * R-35 item 2 — orcamentos.ficha_id e pagamentos.orcamento_id são ON DELETE CASCADE.
+ * Apagar a ficha apaga em cascata os orçamentos dela e os pagamentos deles; isso conta
+ * pra mostrar a consequência real antes da confirmação, não pra bloquear nada.
+ */
+export async function contarVinculosFicha(fichaId: string): Promise<VinculosFicha> {
+  const { supabase, clinicId } = await requireClinicContext();
+
+  const { data: orcamentos } = await supabase
+    .from('orcamentos')
+    .select('id')
+    .eq('ficha_id', fichaId)
+    .eq('clinica_id', clinicId);
+
+  const orcamentoIds = (orcamentos ?? []).map((o) => o.id as string);
+  if (orcamentoIds.length === 0) return { orcamentos: 0, pagamentos: 0 };
+
+  const { count } = await supabase
+    .from('pagamentos')
+    .select('id', { count: 'exact', head: true })
+    .in('orcamento_id', orcamentoIds);
+
+  return { orcamentos: orcamentoIds.length, pagamentos: count ?? 0 };
+}
+
 /**
  * deletarFicha — role dentista só apaga ficha própria; role admin apaga qualquer uma da
  * clínica. Fecha o gap do código morto removido na Fase 0 (client apagava sem checar autoria,
@@ -279,7 +388,7 @@ export async function deletarFicha(fichaId: string, pacienteId: string): Promise
 
   const { data: ficha } = await supabase
     .from('fichas')
-    .select('id, dentista_id, assinado_em')
+    .select('id, dentista_id, assinado_em, dentes_afetados, procedimentos')
     .eq('id', fichaId)
     .eq('clinica_id', clinicId)
     .maybeSingle();
@@ -294,6 +403,12 @@ export async function deletarFicha(fichaId: string, pacienteId: string): Promise
   if (ficha.assinado_em != null) {
     return { ok: false, error: 'Esta ficha tem procedimentos assinados e não pode ser apagada.' };
   }
+
+  // R-30 Parte 6 — contado antes do DELETE: o cascade (migration 108) apaga os eventos junto.
+  const { count: eventosAntes } = await supabase
+    .from('odontograma_eventos')
+    .select('id', { count: 'exact', head: true })
+    .eq('ficha_id', fichaId);
 
   const { data: apagada, error } = await supabase
     .from('fichas')
@@ -310,6 +425,15 @@ export async function deletarFicha(fichaId: string, pacienteId: string): Promise
     if (error.message.includes('evento_assinado_imutavel')) {
       return { ok: false, error: 'Esta ficha tem procedimentos assinados e não pode ser apagada.' };
     }
+    // R-35 item 2 — assinaturas.orcamento_id é ON DELETE RESTRICT: o cascade da ficha tenta
+    // apagar o orçamento, o orçamento tenta apagar a assinatura de aceite, e o Postgres barra
+    // (23503, foreign_key_violation) em vez de deixar a prova de aceite sumir em silêncio.
+    if (error.code === '23503') {
+      return {
+        ok: false,
+        error: 'Esta ficha tem um orçamento já aceito e assinado pelo paciente — não pode ser apagada.',
+      };
+    }
     console.error('[deletarFicha]', error.message);
     return { ok: false, error: 'Erro ao apagar ficha.' };
   }
@@ -321,6 +445,23 @@ export async function deletarFicha(fichaId: string, pacienteId: string): Promise
     console.error('[deletarFicha] DELETE bloqueado silenciosamente (RLS?) — 0 linhas para', fichaId);
     return { ok: false, error: 'Erro ao apagar ficha.' };
   }
+
+  registrarLog(supabase, {
+    clinicaId:  clinicId,
+    actorId:    dentistaId,
+    pacienteId,
+    entityType: ENTITY_TYPES.FICHA,
+    entityId:   fichaId,
+    action:     EVENTS.FICHA_EXCLUIDA,
+    metadata: {
+      dentes_adicionados: [],
+      dentes_removidos:   ficha.dentes_afetados ?? [],
+      eventos_antes:      eventosAntes ?? 0,
+      eventos_depois:     0,
+      procedimentos_antes:  ficha.procedimentos ?? [],
+      procedimentos_depois: [],
+    },
+  });
 
   revalidatePath(`/dashboard/pacientes/${pacienteId}`);
   return { ok: true };
