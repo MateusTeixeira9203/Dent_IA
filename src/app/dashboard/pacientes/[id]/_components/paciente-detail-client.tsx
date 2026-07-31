@@ -205,6 +205,12 @@ export function PacienteDetailClient({
   const [editEmail, setEditEmail] = useState(paciente.email ?? '');
   const [editEndereco, setEditEndereco] = useState(paciente.endereco ?? '');
   const [editDentistaId, setEditDentistaId] = useState(paciente.dentista_id ?? '');
+  // R-41 — fecha a lacuna que o cadastro rápido (nome+telefone só) deixa aberta.
+  const [editCpf, setEditCpf] = useState(paciente.cpf ?? '');
+  const [editDataNascimento, setEditDataNascimento] = useState(paciente.data_nascimento ?? '');
+  const [editResponsavelNome, setEditResponsavelNome] = useState(paciente.responsavel_nome ?? '');
+  const [editResponsavelTelefone, setEditResponsavelTelefone] = useState(paciente.responsavel_telefone ?? '');
+  const [editResponsavelParentesco, setEditResponsavelParentesco] = useState(paciente.responsavel_parentesco ?? '');
   const [editError, setEditError] = useState<string | null>(null);
 
   // Encaminhamento (hierarquia §3) — só a secretária reatribui o dentista responsável.
@@ -523,6 +529,12 @@ export function PacienteDetailClient({
         telefone: editTelefone || null,
         email: editEmail || null,
         endereco: editEndereco || null,
+        // R-41 — fecha a lacuna que o cadastro rápido deixa aberta.
+        cpf: editCpf || null,
+        data_nascimento: editDataNascimento || null,
+        responsavel_nome: editResponsavelNome || null,
+        responsavel_telefone: editResponsavelTelefone || null,
+        responsavel_parentesco: editResponsavelParentesco || null,
         ...(role === 'secretaria' ? { dentista_id: editDentistaId || null } : {}),
       });
       if (result.error) {
@@ -533,6 +545,9 @@ export function PacienteDetailClient({
         setDisplayEmail(editEmail || null);
         setDisplayEndereco(editEndereco || null);
         setIsEditModalOpen(false);
+        // CPF/nascimento/responsável não têm display state próprio — busca do servidor
+        // de novo pra idade/CPF no card do perfil refletirem o que acabou de ser salvo.
+        router.refresh();
       }
     });
   };
@@ -1960,6 +1975,11 @@ export function PacienteDetailClient({
             setEditEmail(paciente.email ?? '');
             setEditEndereco(paciente.endereco ?? '');
             setEditDentistaId(paciente.dentista_id ?? '');
+            setEditCpf(paciente.cpf ?? '');
+            setEditDataNascimento(paciente.data_nascimento ?? '');
+            setEditResponsavelNome(paciente.responsavel_nome ?? '');
+            setEditResponsavelTelefone(paciente.responsavel_telefone ?? '');
+            setEditResponsavelParentesco(paciente.responsavel_parentesco ?? '');
             setEditError(null);
           }
         }}
@@ -1971,6 +1991,16 @@ export function PacienteDetailClient({
         setEditEmail={setEditEmail}
         editEndereco={editEndereco}
         setEditEndereco={setEditEndereco}
+        editCpf={editCpf}
+        setEditCpf={setEditCpf}
+        editDataNascimento={editDataNascimento}
+        setEditDataNascimento={setEditDataNascimento}
+        editResponsavelNome={editResponsavelNome}
+        setEditResponsavelNome={setEditResponsavelNome}
+        editResponsavelTelefone={editResponsavelTelefone}
+        setEditResponsavelTelefone={setEditResponsavelTelefone}
+        editResponsavelParentesco={editResponsavelParentesco}
+        setEditResponsavelParentesco={setEditResponsavelParentesco}
         editError={editError}
         isPending={isPending}
         onSave={handleSaveEdit}

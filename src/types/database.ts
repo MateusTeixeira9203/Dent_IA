@@ -78,6 +78,9 @@ export interface Paciente {
   estado: string | null;
   whatsapp: string | null;
   observacoes: string | null;
+  responsavel_nome: string | null;
+  responsavel_telefone: string | null;
+  responsavel_parentesco: string | null;
   followup_pendente: boolean;
   followup_nota: string | null;
   followup_em: string | null;

@@ -18,6 +18,9 @@ export async function atualizarPaciente(
     endereco?: string | null;
     observacoes?: string | null;
     dentista_id?: string | null;
+    responsavel_nome?: string | null;
+    responsavel_telefone?: string | null;
+    responsavel_parentesco?: string | null;
   }
 ): Promise<{ error?: string }> {
   const { supabase, clinicId, role } = await requireClinicContext();
@@ -27,6 +30,20 @@ export async function atualizarPaciente(
   // aqui dá um erro claro em vez do erro cru do Postgres.
   if (dados.dentista_id !== undefined && role !== 'secretaria') {
     return { error: 'Só a secretária pode reatribuir o dentista responsável.' };
+  }
+
+  // R-41 §3.2 — CPF é identificador de pessoa, bloqueia igual ao cadastro (R-31a). Sem
+  // isto, colidir com uq_pacientes_clinica_cpf vazaria o erro cru do Postgres (:38).
+  // `d.id !== pacienteId` é o que impede o paciente de colidir consigo mesmo.
+  if (dados.cpf && dados.nome) {
+    const duplicatas = await buscarPossiveisDuplicatas(supabase, clinicId, {
+      nome: dados.nome,
+      cpf: dados.cpf,
+    });
+    const outro = duplicatas.find((d) => d.motivo === 'cpf' && d.id !== pacienteId);
+    if (outro) {
+      return { error: `CPF já cadastrado para o paciente "${outro.nome}".` };
+    }
   }
 
   const { error } = await supabase
