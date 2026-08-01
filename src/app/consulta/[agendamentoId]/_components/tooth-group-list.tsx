@@ -142,7 +142,9 @@ export function ToothGroupList({ eventos, onDenteClick, className }: ToothGroupL
                   {TIPO_LABEL[ev.tipo]}
                 </span>
                 <span className="text-[11px]" style={{ color: 'var(--color-text-secondary)' }}>
-                  {ev.ancora.nivel === 'arcada' ? `arcada ${ev.ancora.arcada}` : `quadrante ${ev.ancora.quadrante}`}
+                  {ev.ancora.nivel === 'arcada' ? `arcada ${ev.ancora.arcada}`
+                    : ev.ancora.nivel === 'quadrante' ? `quadrante ${ev.ancora.quadrante}`
+                    : 'boca toda'}
                 </span>
                 <div className="flex-1" />
                 <span
