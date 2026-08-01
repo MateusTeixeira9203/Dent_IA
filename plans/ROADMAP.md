@@ -1,10 +1,13 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · atualizado **2026-07-31** · reorganizado por **importância pro dentista**
-> **Ativo:** **R-46 (Meu dia)** — em planejamento, spec em plano aguardando aprovação ·
-> **Fila:** 14 · **🟡 no ar, não verificado ou codado sem deploy:** 13 · **Concluídos:** 23 ·
+> **ROADMAP** · atualizado **2026-08-01** · reorganizado por **importância pro dentista**
+> **Ativo:** **R-46 (Meu dia)** — R-46a ✅ · R-46g 🟡 · R-46b 🟡 (registrar, interação
+> testada) · **R-46b2 🟡 codado e provado no banco** (o Meu dia salva) · **R-46c em
+> planejamento** (spec `contrato`, esperando aprovação)
+> **Fila:** 14 · **🟡 no ar, não verificado ou codado sem deploy:** 16 · **Concluídos:** 23 ·
 > **Congelado:** 1 · R-38/R-39b/R-31a/R-41 no ar (push + deploy 31/07)
-> **Próximo:** aprovar a spec do R-46 (5 abertas) · gate de 2 contas · R-40 · R-44 (resto)
+> **Próximo:** aprovar spec R-46c · **commitar** (5 sessões no working tree) · R-28 Parte 3 (D7/D8/D9)
+> **Discussão aberta:** [como diminuir o atrito](discussoes/como-diminuir-o-atrito.md) (estado × evento)
 
 **Status:** ⏳ fila · 🔵 ativo (máx 1) · 🟡 no ar **não** verificado · ✅ no ar **e** verificado ·
 🧊 congelado · ✂️ cortado · 💡 ideia sem spec.
@@ -38,7 +41,7 @@ prioridade, por melhor que seja.
 
 | ID | Item | Estado | Peso |
 |---|---|---|---|
-| [R-46](specs/R-46-meu-dia.md) | **Meu dia — a ficha no dia real; o novo modo consulta** (rail do dia, contexto à vista, registrar em lote, colar do Word, Dex em lista) | 🔵 **em execução** — R-47 (bugs achados na Fase 0) corrigido · **R-46a codado** (rota `/dashboard/meu-dia`, rail+contexto, zero escrita, 2 rodadas de verificação adversarial) · falta teste ao vivo · próxima fatia: R-46c (colar do Word) | G |
+| [R-46](specs/R-46-meu-dia.md) | **Meu dia — a ficha no dia real; o novo modo consulta** (rail do dia, contexto à vista, registrar em lote, colar do Word, Dex em lista) | 🔵 **em execução** · R-46a ✅ · **[R-46g](specs/R-46g-porta-modo-consulta.md) 🟡** (porta; A1 do gate de assinatura **ignorada** — sem sistema de pagamento) · **[R-46b](specs/R-46b-registrar-meu-dia.md) 🟡** (registrar — interação testada 01/08, A3/A4 fechadas) · **[R-46b2](specs/R-46b2-salvar-chamar-proximo.md) 🟡 codado e provado no banco** — o Meu dia salva de verdade · **[R-46c](specs/R-46c-colar-do-word.md)** spec `contrato`, esperando aprovação | G |
 | [R-30](specs/R-30-ficha-fonte-unica-procedimento.md) | Ficha: fonte única de procedimento — mata a divergência entre `dentes_observacoes` e `odontograma_eventos` | 🟡 **commitado e em produção** (30/07 noite), bug relatado por ele **confirmado corrigido em produção**. **Parte 1 destrava 24 de 87 fichas (27,6%)** que rejeitavam o save ao editar. Falta o gate de 2 contas pra virar ✅ | G |
 | [R-31a](specs/R-31a-paciente-unico-prevencao.md) | Paciente único: **prevenção** — parar de criar duplicata | 🟡 **codado, testado ao vivo, commitado e no ar** (push 31/07) — §3.2, §3.3, §3.1, §3.4 completos. G1/G2/G4 confirmados com bug real achado e corrigido em cada um (ver handoff). G3 (toque no celular) e G5 (toast do agendamento) só confirmados por lógica — dev tooling não deixou ver o toast renderizar. Falta gate de 2 contas | M |
 | [R-31b](specs/R-31b-paciente-unico-unificacao.md) | Paciente único: **unificação** dos 16 grupos existentes | ⏳ aprovada, depende da R-31a no ar. Nunca `DELETE` — `merged_into_id` reversível | M |

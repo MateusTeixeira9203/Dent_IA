@@ -34,11 +34,11 @@
 | D7 | Estado orto é **fio por arcada** (S e I separados — "ambas" tem dois fios) |
 | D8 | Histórico legado mora no Word → **"colar do Word" em 2 níveis**; nível 1 sem IA |
 | D9 | Colapsável aberto **fica aberto na sessão** (odontograma etc.), não reseta por paciente |
-| D10 | **"Salvar e chamar próximo"** = assina (data+CRO) + conclui agendamento + abre o seguinte |
+| D10 | ~~"Salvar e chamar próximo" = assina (data+CRO) + conclui + abre o seguinte~~ **CORRIGIDO 31/07 pela pesquisa de código:** não existe mecanismo de "dentista certifica com CRO+data" — a única assinatura que existe exige o **paciente desenhando num canvas**, e o CRO não é digitado (a RPC lê `dentistas.cro` e congela em `assinaturas.cro_no_ato`). Decisão dele: **assinatura fica FORA do botão**; ele salva + conclui + avança. Ver [R-46b2 §2](R-46b2-salvar-chamar-proximo.md) |
 | D11 | **Substituição TOTAL é o destino** (dele, 31/07): o modo consulta sai por completo. As fases do §5 são o caminho seguro até lá, não dúvida sobre o destino. A saída SEMPRE cai na ficha (gate G2 da fatia b) |
 | D12 | Pendência de colega: **executa direto, sem modal** — proveniência guarda quem planejou e quem executou (default v1; A2 fechada) |
 | D13 | Anotações + conduta viram **um campo** ("texto da visita"); PDF imprime como evolução (default v1; A4 fechada — conduta tinha 9% de uso) |
-| D14 | Colar do Word: **secretária pode colar o nível 1** (transcrição documental); **nível 2 só o dentista confirma** (default v1; A5 fechada) |
+| D14 | Colar do Word: **secretária pode colar o nível 1** (transcrição documental); **nível 2 só o dentista confirma** (default v1; A5 fechada). **ADIADO 01/08** — a investigação do R-46c achou que isso está bloqueado em **2 camadas** (`salvarFicha:136` barra secretária no servidor; a rota do Meu dia a redireciona), ou seja, não é ajuste de permissão, é superfície nova. Decisão dele: R-46c entra **só com dentista**; D14 vira item próprio ([R-46c §14 A1](R-46c-colar-do-word.md)) |
 
 ## 3. Fatias — cada uma ganha contrato fino + gates quando ativar
 
@@ -82,22 +82,32 @@ documentada no código · G4 ✓ zero escrita · G5 ✓ estados renderizam sem c
 **Falta:** teste ao vivo — pane do browser não compositou nesta sessão inteira (screenshot e
 clique falharam desde a tentativa no R-47). Typecheck/lint/build limpos nas 2 rodadas.
 
-### R-46b — registrar no Meu dia
-Typeahead de procedimento (catálogo **semeado do vocabulário real**: `procedimentos` das 88
-fichas + itens de orçamento; ordem por frequência da clínica) + onde (chips região + popover FDI
-multi-toque, decíduos) + status + **lote multi-dente** (1 registro/dente) + **"fazer hoje →"**
-das pendências + **"Salvar e chamar próximo"** (salvarFicha + agendamento `completed` + próximo).
-Gates: G1 lote grava N registros ancorados certos · G2 a ficha aparece **idêntica** no perfil
-(timeline, odontograma, orçamento, PDF) · G3 "fazer hoje" carrega proveniência e âncora do plano ·
-G4 fluxo típico ≤6 gestos **medido em clique real** · G5 concluir não colide com o papel da
-secretária (A2/v1: quem salvar conclui; conflito real → reporta) · G6 retroativo continua só no perfil.
+### R-46b — registrar no Meu dia `[spec própria]` · R-46b2 — salvar e chamar próximo `[spec própria]`
+**Quebrado em 2 specs em 31/07**, depois da pesquisa de código (3 varreduras completas) mostrar
+que é bem mais construção nova que reuso — o artefato superestimava o reuso:
+- **[R-46b](R-46b-registrar-meu-dia.md)** — typeahead + chips região + grid FDI + odontograma +
+  lote multi-dente + "fazer hoje →". **Correções ao artefato:** os chips "R-07 · os mesmos" são
+  na verdade **2 mecanismos que não convertem entre si** (sentinelas legadas de `arcadas.ts` vs.
+  `QuadranteFDI` moderno) — usa o moderno; **popover FDI não existe** (nem a peça do shadcn está
+  instalada); **catálogo por frequência foi cortado** (decisão dele: "muito relativo, usar o que
+  já está no sistema" — vira busca alfabética na `procedimentos` que Orçamentos já usa).
+- **[R-46b2](R-46b2-salvar-chamar-proximo.md)** — o botão. Descoberta que simplifica: `salvarFicha`
+  com `origem='modo_consulta'` **já fecha o agendamento e notifica a secretária** numa chamada só.
+  Assinatura fica fora (D10 corrigido acima).
 
-### R-46c — colar do Word (nível 1, sem IA)
-Empty-state da coluna do antes → textarea → **ficha retroativa com o texto tal qual**, marcada
-`importado` (proveniência D6), `data_atendimento` retroativa (mecanismo já existe no form atual).
-Sob demanda, paciente a paciente — nunca mutirão.
-Gates: G1 retroativa ordena certo na timeline · G2 marca `importado` visível na timeline e no
-PDF · G3 quem pode colar conforme A5 · G4 texto colado é imutável após assinar (R-03).
+Gates originais preservados nas 2 specs. O G2 ("ficha idêntica no perfil") virou G2 do R-46b2 —
+é a prova de que o modelo velho foi reusado de verdade.
+
+### R-46c — colar do Word (nível 1, sem IA) `[spec própria]`
+Spec: **[R-46c-colar-do-word.md](R-46c-colar-do-word.md)** (01/08, fase `contrato`).
+**Correções ao plano original, achadas na investigação:** `importado` **não existe no banco**
+(`fichas_origem_check` só aceita `modo_consulta|manual` — precisa migration); `fichas.origem`
+**nunca é exibido em lugar nenhum** hoje (nem timeline nem PDF selecionam a coluna), então o
+"marca importado visível" é código novo em 2 pontos; e a timeline chama **toda** ficha de
+"Consulta realizada" — sem consertar isso, o histórico importado mente dizendo que foi um
+atendimento (virou invariante, não polish). Decisões dele (01/08): 1 colagem = 1 ficha com o
+histórico todo · vive no Meu dia **e** no perfil · **só dentista** (D14/secretária adiada,
+está bloqueada em 2 camadas: `salvarFicha:136` e o redirect da rota).
 
 ### R-46d — Dex embutido + colar nível 2 `[bloqueado pela Fase 0]` `[opus]`
 🎤 no rodapé → propostas **em lista, ✓ uma a uma** (nunca "aceitar tudo"), proveniência `via_dex`;
@@ -118,8 +128,16 @@ visita, revalidação por toque. Resolve o achado de segurança do §1 — e her
 Fase 0 (`alerta_novo` da extração já é detectado certo, só não persiste hoje). Decide se herda
 esse campo ou o contrato novo o substitui. Contrato quando ativar.
 
-**Ordem:** 0 → a → c → b → d → e → f. (c antes de b: o colar-do-Word dá valor ao contexto no
-dia 1 e não depende de escrita nova complexa; ele pediu prioridade nisso.)
+### R-46g — a porta: o CTA do hero abre o Meu dia `[spec própria]`
+Spec: **[R-46g-porta-modo-consulta.md](R-46g-porta-modo-consulta.md)**. Fecha a A6. O CTA
+primário do hero passa a abrir `/dashboard/meu-dia?ag=`, e o Meu dia ganha a saída pro
+atendimento por slot (trava: os dois juntos ou nenhum). Não aposenta `/consulta` — isso
+continua sendo a fase 3 do §5, gated pela A1.
+
+**Ordem:** 0 → a → **g** → **b → b2** → c → d → e → f. (g entrou cedo porque é navegação, não
+escrita. **b/b2 subiram na frente do c em 31/07** — decisão dele, "vamos seguir": sem registrar,
+o Meu dia continua sendo só leitura e a hipótese de atrito não é testável de verdade; o
+colar-do-Word (c) melhora o contexto de uma tela que ainda não faz o trabalho.)
 
 ## 4. Fora do escopo do R-46
 
@@ -166,3 +184,35 @@ tomada; as fases acima são só o *quando* da rota.
   quiser além do CTA v1, vira `spec-redesign` com o §3 dele.
 
 *A2, A4 e A5 foram fechadas como defaults v1 → D12, D13, D14 (31/07). Veto dele reabre.*
+
+- **A6 · FECHADA 31/07** — ele decidiu: *"o botão de entrar no modo consulta pode se tornar
+  o trigger pro meu dia"*. Virou spec própria:
+  **[R-46g — A porta](R-46g-porta-modo-consulta.md)** (sub-item; inventário verificado das 15
+  capacidades de `/consulta` e das 7 portas vivas, por varredura multi-agente com verificação
+  adversarial). **Trava que a spec impõe:** a troca só entra junto com a saída pro atendimento
+  de dentro do Meu dia — senão a ação primária do dashboard vira beco sem saída, contra o
+  próprio D11. 3 abertas lá (gate de assinatura, alergia antes do R-46f, tela que congela).
+- **A7 · Coluna do antes ("Pendências abertas") é lista, não ficha — endereçado 31/07.**
+  Ele completou o feedback comparando com o artefato: "última visita" (a seção de cima)
+  estava alta e sem informação — porque `resumo` é 1 frase só (`queixa_principal` ||
+  2 procedimentos || **"Evolução"**, o fallback mais comum), enquanto o artefato mostra
+  itens por evento com dente/local. Comparei com `R-46-ficha-dia.html` via
+  `artefato-visual` (tokens extraídos, não deduzidos) e apliquei o que dava pra fazer com
+  dado real, sem inventar conteúdo:
+  - "Última visita" agora usa os eventos `realizado` do dia daquela visita (mesma
+    `odontograma_eventos` já buscada pras pendências — zero query nova), renderizados como
+    linha `TIPO_LABEL + onde`, igual ao artefato; cai no `resumo` antigo só quando não há
+    evento estruturado naquela data.
+  - Cabeçalho "Última visita · data · dentista" virou 1 linha só (artefato faz isso).
+  - Linhas de pendência ficaram mais compactas (`py-0.5`, tipografia menor) — mas **mantive
+    o nome do dentista por linha**, que o artefato omite. Decisão minha, não pedida: D12
+    desta mesma spec já tinha decidido que proveniência (quem indicou/executou) importa;
+    apagar o campo pra economizar altura ia contra isso. Se ele achar que ainda está
+    denso, cortar isso é a próxima coisa a tentar.
+  - **Não fiz:** o "peek expandido" de visitas anteriores nem "fazer hoje →" no artefato —
+    o 2º é R-46b (escreve dado, fora do escopo read-only do R-46a); o 1º não foi pedido,
+    só existe no artefato.
+  Verificado: typecheck + lint limpos, estrutura conferida via árvore de acessibilidade
+  (fallback pra "Evolução" bateu certo pro caso sem evento). **Não testado clicando** —
+  pane do browser sem compositar (mesmo bloqueio do R-47), não vi com evento real
+  populado.

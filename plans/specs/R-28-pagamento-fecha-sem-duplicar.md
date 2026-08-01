@@ -1,11 +1,13 @@
 # R-28 — Pagamento pendente fecha sem duplicar + `marcado_por_id` gravado
 
-> **SPEC** · **R-28** · fase **execução — codado e verificado na `Teste01` (29/07)** ·
+> **SPEC** · **R-28** · Partes (1)/(2): fase **execução — codado e verificado na `Teste01` (29/07)**.
+> Parte (3): fase **plano escrito, aguardando revisão do Mateus** (31/07) — não implementar
+> até aprovação explícita.
 > **Modelo:** Sonnet (bug fix contido, sem ambiguidade de produto).
 > **Aberto:** 2026-07-29 · **Depende de:** nada (sem migration — schema já tem as colunas).
-> **Escopo desta spec: partes (1) e (2) do achado no ROADMAP.** Parte (3) (39 orçamentos com
-> pagamento mas só 34 `aprovado` — reconciliar dado histórico + regra de auto-aprovação
-> across os 5 caminhos) **fica de fora** — é decisão de negócio, não ajuste, e não bloqueia (1)/(2).
+> **Escopo desta spec: partes (1), (2) — no ar — e (3), abaixo.** Parte (3) (saldo pendente
+> fantasma: uma parcela `pendente` que devia ter fechado quando o pagamento de verdade
+> chegou, e não fechou) tem plano desde 31/07 — não bloqueia (1)/(2).
 
 ## Verificação (29/07, clínica `Teste01`)
 
@@ -100,3 +102,138 @@ async function handleFecharPagamento(): Promise<void>;          // chama marcarP
 - [ ] Clicar em "Falta receber" (sem parcela específica) → Registrar pagamento abre em modo criar novo, valor = saldo, sem banner de fechamento.
 - [ ] Registrar um pagamento novo (fluxo antigo, sem clicar em nenhuma parcela) → `marcado_por_id` gravado (conferir no banco).
 - [ ] Um pagamento já `pago` continua editável pelo lápis (valor/forma/data) — comportamento inalterado.
+
+---
+
+## Parte 3 — Saldo pendente fantasma (reconciliação + fechamento sem duplicar)
+
+> **Status desta parte: plano escrito, 31/07 — aguardando revisão do Mateus.**
+> Não implementar nada abaixo até aprovação explícita. Achado ao vivo nesta sessão e na
+> anterior: orçamento "Gessica" R$250, orçamento "marcos" R$5.360, e de novo hoje — mesmo
+> paciente "Marcos", 2 parcelas de R$250 (1 `PENDENTE` sem nenhum detalhe, 1 `PAGO` via Pix
+> "por Portaria", ambas datadas de hoje 31/07).
+
+### Causa raiz (relida no código, 31/07 — bate com o diagnóstico do handoff)
+
+- `atualizarStatusOrcamento` (actions.ts:104-126) cria 1 linha `pendente` "placeholder"
+  (`forma_pagamento`, `data_vencimento`, `parcela_numero` **todos `null`**) quando um
+  orçamento vira `aprovado` sem plano — só se `count === 0`, então não duplica a si mesma.
+  Essa assinatura (3 campos `null`) é única no schema: `gerarParcelas` sempre grava
+  `data_vencimento`+`parcela_numero`, e um agendamento manual sempre grava `data_vencimento`.
+  Bate exatamente com o "PENDENTE sem nenhum detalhe" do print.
+- `registrarPagamento` (actions.ts:505) sempre faz `INSERT`, nunca olha se já existe uma
+  `pendente` cujo valor bate — nem o placeholder, nem uma parcela normal de `gerarParcelas`.
+  É o caminho por trás de "Registrar pagamento" manual **e** do atalho "Falta receber"
+  (`preencherRestante()` no modal só pré-preenche `pagForm.valor`, nunca seta `closingPagamentoId`).
+- `registrarPagamentoRapido` (actions.ts:772) já faz a coisa certa: lê as `pendente` abertas
+  do orçamento antes, delega a `marcarPagamentoPago` (UPDATE) se existir uma aberta. É o
+  modelo a generalizar — mas ele pega **a mais antiga sem checar valor**, regra que não
+  serve pra `registrarPagamento` (ver D7).
+- **2 caminhos a mais com o mesmo gap**, achados agora via grep de `.insert(` em `pagamentos`
+  (pedido pelo escopo desta spec):
+  - `src/lib/whatsapp/receipt-handler.ts:193` (`matchReceiptToOrcamento`) — insere `pago`
+    sempre que o valor do comprovante bate com o `total` do orçamento (tolerância R$1),
+    nunca fecha uma `pendente` existente.
+  - `src/app/api/webhooks/abacatepay/route.ts:115` — webhook de cobrança avulsa. Tem
+    idempotência própria (`external_payment_id` UNIQUE, protege contra o mesmo evento 2x),
+    mas não checa `pendente` do mesmo orçamento antes de inserir.
+  - Não achei, no código, nenhum caller que crie uma cobrança AbacatePay vinculada a
+    `orcamento_id` — a rota existe e aceita webhook, mas não confirmei uso real em produção
+    (não é "0 uso" confirmado, é "não encontrei o caminho que dispara").
+
+### Decisões
+
+| # | Decisão | Detalhe |
+|---|---|---|
+| D7 | `registrarPagamento` só fecha uma `pendente` existente quando o valor bate **exatamente** (tolerância 1 centavo) — nunca "pega a mais antiga" como `registrarPagamentoRapido` | Alternativa descartada: copiar a regra do rápido. Risco real: um pagamento parcial de R$50 numa parcela de R$100 fecharia a parcela inteira como paga, perdendo R$50 silenciosamente — pior que o bug atual |
+| D8 — **ABERTA** | `receipt-handler.ts` e `abacatepay/route.ts` entram nesta correção agora, ou ficam de fora (uso real não confirmado)? | Ver "Não cobre" abaixo — deixei fora do plano de implementação até você decidir |
+| D9 — **ABERTA** | O que fazer com as duplicatas **já existentes** (Gessica R$250, Marcos R$5.360, e as que a query abaixo achar)? Excluir a linha `pendente` fantasma? Precisa confirmar com o dentista antes de qualquer escrita? | Dado financeiro real de clínica em produção — não decido sozinho |
+
+### Não cobre (nesta parte)
+
+- `receipt-handler.ts` / `abacatepay/route.ts` — mesma checagem poderia se aplicar, mas fica fora até D8.
+- Mudar como/quando o placeholder nasce em `atualizarStatusOrcamento` — só conserta o fechamento, não a criação.
+- Escrever no dado já duplicado — fica só como query read-only + decisão D9.
+
+### Plano de implementação (se aprovado)
+
+| Arquivo | O que muda | Risco |
+|---|---|---|
+| `src/app/dashboard/orcamentos/actions.ts` | `registrarPagamento` ganha checagem de parcela `pendente` equivalente antes do `insert` (delega a `marcarPagamentoPago` se achar); nova função privada `ordenarParcelasPendentes` nomeia o critério de ordenação que `registrarPagamentoRapido` já usa inline; retorno ganha `parcelaFechada?: boolean` | BAIXO |
+| `.../pacientes/[id]/_components/paciente-detail-client.tsx` | `handleRegistrarPagamento` bifurca no retorno: `parcelaFechada` → patch da linha existente + `router.refresh()` (mesmo padrão de `handleFecharPagamento`); senão → append otimista, como hoje | BAIXO |
+
+**Verificável:** gates de aceite abaixo. **Dependências:** nenhuma (sem migration).
+
+### Contrato técnico
+
+```typescript
+// registrarPagamento — mesma assinatura de entrada, retorno ganha 1 campo.
+export async function registrarPagamento(dados: {
+  orcamentoId: string; pacienteId: string; valor: number;
+  formaPagamento: FormaPagamento; data: string;
+  dataVencimento?: string; dentistaId?: string;
+}): Promise<{
+  error?: string;
+  id?: string;
+  autoAprovado?: boolean;
+  parcelaFechada?: boolean; // true = fechou uma pendente existente (UPDATE); false/undefined = inseriu linha nova.
+}>;
+
+// Nova, privada (não exportada) — só nomeia o critério de ordenação que
+// registrarPagamentoRapido já aplica inline hoje (actions.ts:810-815).
+function ordenarParcelasPendentes<T extends {
+  data_vencimento: string | null; parcela_numero: number | null; created_at: string;
+}>(linhas: T[]): T[];
+```
+
+Regra de fechamento em `registrarPagamento` (antes do `insert` existente):
+1. Se `isAgendado` (vencimento futuro) → pula a checagem, insere como hoje. Agendar é criar
+   uma `pendente` nova por definição, nunca fechar outra.
+2. Senão, busca as `pendente` do orçamento (mesma `clinica_id`), ordena com
+   `ordenarParcelasPendentes`, acha a primeira cujo `valor` bate com `dados.valor`
+   (`Math.abs(diff) < 0.005`).
+3. Achou → `marcarPagamentoPago(equivalente.id, { formaPagamento, data })`; retorna
+   `{ id: equivalente.id, parcelaFechada: true, ...resto }`. Não insere nada.
+4. Não achou → comportamento de hoje (`INSERT`), `parcelaFechada: false`.
+
+### Query de reconciliação (read-only — MCP Supabase não disponível nesta sessão; rodar antes de decidir D9, nenhum número abaixo foi inventado)
+
+```sql
+-- Orçamentos onde o total já pago cobre o valor devido, mas ainda existe
+-- pelo menos 1 linha 'pendente' aberta -- a assinatura exata do "saldo fantasma"
+-- relatado, independente de qual caminho criou a duplicata.
+with resumo as (
+  select
+    o.id as orcamento_id, o.clinica_id, o.paciente_id,
+    coalesce(o.valor_acordado, o.total, 0) as valor_devido,
+    coalesce(sum(p.valor) filter (where p.status = 'pago'), 0) as total_pago,
+    count(*)   filter (where p.status = 'pendente') as parcelas_pendentes,
+    coalesce(sum(p.valor) filter (where p.status = 'pendente'), 0) as valor_pendente_fantasma
+  from orcamentos o
+  join pagamentos p on p.orcamento_id = o.id
+  group by o.id
+)
+select r.*, pac.nome as paciente_nome
+from resumo r join pacientes pac on pac.id = r.paciente_id
+where r.parcelas_pendentes > 0 and r.total_pago >= r.valor_devido
+order by r.valor_pendente_fantasma desc;
+```
+
+### Invariantes
+
+- [ ] `registrarPagamento` nunca insere linha nova quando existe uma `pendente` do mesmo orçamento com valor idêntico (tolerância 1 centavo) e o pagamento não é agendamento futuro — fecha por `UPDATE` via `marcarPagamentoPago`.
+- [ ] Duas ou mais `pendente` com o mesmo valor → fecha sempre a mais antiga (mesma ordenação de `registrarPagamentoRapido`), nunca ambíguo.
+- [ ] Agendamento futuro (`dataVencimento > hoje`) nunca fecha uma `pendente` existente, mesmo se o valor bater — sempre cria nova.
+- [ ] Cliente nunca soma uma linha otimista extra quando o servidor fechou (não inseriu) — reflete `UPDATE` na linha existente, igual ao padrão já usado em `handleFecharPagamento`.
+- [ ] `marcarPagamentoPago` continua a única função que muda `status: 'pendente' → 'pago'` — nenhuma lógica de auto-aprovação/log/notificação duplicada dentro de `registrarPagamento`.
+
+### Gates de aceite
+
+- [ ] Orçamento aprovado sem plano (placeholder pendente do total) → "Falta receber" → Confirmar Pagamento → banco mostra 1 `UPDATE` na mesma linha (`status='pago'`), **zero** `INSERT` novo.
+- [ ] Mesmo cenário, mas digitando o valor manualmente (sem clicar em "Falta receber") → mesmo resultado — fecha por `UPDATE`.
+- [ ] 3 parcelas geradas, pagar a 2ª digitando o valor exato dela na aba geral (não clicando na linha da parcela) → fecha a **mais antiga** pendente daquele valor — determinístico, documentado, não necessariamente a 2ª.
+- [ ] Digitar um valor que não bate com nenhuma `pendente` (ex.: parcial de R$50 numa parcela de R$100) → insere linha nova como hoje, nenhuma `pendente` é alterada.
+- [ ] Agendar pagamento futuro com valor igual a uma `pendente` existente → não fecha a existente, cria uma `pendente` nova (2 linhas pendentes coexistindo é o comportamento correto aqui).
+- [ ] UI: a linha antes "Pendente" vira "Pago" na hora, sem linha extra, sem precisar de refresh manual.
+- [ ] `registrarPagamentoRapido` sem regressão — mesmo comportamento de antes.
+- [ ] Query de reconciliação rodada contra o banco real, número de orçamentos afetados documentado (não estimado) — insumo pra D9.
