@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { format, parseISO, differenceInMinutes } from 'date-fns';
 import { Clock, AlertCircle, FileText, ArrowRight, CalendarClock } from 'lucide-react';
 import { motion } from 'motion/react';
-import { ConsultaCtaButton } from './consulta-cta-button';
+import { AbrirMeuDiaButton } from './abrir-meu-dia-button';
 import { MarkAttendedButton } from './mark-attended-button';
 
 type HeroState = 'empty' | 'concluded' | 'active' | 'waiting' | 'critical' | 'near' | 'imminent' | 'approaching' | 'distant';
@@ -249,14 +249,22 @@ export function NextAppointmentHero({ agendamento, now, allConcluded, orcamentos
 
             {/* Actions */}
             <div className="flex flex-col gap-3 shrink-0">
+              {/* R-46g (D8) — sem agendamento pra "abrir", Ver meu dia vira o CTA principal. */}
               <Link
-                href="/dashboard/agendamentos"
+                href="/dashboard/meu-dia"
                 className="btn-glow inline-flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl text-[15px] font-bold text-white transition-all hover:-translate-y-0.5 active:scale-[0.98]"
                 style={{
                   background: 'linear-gradient(135deg, #2f9c85 0%, #1d7a65 100%)',
                   boxShadow:
                     '0 8px 32px rgba(47,156,133,0.38), inset 0 1px 0 rgba(255,255,255,0.14)',
                 }}
+              >
+                <CalendarClock className="w-[18px] h-[18px] shrink-0" />
+                Ver meu dia
+              </Link>
+              <Link
+                href="/dashboard/agendamentos"
+                className="inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-2xl text-sm font-semibold text-text-secondary border border-border hover:bg-surface-alt hover:text-text-primary transition-all"
               >
                 {concluded ? 'Revisar pendências' : 'Ver agenda'}
                 <ArrowRight className="w-4 h-4" />
@@ -269,14 +277,6 @@ export function NextAppointmentHero({ agendamento, now, allConcluded, orcamentos
                   Novo agendamento
                 </Link>
               )}
-              {/* R-46a (D2) — porta v1 pro Meu dia, mesmo peso visual do "Já foi atendido". */}
-              <Link
-                href="/dashboard/meu-dia"
-                className="inline-flex items-center justify-center gap-2.5 px-8 py-3.5 rounded-2xl text-sm font-bold text-text-primary bg-surface border border-border hover:border-teal/50 hover:bg-surface-alt transition-all active:scale-[0.98]"
-              >
-                <CalendarClock className="w-[18px] h-[18px] text-teal shrink-0" />
-                Ver meu dia
-              </Link>
             </div>
           </div>
         </div>
@@ -500,17 +500,9 @@ export function NextAppointmentHero({ agendamento, now, allConcluded, orcamentos
             animate={isCritical ? { scale: [1, 1.03, 1] } : {}}
             transition={{ duration: 1.0, repeat: Infinity }}
           >
-            <ConsultaCtaButton agendamentoId={agendamento.id} />
+            <AbrirMeuDiaButton agendamentoId={agendamento.id} pacienteNome={nomeFormatado} horario={hora} />
           </motion.div>
           <MarkAttendedButton agendamentoId={agendamento.id} />
-          {/* R-46a (D2) — porta v1 pro Meu dia, mesmo peso visual do "Já foi atendido". */}
-          <Link
-            href="/dashboard/meu-dia"
-            className="w-full inline-flex items-center justify-center gap-2.5 px-8 py-3.5 rounded-2xl text-sm font-bold text-text-primary bg-surface border border-border hover:border-teal/50 hover:bg-surface-alt transition-all active:scale-[0.98]"
-          >
-            <CalendarClock className="w-[18px] h-[18px] text-teal shrink-0" />
-            Ver meu dia
-          </Link>
           <Link
             href={`/dashboard/pacientes/${paciente.id}`}
             className="text-center text-xs font-semibold text-text-secondary hover:text-text-primary transition-colors"

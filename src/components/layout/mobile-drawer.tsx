@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  LayoutDashboard, Users, Calendar, Wallet, Settings,
+  LayoutDashboard, Users, Calendar, CalendarClock, Wallet, Settings,
   X, LogOut, Sun, Moon, Lock, Loader2,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -28,6 +28,9 @@ interface MobileDrawerProps {
 
 const NAV_ITEMS = [
   { href: '/dashboard',              icon: LayoutDashboard, label: 'Início' },
+  // R-46g (D7) — mesma razão do floating-dock: Meu dia é a porta, não pode faltar no mobile
+  // (a barreira física — dentista longe do PC — é justamente o que já derrubou o modo consulta antes).
+  { href: '/dashboard/meu-dia',       icon: CalendarClock,   label: 'Meu dia',    hideFromSecretaria: true },
   { href: '/dashboard/pacientes',    icon: Users,           label: 'Pacientes' },
   { href: '/dashboard/agendamentos', icon: Calendar,        label: 'Agenda' },
   { href: '/dashboard/financeiro',   icon: Wallet,          label: 'Financeiro', requiresFeature: 'financeiro' as const },

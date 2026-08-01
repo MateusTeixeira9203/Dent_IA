@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'motion/react';
 import {
-  LayoutDashboard, Users, Calendar, Wallet, Settings,
+  LayoutDashboard, Users, Calendar, CalendarClock, Wallet, Settings,
   Sun, Moon, User, LogOut, Bot, Check, ChevronsUpDown, Loader2,
 } from 'lucide-react';
 import { OdontoIALogo } from '@/components/ui/dent-ia-logo';
@@ -36,6 +36,9 @@ const ROLE_PT: Record<string, string> = {
 
 const NAV_ITEMS = [
   { href: '/dashboard',              icon: LayoutDashboard, label: 'Início',     id: 'dashboard' },
+  // R-46g (D7) — Meu dia é a porta principal agora; tem que existir onde o dentista está,
+  // não só no hero do dashboard. hideFromSecretaria: agendamentos são silo por dentista_id.
+  { href: '/dashboard/meu-dia',       icon: CalendarClock,   label: 'Meu dia',    id: 'meu-dia',    hideFromSecretaria: true },
   { href: '/dashboard/pacientes',    icon: Users,           label: 'Pacientes',  id: 'pacientes' },
   { href: '/dashboard/agendamentos', icon: Calendar,        label: 'Agenda',     id: 'agenda' },
   { href: '/dashboard/financeiro',   icon: Wallet,          label: 'Financeiro', id: 'financeiro', requiresFeature: 'financeiro' as const },

@@ -4,7 +4,10 @@
 import { createClient } from '@/lib/supabase/server';
 import { hojeBRT, inicioDoDiaBRT, fimDoDiaBRT } from '@/lib/hora-brt';
 import type { AgendamentoStatus } from '@/types/database';
-import type { Arcada, QuadranteFDI, TipoRegistroOdontograma, OrtoManutencaoInfo } from '@/types/odontograma';
+import type {
+  Arcada, QuadranteFDI, NivelAncora, FaceDental, OrigemRegistro, PapelNoGrupo,
+  TipoRegistroOdontograma, OrtoManutencaoInfo,
+} from '@/types/odontograma';
 
 /** Mesma janela do `ultimaOrto` client-side (FichasTab.tsx) — replicada aqui em lote,
  *  server-side, pros pacientes do dia de uma vez. */
@@ -30,12 +33,38 @@ export interface MeuDiaPendencia {
   quadrante: QuadranteFDI | null;
   registradoEm: string;
   dentistaNome: string;
+  /**
+   * R-46b (D4) — os 4 campos abaixo não existiam aqui antes (só exibição precisava de
+   * tipo+onde). Vêm da MESMA query já buscada pras pendências, zero query nova — faltavam
+   * só no shape de saída. Servem pra "fazer hoje →" reconstruir o `AncoraClinica` completo
+   * e reusar o `id` real do evento (marcar `realizado` no MESMO registro via upsert — nunca
+   * criar um novo ao lado, que deixaria a pendência original aberta e fantasma).
+   */
+  nivel: NivelAncora;
+  origem: OrigemRegistro;
+  faces: FaceDental[];
+  grupoId: string | null;
+  papelNoGrupo: PapelNoGrupo | null;
+  observacao: string | null;
+}
+
+export interface MeuDiaEventoVisita {
+  id: string;
+  tipo: TipoRegistroOdontograma;
+  dente: number | null;
+  arcada: Arcada | null;
+  quadrante: QuadranteFDI | null;
 }
 
 export interface MeuDiaUltimaVisita {
   data: string;
   dentistaNome: string;
   resumo: string;
+  /** R-46a (ajuste 31/07) — eventos `realizado` do odontograma na data desta visita, mesma
+   *  fonte já buscada pra pendências. Substitui o `resumo` (frase única, geralmente
+   *  "Evolução" quando `queixa_principal`/`procedimentos` estão vazios) por itens tipados
+   *  quando existem; `resumo` fica de fallback pra visitas sem evento estruturado. */
+  eventos: MeuDiaEventoVisita[];
 }
 
 export interface MeuDiaOrto {
@@ -48,19 +77,40 @@ export interface MeuDiaContexto {
   ultimaVisita: MeuDiaUltimaVisita | null;
   pendencias: MeuDiaPendencia[];
   orto: MeuDiaOrto | null;
+  /** R-46g (D9) — mesma fonte e parse do chip de alerta do hero (`next-appointment-hero.tsx`
+   *  `alertas`): `pacientes.observacoes` quebrada por linha. Não é a derivação mais cara do
+   *  C4 (5 fichas do `/consulta`) — é reaproveitar o que já existe, não construir de novo. */
+  alertas: string[];
+}
+
+export interface MeuDiaCatalogoProcedimento {
+  id: string;
+  nome: string;
+  categoria: string;
 }
 
 export interface MeuDiaData {
   slots: MeuDiaSlot[];
   contextoPorPaciente: Record<string, MeuDiaContexto>;
+  /** R-46b (D2) — mesma tabela e mesma ordem que Orçamentos já usa
+   *  (`orcamentos-client.tsx:213-226`): privada por dentista, alfabética. Decisão dele
+   *  31/07: sem frequência de uso — "muito relativo, usar o que já está no sistema". */
+  catalogoProcedimentos: MeuDiaCatalogoProcedimento[];
 }
 
 type AgendamentoRow = {
   id: string;
   data_hora: string;
   status: AgendamentoStatus;
-  paciente: { id: string; nome: string } | null;
+  paciente: { id: string; nome: string; observacoes: string | null } | null;
 };
+
+/** Mesmo parse do chip de alerta em `next-appointment-hero.tsx` (`alertas`) — D9. */
+function parseAlertas(observacoes: string | null): string[] {
+  return observacoes
+    ? observacoes.split('\n').map((l) => l.trim()).filter(Boolean)
+    : [];
+}
 
 type FichaRow = {
   paciente_id: string;
@@ -76,13 +126,15 @@ type EventoRow = {
   paciente_id: string;
   tipo: TipoRegistroOdontograma;
   status: 'indicado' | 'realizado';
-  origem: string;
-  nivel: string;
+  origem: OrigemRegistro;
+  nivel: NivelAncora;
   arcada: Arcada | null;
   quadrante: QuadranteFDI | null;
   dente: number | null;
-  faces: string[] | null;
-  papel_no_grupo: string | null;
+  faces: FaceDental[] | null;
+  papel_no_grupo: PapelNoGrupo | null;
+  grupo_id: string | null;
+  observacao: string | null;
   registrado_em: string;
   created_at: string;
   dentista: { nome: string } | null;
@@ -113,9 +165,9 @@ export async function getMeuDiaData({
   // G1 — fuso da clínica, não do servidor (dentista-dashboard.tsx usa startOfDay/endOfDay
   // do date-fns puro, que roda em UTC na Vercel; aqui usamos o padrão correto, o mesmo
   // que SecretaryDashboardServer já usa em dashboard/page.tsx).
-  const { data: agendamentosRaw } = await supabase
+  const { data: agendamentosRaw, error: agendamentosError } = await supabase
     .from('agendamentos')
-    .select('id, data_hora, status, paciente:pacientes(id, nome)')
+    .select('id, data_hora, status, paciente:pacientes(id, nome, observacoes)')
     .eq('clinica_id', clinicId)
     .eq('dentista_id', dentistaId)
     .gte('data_hora', inicioDoDiaBRT(now).toISOString())
@@ -123,16 +175,29 @@ export async function getMeuDiaData({
     .neq('status', 'cancelled')
     .order('data_hora', { ascending: true });
 
+  // R-46g (D6) — falhar alto em vez de engolir: RLS negando ou query quebrada não pode
+  // virar "nenhum atendimento hoje" (mesmo modo de falha do bug histórico de Orçamentos).
+  if (agendamentosError) {
+    throw new Error(`[getMeuDiaData] agendamentos: ${agendamentosError.message}`);
+  }
+
   const agendamentos = ((agendamentosRaw ?? []) as unknown as AgendamentoRow[])
     .filter((a): a is AgendamentoRow & { paciente: NonNullable<AgendamentoRow['paciente']> } => a.paciente != null);
 
   if (agendamentos.length === 0) {
-    return { slots: [], contextoPorPaciente: {} };
+    // Sem agendamento hoje não há slot pra selecionar — nada usa o catálogo neste render,
+    // então não vale buscar (dentista_id é o mesmo de sempre, não muda por dia).
+    return { slots: [], contextoPorPaciente: {}, catalogoProcedimentos: [] };
   }
 
   const pacienteIds = [...new Set(agendamentos.map((a) => a.paciente.id))];
 
-  const [{ data: fichasHojeRaw }, { data: fichasRecentesRaw }, { data: eventosRaw }] = await Promise.all([
+  const [
+    { data: fichasHojeRaw, error: fichasHojeError },
+    { data: fichasRecentesRaw, error: fichasRecentesError },
+    { data: eventosRaw, error: eventosError },
+    { data: catalogoRaw, error: catalogoError },
+  ] = await Promise.all([
     supabase
       .from('fichas')
       .select('paciente_id')
@@ -169,13 +234,30 @@ export async function getMeuDiaData({
     supabase
       .from('odontograma_eventos')
       .select(
-        'id, paciente_id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, registrado_em, created_at, dentista:dentistas!odontograma_eventos_dentista_id_fkey(nome)',
+        // grupo_id + observacao entraram no R-46b (D4) — só faltavam no shape de saída,
+        // a query já buscava o resto. Ver comentário em MeuDiaPendencia.
+        'id, paciente_id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, observacao, registrado_em, created_at, dentista:dentistas!odontograma_eventos_dentista_id_fkey(nome)',
       )
       .eq('clinica_id', clinicId)
       .in('paciente_id', pacienteIds)
       .order('registrado_em', { ascending: false })
       .order('created_at', { ascending: false }),
+
+    // R-46b (D2) — mesma query que orcamentos-client.tsx já faz: catálogo privado do
+    // dentista, alfabética, sem frequência (decisão dele, 31/07).
+    supabase
+      .from('procedimentos')
+      .select('id, nome, categoria')
+      .eq('clinica_id', clinicId)
+      .eq('dentista_id', dentistaId)
+      .eq('ativo', true)
+      .order('nome'),
   ]);
+
+  if (fichasHojeError) throw new Error(`[getMeuDiaData] fichasHoje: ${fichasHojeError.message}`);
+  if (fichasRecentesError) throw new Error(`[getMeuDiaData] fichasRecentes: ${fichasRecentesError.message}`);
+  if (eventosError) throw new Error(`[getMeuDiaData] eventos: ${eventosError.message}`);
+  if (catalogoError) throw new Error(`[getMeuDiaData] catalogo: ${catalogoError.message}`);
 
   // G3 — granularidade é por paciente+dia, não por agendamento específico (verificação
   // adversarial 31/07): `fichas` não tem FK pra `agendamentos`, então 2 atendimentos do
@@ -203,23 +285,41 @@ export async function getMeuDiaData({
     if (!vencedorPorAncora.has(chave)) vencedorPorAncora.set(chave, e);
   }
   const pendenciasPorPaciente = new Map<string, MeuDiaPendencia[]>();
+  // Mesmo vencedorPorAncora, só que o lado 'realizado' — vira os itens da última visita
+  // (abaixo), em vez de uma 2ª query. Só precisa da data pra casar com `ultima.data_atendimento`.
+  const realizadosPorPaciente = new Map<string, EventoRow[]>();
   for (const e of vencedorPorAncora.values()) {
-    if (e.status !== 'indicado') continue;
-    const arr = pendenciasPorPaciente.get(e.paciente_id) ?? [];
-    arr.push({
-      id: e.id,
-      tipo: e.tipo,
-      dente: e.dente,
-      arcada: e.arcada,
-      quadrante: e.quadrante,
-      registradoEm: e.registrado_em,
-      dentistaNome: e.dentista?.nome ?? 'Equipe',
-    });
-    pendenciasPorPaciente.set(e.paciente_id, arr);
+    if (e.status === 'indicado') {
+      const arr = pendenciasPorPaciente.get(e.paciente_id) ?? [];
+      arr.push({
+        id: e.id,
+        tipo: e.tipo,
+        dente: e.dente,
+        arcada: e.arcada,
+        quadrante: e.quadrante,
+        registradoEm: e.registrado_em,
+        dentistaNome: e.dentista?.nome ?? 'Equipe',
+        nivel: e.nivel,
+        origem: e.origem,
+        faces: e.faces ?? [],
+        grupoId: e.grupo_id,
+        papelNoGrupo: e.papel_no_grupo,
+        observacao: e.observacao,
+      });
+      pendenciasPorPaciente.set(e.paciente_id, arr);
+    } else {
+      const arr = realizadosPorPaciente.get(e.paciente_id) ?? [];
+      arr.push(e);
+      realizadosPorPaciente.set(e.paciente_id, arr);
+    }
   }
 
   const limiteOrto = new Date(now.getTime() - JANELA_ORTO_DIAS * 864e5)
     .toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+
+  // D9 — observacoes vem embutido no mesmo select de agendamentos; 1 por paciente basta
+  // (não muda entre os agendamentos do dia do mesmo paciente).
+  const observacoesPorPaciente = new Map(agendamentos.map((a) => [a.paciente.id, a.paciente.observacoes]));
 
   const contextoPorPaciente: Record<string, MeuDiaContexto> = {};
   for (const pid of pacienteIds) {
@@ -230,6 +330,9 @@ export async function getMeuDiaData({
           data: ultima.data_atendimento,
           dentistaNome: ultima.dentista?.nome ?? 'Equipe',
           resumo: ultima.queixa_principal || (ultima.procedimentos ?? []).slice(0, 2).join(', ') || 'Evolução',
+          eventos: (realizadosPorPaciente.get(pid) ?? [])
+            .filter((e) => e.registrado_em === ultima.data_atendimento)
+            .map((e) => ({ id: e.id, tipo: e.tipo, dente: e.dente, arcada: e.arcada, quadrante: e.quadrante })),
         }
       : null;
 
@@ -247,6 +350,7 @@ export async function getMeuDiaData({
       ultimaVisita,
       pendencias: pendenciasPorPaciente.get(pid) ?? [],
       orto,
+      alertas: parseAlertas(observacoesPorPaciente.get(pid) ?? null),
     };
   }
 
@@ -265,5 +369,7 @@ export async function getMeuDiaData({
     temFichaHoje: pacientesComFichaHoje.has(a.paciente.id),
   }));
 
-  return { slots, contextoPorPaciente };
+  const catalogoProcedimentos: MeuDiaCatalogoProcedimento[] = (catalogoRaw ?? []) as MeuDiaCatalogoProcedimento[];
+
+  return { slots, contextoPorPaciente, catalogoProcedimentos };
 }
