@@ -67,6 +67,7 @@ import { EncaminharBar } from '@/components/fichas/encaminhar-bar';
 import { AssinarBar } from '@/components/fichas/assinar-bar';
 import { agruparRegistros } from '@/lib/odontograma/agrupar-registros';
 import { agruparPorDente, type SecaoRegistros } from '@/lib/odontograma/agrupar-por-dente';
+import { derivarV2DosEventos } from '@/lib/odontograma/derivar-campos-legado';
 import { agregarGruposAbertos } from '@/lib/odontograma/grupos-abertos';
 import type { EvolucaoFormatada } from '@/app/api/dex/formatar-evolucao/route';
 const SignaturePad = dynamic(
@@ -271,42 +272,6 @@ const mapFichaToEvolution = (f: FichaDB): Evolution => ({
   autorCro: f.dentista?.cro ?? null,
   eventos: [], // anexados em fetchFichas após buscar a tabela odontograma_eventos
 });
-
-/**
- * Deriva os campos v2 (`dentes_afetados` / `dentes_observacoes` / `procedimentos`) a partir
- * dos EVENTOS do odontograma.
- *
- * Por que existe: no design definitivo (21/07) o seletor manual de dentes deixou de existir —
- * quem lança à mão passa pelo perfil do dente, que produz **evento**, não seleção. Sem esta
- * derivação, orçamento, PDF e progresso (que leem os campos v2) ficariam vazios numa ficha
- * lançada manualmente. O que o Dex já preencheu tem **precedência**; a derivação só COMPLETA.
- */
-function derivarV2DosEventos(eventos: OdontogramaEventoDraft[]): {
-  dentes: number[];
-  observacoes: Record<string, string>;
-  procedimentos: string[];
-} {
-  const porDente = new Map<number, string[]>();
-  const procedimentos: string[] = [];
-  for (const ev of eventos) {
-    // R-10: sem " - planejado" — o status é jargão redundante (vive em procedimentos_status) e
-    // poluía o orçamento/PDF que o paciente lê. Caminho manual; o "— planejado" que o Dex injeta
-    // no dentes_observacoes é outro fix (adiado — muda prompt e exige eval).
-    const rotulo = TIPO_LABEL[ev.tipo];
-    const linha = ev.observacao ? `${rotulo} (${ev.observacao})` : rotulo;
-    const d = ev.ancora.dente;
-    if (d != null) {
-      const arr = porDente.get(d);
-      if (arr) arr.push(linha); else porDente.set(d, [linha]);
-    }
-    if (!procedimentos.includes(rotulo)) procedimentos.push(rotulo);
-  }
-  return {
-    dentes: [...porDente.keys()],
-    observacoes: Object.fromEntries([...porDente].map(([d, ls]) => [String(d), ls.join('\n')])),
-    procedimentos,
-  };
-}
 
 /**
  * Agrupa os eventos de uma ficha em cards §11 (camada 2): eventos com o MESMO grupo_id
