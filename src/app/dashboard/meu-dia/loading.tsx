@@ -1,11 +1,13 @@
-// R-46g (D6) — mesmo wrapper do page.tsx (mx-auto max-w-3xl), pra não pular layout quando
-// o conteúdo real chega.
+// R-46g (D6) — mesmo wrapper do page.tsx (`PageContainer variant="wide"`, padrão do resto
+// do dashboard), pra não pular layout quando o conteúdo real chega. C1 — skeleton no shape
+// de 3 colunas do cockpit (320 | 1fr | 312).
 
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageContainer } from '@/components/layout/page-container';
 
 export default function MeuDiaLoading(): React.JSX.Element {
   return (
-    <div className="mx-auto max-w-3xl">
+    <PageContainer variant="wide">
       <header className="mb-6">
         <Skeleton className="mb-2 h-3 w-16 rounded" />
         <Skeleton className="h-9 w-64 rounded" />
@@ -18,18 +20,16 @@ export default function MeuDiaLoading(): React.JSX.Element {
           ))}
         </div>
 
-        <div className="rounded-2xl border border-border bg-surface p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <Skeleton className="h-4 w-32 rounded" />
-            <Skeleton className="h-3 w-24 rounded" />
-          </div>
+        <div className="grid grid-cols-[320px_minmax(0,1fr)_312px] items-start gap-3">
+          <Skeleton className="h-64 rounded-2xl" />
+          <Skeleton className="h-[500px] rounded-2xl" />
           <div className="flex flex-col gap-3">
-            <Skeleton className="h-3 w-20 rounded" />
-            <Skeleton className="h-4 w-full rounded" />
-            <Skeleton className="h-4 w-3/4 rounded" />
+            <Skeleton className="h-32 rounded-2xl" />
+            <Skeleton className="h-16 rounded-2xl" />
+            <Skeleton className="h-16 rounded-2xl" />
           </div>
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }

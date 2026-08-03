@@ -8,8 +8,14 @@
 // pra aninhar <a>/<button> dentro de <button>). Seleção troca o contexto embaixo; "iniciar
 // consulta"/"continuar atendimento" só aparece no card selecionado e leva pro /consulta de
 // sempre — nenhum caminho paralelo de atendimento (I3).
+//
+// C2 (contrato §5.2) — arrasta pro lado, sem barra visível (scrollbar-hide já existia, o
+// scroll continua funcionando por teclado/wheel — só a barra some). Limiar de 5px: abaixo
+// é clique, acima é arraste, e o clique correspondente é suprimido em fase de captura —
+// sem isso, soltar o arraste em cima de um card troca de paciente sem querer.
 
 import Link from 'next/link';
+import { useEffect, useRef, useState } from 'react';
 import type { MeuDiaSlot } from '@/server/dashboard/get-meu-dia';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -43,7 +49,56 @@ export interface RailProps {
   onSelecionar: (agendamentoId: string) => void;
 }
 
+const LIMIAR_ARRASTE_PX = 5;
+
 export function Rail({ slots, selecionadoId, onSelecionar }: RailProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const arraste = useRef<{ x: number; scrollLeft: number; moveu: boolean } | null>(null);
+  const [arrastando, setArrastando] = useState(false);
+  const [temMais, setTemMais] = useState(false);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const checar = () => setTemMais(el.scrollWidth > el.clientWidth);
+    checar();
+    const ro = new ResizeObserver(checar);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [slots.length]);
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (!scrollRef.current) return;
+    arraste.current = { x: e.clientX, scrollLeft: scrollRef.current.scrollLeft, moveu: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!arraste.current || !scrollRef.current) return;
+    const dx = e.clientX - arraste.current.x;
+    if (!arraste.current.moveu) {
+      if (Math.abs(dx) < LIMIAR_ARRASTE_PX) return;
+      arraste.current.moveu = true;
+      setArrastando(true);
+    }
+    scrollRef.current.scrollLeft = arraste.current.scrollLeft - dx;
+  }
+
+  function onPointerUp() {
+    arraste.current = arraste.current ? { ...arraste.current } : null;
+    setArrastando(false);
+  }
+
+  // Fase de captura: se o arraste passou do limiar, o clique que o pointerup dispara em
+  // seguida é suprimido — senão soltar o arraste em cima de um card troca de paciente.
+  function onClickCapture(e: React.MouseEvent) {
+    if (arraste.current?.moveu) {
+      e.preventDefault();
+      e.stopPropagation();
+      arraste.current = null;
+    }
+  }
+
   if (slots.length === 0) {
     return (
       <div className="rounded-2xl border border-border bg-surface px-5 py-8 text-center">
@@ -53,58 +108,76 @@ export function Rail({ slots, selecionadoId, onSelecionar }: RailProps) {
   }
 
   return (
-    <div className="flex items-start gap-2 overflow-x-auto scrollbar-hide rounded-2xl border border-border bg-surface p-3">
-      {slots.map((slot) => {
-        const selecionado = slot.agendamentoId === selecionadoId;
-        const semRegistro = slot.statusAgendamento === 'completed' && !slot.temFichaHoje;
+    <div className="relative">
+      <div
+        ref={scrollRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onClickCapture={onClickCapture}
+        className={`flex items-start gap-2 overflow-x-auto scrollbar-hide rounded-2xl border border-border bg-surface p-3 [scroll-snap-type:x_proximity] ${
+          arrastando ? 'cursor-grabbing' : 'cursor-grab'
+        }`}
+      >
+        {slots.map((slot) => {
+          const selecionado = slot.agendamentoId === selecionadoId;
+          const semRegistro = slot.statusAgendamento === 'completed' && !slot.temFichaHoje;
 
-        return (
-          <div
-            key={slot.agendamentoId}
-            className={`min-w-[112px] shrink-0 overflow-hidden rounded-xl border transition-colors ${
-              selecionado
-                ? 'border-teal bg-teal/[0.06]'
-                : semRegistro
-                  ? 'border-coral/30 hover:border-coral/50'
-                  : 'border-border hover:border-teal/40 hover:bg-surface-alt'
-            }`}
-          >
-            <button
-              type="button"
-              onClick={() => onSelecionar(slot.agendamentoId)}
-              className="w-full px-3 py-2.5 text-left"
+          return (
+            <div
+              key={slot.agendamentoId}
+              className={`min-w-[112px] shrink-0 overflow-hidden rounded-xl border transition-colors [scroll-snap-align:start] ${
+                selecionado
+                  ? 'border-teal bg-teal/[0.06]'
+                  : semRegistro
+                    ? 'border-coral/30 hover:border-coral/50'
+                    : 'border-border hover:border-teal/40 hover:bg-surface-alt'
+              }`}
             >
-              <span className="font-mono text-[10px] text-text-secondary">{slot.horario}</span>
-              <p className="mt-0.5 truncate text-[12.5px] font-semibold text-text-primary">
-                {slot.pacienteNome}
-              </p>
-              <div className="mt-1.5 flex items-center gap-1.5">
-                <span
-                  className={`font-mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                    STATUS_COLOR[slot.statusAgendamento] ?? STATUS_COLOR.scheduled
-                  }`}
-                >
-                  {STATUS_LABEL[slot.statusAgendamento] ?? slot.statusAgendamento}
-                </span>
-              </div>
-              {slot.temFichaHoje && (
-                <p className="mt-1 text-[10px] font-semibold text-teal">✓ registrado</p>
-              )}
-              {semRegistro && (
-                <p className="mt-1 text-[10px] font-semibold text-coral">⚠ sem registro</p>
-              )}
-            </button>
-            {selecionado && podeAtender(slot.statusAgendamento) && (
-              <Link
-                href={`/consulta/${slot.agendamentoId}`}
-                className="block border-t border-teal/20 px-3 py-1.5 text-center text-[10.5px] font-bold text-teal transition-colors hover:bg-teal/10"
+              <button
+                type="button"
+                onClick={() => onSelecionar(slot.agendamentoId)}
+                className="w-full px-3 py-2.5 text-left"
               >
-                {slot.statusAgendamento === 'in_progress' ? 'Continuar atendimento' : 'Iniciar consulta'}
-              </Link>
-            )}
-          </div>
-        );
-      })}
+                <span className="font-mono text-[10px] text-text-secondary">{slot.horario}</span>
+                <p className="mt-0.5 truncate text-[12.5px] font-semibold text-text-primary">
+                  {slot.pacienteNome}
+                </p>
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <span
+                    className={`font-mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                      STATUS_COLOR[slot.statusAgendamento] ?? STATUS_COLOR.scheduled
+                    }`}
+                  >
+                    {STATUS_LABEL[slot.statusAgendamento] ?? slot.statusAgendamento}
+                  </span>
+                </div>
+                {slot.temFichaHoje && (
+                  <p className="mt-1 text-[10px] font-semibold text-teal">✓ registrado</p>
+                )}
+                {semRegistro && (
+                  <p className="mt-1 text-[10px] font-semibold text-coral">⚠ sem registro</p>
+                )}
+              </button>
+              {selecionado && podeAtender(slot.statusAgendamento) && (
+                <Link
+                  href={`/consulta/${slot.agendamentoId}`}
+                  className="block border-t border-teal/20 px-3 py-1.5 text-center text-[10.5px] font-bold text-teal transition-colors hover:bg-teal/10"
+                >
+                  {slot.statusAgendamento === 'in_progress' ? 'Continuar atendimento' : 'Iniciar consulta'}
+                </Link>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {temMais && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-y-3 right-3 w-8 rounded-r-2xl bg-gradient-to-l from-surface to-transparent"
+        />
+      )}
     </div>
   );
 }

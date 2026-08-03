@@ -9,6 +9,7 @@ import { redirect } from 'next/navigation';
 import { getDentistaCached } from '@/lib/get-dentista';
 import { getMeuDiaData } from '@/server/dashboard/get-meu-dia';
 import { dataExtensaBRT } from '@/lib/hora-brt';
+import { PageContainer } from '@/components/layout/page-container';
 import { MeuDiaClient } from './_components/meu-dia-client';
 
 interface MeuDiaPageProps {
@@ -33,7 +34,7 @@ export default async function MeuDiaPage({ searchParams }: MeuDiaPageProps) {
   const agendamentoInicialId = ag && slots.some((s) => s.agendamentoId === ag) ? ag : undefined;
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <PageContainer variant="wide">
       <header className="mb-6">
         <p className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-text-secondary/60">
           Meu dia
@@ -49,6 +50,6 @@ export default async function MeuDiaPage({ searchParams }: MeuDiaPageProps) {
         agendamentoInicialId={agendamentoInicialId}
         catalogoProcedimentos={catalogoProcedimentos}
       />
-    </div>
+    </PageContainer>
   );
 }

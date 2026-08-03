@@ -3,10 +3,13 @@
 // R-46g (D6) — a rota vira a porta principal; erro de query não pode mais renderizar como
 // "dia vazio" (I5). Escopo de rota (não full-page como app/error.tsx) — a shell do
 // dashboard (sidebar, header) continua de pé ao redor.
+// C1 — mesmo `PageContainer variant="wide"` de page.tsx/loading.tsx; o cartão de erro em
+// si continua estreito e centralizado.
 
 import { useEffect } from 'react';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageContainer } from '@/components/layout/page-container';
 
 export default function MeuDiaError({
   error,
@@ -20,8 +23,8 @@ export default function MeuDiaError({
   }, [error]);
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-surface p-10 text-center">
+    <PageContainer variant="wide">
+      <div className="mx-auto flex max-w-xl flex-col items-center gap-4 rounded-2xl border border-border bg-surface p-10 text-center">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-coral-pale border border-coral/20">
           <AlertTriangle className="h-7 w-7 text-coral" />
         </div>
@@ -38,6 +41,6 @@ export default function MeuDiaError({
           Tentar novamente
         </Button>
       </div>
-    </div>
+    </PageContainer>
   );
 }

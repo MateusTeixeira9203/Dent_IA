@@ -13,13 +13,26 @@
 // mistura de tudo, "Prevenção"/"Estética" têm tipos diferentes na mesma categoria) —
 // inventar esse mapeamento seria adivinhar em cima de prontuário. Em vez disso, o nome vira
 // `observação` pendente e pede o tipo estrutural em seguida (1 toque a mais, só nesse caso).
+//
+// C1 (contrato §5.4) — `eventosDraft`/`denteAberto`/`textoVisita` deixaram de ser estado
+// local: o dono subiu pra `meu-dia-client` porque "Nesta sessão" (coluna direita) precisa
+// ler o mesmo rascunho que este painel escreve. `key={agendamentoId}` continua protegendo
+// o que sobrou de estado local aqui (onde/status/busca/etc.) — só os 3 campos lidos por
+// fora saíram da proteção do key, e o reset deles agora é explícito no pai.
+// "Registros de hoje" e as pílulas de pendência ("fazer hoje") saíram daqui — o artefato v2
+// não duplica isso no centro; viraram nesta-sessao-bloco.tsx e a-fazer-bloco.tsx.
+//
+// 03/08 — ordem livre: escolher o procedimento antes do "onde" não descarta mais o que foi
+// digitado (achado ao vivo: a ordem obrigatória era a causa real do "+dente não funciona").
+// Fica pendente e registra sozinho assim que o "onde" chegar, em qualquer ordem. E o
+// typeahead aceita o número do dente junto ("restauração 35") — reusa a mesma numeração
+// FDI do popover, sem gramática nova.
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { AlertTriangle, Check, Loader2, X } from 'lucide-react';
-import { Odontograma } from '@/components/odontograma/Odontograma';
+import { Check, AlertTriangle, Loader2, X } from 'lucide-react';
+import { Odontograma, TEETH_UPPER, TEETH_LOWER, TEETH_UPPER_DEC, TEETH_LOWER_DEC } from '@/components/odontograma/Odontograma';
 import { ToothDetailPanel } from '@/components/odontograma/ToothDetailPanel';
-import { ToothGroupList } from '@/app/consulta/[agendamentoId]/_components/tooth-group-list';
 import { getGruposAbertos, salvarEventosOdontograma } from '@/app/consulta/[agendamentoId]/actions';
 import { Combobox, ComboboxInput, ComboboxContent, ComboboxItem } from '@/components/ui/combobox';
 import { OndeSeletor, type OndeValor } from './onde-seletor';
@@ -37,6 +50,20 @@ import type { MeuDiaPendencia, MeuDiaCatalogoProcedimento } from '@/server/dashb
 
 const TIPOS = Object.entries(TIPO_LABEL) as Array<[TipoRegistroOdontograma, string]>;
 
+const DENTES_VALIDOS = new Set([...TEETH_UPPER, ...TEETH_LOWER, ...TEETH_UPPER_DEC, ...TEETH_LOWER_DEC]);
+
+/** 03/08 — "restauração 35" no campo de busca já entende o dente. Só o número — nada de
+ *  gramática de região aqui, essa é a metade cara que ficou de fora de propósito. */
+function extrairDenteDoTexto(texto: string): number | null {
+  const numeros = texto.match(/\d{2}/g);
+  if (!numeros) return null;
+  for (const n of numeros) {
+    const dente = Number(n);
+    if (DENTES_VALIDOS.has(dente)) return dente;
+  }
+  return null;
+}
+
 /** Valor de 1 item da busca — ou um tipo estrutural (registra direto), ou um item do
  *  catálogo comercial (vira observação pendente, pede o tipo estrutural em seguida). */
 type ComboboxValor = TipoRegistroOdontograma | MeuDiaCatalogoProcedimento;
@@ -48,18 +75,29 @@ function ehItemDoCatalogo(v: ComboboxValor): v is MeuDiaCatalogoProcedimento {
 interface RegistrarPainelProps {
   pacienteId: string;
   agendamentoId: string;
-  pendencias: MeuDiaPendencia[];
   catalogoProcedimentos: MeuDiaCatalogoProcedimento[];
-  /** R-46b2 — avisa o pai que a visita salvou (odontograma incluso, ver `eventosFalharam`
-   *  abaixo) pra ele avançar pro próximo slot do rail. Nunca chamado enquanto o odontograma
+  /** C1 (§5.4) — dono é `meu-dia-client`; "Nesta sessão" (direita) lê o mesmo estado. */
+  eventosDraft: OdontogramaEventoDraft[];
+  onEventosDraftChange: (eventos: OdontogramaEventoDraft[]) => void;
+  denteAberto: number | null;
+  onDenteAbertoChange: (dente: number | null) => void;
+  textoVisita: string;
+  onTextoVisitaChange: (texto: string) => void;
+  /** C2 (§5.6, trava 2) — slot já tem ficha hoje: CTA nasce desabilitado com
+   *  "já registrado hoje" até o dentista rascunhar algo novo. */
+  temFichaHoje: boolean;
+  /** C2 (P7) — avisa o pai que a visita salvou (odontograma incluso, ver `eventosFalharam`
+   *  abaixo). NÃO avança pro próximo paciente mais (decisão dele: auto-avanço saiu, o
+   *  dentista troca de paciente clicando no rail). Nunca chamado enquanto o odontograma
    *  não gravou (I4) — o dentista precisa ver o aviso antes de seguir. */
   onSalvo: () => void;
 }
 
 /** Converte a pendência (já um evento real no banco, `status='indicado'`) num draft que
  *  PRESERVA o id — "fazer hoje" fecha o registro existente por upsert, nunca cria um novo
- *  ao lado dele (I3: nunca deixar a pendência original fantasma). */
-function pendenciaParaDraft(p: MeuDiaPendencia, dataPadrao: string): OdontogramaEventoDraft {
+ *  ao lado dele (I3: nunca deixar a pendência original fantasma). Exportado — o gesto
+ *  "fazer hoje" agora dispara do a-fazer-bloco.tsx (coluna direita), via meu-dia-client. */
+export function pendenciaParaDraft(p: MeuDiaPendencia, dataPadrao: string): OdontogramaEventoDraft {
   const ancora: AncoraClinica = { nivel: p.nivel };
   if (p.dente != null) ancora.dente = p.dente;
   if (p.arcada != null) ancora.arcada = p.arcada;
@@ -86,18 +124,23 @@ function ancorasDoOnde(v: OndeValor): AncoraClinica[] {
   return [{ nivel: 'quadrante', quadrante: v.quadrante }];
 }
 
-export function RegistrarPainel({ pacienteId, agendamentoId, pendencias, catalogoProcedimentos, onSalvo }: RegistrarPainelProps) {
-  const [eventosDraft, setEventosDraft] = useState<OdontogramaEventoDraft[]>([]);
-  const [denteAberto, setDenteAberto] = useState<number | null>(null);
+export function RegistrarPainel({
+  pacienteId, agendamentoId, catalogoProcedimentos,
+  eventosDraft, onEventosDraftChange: setEventosDraft,
+  denteAberto, onDenteAbertoChange: setDenteAberto,
+  textoVisita, onTextoVisitaChange: setTextoVisita,
+  temFichaHoje,
+  onSalvo,
+}: RegistrarPainelProps) {
   const [gruposAbertos, setGruposAbertos] = useState<GrupoAberto[]>([]);
-  const [textoVisita, setTextoVisita] = useState('');
   const [textoAberto, setTextoAberto] = useState(false);
 
   const [onde, setOnde] = useState<OndeValor>(null);
   const [status, setStatus] = useState<StatusRegistro>('realizado');
   const [buscaTipo, setBuscaTipo] = useState('');
-  const [avisoOnde, setAvisoOnde] = useState(false);
   const [catalogoPendente, setCatalogoPendente] = useState<MeuDiaCatalogoProcedimento | null>(null);
+  /** 03/08 — procedimento escolhido antes de haver "onde". Some assim que o onde chegar. */
+  const [tipoPendente, setTipoPendente] = useState<{ tipo: TipoRegistroOdontograma; observacao: string } | null>(null);
 
   const [isSaving, setIsSaving] = useState(false);
   const [savedFichaId, setSavedFichaId] = useState<string | null>(null);
@@ -105,6 +148,11 @@ export function RegistrarPainel({ pacienteId, agendamentoId, pendencias, catalog
   const [isRegravando, setIsRegravando] = useState(false);
 
   const dataPadrao = hojeBRT();
+  // C2 (§5.6) — as duas travas contra ficha duplicada colapsam numa condição só: nada pra
+  // salvar. Trava 1 (limpar e desabilitar até rascunho novo) é local e imediata — não
+  // espera o `router.refresh()` do pai, fecha a janela de corrida de um duplo clique rápido
+  // pós-save. Trava 2 (slot já registrado hoje) é o MESMO estado vazio, só muda o rótulo.
+  const semRascunho = eventosDraft.length === 0 && textoVisita.trim() === '';
 
   useEffect(() => {
     let cancelado = false;
@@ -112,14 +160,8 @@ export function RegistrarPainel({ pacienteId, agendamentoId, pendencias, catalog
     return () => { cancelado = true; };
   }, [pacienteId]);
 
-  function registrar(tipo: TipoRegistroOdontograma, observacao = '') {
-    const ancoras = ancorasDoOnde(onde);
-    if (ancoras.length === 0) {
-      setAvisoOnde(true);
-      return;
-    }
-    setAvisoOnde(false);
-    const novos: OdontogramaEventoDraft[] = ancoras.map((ancora) => ({
+  function criarEventos(tipo: TipoRegistroOdontograma, observacao: string, ancoras: AncoraClinica[]): OdontogramaEventoDraft[] {
+    return ancoras.map((ancora) => ({
       id: crypto.randomUUID(),
       tipo,
       status,
@@ -130,13 +172,39 @@ export function RegistrarPainel({ pacienteId, agendamentoId, pendencias, catalog
       observacao,
       realizado_em: status === 'realizado' ? dataPadrao : null,
     }));
-    setEventosDraft([...eventosDraft, ...novos]);
+  }
+
+  function registrar(tipo: TipoRegistroOdontograma, observacao = '') {
+    let ancoras = ancorasDoOnde(onde);
+    // Número junto no texto ("restauração 35") resolve o "onde" sozinho, sem esperar o chip.
+    if (ancoras.length === 0) {
+      const dente = extrairDenteDoTexto(buscaTipo);
+      if (dente != null) {
+        setOnde({ tipo: 'dentes', dentes: [dente] });
+        ancoras = [{ nivel: 'dente', dente }];
+      }
+    }
+    if (ancoras.length === 0) {
+      // Ordem livre: guarda o procedimento em vez de descartar. `handleOndeChange` completa
+      // o registro assim que um "onde" for escolhido, em qualquer ordem.
+      setTipoPendente({ tipo, observacao });
+      setBuscaTipo('');
+      setCatalogoPendente(null);
+      return;
+    }
+    setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacao, ancoras)]);
+    setTipoPendente(null);
     setBuscaTipo('');
     setCatalogoPendente(null);
   }
 
-  function fazerHoje(p: MeuDiaPendencia) {
-    setEventosDraft([...eventosDraft, pendenciaParaDraft(p, dataPadrao)]);
+  function handleOndeChange(novoOnde: OndeValor) {
+    setOnde(novoOnde);
+    if (!tipoPendente) return;
+    const ancoras = ancorasDoOnde(novoOnde);
+    if (ancoras.length === 0) return;
+    setEventosDraft([...eventosDraft, ...criarEventos(tipoPendente.tipo, tipoPendente.observacao, ancoras)]);
+    setTipoPendente(null);
   }
 
   /** Item do catálogo escolhido na busca — só o nome comercial, nunca o tipo estrutural
@@ -199,25 +267,6 @@ export function RegistrarPainel({ pacienteId, agendamentoId, pendencias, catalog
     <div className="rounded-2xl border border-border bg-surface p-5">
       <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-text-secondary">Registrar</p>
 
-      {pendencias.length > 0 && (
-        <div className="mb-3 flex flex-wrap gap-1.5">
-          {pendencias.map((p) => {
-            const jaFeito = eventosDraft.some((e) => e.id === p.id);
-            return (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => fazerHoje(p)}
-                disabled={jaFeito}
-                className="rounded-full border border-teal/30 bg-teal/5 px-2.5 py-1 text-[11px] font-semibold text-teal transition-opacity hover:bg-teal/10 disabled:opacity-40"
-              >
-                {TIPO_LABEL[p.tipo]} {jaFeito ? '✓' : '· fazer hoje →'}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       <Combobox<ComboboxValor>
         inputValue={buscaTipo}
         onInputValueChange={setBuscaTipo}
@@ -273,7 +322,7 @@ export function RegistrarPainel({ pacienteId, agendamentoId, pendencias, catalog
       )}
 
       <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <OndeSeletor valor={onde} onChange={setOnde} />
+        <OndeSeletor valor={onde} onChange={handleOndeChange} />
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Status</span>
           {([['indicado', 'a fazer'], ['realizado', 'feito']] as const).map(([s, label]) => (
@@ -293,33 +342,32 @@ export function RegistrarPainel({ pacienteId, agendamentoId, pendencias, catalog
         </div>
       </div>
 
-      {avisoOnde && (
-        <p className="mt-1.5 text-[11px] font-semibold text-coral">Escolha onde antes de registrar.</p>
+      {tipoPendente && (
+        <p className="mt-1.5 text-[11px] font-semibold text-teal-ink">
+          {TIPO_LABEL[tipoPendente.tipo]} aguardando onde — escolha o dente ou a região.
+        </p>
       )}
 
-      {eventosDraft.length > 0 && (
-        <div className="mt-4">
-          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-secondary">
-            Registros de hoje · {eventosDraft.length}
-          </p>
-          <ToothGroupList eventos={eventosDraft} onDenteClick={setDenteAberto} />
+      {/* C3 (§5.3) — painel do dente abre AO LADO do odontograma, não embaixo. A coluna
+          direita colapsa (cockpit-grid.tsx, via meu-dia-client) e devolve o espaço pra cá —
+          é isso que tira o dente de 22,8px (reprova WCAG 2.2) pra ~34px. */}
+      <div className="mt-4 flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <Odontograma eventos={eventosDraft} selectedTeeth={[]} onToothToggle={setDenteAberto} compact hideFilters />
         </div>
-      )}
-
-      <div className="mt-4">
-        <Odontograma eventos={eventosDraft} selectedTeeth={[]} onToothToggle={setDenteAberto} compact hideFilters />
+        {denteAberto != null && (
+          <div className="w-[290px] shrink-0">
+            <ToothDetailPanel
+              dente={denteAberto}
+              eventos={eventosDraft}
+              onChange={setEventosDraft}
+              onClose={() => setDenteAberto(null)}
+              dataPadrao={dataPadrao}
+              gruposAbertos={gruposAbertos}
+            />
+          </div>
+        )}
       </div>
-
-      {denteAberto != null && (
-        <ToothDetailPanel
-          dente={denteAberto}
-          eventos={eventosDraft}
-          onChange={setEventosDraft}
-          onClose={() => setDenteAberto(null)}
-          dataPadrao={dataPadrao}
-          gruposAbertos={gruposAbertos}
-        />
-      )}
 
       <div className="mt-4 border-t border-border pt-3">
         {textoAberto ? (
@@ -363,12 +411,14 @@ export function RegistrarPainel({ pacienteId, agendamentoId, pendencias, catalog
         <button
           type="button"
           onClick={() => void handleSalvar()}
-          disabled={isSaving || eventosPendentes != null}
+          disabled={isSaving || eventosPendentes != null || semRascunho}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal px-5 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {isSaving
             ? <><Loader2 className="h-4 w-4 animate-spin" /> Salvando…</>
-            : <><Check className="h-4 w-4" /> Salvar e chamar próximo</>
+            : temFichaHoje && semRascunho
+              ? <>Já registrado hoje</>
+              : <><Check className="h-4 w-4" /> Salvar</>
           }
         </button>
       </div>

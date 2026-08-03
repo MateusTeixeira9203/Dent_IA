@@ -3,6 +3,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { hojeBRT, inicioDoDiaBRT, fimDoDiaBRT } from '@/lib/hora-brt';
+import { calcularIdade } from '@/lib/paciente-form-helpers';
 import type { AgendamentoStatus } from '@/types/database';
 import type {
   Arcada, QuadranteFDI, NivelAncora, FaceDental, OrigemRegistro, PapelNoGrupo,
@@ -17,6 +18,9 @@ export interface MeuDiaSlot {
   agendamentoId: string;
   pacienteId: string;
   pacienteNome: string;
+  /** C0 — `phead` do cockpit ("34 anos"). Mesmo `calcularIdade` do cadastro; null quando o
+   *  paciente não tem `data_nascimento`. */
+  pacienteIdade: number | null;
   /** "HH:MM" já formatado no fuso da clínica. */
   horario: string;
   statusAgendamento: AgendamentoStatus;
@@ -56,15 +60,25 @@ export interface MeuDiaEventoVisita {
   quadrante: QuadranteFDI | null;
 }
 
-export interface MeuDiaUltimaVisita {
+export interface MeuDiaVisita {
+  fichaId: string;
   data: string;
   dentistaNome: string;
+  /** R-46a (ajuste 31/07) — frase única, geralmente "Evolução" quando `queixa_principal`/
+   *  `procedimentos` estão vazios. Fallback pra visitas sem evento estruturado. */
   resumo: string;
-  /** R-46a (ajuste 31/07) — eventos `realizado` do odontograma na data desta visita, mesma
-   *  fonte já buscada pra pendências. Substitui o `resumo` (frase única, geralmente
-   *  "Evolução" quando `queixa_principal`/`procedimentos` estão vazios) por itens tipados
-   *  quando existem; `resumo` fica de fallback pra visitas sem evento estruturado. */
+  /** C0 — 1ª linha de `fichas.anotacoes`, ≤160 chars; vazio ou ausente vira `null`. */
+  nota: string | null;
+  /** Eventos `realizado` do odontograma na data desta visita, mesma fonte já buscada pra
+   *  pendências. Duas fichas na mesma data: só a primeira da lista carrega os eventos —
+   *  senão o histórico duplica a mesma linha em duas visitas. */
   eventos: MeuDiaEventoVisita[];
+}
+
+/** C0 — acumulado clínico: 1 item por âncora vencedora com status 'realizado', **sem** o
+ *  filtro de data da visita (histórico inteiro, não só a última). */
+export interface MeuDiaEventoFeito extends MeuDiaEventoVisita {
+  registradoEm: string;
 }
 
 export interface MeuDiaOrto {
@@ -74,7 +88,10 @@ export interface MeuDiaOrto {
 }
 
 export interface MeuDiaContexto {
-  ultimaVisita: MeuDiaUltimaVisita | null;
+  /** C0 — substitui `ultimaVisita`: histórico inteiro (`fichasRecentes`), não só a 1ª. */
+  visitas: MeuDiaVisita[];
+  /** C0 — novo. Estado clínico acumulado (painel "Já feito" do cockpit). */
+  jaFeito: MeuDiaEventoFeito[];
   pendencias: MeuDiaPendencia[];
   orto: MeuDiaOrto | null;
   /** R-46g (D9) — mesma fonte e parse do chip de alerta do hero (`next-appointment-hero.tsx`
@@ -102,7 +119,7 @@ type AgendamentoRow = {
   id: string;
   data_hora: string;
   status: AgendamentoStatus;
-  paciente: { id: string; nome: string; observacoes: string | null } | null;
+  paciente: { id: string; nome: string; observacoes: string | null; data_nascimento: string | null } | null;
 };
 
 /** Mesmo parse do chip de alerta em `next-appointment-hero.tsx` (`alertas`) — D9. */
@@ -112,11 +129,20 @@ function parseAlertas(observacoes: string | null): string[] {
     : [];
 }
 
+/** C0 — 1ª linha de `fichas.anotacoes`; vazia ou ausente vira `null`. Sem corte de tamanho —
+ *  histórico mostra só a última visita agora, então o espaço sobra pra nota inteira. */
+function notaDaFicha(anotacoes: string | null): string | null {
+  const primeiraLinha = anotacoes?.split('\n')[0]?.trim();
+  return primeiraLinha || null;
+}
+
 type FichaRow = {
+  id: string;
   paciente_id: string;
   data_atendimento: string;
   queixa_principal: string | null;
   procedimentos: string[] | null;
+  anotacoes: string | null;
   orto_manutencao: OrtoManutencaoInfo | null;
   dentista: { nome: string } | null;
 };
@@ -124,6 +150,10 @@ type FichaRow = {
 type EventoRow = {
   id: string;
   paciente_id: string;
+  /** C0.1 — vínculo real com a visita (fichas.id). Antes disso o join era por data,
+   *  que quebra com 2 fichas no mesmo dia (decisão dele 03/08: visita rápida sem abrir
+   *  tratamento novo também gera ficha própria). null em eventos sem ficha (preexistente). */
+  ficha_id: string | null;
   tipo: TipoRegistroOdontograma;
   status: 'indicado' | 'realizado';
   origem: OrigemRegistro;
@@ -167,7 +197,7 @@ export async function getMeuDiaData({
   // que SecretaryDashboardServer já usa em dashboard/page.tsx).
   const { data: agendamentosRaw, error: agendamentosError } = await supabase
     .from('agendamentos')
-    .select('id, data_hora, status, paciente:pacientes(id, nome, observacoes)')
+    .select('id, data_hora, status, paciente:pacientes(id, nome, observacoes, data_nascimento)')
     .eq('clinica_id', clinicId)
     .eq('dentista_id', dentistaId)
     .gte('data_hora', inicioDoDiaBRT(now).toISOString())
@@ -210,7 +240,7 @@ export async function getMeuDiaData({
     // por paciente, que o Postgrest não faz nativamente.
     supabase
       .from('fichas')
-      .select('paciente_id, data_atendimento, queixa_principal, procedimentos, orto_manutencao, dentista:dentistas(nome)')
+      .select('id, paciente_id, data_atendimento, queixa_principal, procedimentos, anotacoes, orto_manutencao, dentista:dentistas(nome)')
       .eq('clinica_id', clinicId)
       .in('paciente_id', pacienteIds)
       .order('data_atendimento', { ascending: false })
@@ -236,7 +266,7 @@ export async function getMeuDiaData({
       .select(
         // grupo_id + observacao entraram no R-46b (D4) — só faltavam no shape de saída,
         // a query já buscava o resto. Ver comentário em MeuDiaPendencia.
-        'id, paciente_id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, observacao, registrado_em, created_at, dentista:dentistas!odontograma_eventos_dentista_id_fkey(nome)',
+        'id, paciente_id, ficha_id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, observacao, registrado_em, created_at, dentista:dentistas!odontograma_eventos_dentista_id_fkey(nome)',
       )
       .eq('clinica_id', clinicId)
       .in('paciente_id', pacienteIds)
@@ -324,17 +354,33 @@ export async function getMeuDiaData({
   const contextoPorPaciente: Record<string, MeuDiaContexto> = {};
   for (const pid of pacienteIds) {
     const fichas = fichasPorPaciente.get(pid) ?? [];
-    const ultima = fichas[0];
-    const ultimaVisita: MeuDiaUltimaVisita | null = ultima
-      ? {
-          data: ultima.data_atendimento,
-          dentistaNome: ultima.dentista?.nome ?? 'Equipe',
-          resumo: ultima.queixa_principal || (ultima.procedimentos ?? []).slice(0, 2).join(', ') || 'Evolução',
-          eventos: (realizadosPorPaciente.get(pid) ?? [])
-            .filter((e) => e.registrado_em === ultima.data_atendimento)
-            .map((e) => ({ id: e.id, tipo: e.tipo, dente: e.dente, arcada: e.arcada, quadrante: e.quadrante })),
-        }
-      : null;
+    const eventosRealizados = realizadosPorPaciente.get(pid) ?? [];
+
+    // C0.1 (03/08) — join por `ficha_id`, não por data. Decisão dele: visita rápida que só
+    // avança um tratamento aberto também gera ficha própria, então 2 fichas no mesmo dia é
+    // caso normal, não exceção — casar por data colava os eventos todos na 1ª e deixava a
+    // 2ª vazia. `ficha_id` é o vínculo real (salvar-ficha.ts sempre grava).
+    const visitas: MeuDiaVisita[] = fichas.map((f) => ({
+      fichaId: f.id,
+      data: f.data_atendimento,
+      dentistaNome: f.dentista?.nome ?? 'Equipe',
+      resumo: f.queixa_principal || (f.procedimentos ?? []).slice(0, 2).join(', ') || 'Evolução',
+      nota: notaDaFicha(f.anotacoes),
+      eventos: eventosRealizados
+        .filter((e) => e.ficha_id === f.id)
+        .map((e) => ({ id: e.id, tipo: e.tipo, dente: e.dente, arcada: e.arcada, quadrante: e.quadrante })),
+    }));
+
+    // C0 — mesmo vencedorPorAncora (ramo 'realizado'), sem filtro de data: acumulado
+    // clínico inteiro, não só o da última visita.
+    const jaFeito: MeuDiaEventoFeito[] = eventosRealizados.map((e) => ({
+      id: e.id,
+      tipo: e.tipo,
+      dente: e.dente,
+      arcada: e.arcada,
+      quadrante: e.quadrante,
+      registradoEm: e.registrado_em,
+    }));
 
     // Mesma lógica do `ultimaOrto` (FichasTab.tsx): itera desc, primeira ficha com
     // orto_manutencao decide; se ela já está fora da janela de 120 dias, não há orto ativo.
@@ -347,7 +393,8 @@ export async function getMeuDiaData({
     }
 
     contextoPorPaciente[pid] = {
-      ultimaVisita,
+      visitas,
+      jaFeito,
       pendencias: pendenciasPorPaciente.get(pid) ?? [],
       orto,
       alertas: parseAlertas(observacoesPorPaciente.get(pid) ?? null),
@@ -364,6 +411,7 @@ export async function getMeuDiaData({
     agendamentoId: a.id,
     pacienteId: a.paciente.id,
     pacienteNome: a.paciente.nome,
+    pacienteIdade: a.paciente.data_nascimento ? calcularIdade(a.paciente.data_nascimento) : null,
     horario: fmtHora.format(new Date(a.data_hora)),
     statusAgendamento: a.status,
     temFichaHoje: pacientesComFichaHoje.has(a.paciente.id),
