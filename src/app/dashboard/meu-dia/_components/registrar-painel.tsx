@@ -52,6 +52,12 @@ const TIPOS = Object.entries(TIPO_LABEL) as Array<[TipoRegistroOdontograma, stri
 
 const DENTES_VALIDOS = new Set([...TEETH_UPPER, ...TEETH_LOWER, ...TEETH_UPPER_DEC, ...TEETH_LOWER_DEC]);
 
+/** 03/08 — os únicos 4 tipos cuja âncora é 100% determinada pelo tipo (odontograma.ts:85-90,
+ *  "Ancora em boca"). Pra estes, "onde" nunca existe — exigir o chip era o bug real. Os
+ *  demais tipos resolvem no máximo o NÍVEL (dente/face), nunca o valor, então continuam
+ *  exigindo o chip (`raspagem` inclusive — o único com nível ambíguo, quadrante OU boca). */
+const TIPOS_NIVEL_BOCA = new Set<TipoRegistroOdontograma>(['profilaxia', 'clareamento', 'fluor', 'exame_periodontal']);
+
 /** 03/08 — "restauração 35" no campo de busca já entende o dente. Só o número — nada de
  *  gramática de região aqui, essa é a metade cara que ficou de fora de propósito. */
 function extrairDenteDoTexto(texto: string): number | null {
@@ -175,6 +181,16 @@ export function RegistrarPainel({
   }
 
   function registrar(tipo: TipoRegistroOdontograma, observacao = '') {
+    // 03/08 — profilaxia/clareamento/flúor/exame periodontal não têm "onde": a âncora é
+    // SEMPRE boca, e nenhum chip (dente/região) escolhido antes se aplica aqui — não é
+    // esquecido, é ignorado de propósito (D5 do R-06-07: nível boca nunca pinta dente).
+    if (TIPOS_NIVEL_BOCA.has(tipo)) {
+      setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacao, [{ nivel: 'boca' }])]);
+      setTipoPendente(null);
+      setBuscaTipo('');
+      setCatalogoPendente(null);
+      return;
+    }
     let ancoras = ancorasDoOnde(onde);
     // Número junto no texto ("restauração 35") resolve o "onde" sozinho, sem esperar o chip.
     if (ancoras.length === 0) {
@@ -270,6 +286,7 @@ export function RegistrarPainel({
       <Combobox<ComboboxValor>
         inputValue={buscaTipo}
         onInputValueChange={setBuscaTipo}
+        autoHighlight
         onValueChange={(v) => {
           if (!v) return;
           if (ehItemDoCatalogo(v)) escolherDoCatalogo(v);
