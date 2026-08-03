@@ -58,6 +58,10 @@ export interface MeuDiaEventoVisita {
   dente: number | null;
   arcada: Arcada | null;
   quadrante: QuadranteFDI | null;
+  /** R-55 — sem isso, restaurações de faces diferentes no mesmo dente renderizavam
+   *  linhas idênticas (`ondeLabel` nunca imprimia face). */
+  faces: FaceDental[];
+  observacao: string | null;
 }
 
 export interface MeuDiaVisita {
@@ -69,16 +73,34 @@ export interface MeuDiaVisita {
   resumo: string;
   /** C0 — 1ª linha de `fichas.anotacoes`, ≤160 chars; vazio ou ausente vira `null`. */
   nota: string | null;
-  /** Eventos `realizado` do odontograma na data desta visita, mesma fonte já buscada pra
-   *  pendências. Duas fichas na mesma data: só a primeira da lista carrega os eventos —
-   *  senão o histórico duplica a mesma linha em duas visitas. */
+  /** Eventos `realizado` do odontograma vinculados a ESTA ficha (`ficha_id`, não data — C0.1).
+   *  R-55: sem dedup por âncora — toda ocorrência real aparece, mesmo repetida. */
   eventos: MeuDiaEventoVisita[];
 }
 
-/** C0 — acumulado clínico: 1 item por âncora vencedora com status 'realizado', **sem** o
- *  filtro de data da visita (histórico inteiro, não só a última). */
-export interface MeuDiaEventoFeito extends MeuDiaEventoVisita {
-  registradoEm: string;
+/** R-55 — 1 ocorrência real de um procedimento (1 linha do banco), dentro de um grupo por
+ *  âncora. `data` é a clínica quando existe (fiscalização CRO), senão a de registro. */
+export interface MeuDiaOcorrenciaFeita {
+  id: string;
+  data: string;
+  observacao: string | null;
+  fichaId: string | null;
+}
+
+/** R-55 — acumulado clínico agrupado por âncora (não mais 1 evento solto): a dedup por
+ *  âncora do servidor serve só à pendência agora (ver `chaveAncora`); aqui ela vira
+ *  AGREGAÇÃO — nenhuma ocorrência realizada é descartada, `ocorrencias` tem todas, mais
+ *  recente primeiro. */
+export interface MeuDiaEventoFeito {
+  /** Chave de React (a mesma `chaveAncora` do servidor) — nunca um id de banco. */
+  chave: string;
+  tipo: TipoRegistroOdontograma;
+  dente: number | null;
+  arcada: Arcada | null;
+  quadrante: QuadranteFDI | null;
+  faces: FaceDental[];
+  origem: OrigemRegistro;
+  ocorrencias: MeuDiaOcorrenciaFeita[];
 }
 
 export interface MeuDiaOrto {
@@ -166,6 +188,9 @@ type EventoRow = {
   grupo_id: string | null;
   observacao: string | null;
   registrado_em: string;
+  /** R-55 — data CLÍNICA do procedimento; único campo de data que a RPC de fechamento de
+   *  pendência atualiza. Vira `MeuDiaOcorrenciaFeita.data` com fallback pra `registrado_em`. */
+  realizado_em: string | null;
   created_at: string;
   dentista: { nome: string } | null;
 };
@@ -265,8 +290,9 @@ export async function getMeuDiaData({
       .from('odontograma_eventos')
       .select(
         // grupo_id + observacao entraram no R-46b (D4) — só faltavam no shape de saída,
-        // a query já buscava o resto. Ver comentário em MeuDiaPendencia.
-        'id, paciente_id, ficha_id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, observacao, registrado_em, created_at, dentista:dentistas!odontograma_eventos_dentista_id_fkey(nome)',
+        // a query já buscava o resto. Ver comentário em MeuDiaPendencia. realizado_em
+        // entrou no R-55 (histórico precisa da data clínica por ocorrência).
+        'id, paciente_id, ficha_id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, observacao, registrado_em, realizado_em, created_at, dentista:dentistas!odontograma_eventos_dentista_id_fkey(nome)',
       )
       .eq('clinica_id', clinicId)
       .in('paciente_id', pacienteIds)
@@ -309,39 +335,48 @@ export async function getMeuDiaData({
   // G2 — "indicado sem realizado posterior": nenhuma implementação disto existia no
   // código (achado no mapeamento) — o vencedor por âncora é o de `registrado_em` mais
   // recente (a query já veio ordenada desc, então o 1º visto por chave é o vencedor).
+  //
+  // R-55 — este Map serve SÓ à pendência (trava emendada em R-46-cockpit.md/contrato).
+  // Aplicado ao histórico ele colapsava ocorrência repetida da mesma âncora (achado real
+  // em produção: profilaxia/flúor/clareamento são SEMPRE a mesma chave, pra sempre — e
+  // duas fichas de datas diferentes com o mesmo procedimento perdiam uma das duas).
   const vencedorPorAncora = new Map<string, EventoRow>();
   for (const e of (eventosRaw ?? []) as unknown as EventoRow[]) {
     const chave = `${e.paciente_id}::${chaveAncora(e)}`;
     if (!vencedorPorAncora.has(chave)) vencedorPorAncora.set(chave, e);
   }
   const pendenciasPorPaciente = new Map<string, MeuDiaPendencia[]>();
-  // Mesmo vencedorPorAncora, só que o lado 'realizado' — vira os itens da última visita
-  // (abaixo), em vez de uma 2ª query. Só precisa da data pra casar com `ultima.data_atendimento`.
-  const realizadosPorPaciente = new Map<string, EventoRow[]>();
   for (const e of vencedorPorAncora.values()) {
-    if (e.status === 'indicado') {
-      const arr = pendenciasPorPaciente.get(e.paciente_id) ?? [];
-      arr.push({
-        id: e.id,
-        tipo: e.tipo,
-        dente: e.dente,
-        arcada: e.arcada,
-        quadrante: e.quadrante,
-        registradoEm: e.registrado_em,
-        dentistaNome: e.dentista?.nome ?? 'Equipe',
-        nivel: e.nivel,
-        origem: e.origem,
-        faces: e.faces ?? [],
-        grupoId: e.grupo_id,
-        papelNoGrupo: e.papel_no_grupo,
-        observacao: e.observacao,
-      });
-      pendenciasPorPaciente.set(e.paciente_id, arr);
-    } else {
-      const arr = realizadosPorPaciente.get(e.paciente_id) ?? [];
-      arr.push(e);
-      realizadosPorPaciente.set(e.paciente_id, arr);
-    }
+    if (e.status !== 'indicado') continue;
+    const arr = pendenciasPorPaciente.get(e.paciente_id) ?? [];
+    arr.push({
+      id: e.id,
+      tipo: e.tipo,
+      dente: e.dente,
+      arcada: e.arcada,
+      quadrante: e.quadrante,
+      registradoEm: e.registrado_em,
+      dentistaNome: e.dentista?.nome ?? 'Equipe',
+      nivel: e.nivel,
+      origem: e.origem,
+      faces: e.faces ?? [],
+      grupoId: e.grupo_id,
+      papelNoGrupo: e.papel_no_grupo,
+      observacao: e.observacao,
+    });
+    pendenciasPorPaciente.set(e.paciente_id, arr);
+  }
+
+  // R-55 — 2ª passagem, INDEPENDENTE do vencedor por âncora: histórico e acumulado
+  // precisam de toda ocorrência realizada, não só a mais recente por âncora. `eventosRaw`
+  // já vem ordenado `registrado_em desc, created_at desc` (query acima), então cada array
+  // aqui nasce "mais recente primeiro" de graça.
+  const realizadosPorPaciente = new Map<string, EventoRow[]>();
+  for (const e of (eventosRaw ?? []) as unknown as EventoRow[]) {
+    if (e.status !== 'realizado') continue;
+    const arr = realizadosPorPaciente.get(e.paciente_id) ?? [];
+    arr.push(e);
+    realizadosPorPaciente.set(e.paciente_id, arr);
   }
 
   const limiteOrto = new Date(now.getTime() - JANELA_ORTO_DIAS * 864e5)
@@ -368,19 +403,35 @@ export async function getMeuDiaData({
       nota: notaDaFicha(f.anotacoes),
       eventos: eventosRealizados
         .filter((e) => e.ficha_id === f.id)
-        .map((e) => ({ id: e.id, tipo: e.tipo, dente: e.dente, arcada: e.arcada, quadrante: e.quadrante })),
+        .map((e) => ({
+          id: e.id, tipo: e.tipo, dente: e.dente, arcada: e.arcada, quadrante: e.quadrante,
+          faces: e.faces ?? [], observacao: e.observacao,
+        })),
     }));
 
-    // C0 — mesmo vencedorPorAncora (ramo 'realizado'), sem filtro de data: acumulado
-    // clínico inteiro, não só o da última visita.
-    const jaFeito: MeuDiaEventoFeito[] = eventosRealizados.map((e) => ({
-      id: e.id,
-      tipo: e.tipo,
-      dente: e.dente,
-      arcada: e.arcada,
-      quadrante: e.quadrante,
-      registradoEm: e.registrado_em,
-    }));
+    // R-55 — acumulado clínico inteiro (não só a última visita), agrupado por âncora como
+    // AGREGAÇÃO — nenhuma ocorrência é descartada. `eventosRealizados` já vem "mais recente
+    // primeiro" (ordem da query), então tanto os grupos quanto `ocorrencias` dentro de cada
+    // um nascem na ordem certa sem sort extra.
+    const gruposJaFeito = new Map<string, MeuDiaEventoFeito>();
+    for (const e of eventosRealizados) {
+      const chave = chaveAncora(e);
+      let grupo = gruposJaFeito.get(chave);
+      if (!grupo) {
+        grupo = {
+          chave, tipo: e.tipo, dente: e.dente, arcada: e.arcada, quadrante: e.quadrante,
+          faces: e.faces ?? [], origem: e.origem, ocorrencias: [],
+        };
+        gruposJaFeito.set(chave, grupo);
+      }
+      grupo.ocorrencias.push({
+        id: e.id,
+        data: e.realizado_em ?? e.registrado_em,
+        observacao: e.observacao,
+        fichaId: e.ficha_id,
+      });
+    }
+    const jaFeito: MeuDiaEventoFeito[] = [...gruposJaFeito.values()];
 
     // Mesma lógica do `ultimaOrto` (FichasTab.tsx): itera desc, primeira ficha com
     // orto_manutencao decide; se ela já está fora da janela de 120 dias, não há orto ativo.
