@@ -7,7 +7,17 @@
 > **Depende de:** nada codado — `salvarFicha` (R-11) e o input de data retroativa já existem.
 > **Bloqueia:** R-46d (colar nível 2 estrutura o texto que esta fatia traz).
 > **Artefato:** [R-46-ficha-dia.html](../artefatos/R-46-ficha-dia.html) §2, zona "o antes".
-> Sem artefato próprio — a UI é `Dialog` + textarea + input de data, tudo padrão já no projeto.
+>
+> ⚠️ **CORREÇÃO 01/08 — a spec abaixo assume colar texto; ele quer SUBIR ARQUIVO.**
+> Achado depois de escrita: `mammoth`, `officeparser` e `pdf-parse` **já estão instalados** e
+> `/api/extrair-texto` já aceita `.docx`/`.doc`/`.pdf`/`.txt`, extraindo em memória sem
+> persistir. Upload não é construção nova — é ligar o que existe. **O contrato dos §7/§10
+> muda** (ganha o upload; a textarea vira o fallback de colar). Duas consequências:
+> **(a)** o limite de 5000 chars de `anotacoes` (§5) deixa de ser hipótese remota — um `.docx`
+> com 3 anos de histórico estoura fácil, então virou a A2 abaixo; **(b)** a UI deixa de morar
+> no empty-state e passa a ser a **aba da coluna esquerda do cockpit** — ou seja, esta fatia
+> agora depende do redesign, e o §10 se resolve lá. O resto da spec (migration, `importado`,
+> exibição honesta, invariantes, gates) continua valendo inteiro.
 
 ## 1. O problema
 

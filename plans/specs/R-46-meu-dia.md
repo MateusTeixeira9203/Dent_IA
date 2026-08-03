@@ -55,8 +55,14 @@ Relatório: [auditorias/2026-07-31-fase0-dex-ficha-rapida.md](../auditorias/2026
 6. `alerta_novo` (alergia nova) nunca persiste pela ficha rápida e **é apagado** se uma ficha
    nascida no modo consulta for reeditada por ela (`FichasTab.tsx:1193`, `salvar-ficha.ts:169,234`).
 
-**Decisão de sequenciamento — dele, antes de R-46d:** consertar 1/2/6 como fila própria (fora do
-R-46, achado de auditoria) antes ou dentro do R-46d? Ver handoff 31/07.
+**Decisão de sequenciamento — RESOLVIDA 02/08, e já satisfeita:** os 6 achados **já têm
+correção de código** — 1, 2 e 6 pelo **R-47** (commitado 31/07, `docs/../auditorias/2026-07-31-
+fase0-dex-ficha-rapida.md`, 2 rodadas de verificação adversarial; falta só o teste ao vivo pra
+virar ✅ no `ROADMAP.md`, mesmo gate genérico de vários outros itens). 3, 4 e 5 pelo **R-48**
+(01/08, confirmado no iPhone real dele, ainda não commitado). Isso libera o campo mágico
+completo ("Organizar com Dex") no R-46c (ver [R-46-cockpit.md §5 F1](R-46-cockpit.md)) sem
+precisar de trabalho novo — só R-48 commitado e R-47 com o teste ao vivo feito, que já
+estavam na fila por outro motivo.
 
 ### R-46a — esqueleto + contexto (só leitura) ✅ codado 31/07, sem teste ao vivo
 Rota `/dashboard/meu-dia`: **rail** do dia (agenda + estado de registro por slot, ⚠ sem-registro)

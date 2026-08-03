@@ -1,12 +1,27 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · atualizado **2026-08-01** · reorganizado por **importância pro dentista**
-> **Ativo:** **R-46 (Meu dia)** — R-46a ✅ · R-46g 🟡 · R-46b 🟡 (registrar, interação
-> testada) · **R-46b2 🟡 codado e provado no banco** (o Meu dia salva) · **R-46c em
-> planejamento** (spec `contrato`, esperando aprovação)
-> **Fila:** 14 · **🟡 no ar, não verificado ou codado sem deploy:** 16 · **Concluídos:** 23 ·
-> **Congelado:** 1 · R-38/R-39b/R-31a/R-41 no ar (push + deploy 31/07)
-> **Próximo:** aprovar spec R-46c · **commitar** (5 sessões no working tree) · R-28 Parte 3 (D7/D8/D9)
+> **ROADMAP** · atualizado **2026-08-03** · reorganizado por **importância pro dentista**
+> **Ativo:** **R-46 (Meu dia)** — R-46a ✅ · R-46g 🟡 · R-46b 🟡 · **R-46b2 🟡 provado no banco**
+> (o Meu dia salva) · **R-46c** spec `contrato` (campo mágico completo, com IA — 02/08)
+> · **cockpit tela cheia: [spec](specs/R-46-cockpit.md) e [artefato v2](artefatos/R-46-cockpit.html)
+> APROVADOS 02/08** após 6 rodadas — **C0/C1/C2/C3 codados 03/08**, C0/C1 testados ao vivo,
+> C2/C3 ainda não. Faltam C4 (espera R-46c) e C5
+> **Novos de 02/08:** **R-46h** 💡 um botão salva + abre orçamento ·
+> **[R-49](specs/R-49-voz-e-campos-de-especialidade.md)** ⏳ voz e campos de especialidade
+> (spec escrita, entra depois do cockpit) · **R-50** 🐛 orto: `arcada` força a IA a inventar
+> **+** sem ativação manual nenhuma
+> **R-48 (voz confiável) ✅** (01/08) — 7 gates, G1 no iPhone real. **Fase 0 inteira
+> code-complete:** achados 1/2/6 pelo R-47, 3/4/5 pelo R-48; falta R-47 no teste ao vivo
+> (🟡→✅) e R-48 ser commitado
+> **Fila:** 22 · **🟡 no ar/codado sem deploy:** 16 · **Concluídos:** 24 · **Congelado:** 1
+> **Novos de 03/08:** C0-C3 do cockpit testados ao vivo (C2/C3 ok) · `/pontual` do Registrar
+> aplicado (Enter seleciona, boca-toda com âncora implícita) ·
+> **R-51 a R-54** — modelo clínico multi-sessão, encaminhar no "A fazer", orçamento pelos
+> indicados em aberto, e o buraco da ficha duplicada no mesmo dia · **[R-55](specs/R-55-historico-sem-perda-de-dado.md)**
+> 🐛 dedup por âncora esconde procedimento repetido no histórico — spec `proposta`, emenda feita
+> no R-46 (trava do algoritmo passa a valer só pra pendência)
+> **Próximo:** aprovar spec R-55 · C4/C5 do cockpit · spec do bloco R-51-54 (interdependentes,
+> uma spec só) · aprovar spec R-46c · **commitar** (10 sessões no working tree) · R-28 Parte 3
 > **Discussão aberta:** [como diminuir o atrito](discussoes/como-diminuir-o-atrito.md) (estado × evento)
 
 **Status:** ⏳ fila · 🔵 ativo (máx 1) · 🟡 no ar **não** verificado · ✅ no ar **e** verificado ·
@@ -41,7 +56,15 @@ prioridade, por melhor que seja.
 
 | ID | Item | Estado | Peso |
 |---|---|---|---|
-| [R-46](specs/R-46-meu-dia.md) | **Meu dia — a ficha no dia real; o novo modo consulta** (rail do dia, contexto à vista, registrar em lote, colar do Word, Dex em lista) | 🔵 **em execução** · R-46a ✅ · **[R-46g](specs/R-46g-porta-modo-consulta.md) 🟡** (porta; A1 do gate de assinatura **ignorada** — sem sistema de pagamento) · **[R-46b](specs/R-46b-registrar-meu-dia.md) 🟡** (registrar — interação testada 01/08, A3/A4 fechadas) · **[R-46b2](specs/R-46b2-salvar-chamar-proximo.md) 🟡 codado e provado no banco** — o Meu dia salva de verdade · **[R-46c](specs/R-46c-colar-do-word.md)** spec `contrato`, esperando aprovação | G |
+| [R-46](specs/R-46-meu-dia.md) | **Meu dia — a ficha no dia real; o novo modo consulta** (rail do dia, contexto à vista, registrar em lote, colar do Word, Dex em lista) | 🔵 **em execução** · R-46a ✅ · **[R-46g](specs/R-46g-porta-modo-consulta.md) 🟡** (porta; A1 do gate de assinatura **ignorada** — sem sistema de pagamento) · **[R-46b](specs/R-46b-registrar-meu-dia.md) 🟡** (registrar — interação testada 01/08, A3/A4 fechadas) · **[R-46b2](specs/R-46b2-salvar-chamar-proximo.md) 🟡 codado e provado no banco** — o Meu dia salva de verdade · **[R-46c](specs/R-46c-colar-do-word.md)** spec `contrato`, esperando aprovação · **[cockpit](specs/R-46-cockpit.md) spec `aprovada` + [contrato](specs/R-46-cockpit-contrato.md) + [artefato v2](artefatos/R-46-cockpit.html) aprovados 02/08** — **C0/C1/C2/C3 codados 03/08** (typecheck/lint/build limpos, não commitado); C0/C1 testados ao vivo por ele, C2/C3 ainda não. Faltam C4 (espera R-46c) e C5, desktop | G |
+| **R-46h** | 💡 **Um botão: salva a visita e já abre o orçamento** — extrai `NovoOrcamentoModal`/`FichaParaOrc` de `paciente-detail-client.tsx` pra componente compartilhado, sem duplicar | 💡 02/08 — **decidido por ele: um gesto faz tudo** (resolve o `fichaId` que só existe pós-save). [R-46-cockpit.md §5a](specs/R-46-cockpit.md). Sem spec ainda — entra quando o cockpit codar | M |
+| [R-49](specs/R-49-voz-e-campos-de-especialidade.md) | **Voz e campos de especialidade** — preencher sem digitar 17 vezes. Ele mesmo pôs na fila: *"depois que a gente terminar de construir tudo isso a gente vai refinar a voz"* | ⏳ **spec escrita 02/08** (fase `debate`), entra **depois do cockpit**. D1: parser **determinístico** come **texto** (`(texto) => EndoDetalhe`, precedente `perio.ts:154`) · D2: a revisão **é** a tabela · voz **nunca escreve milímetro**. Dado que reposiciona: **66% dos endos têm odontometria vazia** | G |
+| **R-50** | 🐛 **Orto tem 2 furos, um item só:** (a) `orto.ts:18` — `arcada` é enum **não-nullable** enquanto os outros 4 campos são nullable, e como o pass 1 já extrai `orto_manutencao` por IA, o schema **obriga a IA a inventar a arcada**; (b) `orto.ts:30` — `tiposEvento: []`, então **nenhum tipo do catálogo liga o `OrtoForm`**: sem campo mágico, manutenção ortodôntica não tem como ser registrada na mão | ⏳ achado 02/08 (a: medição de produção · b: pergunta dele sobre ativação manual). (a) viola a I5 em campo clínico; (b) deixa uma especialidade inteira dependente de IA. [§5a](specs/R-46-cockpit.md) | P |
+| **R-51** | Procedimento multi-sessão (canal, implante): "em andamento" vira **derivado** do `grupo_id` — sem 3º status novo | ⏳ achado 03/08, discutindo o cockpit. Workflow confirmou: 3º status quebra 23 arquivos em silêncio (zero exhaustive check no TS); `grupo_id` + `grupos-abertos.ts` já é o modelo, zero migration. `get-meu-dia.ts` precisa parar de fechar a pendência cedo (`chaveAncora` ignora `grupo_id`) | G |
+| **R-52** | Encaminhar pendência pro outro dentista **dentro do bloco "A fazer"** do cockpit — sem painel (painel foi rejeitado no design-shotgun de 24/07) | ⏳ decidido 03/08 — `EncaminharBar`/RPC/RLS já existem e são reusáveis, mas `MeuDiaPendencia` não carrega `dentistaId` nem `encaminhado_para`; a ação falha o lote inteiro se algum item for de outro autor ou de ficha assinada | M |
+| **R-53** | Orçamento nasce de **todos os indicados em aberto do paciente**, não só os registrados hoje | ⏳ decidido 03/08. Amarrado ao R-51 (indicado de sessão em andamento entra?) e ao R-52 (encaminhado não entra na conta) | M |
+| **R-54** | 🐛 `salvarVisitaMeuDia` sempre faz `INSERT`, nunca checa se já existe ficha do paciente hoje — 2ª gravação no mesmo dia cria ficha solta, sem juntar | ⏳ achado 02/08, **real em produção**, não teórico — `fichas` não tem FK pra `agendamentos`. Fica mais frequente com a decisão de 03/08 de que toda "visita rápida" também gera ficha. Decisão pendente: 2ª gravação acrescenta na ficha do dia, ou cria outra? | G |
+| [R-55](specs/R-55-historico-sem-perda-de-dado.md) | 🐛 Dedup por âncora em `get-meu-dia.ts` esconde procedimento repetido — histórico e "Já feito" mostram só 1 ocorrência por âncora, sempre, mesmo com datas diferentes | ⏳ **spec `proposta` 03/08**, achado real em produção (4 colisões medidas, uma com datas distintas). Emenda feita em `R-46-cockpit.md`/contrato: a trava do "vencedor por âncora" passa a valer só pra pendência. **Bloqueia** histórico detalhado e o C6 do cockpit | G |
 | [R-30](specs/R-30-ficha-fonte-unica-procedimento.md) | Ficha: fonte única de procedimento — mata a divergência entre `dentes_observacoes` e `odontograma_eventos` | 🟡 **commitado e em produção** (30/07 noite), bug relatado por ele **confirmado corrigido em produção**. **Parte 1 destrava 24 de 87 fichas (27,6%)** que rejeitavam o save ao editar. Falta o gate de 2 contas pra virar ✅ | G |
 | [R-31a](specs/R-31a-paciente-unico-prevencao.md) | Paciente único: **prevenção** — parar de criar duplicata | 🟡 **codado, testado ao vivo, commitado e no ar** (push 31/07) — §3.2, §3.3, §3.1, §3.4 completos. G1/G2/G4 confirmados com bug real achado e corrigido em cada um (ver handoff). G3 (toque no celular) e G5 (toast do agendamento) só confirmados por lógica — dev tooling não deixou ver o toast renderizar. Falta gate de 2 contas | M |
 | [R-31b](specs/R-31b-paciente-unico-unificacao.md) | Paciente único: **unificação** dos 16 grupos existentes | ⏳ aprovada, depende da R-31a no ar. Nunca `DELETE` — `merged_into_id` reversível | M |
@@ -116,6 +139,7 @@ privada**, e a demanda pede que dentista veja "horários marcados". Pode ser con
 
 | ID | Item | Fechado |
 |---|---|---|
+| [R-48](_arquivo/specs/R-48-voz-confiavel.md) | Voz confiável — mic iOS, retry sem perder texto, falha no meio do ditado não descarta áudio | 2026-08-01 |
 | R-27 | Redesign do padrão de modal/painel (orçamento + agendamento) | 2026-07-29 |
 | R-11 | Contrato único `salvarFicha`/`deletarFicha` | 2026-07-28 |
 | R-08b | Rastreio periodontal (PSR/CPITN) | 2026-07-29 |
