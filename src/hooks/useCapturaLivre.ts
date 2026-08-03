@@ -6,8 +6,17 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
-import { useAudioRecorder, type RecorderStatus } from '@/hooks/useAudioRecorder';
+import { useAudioRecorder, type RecorderStatus, type MicErro } from '@/hooks/useAudioRecorder';
 import { denteLabel } from '@/lib/arcadas';
+import { extensaoDoMime } from '@/lib/audio-mime';
+
+// R-48 §5 — mensagens que dizem a verdade: cada motivo tem o texto certo, nunca
+// culpa permissão quando a permissão foi concedida (I4).
+const MSG_POR_MOTIVO: Record<MicErro, string> = {
+  permissao: 'Microfone bloqueado. Libere o acesso nas permissões do navegador.',
+  'sem-suporte': 'Este navegador não consegue gravar áudio. Tente o Safari (iPhone/iPad) ou o Chrome atualizado.',
+  hardware: 'Não foi possível acessar o microfone. Tente de novo.',
+};
 
 export interface UseCapturaLivreOptions {
   /** Nome do paciente — reservado pelo contrato da spec; nenhuma rota consumida
@@ -42,6 +51,9 @@ export function useCapturaLivre(options: UseCapturaLivreOptions = {}): UseCaptur
   const [isDetecting, setIsDetecting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const detectDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Latest-ref pro mimeType negociado pelo gravador — processarAudio precisa dele (I2),
+  // mas é declarado antes de useAudioRecorder existir (evita ciclo de dependência).
+  const mimeTypeRef = useRef<string | null>(null);
 
   // Caminho único de pós-gravação: usado pelo stop manual E pelo corte por silêncio.
   const processarAudio = useCallback(async (blob: Blob | null) => {
@@ -50,7 +62,9 @@ export function useCapturaLivre(options: UseCapturaLivreOptions = {}): UseCaptur
     setIsTranscribing(true);
     try {
       const fd = new FormData();
-      fd.append('audio', blob, 'audio.webm');
+      // R-48 (D/I2) — o nome tem que bater com o formato real do blob: o Groq infere
+      // o formato pelo nome do arquivo, não pelo Content-Type do FormData.
+      fd.append('audio', blob, `audio.${extensaoDoMime(blob.type || mimeTypeRef.current || '')}`);
       const res = await fetch('/api/transcrever', { method: 'POST', body: fd });
       if (!res.ok) throw new Error(`Erro ${res.status}`);
       const data = await res.json() as { transcricao?: string };
@@ -65,9 +79,22 @@ export function useCapturaLivre(options: UseCapturaLivreOptions = {}): UseCaptur
     } finally { setIsTranscribing(false); }
   }, []);
 
-  const { status: micStatus, startRecording, stopRecording } = useAudioRecorder({
+  const { status: micStatus, startRecording, stopRecording, resetError, mimeType } = useAudioRecorder({
     onAutoStop: (blob) => { void processarAudio(blob); },
+    onError: (motivo, blobParcial) => {
+      // R-48 (C/D2/I3) — falha DURANTE a gravação: nunca mais silenciosa, e o áudio
+      // já capturado é aproveitado em vez de descartado.
+      void motivo; // sempre 'hardware' neste caminho — o texto de "meio" é o certo aqui
+      if (blobParcial) {
+        toast.error('A gravação falhou no meio. Transcrevendo o que deu tempo de capturar.');
+        void processarAudio(blobParcial);
+      } else {
+        toast.error('A gravação falhou no meio e não deu tempo de capturar nada.');
+      }
+    },
   });
+
+  useEffect(() => { mimeTypeRef.current = mimeType; }, [mimeType]);
 
   // Detecção ao vivo de procedimentos enquanto o dentista escreve.
   useEffect(() => {
@@ -113,22 +140,23 @@ export function useCapturaLivre(options: UseCapturaLivreOptions = {}): UseCaptur
       setIsTranscribing(true);
       const blob = await stopRecording();
       await processarAudio(blob);
-    } else {
-      if (micStatus === 'error') {
-        toast.error('Microfone indisponível. Verifique as permissões do navegador e recarregue a página.');
-        return;
-      }
-      setElapsedSeconds(0);
-      setLiveTranscript('');
-      const started = await startRecording();
-      if (!started) {
-        toast.error('Não foi possível acessar o microfone. Verifique as permissões do navegador.');
-        return;
-      }
-      // Só inicia o timer após confirmar que a gravação começou.
-      timerRef.current = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
+      return;
     }
-  }, [micStatus, startRecording, stopRecording, processarAudio]);
+
+    // R-48 (B/I5) — depois de um erro, o próximo clique TENTA GRAVAR de novo em vez de
+    // só repetir o toast; o texto já digitado no painel nunca é tocado aqui.
+    if (micStatus === 'error') resetError();
+
+    setElapsedSeconds(0);
+    setLiveTranscript('');
+    const result = await startRecording();
+    if (!result.ok) {
+      toast.error(MSG_POR_MOTIVO[result.motivo]);
+      return;
+    }
+    // Só inicia o timer após confirmar que a gravação começou.
+    timerRef.current = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
+  }, [micStatus, startRecording, stopRecording, processarAudio, resetError]);
 
   return {
     texto,
