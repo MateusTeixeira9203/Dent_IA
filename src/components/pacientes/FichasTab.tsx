@@ -2279,7 +2279,10 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                                 </div>
                                 <Odontograma
                                   eventos={eventosVis.length > 0 ? eventosVis.map(eventoViewParaDraft) : undefined}
-                                  selectedTeeth={eventosVis.length > 0 ? [] : evo.teethNotes.map((tn) => tn.tooth)}
+                                  // C5 — anel de seleção agora é aditivo (não depende mais de
+                                  // `clinico`), então o `[]` defensivo saiu: um dente com evento
+                                  // já mostra o anel corretamente ao ser selecionado.
+                                  selectedTeeth={evo.teethNotes.map((tn) => tn.tooth)}
                                   onToothToggle={(d) => {
                                     const jaAberto = denteSalvoAberto?.fichaId === evo.id && denteSalvoAberto.dente === d;
                                     setDenteSalvoAberto(jaAberto ? null : { fichaId: evo.id, dente: d });

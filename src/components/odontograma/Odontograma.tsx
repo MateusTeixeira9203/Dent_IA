@@ -255,6 +255,11 @@ interface ToothSVGProps {
    *  linha (menor totalH do grupo, da borda oclusal). Calculado pelo renderArch, que conhece
    *  a ordem e as classes do arco — o ToothSVG só desenha o seu segmento. */
   ponteLinks?: { left: boolean; right: boolean; altura: number } | null;
+  /** C5 (P13) — anel de seleção, INDEPENDENTE de `state`/`clinico`. Antes, dente com resumo
+   *  clínico (`clinico = resumo != null`) sempre caía em `computeToothState → 'default'` e
+   *  nunca mostrava contorno de seleção — `selectedTeeth` era ignorado nesse caso. Correção
+   *  aditiva: desenhado por fora, em camada própria, sem tocar crownFill/crownStroke/strokeW. */
+  selecionado?: boolean;
 }
 
 /** R-06 (D3, norma MINSA RM-559-2022): segmento da ponte na altura dos ápices + traço
@@ -287,7 +292,20 @@ function PonteMarks({ resumo, links, w, totalH, isUpper }: {
   );
 }
 
-export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, resumo = null, ponteLinks = null }: ToothSVGProps) {
+/** C5 — anel aditivo, desenhado por fora da geometria do dente (o `<svg>` já tem
+ *  `overflow:visible`). Independente de `clinico`/`state` de propósito: é a única forma de
+ *  mostrar seleção num dente com resumo clínico, que sempre computa `state === 'default'`. */
+function SelecaoRing({ w, totalH }: { w: number; totalH: number }) {
+  return (
+    <rect
+      x={-2.5} y={-2.5} width={w + 5} height={totalH + 5} rx={4}
+      style={{ fill: 'none', stroke: 'var(--color-teal)', strokeWidth: 2, pointerEvents: 'none' }}
+      aria-hidden="true"
+    />
+  );
+}
+
+export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, resumo = null, ponteLinks = null, selecionado = false }: ToothSVGProps) {
   const cls    = TOOTH_CLASS[num] ?? 'premolar';
   const family = TOOTH_FAMILY[cls];
   const { w, crownH, rootH } = DIMS[cls];
@@ -336,6 +354,7 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, resumo = 
         )}
         {/* R-06: pôntico costuma viver sobre dente ausente — a linha da ponte continua aqui */}
         <PonteMarks resumo={resumo} links={ponteLinks} w={w} totalH={totalH} isUpper={isUpper} />
+        {selecionado && <SelecaoRing w={w} totalH={totalH} />}
       </svg>
     );
   }
@@ -653,6 +672,8 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, resumo = 
       {/* R-06: segmento da ponte (linha nos ápices + traço do pilar) — deriva do grupo (D3/I1) */}
       {clinico && <PonteMarks resumo={resumo} links={ponteLinks} w={w} totalH={totalH} isUpper={isUpper} />}
 
+      {selecionado && <SelecaoRing w={w} totalH={totalH} />}
+
       {/* Checkbox (multi-select mode) */}
       {showCheckbox && (
         <g>
@@ -834,6 +855,7 @@ export function Odontograma({
               showCheckbox={showCheckbox && !clinico}
               resumo={resumo}
               ponteLinks={ponteLinks}
+              selecionado={selectedTeeth.includes(num)}
             />
 
             {!isUpper && (

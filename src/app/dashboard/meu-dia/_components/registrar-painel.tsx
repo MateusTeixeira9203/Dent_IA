@@ -223,6 +223,19 @@ export function RegistrarPainel({
     setTipoPendente(null);
   }
 
+  // C5 (contrato §5.5) — toque no odontograma escreve no MESMO "onde" que os chips (fonte
+  // única, nenhum estado novo). 1º toque acende; 2º toque com só ele aceso abre o painel do
+  // dente; 2º toque com 2+ acesos só remove do lote (multi-seleção continua ativa). Invariante
+  // herdada de onde-seletor.tsx: âncora é dente(s) OU região — selecionar dente aqui já limpa
+  // a região, porque handleOndeChange substitui o `onde` inteiro.
+  function onToothToggle(dente: number) {
+    const sel = onde?.tipo === 'dentes' ? onde.dentes : [];
+    if (!sel.includes(dente)) return handleOndeChange({ tipo: 'dentes', dentes: [...sel, dente] });
+    if (sel.length === 1) { setDenteAberto(dente); return; }
+    const resto = sel.filter((d) => d !== dente);
+    handleOndeChange(resto.length > 0 ? { tipo: 'dentes', dentes: resto } : null);
+  }
+
   /** Item do catálogo escolhido na busca — só o nome comercial, nunca o tipo estrutural
    *  (§A3: sem de-para confiável). Fica pendente até o dentista confirmar qual dos 16 tipos. */
   function escolherDoCatalogo(item: MeuDiaCatalogoProcedimento) {
@@ -370,7 +383,13 @@ export function RegistrarPainel({
           é isso que tira o dente de 22,8px (reprova WCAG 2.2) pra ~34px. */}
       <div className="mt-4 flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <Odontograma eventos={eventosDraft} selectedTeeth={[]} onToothToggle={setDenteAberto} compact hideFilters />
+          <Odontograma
+            eventos={eventosDraft}
+            selectedTeeth={onde?.tipo === 'dentes' ? onde.dentes : []}
+            onToothToggle={onToothToggle}
+            compact
+            hideFilters
+          />
         </div>
         {denteAberto != null && (
           <div className="w-[290px] shrink-0">
