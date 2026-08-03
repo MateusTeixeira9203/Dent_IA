@@ -1,7 +1,8 @@
 # R-46c — Colar do Word (nível 1, sem IA)
 
 > **SPEC** · sub-item do **R-46** · 🔵 ativo
-> **Aberto:** 2026-08-01 · **Fechado:** — · **Fase:** contrato
+> **Aberto:** 2026-08-01 · **Fechado:** — · **Fase:** **aprovada** (03/08 — emendada pro
+> cockpit real, escopo confirmado: upload/colar sem IA, D7; organizar com Dex vira R-46d)
 > **Modelo:** Sonnet 5 (migration de 1 linha + wrapper fino + 2 pontos de exibição; sem IA,
 > sem RLS nova, sem modelo de dado novo).
 > **Depende de:** nada codado — `salvarFicha` (R-11) e o input de data retroativa já existem.
@@ -18,6 +19,27 @@
 > no empty-state e passa a ser a **aba da coluna esquerda do cockpit** — ou seja, esta fatia
 > agora depende do redesign, e o §10 se resolve lá. O resto da spec (migration, `importado`,
 > exibição honesta, invariantes, gates) continua valendo inteiro.
+>
+> ⚠️ **EMENDA 03/08 — o cockpit saiu do papel; §7 e §10 abaixo referenciam arquivos que não
+> existem mais.** `contexto-coluna.tsx` foi deletado (virou 3 blocos independentes) e
+> `MeuDiaUltimaVisita` virou `MeuDiaVisita[]` (histórico inteiro, não só a última). Fixado:
+>
+> - **§10** — o botão de colar mora no `historico-bloco.tsx` (coluna esquerda), no estado vazio
+>   dele: *"Sem histórico no sistema ainda — o contexto nasce nesta consulta."*
+>   (`historico-bloco.tsx:44-47`), condição `visitas.length === 0`. **O achado 4 (paciente com
+>   pendência mas sem ficha nunca via o botão) já morreu de graça no redesign** — o cockpit
+>   separou histórico de pendência/orto em blocos independentes, então `visitas.length === 0`
+>   não carrega mais a mistura que o `semNadaAinda` antigo tinha. Nenhum trabalho extra aqui.
+> - **§7** — `MeuDiaUltimaVisita` não existe. D5 aplica-se agora a `MeuDiaVisita` (a interface
+>   já existe em `get-meu-dia.ts`, ganha 1 campo): `visitas.map` calcula `resumo` como
+>   `queixa_principal || procedimentos.slice(0,2).join() || 'Evolução'` — uma ficha importada
+>   (`queixa_principal`/`procedimentos` vazios por §5) cai no MESMO `'Evolução'` que o achado 6
+>   original descrevia. A correção é a mesma, só o lugar mudou.
+> - **`historico-bloco.tsx`** ganha o botão + usa o novo campo pra rotular a visita importada
+>   (nunca "Consulta realizada" — I3 continua valendo, é do domínio, não da tela).
+>
+> Nada do resto (D1-D7, migration §6, wrapper §9, invariantes I1-I7) muda — é só onde a UI
+> pousa e qual arquivo o D5 toca.
 
 ## 1. O problema
 
@@ -119,14 +141,18 @@ export interface ColarDoWordDialogProps {
 ```
 
 ```typescript
-// src/server/dashboard/get-meu-dia.ts — MeuDiaUltimaVisita ganha 1 campo (D5)
-export interface MeuDiaUltimaVisita {
+// src/server/dashboard/get-meu-dia.ts — MeuDiaVisita (já existe, R-55) ganha 1 campo (D5)
+export interface MeuDiaVisita {
+  fichaId: string;
   data: string;
   dentistaNome: string;
   resumo: string;
+  nota: string | null;
   eventos: MeuDiaEventoVisita[];
-  /** true quando a ficha dessa visita tem origem='importado' — a coluna rotula como
-   *  histórico transcrito e o `resumo` vira trecho do texto, não 'Evolução' (achado 6). */
+  /** R-46c — true quando `fichas.origem === 'importado'`. `historico-bloco.tsx` rotula a
+   *  visita como histórico transcrito e o `resumo` vira trecho do texto colado, não
+   *  'Evolução' (mesmo defeito do achado 6, lugar novo). Cálculo: 1ª linha de `anotacoes`
+   *  quando `importado`, senão a regra atual (`queixa_principal || procedimentos.join`). */
   importado: boolean;
 }
 
@@ -163,13 +189,13 @@ const importarSchema = z.object({
 
 ```
 ColarDoWordDialog                        ← Client. Dialog + textarea + input de data
-  ├─ chamado por: contexto-coluna.tsx    (Meu dia — botão no bloco do antes)
+  ├─ chamado por: historico-bloco.tsx    (Meu dia — botão no estado vazio, visitas.length === 0)
   └─ chamado por: FichasTab.tsx          (perfil — botão ao lado de "Nova Evolução")
 ```
 
 | Onde | Quando o botão aparece |
 |---|---|
-| Meu dia (`contexto-coluna.tsx`) | Quando **não há ficha nenhuma** (`ultimaVisita === null`) — independente de pendência/orto. Corrige o achado 4; a condição `semNadaAinda` continua governando só o texto do estado vazio |
+| Meu dia (`historico-bloco.tsx:44-47`) | Quando **`visitas.length === 0`** — substitui/acompanha o texto "Sem histórico no sistema ainda". Já é independente de pendência/orto por construção do cockpit (blocos separados) — o achado 4 não existe mais nesta versão |
 | Perfil (`FichasTab.tsx`) | Sempre, ao lado de "Nova Evolução", sob o mesmo `canWrite` que já gateia aquele CTA |
 
 Exibição (D4) — os 2 pontos que precisam mudar:
@@ -214,9 +240,11 @@ Rodar em localhost, logado como dentista, num paciente de teste.
 - [ ] **G7** — **Conferir no banco:** nenhum agendamento mudou de status e nenhuma
       notificação foi criada pela importação (I1).
 - [ ] **G8** — No Meu dia, o paciente que só tem a ficha importada mostra o trecho do texto
-      na "última visita" — não a palavra "Evolução" (D5/achado 6).
+      no bloco Histórico (`historico-bloco.tsx`, prévia da visita mais recente) — não a
+      palavra "Evolução" (D5/achado 6, agora em `MeuDiaVisita.resumo`).
 - [ ] **G9** — No Meu dia, o botão de colar aparece pra paciente **com pendência aberta e
-      sem ficha** (o caso que o achado 4 escondia).
+      sem ficha** (bloco "A fazer" tem item, bloco "Histórico" está vazio) — prova de que o
+      achado 4 não voltou com o redesign dos blocos independentes.
 - [ ] **G10** — Dark e light conferidos no dialog.
 
 ## 13. Riscos
