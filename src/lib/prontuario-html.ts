@@ -26,6 +26,10 @@ export type FichaExport = {
   assinatura_url: string | null;
   assinado_em: string | null;
   dentista: { nome: string; cro?: string | null } | null;
+  /** R-46c (I3) — presente quando a ficha veio da query com `origem` selecionado. Ausente
+   *  (undefined) em callers que não atualizaram o select ainda; nesse caso o badge cai no
+   *  comportamento de sempre (nunca lê `origem` como false-positivo de "não importado"). */
+  origem?: 'modo_consulta' | 'manual' | 'importado';
 };
 
 /** v3 §1.10 — evento do odontograma no documento impresso (fiscalização CRO). */
@@ -236,11 +240,17 @@ function renderFichaCard(f: FichaExport): string {
       <div class="field-val">${concluidos.map(c => `✓ ${esc(c)}`).join('&nbsp;&nbsp;·&nbsp;&nbsp;')}</div>
     </div>` : '';
 
+  // R-46c (I3) — nunca se apresenta como atendimento: badge próprio, nunca
+  // queixa_principal/'Evolução' (achado 3, mesma invariante da timeline).
+  const badge = f.origem === 'importado'
+    ? 'Histórico importado — transcrito do registro anterior'
+    : (f.queixa_principal ?? 'Evolução');
+
   return `
     <div class="card">
       <div class="card-header">
         <span class="card-date">${esc(formatarDataFicha(f.data_atendimento, f.created_at))}</span>
-        <span class="badge badge-teal">${esc(f.queixa_principal ?? 'Evolução')}</span>
+        <span class="badge badge-teal">${esc(badge)}</span>
         <span class="card-prof">Dr(a). ${esc(f.dentista?.nome ?? 'Profissional')}${f.dentista?.cro ? ` · CRO ${esc(f.dentista.cro)}` : ''}</span>
       </div>
       ${f.anotacoes ? `<div class="field"><div class="field-lbl">Anotações</div><div class="field-val">${esc(f.anotacoes)}</div></div>` : ''}

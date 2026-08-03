@@ -34,7 +34,10 @@ const DENTES_E_ANCORAS_VALIDOS = new Set<number>([
  * Fora de escopo (Decisão #6): os 3 fluxos de assinatura (assinatura_url/assinado_em) — R-03b.
  */
 
-export type OrigemFicha = 'modo_consulta' | 'manual';
+// R-46c — 'importado' é histórico transcrito do Word, sem agendamento nem odontograma
+// estruturado (D7: zero parsing). Fecha (status 'concluida', D6) na hora — nunca é
+// "trabalho em aberto" como uma ficha 'manual' comum.
+export type OrigemFicha = 'modo_consulta' | 'manual' | 'importado';
 
 export interface SalvarFichaInput {
   fichaId?: string;
@@ -65,7 +68,7 @@ export interface DeletarFichaResult {
 const salvarFichaSchema = z.object({
   fichaId:            z.string().uuid().optional(),
   pacienteId:         z.string().uuid(),
-  origem:             z.enum(['modo_consulta', 'manual']),
+  origem:             z.enum(['modo_consulta', 'manual', 'importado']),
   agendamentoId:      z.string().uuid().optional(),
   dataAtendimento:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   queixaPrincipal:    z.string().trim().max(500),
@@ -219,8 +222,9 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
     return resultado;
   }
 
-  // Create — status derivado da origem, nunca do input.
-  const status = data.origem === 'modo_consulta' ? 'concluida' : 'aberta';
+  // Create — status derivado da origem, nunca do input. R-46c (D6): 'importado' também
+  // fecha na hora — é registro histórico, não trabalho em aberto.
+  const status = data.origem === 'modo_consulta' || data.origem === 'importado' ? 'concluida' : 'aberta';
 
   const { data: nova, error } = await supabase
     .from('fichas')

@@ -10,7 +10,9 @@ export type TimelineEventType =
   | 'payment_registered'
   | 'patient_updated'
   // Clínicos — visíveis apenas para dentista/admin
-  | 'consultation_created';
+  | 'consultation_created'
+  /** R-46c (I3) — ficha origem='importado' nunca se apresenta como atendimento. */
+  | 'history_imported';
 
 export type TimelineEvent = {
   id: string;
@@ -32,6 +34,7 @@ const OPERATIONAL_TYPES: TimelineEventType[] = [
 
 const CLINICAL_TYPES: TimelineEventType[] = [
   'consultation_created',
+  'history_imported',
 ];
 
 /**
@@ -92,7 +95,9 @@ export async function getVisibleTimelineEvents({
       isClinical
         ? supabase
             .from('fichas')
-            .select('id, data_atendimento, queixa_principal, dentista:dentistas(nome)')
+            // R-46c (I3) — `origem` decide o type/título; sem isso toda ficha vira
+            // "Consulta realizada" hardcoded, mentindo sobre histórico transcrito (achado 3).
+            .select('id, data_atendimento, queixa_principal, origem, dentista:dentistas(nome)')
             .eq('paciente_id', patientId)
             .eq('clinica_id', clinicId)
             .order('data_atendimento', { ascending: false })
@@ -188,14 +193,16 @@ export async function getVisibleTimelineEvents({
         id: string;
         data_atendimento: string;
         queixa_principal: string | null;
+        origem: 'modo_consulta' | 'manual' | 'importado';
         dentista: { nome: string } | null;
       };
 
+      const importado = ficha.origem === 'importado';
       events.push({
         id: `fic_${ficha.id}`,
-        type: 'consultation_created',
+        type: importado ? 'history_imported' : 'consultation_created',
         timestamp: ficha.data_atendimento,
-        title: 'Consulta realizada',
+        title: importado ? 'Histórico importado' : 'Consulta realizada',
         description: ficha.queixa_principal,
         actor: (ficha.dentista as { nome: string } | null)?.nome ?? null,
       });

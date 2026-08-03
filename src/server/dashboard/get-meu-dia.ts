@@ -76,6 +76,11 @@ export interface MeuDiaVisita {
   /** Eventos `realizado` do odontograma vinculados a ESTA ficha (`ficha_id`, não data — C0.1).
    *  R-55: sem dedup por âncora — toda ocorrência real aparece, mesmo repetida. */
   eventos: MeuDiaEventoVisita[];
+  /** R-46c — true quando `fichas.origem === 'importado'` (histórico transcrito do Word,
+   *  D7: zero parsing). `historico-bloco.tsx` rotula como transcrito, nunca como
+   *  atendimento (I3) — e o `resumo` usa a 1ª linha do texto colado em vez de cair em
+   *  'Evolução' (mesmo defeito do achado 6 do R-46c, lugar novo). */
+  importado: boolean;
 }
 
 /** R-55 — 1 ocorrência real de um procedimento (1 linha do banco), dentro de um grupo por
@@ -167,6 +172,8 @@ type FichaRow = {
   anotacoes: string | null;
   orto_manutencao: OrtoManutencaoInfo | null;
   dentista: { nome: string } | null;
+  /** R-46c — dispara o rótulo "histórico importado" e o resumo por trecho colado. */
+  origem: 'modo_consulta' | 'manual' | 'importado';
 };
 
 type EventoRow = {
@@ -265,7 +272,7 @@ export async function getMeuDiaData({
     // por paciente, que o Postgrest não faz nativamente.
     supabase
       .from('fichas')
-      .select('id, paciente_id, data_atendimento, queixa_principal, procedimentos, anotacoes, orto_manutencao, dentista:dentistas(nome)')
+      .select('id, paciente_id, data_atendimento, queixa_principal, procedimentos, anotacoes, orto_manutencao, origem, dentista:dentistas(nome)')
       .eq('clinica_id', clinicId)
       .in('paciente_id', pacienteIds)
       .order('data_atendimento', { ascending: false })
@@ -395,19 +402,28 @@ export async function getMeuDiaData({
     // avança um tratamento aberto também gera ficha própria, então 2 fichas no mesmo dia é
     // caso normal, não exceção — casar por data colava os eventos todos na 1ª e deixava a
     // 2ª vazia. `ficha_id` é o vínculo real (salvar-ficha.ts sempre grava).
-    const visitas: MeuDiaVisita[] = fichas.map((f) => ({
+    const visitas: MeuDiaVisita[] = fichas.map((f) => {
+      // R-46c (D5) — importada não tem queixa/procedimentos (D7: zero parsing), então
+      // sempre cairia em 'Evolução' pela regra normal (achado 6, lugar novo). `nota` fica
+      // null pra não duplicar o mesmo trecho duas vezes na mesma visita.
+      const importado = f.origem === 'importado';
+      return {
       fichaId: f.id,
       data: f.data_atendimento,
       dentistaNome: f.dentista?.nome ?? 'Equipe',
-      resumo: f.queixa_principal || (f.procedimentos ?? []).slice(0, 2).join(', ') || 'Evolução',
-      nota: notaDaFicha(f.anotacoes),
+      resumo: importado
+        ? (notaDaFicha(f.anotacoes) ?? 'Histórico importado')
+        : (f.queixa_principal || (f.procedimentos ?? []).slice(0, 2).join(', ') || 'Evolução'),
+      nota: importado ? null : notaDaFicha(f.anotacoes),
+      importado,
       eventos: eventosRealizados
         .filter((e) => e.ficha_id === f.id)
         .map((e) => ({
           id: e.id, tipo: e.tipo, dente: e.dente, arcada: e.arcada, quadrante: e.quadrante,
           faces: e.faces ?? [], observacao: e.observacao,
         })),
-    }));
+      };
+    });
 
     // R-55 — acumulado clínico inteiro (não só a última visita), agrupado por âncora como
     // AGREGAÇÃO — nenhuma ocorrência é descartada. `eventosRealizados` já vem "mais recente

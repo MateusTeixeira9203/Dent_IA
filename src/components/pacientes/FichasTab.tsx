@@ -41,6 +41,7 @@ import dynamic from 'next/dynamic';
 import type SignaturePadLib from 'signature_pad';
 import { formatarDataFicha } from '@/lib/format-data-ficha';
 import { CapturaLivreCard } from '@/components/fichas/captura-livre-card';
+import { ColarDoWordDialog } from '@/components/pacientes/colar-do-word-dialog';
 import { OrtoCard } from '@/components/fichas/orto-card';
 import { OrtoForm, ORTO_VAZIO } from '@/components/fichas/orto-form';
 import { RegistroCard, type RegistroCardData } from '@/components/fichas/registro-card';
@@ -614,6 +615,8 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   );
 
   const [evolutions, setEvolutions] = React.useState<Evolution[]>([]);
+  // R-46c — colar histórico do Word, mesmo dialog do Meu dia.
+  const [colarAberto, setColarAberto] = React.useState(false);
   // R-04b — rascunho do detalhe que o DESTINO está preenchendo (chave = key do card = id do evento;
   // endo/implante nunca agrupam) + qual card está salvando no momento.
   const [detalheRascunho, setDetalheRascunho] = React.useState<Record<string, unknown>>({});
@@ -1691,6 +1694,13 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
 
   return (
     <div className="space-y-6">
+      <ColarDoWordDialog
+        pacienteId={patientId}
+        pacienteNome={patientName ?? ''}
+        open={colarAberto}
+        onOpenChange={setColarAberto}
+        onImportado={() => void fetchFichas()}
+      />
       {/* R-30 Parte 5 — fail-closed visível: eventos não carregaram, edição bloqueada até
           recarregar. Sem isto o único sinal seria um toast que passou e ninguém viu. */}
       {eventosFalharamAoCarregar && (
@@ -1720,6 +1730,15 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                 Manutenção
               </Button>
             )}
+            {/* R-46c — colar/subir histórico do Word, mesmo dialog do Meu dia. */}
+            <Button
+              variant="outline"
+              onClick={() => setColarAberto(true)}
+              className="rounded-xl px-4 py-5 font-bold text-sm flex items-center gap-2 border-border text-text-secondary hover:text-teal hover:border-teal/50 transition-all active:scale-95"
+            >
+              <FileText className="w-4 h-4" />
+              Colar do Word
+            </Button>
             <Button
               onClick={() => setIsPanelOpen(true)}
               className="bg-teal hover:bg-teal-lt text-white rounded-xl px-6 py-5 font-bold text-sm flex items-center gap-2 shadow-[0_0_15px_rgba(47,156,133,0.3)] transition-all active:scale-95"

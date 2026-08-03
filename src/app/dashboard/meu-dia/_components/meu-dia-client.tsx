@@ -128,6 +128,9 @@ export function MeuDiaClient({ slots, contextoPorPaciente, agendamentoInicialId,
             esquerda={
               <HistoricoBloco
                 visitas={contexto.visitas}
+                pacienteId={slotSelecionado.pacienteId}
+                pacienteNome={slotSelecionado.pacienteNome}
+                onImportado={() => router.refresh()}
                 aberto={abertoEsquerda === 'historico'}
                 onToggle={() => setAbertoEsquerda((a) => (a === 'historico' ? null : 'historico'))}
               />
