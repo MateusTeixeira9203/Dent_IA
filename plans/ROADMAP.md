@@ -7,8 +7,9 @@
 > **04/08 — sessão grande de planejamento + execução:**
 > **[C6](specs/R-46-C6-layout-cockpit.md) `aprovada`** — jaFeito sai de vez, painel do dente
 > vira resumo + `Sheet`, colunas redistribuídas (esquerda = o que já aconteceu · direita = o
-> que está pendente), responsivo entra (P8 morreu). Não codada — falta D5 (piso 36px) + medir
-> o G1 de verdade como **gate de entrada**, não consequência
+> que está pendente), responsivo entra (P8 morreu). **Gate de entrada medido ao vivo 04/08**
+> ([MAPA §1](MAPA-MEU-DIA.md)): centro estoura o viewport em 37px sozinho, a 1440×900, antes
+> do dock — **C6 confirmado urgente, não opcional**. Ainda não codada
 > **[R-46d](specs/R-46d-campo-magico.md)** — **D0 ✅ commitado**. D1 ganhou escopo grande
 > (D7-D12): campo mágico **substitui** a barra de procedimento — absorve o R-46b, mata o
 > caminho de 3 gestos determinístico (fallback sem IA: só o painel do dente). Detecção acende

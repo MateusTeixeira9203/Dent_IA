@@ -41,6 +41,16 @@ tabs + rótulos, já com `zoom .85`): **~260px**.
 **Conclusão: o G1 do contrato ("cabe na viewport sem scroll") provavelmente já falha hoje.**
 Antes de orçamento, retorno, orto e painel de histórico existirem.
 
+> ✅ **Medido ao vivo 04/08** (1440×900, paciente com dado real, pós-R-58): confirma a
+> conclusão acima, **não é mais "provavelmente".** Grid do cockpit começa em `y=302` (bate
+> com a aritmética — 900−598≈302). Coluna **centro sozinha mede 635px** e termina em `y=937`
+> — **37px além do viewport ANTES de contar o dock** (mais ~112px de overlay por cima).
+> Colunas laterais, hoje (histórico colapsado em 1 visita, "Já feito" com 2 itens, resto
+> vazio): esquerda 237px · direita 269px — **nenhuma das duas é o gargalo**; é o centro
+> (odontograma + `RegistrarPainel`). **C6 não resolve isso sozinho** (ele mexe em
+> esquerda/direita) — o centro só fica mais raso com o R-46d D1 (D12: ONDE/STATUS somem).
+> Os dois juntos são o que ataca o número real.
+
 > **Consequência prática, e é a decisão de design da próxima fatia:** cada coisa nova só
 > entra **pagando** — com remoção, com abas no lugar de acordeão (§7.4), ou com densidade.
 > "Adicionar porque é útil" é exatamente como a ficha completa chegou a 38 colunas.
@@ -105,7 +115,7 @@ produto. Nada que entrar pode piorá-lo.
 | **D2** | **Zero dedup no caminho do Meu dia.** `dedupEventosDraft` está trancado no `FichasTab` (R-30 Parte 2). Dois lançamentos equivalentes = **2 linhas cobráveis** | Defeito já provado na ficha do Renato (R-30) | Cobrança duplicada. Fix = **R-46d D0**, ~40 linhas, zero closure |
 | **D3** | `origem='modo_consulta'` sem ter havido modo consulta → timeline anuncia **"Consulta realizada"**, onboarding conta como consulta real | `get-visible-timeline-events.ts:203` | Mesma desonestidade que o R-46c corrigiu pra `'importado'` |
 | **D4** | `temFichaHoje` é por **paciente+dia**, não por agendamento; o cockpit seleciona por `agendamentoId` (D5 do R-46g) | Contradição entre 2 specs aprovadas | 2º atendimento do mesmo paciente no dia nasce com CTA desabilitado. **Cortar o R-54 levou junto o fix (`fichas.agendamento_id`)** |
-| **D5** | **2 de 10 controles passam o piso de 36px.** Chips a ~23px, "ver mais" a ~15px, X de cancelar a 14px | Medido do CSS | Chairside. Errar o dente vizinho é risco real |
+| **D5** | **2 de 10 controles passam o piso de 36px.** Chips a ~23px, "ver mais" a ~15px, X de cancelar a 14px. ✅ **Remedido ao vivo 04/08** (1440×900): ainda falha — chips ONDE/STATUS 28px, "Legenda"/tabs Perm./Decíduos ~28px, "ver as N visitas" 18px, "+ texto da visita" 18px. Cabeçalhos de acordeão (`BlocoMoldavel`) passam exato em 36px. **Boa notícia parcial:** chips ONDE/STATUS e "+ texto da visita" **morrem com o R-46d D12/D7** — não precisam de fix próprio, o redesign já resolve. Sobra pra fixar direto: tabs do odontograma, "Legenda", "ver mais" do histórico | Medido do CSS + ao vivo | Chairside. Errar o dente vizinho é risco real |
 | **D6** | **6 reprovações de AA**, incluindo o CTA (`text-white` sobre `bg-teal` = **3.38:1**) — o contrato §1 avisou por escrito e mandou `bg-teal-dark` | Medido | O contorno do dente é **1.27:1 dark / 1.78:1 light** — o maior elemento do centro |
 | **D7** | `salvarFicha` no ramo de **update** não tem `.select()` — dentista não-autor editando ficha de colega recebe `ok:true` com 0 linhas | `salvar-ficha.ts:162-186` | Só a UI segura. Não morde o Meu dia hoje (create-only), morde no dia que ganhar edição |
 
@@ -114,15 +124,15 @@ produto. Nada que entrar pode piorá-lo.
 | # | Conflito | Quem decide |
 |---|---|---|
 | ~~**C1**~~ | ✅ **RESOLVIDO 03/08 (noite).** *"Usará a mesma lógica que usamos na ficha e o mesmo modelo"* → [`filtro-responsavel.ts`](../src/lib/fichas/filtro-responsavel.ts) (R-16), `responsável = encaminhado_para ?? autor`. **Uma lib, duas configurações:** "A fazer" chama com `FILTRO_MEUS` fixo (lista de trabalho, sem chips); orçamento chama com `null` + chips (visão do dinheiro). **Nota:** `buscarIndicadosAbertos` **não existe no código** — é função planejada na spec do R-53, então isto nunca foi contradição entre código no ar. Consequência registrada na spec: o `.is('encaminhado_para', null)` cai | ~~Ele~~ ✅ |
-| **C2** | **Spec R-51-53 × código.** A spec diz "encaminhada pra mim **não** aparece" (`:154`, invariante `:255`); o código no working tree mostra, com "concluir →" via RPC 109 — porque ele decidiu isso hoje. **Conversa vence, a spec precisa ser corrigida** | Eu (editar a spec) |
-| **C3** | **C6 §4.0 × §4.** O §4.0 revogou "apagar Já feito"; o §4 ainda diz `jaFeito REMOVIDO` e o G1 pede grep vazio. **Codar contra o §4 hoje apaga o que ele mandou manter** | Eu (reescrever o §4) |
-| **C4** | **R-46d D2 × §8.** D2 diz "é único, funde"; §8 diz "não fundir". Precedência mata o §8 — mas ninguém reescreveu | Eu |
-| **C5** | **R-46d não implementa a própria D2.** `CampoMagicoMeuDiaProps` não tem `pacienteId`, data nem destino, e `aplicar()` carimba `hojeBRT()`. Se o mesmo componente servir o caminho importado, **histórico de 3 anos vira evento de hoje** — a mentira que o R-46c existe pra impedir | Eu (contrato de destino antes de qualquer código) |
+| ~~C2~~ | ✅ **JÁ RESOLVIDO** (verificado 04/08, antes do C6/R-46d D1). `R-51-53-modelo-multissessao.md:54-58` já diz "encaminhada pra mim aparece, com concluir →" e a nota própria do arquivo confirma "corrigido em 03/08 (noite)" — mapa desatualizado, não spec | ~~Eu~~ ✅ |
+| ~~C3~~ | ✅ **JÁ RESOLVIDO.** `R-46-C6-layout-cockpit.md` §4.0 e §4 concordam: `jaFeito` sai de vez, dado equivalente já em `visitas[].eventos` (R-55). Sem contradição no texto atual | ~~Eu~~ ✅ |
+| ~~C4~~ | ✅ **RECONCILIADO, não é contradição.** D2 = não duplicar a captura (`CapturaLivreCard` reusado, já é assim no D1). §8 = não fundir os 2 componentes de DIÁLOGO (`ColarDoWordDialog` × `campo-magico-meu-dia.tsx`) — isso segue fora de escopo mesmo, sem travar D1 | ~~Eu~~ ✅ |
+| ~~C5~~ | ✅ **PREMISSA FALSA.** `campo-magico-meu-dia.tsx` nunca serve o caminho importado — esse é o `ColarDoWordDialog` (D8). `hojeBRT()` é o comportamento certo pro escopo do campo mágico (só "hoje"), não bug | ~~Eu~~ ✅ |
 | ~~**C6**~~ | ✅ **RESOLVIDO 03/08 (noite): "Salvar"**, e evolui pra *"Salvar e gerar orçamento"* quando o R-46h entrar. O rótulo não pode prometer orçamento que ainda não existe. As outras 2 specs recebem emenda | ~~Ele~~ ✅ |
 | ~~**C7**~~ | ✅ **RESOLVIDO 03/08 (noite): mantém sem auto-avanço.** O gesto extra compra verificação — e o R-55 acabou de tornar o histórico confiável, que é justamente o que se confere depois de salvar. Segue **não medido**; se a instrumentação do §6.7 existir um dia, é a 1ª hipótese a testar | ~~Ele~~ ✅ |
 | ~~**C8**~~ | ✅ **RESOLVIDO 03/08 (noite): responsivo entra em TODA fatia, agora — o P8 morre.** Ele escolheu a opção mais cara das três, a favor da spec-mãe (`R-46-meu-dia.md:181`). **Encarece C6 e R-46d D1**, que já eram os mais caros. Registrado em [R-46-C6 §2.5](specs/R-46-C6-layout-cockpit.md) | ~~Ele~~ ✅ |
-| **C9** | **Headers mentindo.** `R-55:3` diz `proposta`; ROADMAP/ESTADO dizem aprovada+codada, e o commit existe. Idem C6. Pela precedência do CLAUDE.md a spec vence — a fonte mais autoritativa é a errada | Eu |
-| **C10** | **R-55 §4 × C6 Q1.** R-55 cortou sub-lista/"+N"/observação porque *"o bloco morre no C6"*. O C6 decidiu que **não morre**. A justificativa caiu; o trabalho cortado ficou órfão | Eu (o C6 assume) |
+| ~~C9~~ | ✅ **JÁ RESOLVIDO.** `R-55-historico-sem-perda-de-dado.md:3` já diz `aprovada`, com nota própria "cabeçalho corrigido em 03/08 (noite)". `C6` idem (linha 3 deste mapa já lista `aprovada`) | ~~Eu~~ ✅ |
+| ~~C10~~ | ✅ **JÁ RESOLVIDO.** A "fechamento definitivo" §4.0 do C6 (jaFeito sai de vez, não vira sub-lista) supera a leitura que o R-55 tinha em mente quando cortou — não sobrou trabalho órfão, o corte do R-55 ficou correto por outro motivo (R-55 nunca reintroduziu dedup) | ~~Eu~~ ✅ |
 
 ## 6. O que falta e não tem item nenhum
 
@@ -196,12 +206,12 @@ Sem teto declarado, cada item se justifica sozinho e a soma vira cabine de aviã
 
 | # | O quê | Por quê agora |
 |---|---|---|
-| 0 | Corrigir C2/C3/C4/C9 nas specs | Documento que mente é pior que documento ausente |
+| ~~0~~ | ✅ Corrigir C2/C3/C4/C5/C9/C10 nas specs — **já estavam corrigidos, só o mapa mentia** (verificado 04/08) | Documento que mente é pior que documento ausente |
 | 1 | Fechar e commitar **R-51 + R-52** | Já meio escrito; C6/R-57 tocam os mesmos 4 arquivos |
 | 2 | **R-46d D0** | Fecha o **D2** (cobrança duplicada) e é a 1ª prova ao vivo do R-47 |
-| 3 | **D1** (queixa `null`) + **D6 passos 1-2** | 1 linha e uma varredura. Ficha sem título vai pro CRO. **Medido 03/08: 4 fichas já estão com título vazio no banco, 0 com `null`** |
-| 4 | **R-53** | Isolado no perfil, e é o pré-requisito real do R-46h. **Destravado** — o C1 caiu |
-| **4.5** | **D5 (piso de 36px) + medir o G1 de verdade** | ⚠️ **Furo corrigido em 03/08 (noite): o D5 não existia nesta ordem.** O §7.4 declara que o piso de 36px *"define o custo do passo 4"* (+26px/linha num orçamento de 441) — fazer o C6 antes é desenhar as abas e só então descobrir que o piso comeu o espaço liberado. E o §1 ainda é *"provavelmente falha"*: se medir 380px em vez de 560px, o C6 muda de urgente pra opcional. **Os dois são gate de entrada do C6, não consequência dele** |
+| 3 | ✅ **D1** (queixa `null`) feito 04/08 · **D6 passos 1-2 (token/contraste) segue aberto** | 1 linha e uma varredura. Ficha sem título vai pro CRO. **Medido 03/08: 4 fichas já estão com título vazio no banco, 0 com `null`** |
+| 4 | ✅ **R-53** feito e testado ao vivo 04/08 | Isolado no perfil, e é o pré-requisito real do R-46h. **Destravado** — o C1 caiu |
+| **4.5** | ✅ **Medido ao vivo 04/08 — ver §1 e D5 acima.** Resultado: **C6 fica urgente, não opcional** — o centro já estoura o viewport por 37px sozinho (antes do dock), e D5 segue falhando nos mesmos controles de antes, menos os que o R-46d D12 já vai matar | O §7.4 declara que o piso de 36px *"define o custo do passo 4"*. **Os dois eram gate de entrada do C6, agora resolvidos** |
 | 5 | ~~Brief da moldura~~ → **C6 + R-46d D1** juntos | Mesmos arquivos, mesmo problema de forma. **Brief não é mais necessário** — ele decidiu a moldura em 03/08 (`Sheet` pela direita + painel pequeno inline), e o `Sheet` já é padrão usado em 3 telas. **Mas agora carrega o responsivo (C8)** |
 | 6 | **R-57 F1 + F2** | Depois que o cockpit parar de se mexer |
 | 7 | **R-46h** (spec) + **retorno** (spec) | Os dois maiores buracos vs. a régua |
