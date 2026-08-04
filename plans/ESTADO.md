@@ -1,70 +1,48 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-08-03 (noite) · sessão #15
-> **Item ativo:** R-46 (Meu dia) · **Modo:** planejamento → execução (R-51/R-52 em código)
+> **ESTADO** · atualizado 2026-08-04 01:31 · sessão #16
+> **Item ativo:** R-46 (Meu dia) · **Modo:** nenhum (sessão encerrada)
 
 ## Agora
 
-**Sessão de spec + mapa, com execução parcial no meio.** Escrevi 4 specs novas, montei o
-**[MAPA-MEU-DIA.md](MAPA-MEU-DIA.md)** (o documento que passa a decidir o que entra e o que
-não entra no Meu dia), e codei R-51 + metade do R-52.
+**Bloco de execução fechado e commitado.** D1 (queixa null), R-46d D0 (dedup extraído pra
+lib) e R-52 (encaminhar em lote) estão codados, verificados e commitados — R-52 com prova real
+no banco (escrita confirmada, item some da lista de quem encaminhou). R-51 está codado e
+commitado, mas **não** verificado em cenário multi-sessão real — só typecheck/lint/build e
+dado sintético.
 
-**Nada foi commitado.** 5 arquivos novos em `plans/`, 4 modificados em `src/`, `ROADMAP.md`
-editado. Os 15 commits anteriores continuam sem push (produção está em **31/07**).
+### Duas decisões de produto grandes fecharam nesta sessão
+- **"Já feito" sai de vez** da coluna direita — o dado vira só `visitas[].eventos`, sem campo
+  próprio. Histórico é a única fonte do acumulado clínico.
+- **Campo mágico substitui a barra de procedimento inteira** — absorve o R-46b, muda a métrica
+  de "3 gestos determinístico" pra um caminho com IA no meio (com fallback sem IA obrigatório
+  pelo painel do dente).
 
-### O documento que passa a governar
-
-**[MAPA-MEU-DIA.md](MAPA-MEU-DIA.md)** — a função do Meu dia nas palavras dele, a régua de
-admissão (fixo / contextual / sob demanda), 7 defeitos, 10 contradições vivas, 7 buracos sem
-item, e a direção de design. **Ler antes de propor qualquer coisa nova pra esta tela.**
-
-O fato que ele estabelece e governa todo o resto: **a tela tem ~441px de orçamento vertical
-e já está estourada** — o G1 do contrato provavelmente já falha hoje, antes de orçamento,
-retorno e orto entrarem. Coisa nova só entra pagando.
-
-### Specs escritas nesta sessão
-- [R-51-53](specs/R-51-53-modelo-multissessao.md) — multi-sessão · **R-54 ✂️ cortado** (não era defeito)
-- [R-46-C6](specs/R-46-C6-layout-cockpit.md) — `aprovada`. jaFeito sai de vez, painel do dente vira resumo + `Sheet`
-- [R-46d](specs/R-46d-campo-magico.md) — campo mágico · D0 pronta pra codar
-- [R-57](specs/R-57-atrito-faixa-rapida.md) — encaixe · observação · (repetir, ⛔ bloqueada)
-
-### Código escrito (não commitado, 🟡)
-- **R-51** — `vencedorPorAncora` pula evento com `grupo_id`; `indicado` de grupo vira pendência
-  direta; `emAndamento` derivado. Typecheck/lint/build limpos. **Lógica provada com dado
-  sintético**, incluindo reprodução do bug original. Tela **não** verificada ao vivo.
-- **R-52 (metade)** — servidor devolve `dentistaId`/`encaminhadoParaId`/`destinosEncaminhar`/
-  `meuDentistaId`; "A fazer" filtra pra (minha ∧ não encaminhada) ∨ (encaminhada pra mim), com
-  "concluir →" via RPC 109. **Falta:** modo seleção + `EncaminharBar`, e sucesso parcial no
-  `encaminharProcedimento`.
+### 4 specs em `contrato`/`aprovada`, nenhuma codada ainda
+- **[C6](specs/R-46-C6-layout-cockpit.md)** `aprovada` — colunas redistribuídas (esquerda = o
+  que aconteceu, direita = o que está pendente), painel do dente vira resumo + `Sheet`.
+- **[R-46d D1](specs/R-46d-campo-magico.md)** `contrato` — campo mágico com detecção em tempo
+  real (motion no odontograma, nunca cor).
+- **[R-53](specs/R-53-orcamento-indicados-abertos.md)** `contrato` — orçamento nasce dos
+  indicados em aberto, query ficha-cêntrica.
+- **[R-58](specs/R-58-historico-detalhado.md)** `contrato` — histórico com texto em evidência,
+  entra **antes** do R-53 (decisão dele).
 
 ## Travado
 
-- **R-57 F3** — conflita com decisão dele de 31/07 ("sem frequência de uso").
-
-Nada mais travado tecnicamente. C6 e R-46d D1 (moldura) fecharam: `Sheet` pro painel do dente
-(C6), expansão in-place pro campo mágico (R-46d D4, já resolvido antes — eram duas decisões
-diferentes, não uma). As 4 contradições C1/C6/C7/C8 e o conflito do `jaFeito` fecharam
-03/08 (noite) — ver specs.
+Nada tecnicamente. C6 e R-46d D1 precisam do browser pane pra qualquer verificação visual —
+e o D5 (piso de 36px) + medir o G1 de verdade são **gate de entrada** dos dois, não consequência.
 
 ## Esperando você
 
-- [x] ~~**4 contradições**~~ ✅ resolvidas 03/08 (noite): **C1** orçamento usa
-      `filtro-responsavel.ts` · **C6** CTA é **"Salvar"** até o R-46h · **C7** mantém sem
-      auto-avanço · **C8** responsivo entra em toda fatia, P8 morre.
-- [x] ~~**Conflito do `jaFeito`**~~ ✅ resolvido 03/08 (noite): **some de vez.** *"O já feito
-      será tudo registrado no histórico, referente àquela consulta, aquela data."* O dado
-      sobrevive em `visitas[].eventos` (R-55, já fiel) — nada fica inacessível. Spec C6 §4/§4.0
-      reescritos.
-- [ ] **Push** — 15 commits (não 9: há 5 de 01/08 que nunca subiram, incluindo o que faz o
-      Meu dia virar a porta do atendimento). Ele optou por não subir nesta sessão.
-- [ ] **R-46h e "marcar retorno"** — os dois exemplos que ele deu, e nenhum tem spec.
-- [ ] **R-49 A1** — a tabela de especialidade abre sozinha? (66% dos endos vazios)
-- [ ] Antigos: R-56 · R-28 Parte 3 · gate de 2 contas · R-40 · R-44.
+- [ ] **Ordem de execução:** R-58 → R-53 (como está no ROADMAP), ou C6/R-46d D1 primeiro?
+- [ ] **Push** — 13 commits acumulados (9 de antes + 4 desta sessão), produção continua em 31/07.
+- [ ] **R-51** — testar em cenário multi-sessão real quando houver paciente de teste com
+      tratamento em grupo.
+- [ ] **R-46h e "marcar retorno"** — sem spec ainda.
+- [ ] Itens antigos: R-56 · R-28 Parte 3 · gate de 2 contas · R-40 · R-44.
 
 ## Próximo da fila
 
-Fase 0 fechada (specs corrigidas, aprovadas). Execução em andamento nesta sessão: D1 (queixa
-`null`) → fix do filtro em `a-fazer-bloco.tsx` (usar `filtro-responsavel.ts`) → terminar R-52
-(seleção + `EncaminharBar`) → R-46d D0 → R-53. **R-51 codado mas não verificado ao vivo** —
-precisa do pane do browser exibido; verificação fica pendente até isso. C6 + R-46d D1 (UI
-nova, Sheet) entram depois, com D5 (piso 36px) e a medição real do G1 como gate de entrada.
+D5 (piso 36px) + medir G1 de verdade → C6 + R-46d D1 juntos (UI nova, precisa do browser) ·
+R-58 → R-53. Fila completa no [ROADMAP](ROADMAP.md).

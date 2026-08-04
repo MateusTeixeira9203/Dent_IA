@@ -1,29 +1,33 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · atualizado **2026-08-03 16:00** · reorganizado por **importância pro dentista**
-> **Ativo:** **R-46 (Meu dia)** — R-46a ✅ · R-46g 🟡 · R-46b 🟡 · R-46b2 🟡 provado no banco ·
-> **cockpit (C0-C5) 🟡 todos codados, testados ao vivo, commitados 03/08** — nada em produção
-> · **R-46c (colar do Word) 🟡 codado, migration aplicada, testado ao vivo 03/08** · **R-55
-> (dedup) 🟡 codado e testado ao vivo 03/08** · **C5 (seleção múltipla) 🟡 testado ao vivo**
-> **Faltam no R-46:** **[C6](specs/R-46-C6-layout-cockpit.md)** ⏳ spec escrita 03/08 — §4
-> precisa de releitura (ele decidiu que o "Já feito" vira **painel sob demanda**, não some) ·
-> **[R-46d](specs/R-46d-campo-magico.md)** ⏳ spec escrita 03/08 — **D0 pronta pra codar**, D1
-> espera a forma do painel
-> **Decisão que trava C6 e R-46d D1 juntos:** a moldura do "painel que abre por cima"
-> (overlay × expansão in-place). É UI nova → regra 4 pede brief/artefato antes do componente
-> **R-48 (voz confiável) ✅ commitado 03/08** — codado numa sessão anterior (01/08, 7 gates,
-> G1 no iPhone real), não retestado hoje
-> **Novos de 02/08:** **R-46h** 💡 um botão salva + abre orçamento ·
-> **[R-49](specs/R-49-voz-e-campos-de-especialidade.md)** ⏳ voz e campos de especialidade,
-> entra depois do cockpit · **R-50** 🐛 orto sem ativação manual
-> **Novos de 03/08:** **[R-51 a R-53](specs/R-51-53-modelo-multissessao.md)** ⏳ spec escrita —
-> modelo multi-sessão, "A fazer" vira só a minha lista, orçamento pelos indicados em aberto.
-> **R-54 ✂️ cortado** (não era defeito — ficha nova por sessão é o modelo) · **R-56** 🐛 2
-> surfaces a mais vazam ficha sem checar `origem`, não urgente
-> **Fila:** 23 · **🟡 no ar/codado sem deploy:** 21 · **Concluídos:** 24 · **Congelado:** 1 · **Cortado:** 4
-> **Próximo:** decidir push do que já está pronto (cockpit+R-55+R-46c+R-48+pontual, 9 commits)
-> · **execução pronta pra começar:** R-46d D0 → R-51 → R-52 → R-53 (nenhum precisa de UI nova)
-> · **travados por decisão de forma:** C6 e R-46d D1
+> **ROADMAP** · atualizado **2026-08-04** · reorganizado por **importância pro dentista**
+> **Ativo:** **R-46 (Meu dia)** — R-46a ✅ · R-46g/R-46b/R-46b2/R-46c/cockpit(C0-C5)/C5/R-55
+> **🟡 codados, testados ao vivo** — nada em produção ainda (13 commits acumulados, prod em 31/07)
+> **04/08 — sessão grande de planejamento + execução:**
+> **[C6](specs/R-46-C6-layout-cockpit.md) `aprovada`** — jaFeito sai de vez, painel do dente
+> vira resumo + `Sheet`, colunas redistribuídas (esquerda = o que já aconteceu · direita = o
+> que está pendente), responsivo entra (P8 morreu). Não codada — falta D5 (piso 36px) + medir
+> o G1 de verdade como **gate de entrada**, não consequência
+> **[R-46d](specs/R-46d-campo-magico.md)** — **D0 ✅ commitado**. D1 ganhou escopo grande
+> (D7-D12): campo mágico **substitui** a barra de procedimento — absorve o R-46b, mata o
+> caminho de 3 gestos determinístico (fallback sem IA: só o painel do dente). Detecção acende
+> o odontograma com **motion**, nunca cor
+> **[R-51/R-52](specs/R-51-53-modelo-multissessao.md) 🟡 codados e commitados** — R-52 testado
+> ao vivo (escrita confirmada no banco); R-51 só por typecheck/lint/build + dado sintético
+> **[R-53](specs/R-53-orcamento-indicados-abertos.md)** ⏳ spec própria (saiu do combinado,
+> que estourou o teto) — evento encaminhado **entra** no orçamento (X1), query ficha-cêntrica
+> **[R-58](specs/R-58-historico-detalhado.md)** ⏳ novo — texto da visita em evidência, evento
+> fechado depois aparece nas 2 entradas (onde indicado, onde feito). **Entra antes do R-53**,
+> habilita o C6
+> **[R-49](specs/R-49-voz-e-campos-de-especialidade.md)** — emenda: IA **pode** preencher
+> odontometria agora (I2 revogada), com a tabela do procedimento abrindo sozinha como
+> guarda-corpo
+> **R-54 ✂️ cortado** — reaberto como pergunta 04/08, **não confirmado como bug**: medido que
+> o agrupamento por sessão já funciona (fichas com até 24 eventos numa entrada só)
+> **Fila:** 22 · **🟡 no ar/codado sem deploy:** 13 · **💡 ideia sem spec:** 3 ·
+> **Concluídos:** 24 · **Congelado:** 1 · **Cortado:** 4
+> **Próximo:** push do que está pronto · D5 + medir G1 → C6 + R-46d D1 juntos (UI nova,
+> precisa do browser) · R-58 → R-53
 > **Discussão aberta:** [como diminuir o atrito](discussoes/como-diminuir-o-atrito.md) (estado × evento)
 
 **Status:** ⏳ fila · 🔵 ativo (máx 1) · 🟡 no ar **não** verificado · ✅ no ar **e** verificado ·
@@ -58,13 +62,13 @@ prioridade, por melhor que seja.
 
 | ID | Item | Estado | Peso |
 |---|---|---|---|
-| [R-46](specs/R-46-meu-dia.md) | **Meu dia — a ficha no dia real; o novo modo consulta** (rail do dia, contexto à vista, registrar em lote, colar do Word, Dex em lista) | 🔵 **em execução** · R-46a ✅ · **[R-46g](specs/R-46g-porta-modo-consulta.md) 🟡** (porta; A1 do gate de assinatura **ignorada** — sem sistema de pagamento) · **[R-46b](specs/R-46b-registrar-meu-dia.md) 🟡** (registrar — interação testada 01/08, A3/A4 fechadas) · **[R-46b2](specs/R-46b2-salvar-chamar-proximo.md) 🟡 codado e provado no banco** — o Meu dia salva de verdade · **[R-46c](specs/R-46c-colar-do-word.md) 🟡 codado e provado 03/08** (migration aplicada, importação testada ao vivo com prova no banco/PDF/timeline) · **[cockpit](specs/R-46-cockpit.md) spec `aprovada` + [contrato](specs/R-46-cockpit-contrato.md) — C0 a C5 todos 🟡 codados, testados ao vivo, commitados** (nada em produção ainda). **Faltam:** C6 (layout novo — tirar "Já feito", painel do dente na direita; ainda não especificado) e o R-46d (campo mágico com IA — ver linha própria) | G |
-| [R-46d](specs/R-46d-campo-magico.md) | **Campo mágico com IA no Meu dia** — 1 componente único (arquivo, voz, organizar), o mesmo do `ColarDoWordDialog`, em telas diferentes | **D0 ✅ commitável** (dedup/merge extraídos pra `src/lib/odontograma/dedup-eventos-draft.ts`, 8 testes passando, 04/08). **D1 ⏳** — ganhou escopo em 04/08 (D7-D10): o campo mágico **substitui a barra de procedimento** (não convivem), anexo vira caixa própria sob o Histórico com "usar este documento de base", e a detecção aparece **enquanto o texto entra**. ⚠️ **Absorve o R-46b** e mata o caminho determinístico de 3 gestos — ver §2.1 da spec. Extração de **valor** ficou fora (item próprio, depois do R-53) | G |
+| [R-46](specs/R-46-meu-dia.md) | **Meu dia — a ficha no dia real; o novo modo consulta** (rail do dia, contexto à vista, registrar em lote, colar do Word, Dex em lista) | 🔵 **em execução** · R-46a ✅ · **[R-46g](specs/R-46g-porta-modo-consulta.md) 🟡** (porta; A1 do gate de assinatura **ignorada** — sem sistema de pagamento) · **[R-46b](specs/R-46b-registrar-meu-dia.md) 🟡** (registrar — **absorvido pelo R-46d D7-D12**, ver linha própria: o campo mágico substitui a barra) · **[R-46b2](specs/R-46b2-salvar-chamar-proximo.md) 🟡 codado e provado no banco** — o Meu dia salva de verdade · **[R-46c](specs/R-46c-colar-do-word.md) 🟡 codado e provado 03/08** (migration aplicada, importação testada ao vivo com prova no banco/PDF/timeline) · **[cockpit](specs/R-46-cockpit.md) spec `aprovada` + [contrato](specs/R-46-cockpit-contrato.md) — C0 a C5 todos 🟡 codados, testados ao vivo, commitados** (nada em produção ainda). **Faltam:** [C6](specs/R-46-C6-layout-cockpit.md) (spec `aprovada` 04/08, não codada) e o [R-46d](specs/R-46d-campo-magico.md) (D0 commitado, D1 em spec) | G |
+| [R-46d](specs/R-46d-campo-magico.md) | **Campo mágico com IA no Meu dia** — substitui a barra de procedimento inteira (D7, 04/08), não só "+ texto da visita" | **D0 ✅ commitado** (dedup/merge extraídos pra `src/lib/odontograma/dedup-eventos-draft.ts`, 8 testes, `refactor(odontograma)` 04/08). **D1 ⏳ contrato escrito, não codado** — absorve o R-46b, detecção com motion no odontograma (D11), anexo vira caixa sob o Histórico (D8), tabela de especialidade abre sozinha quando tem número (ver R-49). Extração de **valor** ficou fora (item próprio, depois do R-53) | G |
 | **R-46h** | 💡 **Um botão: salva a visita e já abre o orçamento** — extrai `NovoOrcamentoModal`/`FichaParaOrc` de `paciente-detail-client.tsx` pra componente compartilhado, sem duplicar | 💡 02/08 — **decidido por ele: um gesto faz tudo** (resolve o `fichaId` que só existe pós-save). [R-46-cockpit.md §5a](specs/R-46-cockpit.md). Sem spec ainda — entra quando o cockpit codar | M |
-| [R-49](specs/R-49-voz-e-campos-de-especialidade.md) | **Voz e campos de especialidade** — preencher sem digitar 17 vezes. Ele mesmo pôs na fila: *"depois que a gente terminar de construir tudo isso a gente vai refinar a voz"* | ⏳ **spec escrita 02/08** (fase `debate`), entra **depois do cockpit**. D1: parser **determinístico** come **texto** (`(texto) => EndoDetalhe`, precedente `perio.ts:154`) · D2: a revisão **é** a tabela · voz **nunca escreve milímetro**. Dado que reposiciona: **66% dos endos têm odontometria vazia** | G |
+| [R-49](specs/R-49-voz-e-campos-de-especialidade.md) | **Voz e campos de especialidade** — preencher sem digitar 17 vezes | ⏳ **spec escrita 02/08**, **emenda 04/08**: I2 (zero LLM no número clínico) **revogada** — a IA pode preencher odontometria, com a tabela abrindo sozinha (guarda-corpo) e I5 (recusa por faixa) virando o guarda-corpo principal. Dado que motivou: **66% dos endos têm odontometria vazia** | G |
 | **R-50** | 🐛 **Orto tem 2 furos, um item só:** (a) `orto.ts:18` — `arcada` é enum **não-nullable** enquanto os outros 4 campos são nullable, e como o pass 1 já extrai `orto_manutencao` por IA, o schema **obriga a IA a inventar a arcada**; (b) `orto.ts:30` — `tiposEvento: []`, então **nenhum tipo do catálogo liga o `OrtoForm`**: sem campo mágico, manutenção ortodôntica não tem como ser registrada na mão | ⏳ achado 02/08 (a: medição de produção · b: pergunta dele sobre ativação manual). (a) viola a I5 em campo clínico; (b) deixa uma especialidade inteira dependente de IA. [§5a](specs/R-46-cockpit.md) | P |
-| [R-51](specs/R-51-53-modelo-multissessao.md) | Procedimento multi-sessão (canal, implante): "em andamento" vira **derivado** do `grupo_id` — sem 3º status novo | ⏳ **spec escrita 03/08** (fase `contrato`). Mecanismo confirmado no código: `vencedorPorAncora` passa a pular evento com `grupo_id`; `indicado` de grupo vira pendência direta. Zero migration | G |
-| [R-52](specs/R-51-53-modelo-multissessao.md) | Encaminhar pendência pro outro dentista **dentro do bloco "A fazer"** — e "A fazer" vira **estritamente a minha lista** | ⏳ **spec escrita 03/08**. Recorte dele: pendência de colega e encaminhada-pra-mim **não aparecem** no Meu dia (resolve na ficha); "assumir" rejeitado. Mata um **silent-fail real** (fazer hoje em item de colega devolvia `ok:true` sem gravar) | M |
+| [R-51](specs/R-51-53-modelo-multissessao.md) | Procedimento multi-sessão (canal, implante): "em andamento" vira **derivado** do `grupo_id` — sem 3º status novo | 🟡 **codado e commitado 04/08** (`feat(dashboard)`, junto do R-52). Typecheck/lint/build limpos + dado sintético. **Não exercitado em cenário multi-sessão real** — falta o teste ao vivo | G |
+| [R-52](specs/R-51-53-modelo-multissessao.md) | Encaminhar pendência pro outro dentista **dentro do bloco "A fazer"** — e "A fazer" vira **estritamente a minha lista** | 🟡 **codado, commitado e testado ao vivo 04/08.** Modo seleção + `EncaminharBar` + sucesso parcial em `encaminharProcedimento` — escrita confirmada no banco (`encaminhado_para` setado, item some da lista de quem encaminhou). Mata o **silent-fail real** (fazer hoje em item de colega devolvia `ok:true` sem gravar) | M |
 | [R-53](specs/R-53-orcamento-indicados-abertos.md) | Orçamento nasce de **todos os indicados em aberto do paciente**, não só os registrados hoje | ⏳ **spec própria escrita 04/08** (saiu do doc combinado, que estourou o teto). Fase `contrato`. Zero migration/RLS. **X1 fechado:** usa `filtro-responsavel.ts` com chips (Todos por padrão) — evento encaminhado **entra** no orçamento, só `assinatura_id` exclui. Recorte decidido: query fica **ficha-cêntrica** (`!inner` + filtro no embed), não flat — é o que permite reusar a lib sem adaptar | M |
 | [R-55](specs/R-55-historico-sem-perda-de-dado.md) | 🐛 Dedup por âncora em `get-meu-dia.ts` esconde procedimento repetido — histórico e "Já feito" mostram só 1 ocorrência por âncora, sempre, mesmo com datas diferentes | 🟡 **aprovada, codada e testada ao vivo 03/08** — registrei uma 2ª profilaxia real, banco confirma as 2 linhas, tela agrupa certo ("2×") em vez de esconder uma. Emenda em `R-46-cockpit.md`/contrato aplicada. **Ainda bloqueia** histórico detalhado e o C6 do cockpit | G |
 | **R-56** | 🐛 `fichasRecentes` (resumo do paciente) e a lista de fichas do `FichasTab` também mostram "Evolução"/dentista sem checar `origem` — mesma classe de defeito do R-46c (achado 3), só que em 2 surfaces que a spec original não mapeou | ⏳ achado 03/08, testando o R-46c ao vivo. Não é urgente (não é PDF/timeline oficial), mas é a mesma mentira de honestidade do prontuário em superfícies menores | P |
