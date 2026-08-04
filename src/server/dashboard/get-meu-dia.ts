@@ -7,7 +7,7 @@ import { calcularIdade } from '@/lib/paciente-form-helpers';
 import type { AgendamentoStatus } from '@/types/database';
 import type {
   Arcada, QuadranteFDI, NivelAncora, FaceDental, OrigemRegistro, PapelNoGrupo,
-  TipoRegistroOdontograma, OrtoManutencaoInfo,
+  TipoRegistroOdontograma, OrtoManutencaoInfo, StatusRegistro,
 } from '@/types/odontograma';
 
 /** Mesma janela do `ultimaOrto` client-side (FichasTab.tsx) — replicada aqui em lote,
@@ -86,6 +86,32 @@ export interface MeuDiaEventoVisita {
    *  linhas idênticas (`ondeLabel` nunca imprimia face). */
   faces: FaceDental[];
   observacao: string | null;
+  /** R-58 — nível da âncora (dente/arcada/quadrante/boca/face). Já vinha na query pras
+   *  pendências (`MeuDiaPendencia`); faltava aqui pro histórico reusar `RegistroCard`/
+   *  `agruparRegistros`, que exigem `AncoraClinica` completa. */
+  nivel: NivelAncora;
+  /** R-58 — 'indicado' | 'realizado'. Antes esta lista só tinha realizados (§4.2 muda
+   *  isso: os indicados desta ficha entram, pra sessão de anamnese sem `realizado` não
+   *  renderizar vazia). */
+  status: StatusRegistro;
+  origem: OrigemRegistro;
+  /** R-58 — mesmo grupo multi-dente da ficha salva (ponte, exodontia múltipla). Sem isso
+   *  `eventosParaCards`/`agruparRegistros` não têm como colapsar num card só aqui. */
+  grupoId: string | null;
+  /** R-58 (§2) — data clínica da execução. Quando difere da data da ficha que CONTÉM este
+   *  evento na lista `eventos`, o evento foi indicado aqui e feito depois — alimenta o
+   *  enquadramento duplo ("concluída em DD/MM"). */
+  realizadoEm: string | null;
+  /** R-58 (§2) — data da ficha ONDE este evento foi indicado (`ficha_id`). Pros itens de
+   *  `feitosAqui` (indicados numa ficha diferente da que os contém), é o que alimenta o
+   *  outro lado do enquadramento duplo ("indicada em DD/MM"). */
+  indicadoEm: string;
+  /** R-58 — data (sem hora, `date` no banco) em que o evento entrou no prontuário —
+   *  `RegistroCard` usa isto (vs. `realizadoEm`) pra sinalizar retroativo. */
+  registradoEm: string;
+  /** R-58 — detalhe de especialidade (jsonb, migration 106). ÚNICO campo novo no SELECT.
+   *  Lido sempre por safeParse — dado corrompido degrada pra "sem tabela" (spec-106 §5). */
+  detalhe: unknown | null;
 }
 
 export interface MeuDiaVisita {
@@ -93,13 +119,25 @@ export interface MeuDiaVisita {
   data: string;
   dentistaNome: string;
   /** R-46a (ajuste 31/07) — frase única, geralmente "Evolução" quando `queixa_principal`/
-   *  `procedimentos` estão vazios. Fallback pra visitas sem evento estruturado. */
+   *  `procedimentos` estão vazios. Fallback pra visitas sem `texto` nem evento (G9). */
   resumo: string;
   /** C0 — 1ª linha de `fichas.anotacoes`, ≤160 chars; vazio ou ausente vira `null`. */
   nota: string | null;
-  /** Eventos `realizado` do odontograma vinculados a ESTA ficha (`ficha_id`, não data — C0.1).
-   *  R-55: sem dedup por âncora — toda ocorrência real aparece, mesmo repetida. */
+  /** Eventos do odontograma vinculados a ESTA ficha (`ficha_id`, não data — C0.1), os DOIS
+   *  status (R-58 §4.2 — antes só `realizado`; sessão de anamnese sem `realizado`
+   *  renderizava vazia). R-55: sem dedup por âncora — toda ocorrência real aparece. */
   eventos: MeuDiaEventoVisita[];
+  /** R-58 (§0 regra 3) — nenhum evento desta ficha continua `indicado` em aberto.
+   *  DERIVADO da lista, nunca persistido: `eventos.every(e => e.status === 'realizado')`
+   *  (mesmo princípio de `emAndamento` do R-51 — não criar 3º status por acidente). */
+  semPendencia: boolean;
+  /** R-58 (§2) — eventos feitos NESTA data mas indicados numa ficha anterior (`ficha_id`
+   *  aponta pra outra ficha; `realizado_em` aponta pra esta). Alimentam "o que eu fiz
+   *  hoje" mesmo quando o achado original é de uma consulta passada. */
+  feitosAqui: MeuDiaEventoVisita[];
+  /** R-58 — texto completo de `fichas.anotacoes`, sem truncar (I7). `nota` continua sendo
+   *  a 1ª linha, pro resumo fechado do bloco. */
+  texto: string | null;
   /** R-46c — true quando `fichas.origem === 'importado'` (histórico transcrito do Word,
    *  D7: zero parsing). `historico-bloco.tsx` rotula como transcrito, nunca como
    *  atendimento (I3) — e o `resumo` usa a 1ª linha do texto colado em vez de cair em
@@ -199,6 +237,24 @@ function notaDaFicha(anotacoes: string | null): string | null {
   return primeiraLinha || null;
 }
 
+/**
+ * R-58 — `EventoRow` cru → `MeuDiaEventoVisita` (view-model do histórico). `indicadoEm`
+ * resolve a data da ficha ONDE o evento foi indicado (`ficha_id`): pros itens de `eventos`
+ * (a própria ficha que os contém) bate com a data dela mesma; pros de `feitosAqui`
+ * (indicados numa OUTRA ficha), é o que sustenta "indicada em DD/MM" (§2). Fallback pro
+ * `registrado_em` só no caso raro de `ficha_id` órfão — nunca deveria faltar em produção
+ * (`fichasRecentesRaw` busca TODAS as fichas do paciente, sem `.limit()`).
+ */
+function eventoParaVisita(e: EventoRow, fichaDataPorId: Map<string, string>): MeuDiaEventoVisita {
+  return {
+    id: e.id, tipo: e.tipo, dente: e.dente, arcada: e.arcada, quadrante: e.quadrante,
+    faces: e.faces ?? [], observacao: e.observacao, nivel: e.nivel, status: e.status,
+    origem: e.origem, grupoId: e.grupo_id, realizadoEm: e.realizado_em,
+    indicadoEm: (e.ficha_id ? fichaDataPorId.get(e.ficha_id) : undefined) ?? e.registrado_em,
+    registradoEm: e.registrado_em, detalhe: e.detalhe,
+  };
+}
+
 type FichaRow = {
   id: string;
   paciente_id: string;
@@ -230,6 +286,9 @@ type EventoRow = {
   papel_no_grupo: PapelNoGrupo | null;
   grupo_id: string | null;
   observacao: string | null;
+  /** R-58 — detalhe de especialidade (jsonb, migration 106). ÚNICO campo novo no SELECT
+   *  desta fatia; o resto já vinha e era descartado no `.map()`. */
+  detalhe: unknown | null;
   registrado_em: string;
   /** R-55 — data CLÍNICA do procedimento; único campo de data que a RPC de fechamento de
    *  pendência atualiza. Vira `MeuDiaOcorrenciaFeita.data` com fallback pra `registrado_em`. */
@@ -342,12 +401,14 @@ export async function getMeuDiaData({
       .select(
         // grupo_id + observacao entraram no R-46b (D4) — só faltavam no shape de saída,
         // a query já buscava o resto. Ver comentário em MeuDiaPendencia. realizado_em
-        // entrou no R-55 (histórico precisa da data clínica por ocorrência).
+        // entrou no R-55 (histórico precisa da data clínica por ocorrência). detalhe
+        // entrou no R-58 (tabela de especialidade no histórico) — único campo novo aqui,
+        // o resto da fatia só expõe o que já vinha e era descartado no .map().
         // R-52: dentista_id (autor bruto) + encaminhado_para e o nome do destino. As DUAS FKs
         // apontam pra `dentistas`, então os dois embeds PRECISAM do `!fkey` desambiguando —
         // sem isso o Postgrest devolve 300 (é a família de bug do R-44). Mesmo par já usado
         // em FichasTab.tsx:943.
-        'id, paciente_id, ficha_id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, observacao, registrado_em, realizado_em, created_at, dentista_id, encaminhado_para, dentista:dentistas!odontograma_eventos_dentista_id_fkey(nome), encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(nome)',
+        'id, paciente_id, ficha_id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, observacao, detalhe, registrado_em, realizado_em, created_at, dentista_id, encaminhado_para, dentista:dentistas!odontograma_eventos_dentista_id_fkey(nome), encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(nome)',
       )
       .eq('clinica_id', clinicId)
       .in('paciente_id', pacienteIds)
@@ -481,12 +542,16 @@ export async function getMeuDiaData({
   // precisam de toda ocorrência realizada, não só a mais recente por âncora. `eventosRaw`
   // já vem ordenado `registrado_em desc, created_at desc` (query acima), então cada array
   // aqui nasce "mais recente primeiro" de graça.
-  const realizadosPorPaciente = new Map<string, EventoRow[]>();
+  //
+  // R-58 — vira `eventosPorPaciente` (os DOIS status, não só `realizado`): o histórico
+  // agora também mostra o `indicado` desta ficha (§4.2). `jaFeito` abaixo filtra
+  // `realizado` de novo a partir daqui — mesmo array de entrada, comportamento idêntico
+  // ao de antes (G5), só a fonte comum mudou de nome.
+  const eventosPorPaciente = new Map<string, EventoRow[]>();
   for (const e of (eventosRaw ?? []) as unknown as EventoRow[]) {
-    if (e.status !== 'realizado') continue;
-    const arr = realizadosPorPaciente.get(e.paciente_id) ?? [];
+    const arr = eventosPorPaciente.get(e.paciente_id) ?? [];
     arr.push(e);
-    realizadosPorPaciente.set(e.paciente_id, arr);
+    eventosPorPaciente.set(e.paciente_id, arr);
   }
 
   const limiteOrto = new Date(now.getTime() - JANELA_ORTO_DIAS * 864e5)
@@ -499,7 +564,12 @@ export async function getMeuDiaData({
   const contextoPorPaciente: Record<string, MeuDiaContexto> = {};
   for (const pid of pacienteIds) {
     const fichas = fichasPorPaciente.get(pid) ?? [];
-    const eventosRealizados = realizadosPorPaciente.get(pid) ?? [];
+    const eventosDoPaciente = eventosPorPaciente.get(pid) ?? [];
+    const eventosRealizados = eventosDoPaciente.filter((e) => e.status === 'realizado');
+    // R-58 — lookup pra `eventoParaVisita` resolver `indicadoEm`. `fichas` já é TODAS as
+    // fichas deste paciente (sem `.limit()`), então todo `ficha_id` referenciado por um
+    // evento deste paciente está aqui.
+    const fichaDataPorId = new Map(fichas.map((f) => [f.id, f.data_atendimento]));
 
     // C0.1 (03/08) — join por `ficha_id`, não por data. Decisão dele: visita rápida que só
     // avança um tratamento aberto também gera ficha própria, então 2 fichas no mesmo dia é
@@ -510,6 +580,25 @@ export async function getMeuDiaData({
       // sempre cairia em 'Evolução' pela regra normal (achado 6, lugar novo). `nota` fica
       // null pra não duplicar o mesmo trecho duas vezes na mesma visita.
       const importado = f.origem === 'importado';
+      // R-58 (§4.2) — os DOIS status desta ficha (não só realizado — sessão de anamnese
+      // sem `realizado` não pode renderizar vazia, §0 regra 1).
+      const eventos = eventosDoPaciente
+        .filter((e) => e.ficha_id === f.id)
+        .map((e) => eventoParaVisita(e, fichaDataPorId));
+      // R-58 (§2) — feitos NESTA data, indicados numa ficha de OUTRO dia. `ficha_id !== f.id`
+      // sozinho não basta: 2 fichas do MESMO paciente podem cair no MESMO dia (C0.1 — "visita
+      // rápida... 2 fichas no mesmo dia é caso normal"), e cada uma vira `ficha_id !== f.id`
+      // pra sua irmã — sem o 2º checa (data indicada != data desta ficha), as duas fichas do
+      // dia trocavam os eventos uma da outra, violando §0 regra 2 (a entrada tem que dizer o
+      // que foi feito NAQUELA consulta, não na consulta irmã do mesmo dia). Achado ao vivo,
+      // não em leitura de código — verificação real pegou o que a leitura não pegou.
+      const feitosAqui = eventosDoPaciente
+        .filter((e) => {
+          if (e.realizado_em !== f.data_atendimento || e.ficha_id === f.id) return false;
+          const dataIndicada = e.ficha_id ? fichaDataPorId.get(e.ficha_id) : undefined;
+          return dataIndicada !== f.data_atendimento;
+        })
+        .map((e) => eventoParaVisita(e, fichaDataPorId));
       return {
       fichaId: f.id,
       data: f.data_atendimento,
@@ -519,12 +608,12 @@ export async function getMeuDiaData({
         : (f.queixa_principal || (f.procedimentos ?? []).slice(0, 2).join(', ') || 'Evolução'),
       nota: importado ? null : notaDaFicha(f.anotacoes),
       importado,
-      eventos: eventosRealizados
-        .filter((e) => e.ficha_id === f.id)
-        .map((e) => ({
-          id: e.id, tipo: e.tipo, dente: e.dente, arcada: e.arcada, quadrante: e.quadrante,
-          faces: e.faces ?? [], observacao: e.observacao,
-        })),
+      eventos,
+      // R-58 (§0 regra 3) — derivado, nunca persistido (I2). Ficha sem NENHUM evento
+      // também é "sem pendência" — nada ficou aberto porque nada foi indicado.
+      semPendencia: eventos.every((e) => e.status === 'realizado'),
+      feitosAqui,
+      texto: f.anotacoes || null,
       };
     });
 
