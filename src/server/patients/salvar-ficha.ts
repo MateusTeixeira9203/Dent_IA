@@ -163,7 +163,11 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
       .from('fichas')
       .update({
         data_atendimento:    data.dataAtendimento,
-        queixa_principal:    data.queixaPrincipal,
+        // D1 (achado no MAPA-MEU-DIA.md §4) — mesmo padrão de `conduta` abaixo: string vazia
+        // vira null, não fica presa vazia. `?? 'Evolução'` nos 4 consumidores (PDF, timeline,
+        // perfil, modal de orçamento) só pega null — string vazia passava reto e a ficha ia
+        // pro CRO sem título.
+        queixa_principal:    data.queixaPrincipal || null,
         anotacoes:           data.anotacoes,
         dentes_afetados:     data.dentesAfetados,
         dentes_observacoes:  data.dentesObservacoes,
@@ -233,7 +237,7 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
       paciente_id:         data.pacienteId,
       dentista_id:         dentistaId,
       data_atendimento:    data.dataAtendimento,
-      queixa_principal:    data.queixaPrincipal,
+      queixa_principal:    data.queixaPrincipal || null, // D1 — ver comentário no ramo update
       anotacoes:           data.anotacoes,
       dentes_afetados:     data.dentesAfetados,
       dentes_observacoes:  data.dentesObservacoes,
