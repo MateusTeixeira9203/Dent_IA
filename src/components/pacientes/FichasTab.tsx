@@ -46,15 +46,14 @@ import { OrtoCard } from '@/components/fichas/orto-card';
 import { OrtoForm, ORTO_VAZIO } from '@/components/fichas/orto-form';
 import { RegistroCard, type RegistroCardData } from '@/components/fichas/registro-card';
 import { DenteGrupoHeader } from '@/components/fichas/dente-grupo-header';
-import { endoDetalheSchema, type EndoDetalhe } from '@/lib/especialidades/endo';
-import { EndoCard } from '@/components/fichas/endo-card';
+import type { EndoDetalhe } from '@/lib/especialidades/endo';
 import { EndoForm } from '@/components/fichas/endo-form';
-import { implanteDetalheSchema, type ImplanteDetalhe } from '@/lib/especialidades/implante';
-import { psrDetalheSchema, PSR_VAZIO, type PsrDetalhe } from '@/lib/especialidades/perio';
+import type { ImplanteDetalhe } from '@/lib/especialidades/implante';
+import { PSR_VAZIO, type PsrDetalhe } from '@/lib/especialidades/perio';
 import { PsrForm } from '@/components/fichas/psr-form';
-import { PsrCard } from '@/components/fichas/psr-card';
-import { ImplanteCard } from '@/components/fichas/implante-card';
 import { ImplanteForm } from '@/components/fichas/implante-form';
+import { corpoEspecialidade } from '@/components/fichas/corpo-especialidade';
+import { eventosParaCards } from '@/lib/odontograma/eventos-para-cards';
 import { TIPO_LABEL, corDoRegistro } from '@/types/odontograma';
 import type {
   OrtoManutencaoInfo, OdontogramaEventoDraft,
@@ -63,7 +62,8 @@ import type {
 } from '@/types/odontograma';
 import { alternarStatusRegistro, encaminharProcedimento, atualizarStatusEncaminhado, preencherDetalheEncaminhado, assinarProcedimentos, assinarTodosRealizadosDaFicha } from '@/app/consulta/[agendamentoId]/actions';
 import { salvarFicha, deletarFicha, contarVinculosFicha, type VinculosFicha } from '@/server/patients/salvar-ficha';
-import { derivarResponsaveis, eventosVisiveis, fichaVisivel, filtroAindaValido, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
+import { derivarResponsaveis, eventosVisiveis, fichaVisivel, filtroAindaValido } from '@/lib/fichas/filtro-responsavel';
+import { ChipsResponsavel } from '@/components/fichas/chips-responsavel';
 import { EncaminharBar } from '@/components/fichas/encaminhar-bar';
 import { AssinarBar } from '@/components/fichas/assinar-bar';
 import { agruparRegistros } from '@/lib/odontograma/agrupar-registros';
@@ -276,41 +276,6 @@ const mapFichaToEvolution = (f: FichaDB): Evolution => ({
 });
 
 /**
- * Agrupa os eventos de uma ficha em cards §11 (camada 2): eventos com o MESMO grupo_id
- * viram UM card multi-dente ("Exodontia · dentes 31–41"); os isolados, um card cada.
- * Autor/CRO vêm da ficha (na ficha rápida, um autor por ficha). `assinada` (R-03b) agora é
- * POR CARD — `primeiro.assinaturaId != null` — não mais um flag uniforme de toda a ficha
- * (a assinatura granular do R-03a congela registro a registro, não a ficha inteira).
- * Agrupamento/ordenação delegados a agruparRegistros (R-02 I2 — antes duplicado aqui
- * e em gruposDraft; agora uma função só, em src/lib/odontograma/agrupar-registros.ts).
- */
-function eventosParaCards(
-  eventos: EventoView[], autorNome: string, autorCro: string | null,
-): Array<{ key: string; ids: string[]; data: RegistroCardData }> {
-  return agruparRegistros(eventos).map(({ itens }) => {
-    const primeiro = itens[0];
-    return {
-      key: primeiro.id,
-      ids: itens.map((e) => e.id),   // alvo do toggle de status (todos do grupo juntos)
-      data: {
-        tipo: primeiro.tipo,
-        status: primeiro.status,
-        origem: primeiro.origem,
-        ancoras: itens.map((e) => e.ancora),
-        observacao: primeiro.observacao,
-        detalhe: primeiro.detalhe,
-        realizadoEm: primeiro.realizadoEm,
-        registradoEm: primeiro.registradoEm,
-        autorNome,
-        autorCro,
-        assinada: primeiro.assinaturaId != null,
-        encaminhadoPara: primeiro.encaminhadoPara,
-      },
-    };
-  });
-}
-
-/**
  * Agrupa o RASCUNHO (OdontogramaEventoDraft[]) do mesmo jeito que a ficha salva — mesma
  * função (agruparRegistros), mesmo card-fonte (RegistroCard, R-02 I1). Adapta grupo_id
  * (snake_case no draft) pra grupoId antes de chamar; recupera os índices originais por id
@@ -506,27 +471,6 @@ function unirObservacoes(derivada: string, doFormulario: string): string {
     .map((l) => l.trim())
     .filter(Boolean);
   return [...new Set(linhas)].join('\n');
-}
-
-/**
- * Resolve o corpo de camada 3 (tabela de endo, campos de implante) pra um card §11 —
- * só monta quando há dado (I2). `detalhe` é lido SEMPRE por safeParse (migration 106,
- * spec-106 §5): dado corrompido degrada pra "sem tabela", nunca quebra a ficha.
- */
-function corpoEspecialidade(tipo: TipoRegistroOdontograma, detalhe: unknown): React.ReactNode {
-  if (tipo === 'endodontia') {
-    const r = endoDetalheSchema.safeParse(detalhe);
-    return r.success ? <EndoCard valor={r.data} /> : null;
-  }
-  if (tipo === 'implante') {
-    const r = implanteDetalheSchema.safeParse(detalhe);
-    return r.success ? <ImplanteCard valor={r.data} /> : null;
-  }
-  if (tipo === 'exame_periodontal') {
-    const r = psrDetalheSchema.safeParse(detalhe);
-    return r.success ? <PsrCard valor={r.data} /> : null;
-  }
-  return null;
 }
 
 // Ficha enlatada do perfil demo (K · spec 3.3) — coerente com o seed da consulta demo (João Silva, dente 46).
@@ -1697,39 +1641,14 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
         )}
       </div>
 
-      {/* R-16: filtro por responsável — só quando há ≥2 responsáveis distintos
-          no paciente (solo não vê chrome). Meus = o dentista logado; os demais
-          chips, cada outro responsável presente. */}
-      {responsaveis.length >= 2 && (() => {
-        const souResponsavel = responsaveis.some((r) => r.id === dentistaId);
-        const outros = responsaveis.filter((r) => r.id !== dentistaId);
-        const chipClass = (ativo: boolean) =>
-          `inline-flex items-center min-h-[40px] text-xs font-bold rounded-full px-3.5 border transition-colors ${
-            ativo
-              ? 'bg-teal border-teal text-white'
-              : 'bg-surface border-border text-text-secondary hover:border-teal hover:text-teal-ink'
-          }`;
-        return (
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[9.5px] font-bold uppercase tracking-widest text-text-secondary mr-1">
-              Responsável
-            </span>
-            <button type="button" onClick={() => setFiltroResponsavel(null)} className={chipClass(filtroResponsavel === null)}>
-              Todos
-            </button>
-            {souResponsavel && (
-              <button type="button" onClick={() => setFiltroResponsavel(FILTRO_MEUS)} className={chipClass(filtroResponsavel === FILTRO_MEUS)}>
-                Meus
-              </button>
-            )}
-            {outros.map((r) => (
-              <button key={r.id} type="button" onClick={() => setFiltroResponsavel(r.id)} className={chipClass(filtroResponsavel === r.id)}>
-                {r.nome}
-              </button>
-            ))}
-          </div>
-        );
-      })()}
+      {/* R-16: filtro por responsável — só quando há ≥2 responsáveis distintos no paciente
+          (ChipsResponsavel esconde sozinho quando solo). */}
+      <ChipsResponsavel
+        responsaveis={responsaveis}
+        meuId={dentistaId}
+        filtro={filtroResponsavel}
+        onFiltroChange={setFiltroResponsavel}
+      />
 
       <AnimatePresence>
         {isPanelOpen && (
