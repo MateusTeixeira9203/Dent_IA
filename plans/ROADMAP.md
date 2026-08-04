@@ -2,18 +2,23 @@
 
 > **ROADMAP** · atualizado **2026-08-04** · reorganizado por **importância pro dentista**
 > **Ativo:** **R-46 (Meu dia)** — R-46a ✅ · R-46g/R-46b/R-46b2/R-46c/cockpit(C0-C5)/C5/R-55
-> **🟡 codados, testados ao vivo** — nada em produção ainda (20 commits acumulados desde 01/08,
-> prod em 31/07 — "13" de versões anteriores deste cabeçalho subcontava 2 sessões inteiras)
-> **04/08 — sessão grande de planejamento + execução:**
-> **[C6](specs/R-46-C6-layout-cockpit.md) `aprovada`** — jaFeito sai de vez, painel do dente
-> vira resumo + `Sheet`, colunas redistribuídas (esquerda = o que já aconteceu · direita = o
-> que está pendente), responsivo entra (P8 morreu). **Gate de entrada medido ao vivo 04/08**
-> ([MAPA §1](MAPA-MEU-DIA.md)): centro estoura o viewport em 37px sozinho, a 1440×900, antes
-> do dock — **C6 confirmado urgente, não opcional**. Ainda não codada
-> **[R-46d](specs/R-46d-campo-magico.md)** — **D0 ✅ commitado**. D1 ganhou escopo grande
-> (D7-D12): campo mágico **substitui** a barra de procedimento — absorve o R-46b, mata o
-> caminho de 3 gestos determinístico (fallback sem IA: só o painel do dente). Detecção acende
-> o odontograma com **motion**, nunca cor
+> **🟡 codados, testados ao vivo** — nada em produção ainda (27 commits acumulados desde 01/08,
+> prod em 31/07)
+> **04/08 — C6 + R-46d D1 codados juntos, testados ao vivo (3 rodadas de correção na hora):**
+> **[C6](specs/R-46-C6-layout-cockpit.md) 🟡 codado e testado ao vivo** — jaFeito saiu; colunas
+> redistribuídas (esquerda ganha Concluídos hoje + Anexar documentos); painel do dente
+> **revisado 2×**: 1ª leitura (resumo+`Sheet`) foi codada, testada, e revogada por ele na
+> mesma sessão — virou **1 painel só flutuando ao lado do odontograma**, `colapsarDireita`
+> evita a regressão de WCAG que motivou o desenho original (medido: dente 43×76px igual com
+> painel aberto ou fechado). Acordeões perderam a exclusão mútua (pedido dele — liberdade de
+> abrir tudo). Não em produção
+> **[R-46d](specs/R-46d-campo-magico.md) 🟡 D0+D1 codados e testados ao vivo** — campo mágico
+> substitui a barra de procedimento inteira (absorve R-46b). Fallback "Registrar sem IA":
+> `OndeSeletor` saiu de vez (clicar o dente ou digitar já resolve onde), chip de **manutenção
+> ortodôntica** entrou (fecha o R-50-b). D12 (chips somem da faixa fixa) feito; **D9/D11
+> (detecção em tempo real + motion no odontograma) não entraram nesta rodada** — o campo
+> mágico usa a detecção por texto que o `CapturaLivreCard` já tinha, sem o odontograma acender.
+> Não em produção
 > **[R-51/R-52](specs/R-51-53-modelo-multissessao.md) 🟡 codados e commitados** — R-52 testado
 > ao vivo (escrita confirmada no banco); R-51 só por typecheck/lint/build + dado sintético
 > **[R-53](specs/R-53-orcamento-indicados-abertos.md) 🟡 codado e testado ao vivo** — evento
@@ -28,8 +33,9 @@
 > o agrupamento por sessão já funciona (fichas com até 24 eventos numa entrada só)
 > **Fila:** 20 · **🟡 no ar/codado sem deploy:** 15 · **💡 ideia sem spec:** 3 ·
 > **Concluídos:** 24 · **Congelado:** 1 · **Cortado:** 4
-> **Próximo:** push do que está pronto · D5 + medir G1 → C6 + R-46d D1 juntos (UI nova,
-> precisa do browser) · R-58 → R-53
+> **Próximo:** ele decide — push (27 commits acumulados, decidiu revisar tudo de uma vez antes)
+> · D9/D11 do R-46d (detecção em tempo real + motion) · R-46h/"marcar retorno" (sem spec ainda,
+> espaço abriu com o D12)
 > **Discussão aberta:** [como diminuir o atrito](discussoes/como-diminuir-o-atrito.md) (estado × evento)
 
 **Status:** ⏳ fila · 🔵 ativo (máx 1) · 🟡 no ar **não** verificado · ✅ no ar **e** verificado ·
@@ -64,11 +70,11 @@ prioridade, por melhor que seja.
 
 | ID | Item | Estado | Peso |
 |---|---|---|---|
-| [R-46](specs/R-46-meu-dia.md) | **Meu dia — a ficha no dia real; o novo modo consulta** (rail do dia, contexto à vista, registrar em lote, colar do Word, Dex em lista) | 🔵 **em execução** · R-46a ✅ · **[R-46g](specs/R-46g-porta-modo-consulta.md) 🟡** (porta; A1 do gate de assinatura **ignorada** — sem sistema de pagamento) · **[R-46b](specs/R-46b-registrar-meu-dia.md) 🟡** (registrar — **absorvido pelo R-46d D7-D12**, ver linha própria: o campo mágico substitui a barra) · **[R-46b2](specs/R-46b2-salvar-chamar-proximo.md) 🟡 codado e provado no banco** — o Meu dia salva de verdade · **[R-46c](specs/R-46c-colar-do-word.md) 🟡 codado e provado 03/08** (migration aplicada, importação testada ao vivo com prova no banco/PDF/timeline) · **[cockpit](specs/R-46-cockpit.md) spec `aprovada` + [contrato](specs/R-46-cockpit-contrato.md) — C0 a C5 todos 🟡 codados, testados ao vivo, commitados** (nada em produção ainda). **Faltam:** [C6](specs/R-46-C6-layout-cockpit.md) (spec `aprovada` 04/08, não codada) e o [R-46d](specs/R-46d-campo-magico.md) (D0 commitado, D1 em spec) | G |
-| [R-46d](specs/R-46d-campo-magico.md) | **Campo mágico com IA no Meu dia** — substitui a barra de procedimento inteira (D7, 04/08), não só "+ texto da visita" | **D0 ✅ commitado** (dedup/merge extraídos pra `src/lib/odontograma/dedup-eventos-draft.ts`, 8 testes, `refactor(odontograma)` 04/08). **D1 ⏳ contrato escrito, não codado** — absorve o R-46b, detecção com motion no odontograma (D11), anexo vira caixa sob o Histórico (D8), tabela de especialidade abre sozinha quando tem número (ver R-49). Extração de **valor** ficou fora (item próprio, depois do R-53) | G |
+| [R-46](specs/R-46-meu-dia.md) | **Meu dia — a ficha no dia real; o novo modo consulta** (rail do dia, contexto à vista, registrar em lote, colar do Word, Dex em lista) | 🔵 **em execução** · R-46a ✅ · **[R-46g](specs/R-46g-porta-modo-consulta.md) 🟡** (porta; A1 do gate de assinatura **ignorada** — sem sistema de pagamento) · **[R-46b](specs/R-46b-registrar-meu-dia.md) 🟡→absorvido** (a barra morreu de vez, ver R-46d) · **[R-46b2](specs/R-46b2-salvar-chamar-proximo.md) 🟡 codado e provado no banco** — o Meu dia salva de verdade · **[R-46c](specs/R-46c-colar-do-word.md) 🟡 codado e provado 03/08** (migration aplicada, importação testada ao vivo com prova no banco/PDF/timeline) · **[cockpit](specs/R-46-cockpit.md) spec `aprovada` + [contrato](specs/R-46-cockpit-contrato.md) — C0 a C5 🟡** · **[C6](specs/R-46-C6-layout-cockpit.md) 🟡 codado e testado ao vivo 04/08** (painel do dente flutua ao lado do odontograma, ver cabeçalho) · **[R-46d](specs/R-46d-campo-magico.md) 🟡 D0+D1 codados e testados ao vivo 04/08**. **Falta:** tudo em produção ainda | G |
+| [R-46d](specs/R-46d-campo-magico.md) | **Campo mágico com IA no Meu dia** — substitui a barra de procedimento inteira (D7, 04/08), não só "+ texto da visita" | **D0 ✅ commitado** (dedup/merge extraídos pra `src/lib/odontograma/dedup-eventos-draft.ts`, 8 testes). **D1 🟡 codado e testado ao vivo 04/08** — absorve o R-46b, anexo vira caixa sob o Histórico (D8), fallback "Registrar sem IA" com chip de orto. **D9/D11 (motion no odontograma) ficaram de fora** desta rodada — próxima fatia. Extração de **valor** ficou fora (item próprio, depois do R-53) | G |
 | **R-46h** | 💡 **Um botão: salva a visita e já abre o orçamento** — extrai `NovoOrcamentoModal`/`FichaParaOrc` de `paciente-detail-client.tsx` pra componente compartilhado, sem duplicar | 💡 02/08 — **decidido por ele: um gesto faz tudo** (resolve o `fichaId` que só existe pós-save). [R-46-cockpit.md §5a](specs/R-46-cockpit.md). Sem spec ainda — entra quando o cockpit codar | M |
 | [R-49](specs/R-49-voz-e-campos-de-especialidade.md) | **Voz e campos de especialidade** — preencher sem digitar 17 vezes | ⏳ **spec escrita 02/08**, **emenda 04/08**: I2 (zero LLM no número clínico) **revogada** — a IA pode preencher odontometria, com a tabela abrindo sozinha (guarda-corpo) e I5 (recusa por faixa) virando o guarda-corpo principal. Dado que motivou: **66% dos endos têm odontometria vazia** | G |
-| **R-50** | 🐛 **Orto tem 2 furos, um item só:** (a) `orto.ts:18` — `arcada` é enum **não-nullable** enquanto os outros 4 campos são nullable, e como o pass 1 já extrai `orto_manutencao` por IA, o schema **obriga a IA a inventar a arcada**; (b) `orto.ts:30` — `tiposEvento: []`, então **nenhum tipo do catálogo liga o `OrtoForm`**: sem campo mágico, manutenção ortodôntica não tem como ser registrada na mão | ⏳ achado 02/08 (a: medição de produção · b: pergunta dele sobre ativação manual). (a) viola a I5 em campo clínico; (b) deixa uma especialidade inteira dependente de IA. [§5a](specs/R-46-cockpit.md) | P |
+| **R-50** | 🐛 **Orto tinha 2 furos:** (a) `orto.ts:18` — `arcada` é enum **não-nullable** enquanto os outros 4 campos são nullable, e como o pass 1 já extrai `orto_manutencao` por IA, o schema **obriga a IA a inventar a arcada**; (b) ~~`tiposEvento: []`, nenhum tipo do catálogo liga o `OrtoForm`~~ | (a) **segue aberto** — viola a I5 em campo clínico, só afeta o caminho de IA. (b) **✅ fechado 04/08** — chip "Manutenção ortodôntica" no fallback "Registrar sem IA" do R-46d D1, com `OrtoForm` restilizado + suporte a "Ambas" (2 arcadas, campos separados) | P |
 | [R-51](specs/R-51-53-modelo-multissessao.md) | Procedimento multi-sessão (canal, implante): "em andamento" vira **derivado** do `grupo_id` — sem 3º status novo | 🟡 **codado e commitado 04/08** (`feat(dashboard)`, junto do R-52). Typecheck/lint/build limpos + dado sintético. **Não exercitado em cenário multi-sessão real** — falta o teste ao vivo | G |
 | [R-52](specs/R-51-53-modelo-multissessao.md) | Encaminhar pendência pro outro dentista **dentro do bloco "A fazer"** — e "A fazer" vira **estritamente a minha lista** | 🟡 **codado, commitado e testado ao vivo 04/08.** Modo seleção + `EncaminharBar` + sucesso parcial em `encaminharProcedimento` — escrita confirmada no banco (`encaminhado_para` setado, item some da lista de quem encaminhou). Mata o **silent-fail real** (fazer hoje em item de colega devolvia `ok:true` sem gravar) | M |
 | [R-53](specs/R-53-orcamento-indicados-abertos.md) | Orçamento nasce de **todos os indicados em aberto do paciente**, não só os registrados hoje | 🟡 **codado e testado ao vivo 04/08, não em produção.** G1 provado 2× com match exato (14, depois 11/3 pelo filtro); G5 provado com orçamento real criado+PDF 200+apagado; G4/G6/G7/G8 provados. G3 só metade (não achei paciente real com 2+ responsáveis incluindo 1 encaminhado); G9 (2 contas) não verificado | M |

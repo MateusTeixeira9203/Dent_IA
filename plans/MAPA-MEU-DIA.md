@@ -212,9 +212,9 @@ Sem teto declarado, cada item se justifica sozinho e a soma vira cabine de aviã
 | 3 | ✅ **D1** (queixa `null`) feito 04/08 · **D6 passos 1-2 (token/contraste) segue aberto** | 1 linha e uma varredura. Ficha sem título vai pro CRO. **Medido 03/08: 4 fichas já estão com título vazio no banco, 0 com `null`** |
 | 4 | ✅ **R-53** feito e testado ao vivo 04/08 | Isolado no perfil, e é o pré-requisito real do R-46h. **Destravado** — o C1 caiu |
 | **4.5** | ✅ **Medido ao vivo 04/08 — ver §1 e D5 acima.** Resultado: **C6 fica urgente, não opcional** — o centro já estoura o viewport por 37px sozinho (antes do dock), e D5 segue falhando nos mesmos controles de antes, menos os que o R-46d D12 já vai matar | O §7.4 declara que o piso de 36px *"define o custo do passo 4"*. **Os dois eram gate de entrada do C6, agora resolvidos** |
-| 5 | ~~Brief da moldura~~ → **C6 + R-46d D1** juntos | Mesmos arquivos, mesmo problema de forma. **Brief não é mais necessário** — ele decidiu a moldura em 03/08 (`Sheet` pela direita + painel pequeno inline), e o `Sheet` já é padrão usado em 3 telas. **Mas agora carrega o responsivo (C8)** |
+| 5 | ✅ **C6 + R-46d D1** feito e testado ao vivo 04/08 | A moldura decidida em 03/08 (resumo+`Sheet`) foi codada, testada ao vivo, e **revogada por ele na mesma sessão** — painel do dente virou 1 flutuando ao lado do odontograma, `colapsarDireita` de volta. Responsivo (C8) **não verificado** — telas estreitas ficaram pra próxima fatia |
 | 6 | **R-57 F1 + F2** | Depois que o cockpit parar de se mexer |
-| 7 | **R-46h** (spec) + **retorno** (spec) | Os dois maiores buracos vs. a régua |
+| 7 | **D9/D11** (motion no odontograma) + **R-46h** (spec) + **retorno** (spec) | Os maiores buracos vs. a régua, agora que o cockpit fechou |
 
 ## 9. O que este mapa recusa
 
