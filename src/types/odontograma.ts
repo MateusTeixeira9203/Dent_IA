@@ -196,6 +196,9 @@ export interface OdontogramaEstadoAtual {
 
 export interface OrtoManutencaoInfo {
   arcada: 'superior' | 'inferior' | 'ambas';
+  /** Quando `arcada` é só 1, descreve ela. Quando `arcada === 'ambas'`, descreve a SUPERIOR —
+   *  os campos `_inferior` abaixo descrevem a inferior (04/08: são procedimentos diferentes
+   *  por arcada, 1 campo só não bastava). */
   fio: string | null;
   /** Inclui a troca de ligadura ("borrachinhas") — rotina que acompanha a ativação. */
   ativacao: string | null;
@@ -203,6 +206,12 @@ export interface OrtoManutencaoInfo {
   elastico_corrente: string | null;
   /** Entre arcadas, uso domiciliar (ex: "3/16 Classe II, 13→46"). */
   elastico_intermaxilar: string | null;
+  /** 04/08 — só fazem sentido com `arcada === 'ambas'`. Opcionais: registro antigo (ou
+   *  extraído por IA, que ainda não preenche estes) não tem, e isso é válido — nunca `''`. */
+  fio_inferior?: string | null;
+  ativacao_inferior?: string | null;
+  elastico_corrente_inferior?: string | null;
+  elastico_intermaxilar_inferior?: string | null;
 }
 
 // ── Entrada da IA para o client (§3.1) ───────────────────────────────────

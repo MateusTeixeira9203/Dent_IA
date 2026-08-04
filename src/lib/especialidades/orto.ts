@@ -20,6 +20,11 @@ export const ortoManutencaoSchema = z.object({
   ativacao: z.string().trim().min(1).nullable(),
   elastico_corrente: z.string().trim().min(1).nullable(),
   elastico_intermaxilar: z.string().trim().min(1).nullable(),
+  // 04/08 — só usados com arcada 'ambas' (form manual). Opcionais: IA/registro antigo não têm.
+  fio_inferior: z.string().trim().min(1).nullable().optional(),
+  ativacao_inferior: z.string().trim().min(1).nullable().optional(),
+  elastico_corrente_inferior: z.string().trim().min(1).nullable().optional(),
+  elastico_intermaxilar_inferior: z.string().trim().min(1).nullable().optional(),
 });
 export type OrtoManutencaoDetalhe = z.infer<typeof ortoManutencaoSchema>;
 
