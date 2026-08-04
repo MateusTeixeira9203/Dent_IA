@@ -2,7 +2,8 @@
 
 > **ROADMAP** · atualizado **2026-08-04** · reorganizado por **importância pro dentista**
 > **Ativo:** **R-46 (Meu dia)** — R-46a ✅ · R-46g/R-46b/R-46b2/R-46c/cockpit(C0-C5)/C5/R-55
-> **🟡 codados, testados ao vivo** — nada em produção ainda (13 commits acumulados, prod em 31/07)
+> **🟡 codados, testados ao vivo** — nada em produção ainda (20 commits acumulados desde 01/08,
+> prod em 31/07 — "13" de versões anteriores deste cabeçalho subcontava 2 sessões inteiras)
 > **04/08 — sessão grande de planejamento + execução:**
 > **[C6](specs/R-46-C6-layout-cockpit.md) `aprovada`** — jaFeito sai de vez, painel do dente
 > vira resumo + `Sheet`, colunas redistribuídas (esquerda = o que já aconteceu · direita = o
@@ -14,17 +15,17 @@
 > o odontograma com **motion**, nunca cor
 > **[R-51/R-52](specs/R-51-53-modelo-multissessao.md) 🟡 codados e commitados** — R-52 testado
 > ao vivo (escrita confirmada no banco); R-51 só por typecheck/lint/build + dado sintético
-> **[R-53](specs/R-53-orcamento-indicados-abertos.md)** ⏳ spec própria (saiu do combinado,
-> que estourou o teto) — evento encaminhado **entra** no orçamento (X1), query ficha-cêntrica
-> **[R-58](specs/R-58-historico-detalhado.md)** ⏳ novo — texto da visita em evidência, evento
-> fechado depois aparece nas 2 entradas (onde indicado, onde feito). **Entra antes do R-53**,
-> habilita o C6
+> **[R-53](specs/R-53-orcamento-indicados-abertos.md) 🟡 codado e testado ao vivo** — evento
+> encaminhado **entra** no orçamento (X1), query ficha-cêntrica. Não em produção
+> **[R-58](specs/R-58-historico-detalhado.md)** 🟡 codado e testado ao vivo, não em produção —
+> texto da visita em evidência, evento fechado depois aparece nas 2 entradas (onde indicado,
+> onde feito). **Entra antes do R-53**, habilita o C6
 > **[R-49](specs/R-49-voz-e-campos-de-especialidade.md)** — emenda: IA **pode** preencher
 > odontometria agora (I2 revogada), com a tabela do procedimento abrindo sozinha como
 > guarda-corpo
 > **R-54 ✂️ cortado** — reaberto como pergunta 04/08, **não confirmado como bug**: medido que
 > o agrupamento por sessão já funciona (fichas com até 24 eventos numa entrada só)
-> **Fila:** 22 · **🟡 no ar/codado sem deploy:** 13 · **💡 ideia sem spec:** 3 ·
+> **Fila:** 20 · **🟡 no ar/codado sem deploy:** 15 · **💡 ideia sem spec:** 3 ·
 > **Concluídos:** 24 · **Congelado:** 1 · **Cortado:** 4
 > **Próximo:** push do que está pronto · D5 + medir G1 → C6 + R-46d D1 juntos (UI nova,
 > precisa do browser) · R-58 → R-53
@@ -69,10 +70,10 @@ prioridade, por melhor que seja.
 | **R-50** | 🐛 **Orto tem 2 furos, um item só:** (a) `orto.ts:18` — `arcada` é enum **não-nullable** enquanto os outros 4 campos são nullable, e como o pass 1 já extrai `orto_manutencao` por IA, o schema **obriga a IA a inventar a arcada**; (b) `orto.ts:30` — `tiposEvento: []`, então **nenhum tipo do catálogo liga o `OrtoForm`**: sem campo mágico, manutenção ortodôntica não tem como ser registrada na mão | ⏳ achado 02/08 (a: medição de produção · b: pergunta dele sobre ativação manual). (a) viola a I5 em campo clínico; (b) deixa uma especialidade inteira dependente de IA. [§5a](specs/R-46-cockpit.md) | P |
 | [R-51](specs/R-51-53-modelo-multissessao.md) | Procedimento multi-sessão (canal, implante): "em andamento" vira **derivado** do `grupo_id` — sem 3º status novo | 🟡 **codado e commitado 04/08** (`feat(dashboard)`, junto do R-52). Typecheck/lint/build limpos + dado sintético. **Não exercitado em cenário multi-sessão real** — falta o teste ao vivo | G |
 | [R-52](specs/R-51-53-modelo-multissessao.md) | Encaminhar pendência pro outro dentista **dentro do bloco "A fazer"** — e "A fazer" vira **estritamente a minha lista** | 🟡 **codado, commitado e testado ao vivo 04/08.** Modo seleção + `EncaminharBar` + sucesso parcial em `encaminharProcedimento` — escrita confirmada no banco (`encaminhado_para` setado, item some da lista de quem encaminhou). Mata o **silent-fail real** (fazer hoje em item de colega devolvia `ok:true` sem gravar) | M |
-| [R-53](specs/R-53-orcamento-indicados-abertos.md) | Orçamento nasce de **todos os indicados em aberto do paciente**, não só os registrados hoje | ⏳ **spec própria escrita 04/08** (saiu do doc combinado, que estourou o teto). Fase `contrato`. Zero migration/RLS. **X1 fechado:** usa `filtro-responsavel.ts` com chips (Todos por padrão) — evento encaminhado **entra** no orçamento, só `assinatura_id` exclui. Recorte decidido: query fica **ficha-cêntrica** (`!inner` + filtro no embed), não flat — é o que permite reusar a lib sem adaptar | M |
+| [R-53](specs/R-53-orcamento-indicados-abertos.md) | Orçamento nasce de **todos os indicados em aberto do paciente**, não só os registrados hoje | 🟡 **codado e testado ao vivo 04/08, não em produção.** G1 provado 2× com match exato (14, depois 11/3 pelo filtro); G5 provado com orçamento real criado+PDF 200+apagado; G4/G6/G7/G8 provados. G3 só metade (não achei paciente real com 2+ responsáveis incluindo 1 encaminhado); G9 (2 contas) não verificado | M |
 | [R-55](specs/R-55-historico-sem-perda-de-dado.md) | 🐛 Dedup por âncora em `get-meu-dia.ts` esconde procedimento repetido — histórico e "Já feito" mostram só 1 ocorrência por âncora, sempre, mesmo com datas diferentes | 🟡 **aprovada, codada e testada ao vivo 03/08** — registrei uma 2ª profilaxia real, banco confirma as 2 linhas, tela agrupa certo ("2×") em vez de esconder uma. Emenda em `R-46-cockpit.md`/contrato aplicada. **Ainda bloqueia** histórico detalhado e o C6 do cockpit | G |
 | **R-56** | 🐛 `fichasRecentes` (resumo do paciente) e a lista de fichas do `FichasTab` também mostram "Evolução"/dentista sem checar `origem` — mesma classe de defeito do R-46c (achado 3), só que em 2 surfaces que a spec original não mapeou | ⏳ achado 03/08, testando o R-46c ao vivo. Não é urgente (não é PDF/timeline oficial), mas é a mesma mentira de honestidade do prontuário em superfícies menores | P |
-| [R-58](specs/R-58-historico-detalhado.md) | **Histórico detalhado** — texto da visita em evidência (é o conteúdo inteiro quando a sessão só gerou achado), expansão por profundidade, badge de "nada pendente", e o procedimento fechado depois aparecendo nas **duas** entradas (onde foi indicado e onde foi feito) | ⏳ **spec escrita 04/08**, fase `contrato`. **Entra antes do R-53** (decisão dele). Zero migration — os campos já vêm no SELECT e são descartados no `.map()`; só `detalhe` entra. **Habilita o C6** (é o que sustenta tirar o "Já feito"). ⚠️ Pré-requisito: extrair `eventosParaCards`/`corpoEspecialidade` do `FichasTab` (privadas hoje), mesmo padrão do R-46d D0 | G |
+| [R-58](specs/R-58-historico-detalhado.md) | **Histórico detalhado** — texto da visita em evidência (é o conteúdo inteiro quando a sessão só gerou achado), expansão por profundidade, badge de "nada pendente", e o procedimento fechado depois aparecendo nas **duas** entradas (onde foi indicado e onde foi feito) | 🟡 **codado e testado ao vivo 04/08, não em produção.** Pré-requisito cumprido (`eventosParaCards`/`corpoEspecialidade` extraídos). G1 provado com fixture temporária (paciente real da spec estava errado). Achou e corrigiu 1 bug ao vivo (fichas do mesmo dia trocavam evento uma da outra). G6/G7 só parcial — sem dado real de endo/texto longo pro dentista logado hoje. **Habilita o C6** | G |
 | [R-57](specs/R-57-atrito-faixa-rapida.md) | **Atrito da faixa rápida** — encaixe no rail · observação por procedimento no Registrar · (repetir, bloqueada) | ⏳ **spec escrita 03/08**, saída da revisão "pensando como dentista de fluxo alto". **F1 encaixe:** `AtenderAgoraModal`/`criarEncaixe` já existem inteiros, só estão presos na Agenda e empurram pra `/consulta` (rota aposentada). **F2 observação:** o campo existe mas só é editável dentro do painel do dente; o nome do catálogo ocupa ele de propósito. **F3 ⛔ bloqueada** — conflita com decisão dele de 31/07 ("sem frequência de uso"), precisa dele | P |
 | [R-30](specs/R-30-ficha-fonte-unica-procedimento.md) | Ficha: fonte única de procedimento — mata a divergência entre `dentes_observacoes` e `odontograma_eventos` | 🟡 **commitado e em produção** (30/07 noite), bug relatado por ele **confirmado corrigido em produção**. **Parte 1 destrava 24 de 87 fichas (27,6%)** que rejeitavam o save ao editar. Falta o gate de 2 contas pra virar ✅ | G |
 | [R-31a](specs/R-31a-paciente-unico-prevencao.md) | Paciente único: **prevenção** — parar de criar duplicata | 🟡 **codado, testado ao vivo, commitado e no ar** (push 31/07) — §3.2, §3.3, §3.1, §3.4 completos. G1/G2/G4 confirmados com bug real achado e corrigido em cada um (ver handoff). G3 (toque no celular) e G5 (toast do agendamento) só confirmados por lógica — dev tooling não deixou ver o toast renderizar. Falta gate de 2 contas | M |

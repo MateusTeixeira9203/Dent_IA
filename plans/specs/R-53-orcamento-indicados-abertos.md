@@ -1,6 +1,6 @@
 # R-53 — Orçamento nasce dos indicados em aberto do paciente
 
-> **SPEC** · **R-53** · ⏳ fila · **Fase:** `contrato`
+> **SPEC** · **R-53** · 🟡 codado e testado ao vivo, não em produção · **Fase:** `aprovada`
 > **Aberto:** 2026-08-04 · **Fechado:** —
 > **Modelo:** Sonnet 5 (mecânico — queries e funções já mapeadas; a decisão de recorte
 > do §3 é a única parte não-óbvia, e está fechada com dado medido)
@@ -160,50 +160,64 @@ de chips precisa funcionar em tablet, com rolagem horizontal se estourar.
 
 ## 6. Invariantes
 
-- [ ] **I1** — Evento com `assinatura_id` **nunca** entra no orçamento (congelado). É a única
-      exclusão por query.
-- [ ] **I2** — Evento **encaminhado entra** no orçamento. ⚠️ *Corrigido do contrato anterior,
-      que mandava excluir — ver §2.1.* Excluir seria perder receita em silêncio.
-- [ ] **I3** — Responsável nunca é calculado inline: sempre `filtro-responsavel.ts`. Vale pro
-      orçamento **e** pro "A fazer" (R-52).
-- [ ] **I4** — O filtro por responsável é **display puro**. Nunca decide o que é gravado, nunca
+- [x] **I1** — Evento com `assinatura_id` **nunca** entra no orçamento (congelado). É a única
+      exclusão por query. Dupla trava: `!inner`+`.is(...,null)` na query **e** o filtro do
+      próprio `eventosParaItens`. Não achado nenhum indicado com assinatura em produção hoje
+      (0 linhas) — invariante nunca exercitada por dado real, só por código.
+- [x] **I2** — Evento **encaminhado entra** no orçamento. ⚠️ *Corrigido do contrato anterior,
+      que mandava excluir — ver §2.1.* Excluir seria perder receita em silêncio. Confirmado ao
+      vivo: o único evento encaminhado+elegível do banco (raspagem, "Teste R-31a") apareceu
+      sob "Todos".
+- [x] **I3** — Responsável nunca é calculado inline: sempre `filtro-responsavel.ts`. Vale pro
+      orçamento **e** pro "A fazer" (R-52) — conferido: `a-fazer-bloco.tsx:15` importa
+      `responsavelPassaFiltro`/`FILTRO_MEUS` da lib, não reimplementa.
+- [x] **I4** — O filtro por responsável é **display puro**. Nunca decide o que é gravado, nunca
       é autoria legal (o PDF/prontuário segue mostrando `dentista_id` + CRO + assinatura).
-- [ ] **I5** — Nenhum orçamento **existente** muda de valor pra trás — a mudança é só na fonte
-      dos itens de um orçamento novo.
-- [ ] **I6** — Orçamento agregado não pertence a 1 ficha: `orcamentos.ficha_id` fica `null`
-      (a coluna já é nullable desde `20260321000002_014`).
-- [ ] **I7** — Nenhuma ficha é criada, alterada ou "juntada" por este item (modelo do §0 da
-      spec-mãe: sessão nova = ficha nova, sempre).
+- [x] **I5** — Nenhum orçamento **existente** muda de valor pra trás — a mudança é só na fonte
+      dos itens de um orçamento novo. Não toquei em nenhum código de leitura/edição de
+      orçamento existente.
+- [x] **I6** — Orçamento agregado não pertence a 1 ficha: `orcamentos.ficha_id` fica `null`
+      (a coluna já é nullable desde `20260321000002_014`). **Provado ao vivo:** orçamento real
+      criado com `ficha_id: null`, confirmado no banco.
+- [x] **I7** — Nenhuma ficha é criada, alterada ou "juntada" por este item (modelo do §0 da
+      spec-mãe: sessão nova = ficha nova, sempre). Não toquei em `salvarFicha` nem RPC nenhuma.
 
 ## 7. Gates de aceite
 
 **Prova no banco (não na tela):**
-- [ ] **G1** — Paciente com indicados em ≥2 fichas de datas diferentes: o número de itens do
-      orçamento aberto bate com
-      `select count(*) from odontograma_eventos where paciente_id=X and status='indicado' and assinatura_id is null`
-      — **sem** condição de `encaminhado_para` (é a correção do §2.1). Usar um dos 20 pacientes
-      com indicado aberto medidos em 04/08.
-- [ ] **G2** — Evento com `assinatura_id` não-nulo **não** aparece no orçamento.
-- [ ] **G3** — Evento com `encaminhado_para` setado **aparece**, sob o filtro "Todos", com o
-      responsável exibido = o destino (não o autor). Dado de teste já existe: 1 evento
-      encaminhado no banco (raspagem Q2, criada no teste do R-52 em 04/08).
-- [ ] **G4** — Paciente **sem** nenhum indicado aberto: cai no fallback de texto, com a etapa
-      "selecionar ficha", exatamente como é hoje (regressão).
-- [ ] **G5** — Orçamento gerado pelo caminho agregado grava `orcamentos.ficha_id = null` e não
-      quebra o PDF nem a tela de orçamentos (as duas leem `ficha_id` opcional).
+- [x] **G1** — ✅ Provado ao vivo 2×. Paciente `4df91e93` ("Mateus Teixeira", 6 fichas com
+      indicado): **14 item(s)** no modal, exato match com `count(*)` no banco (14). Chip
+      "Mateus Teixeira" → **11**, chip "Meus" → **3**, 11+3=14 — aritmética do filtro bate
+      exatamente. Paciente `393c7e47` (1 indicado): **1 item(s)**, também exato.
+- [x] **G2** — Evento com `assinatura_id` não-nulo não aparece — garantido por código (dupla
+      trava, ver I1). Sem dado real pra testar (0 indicados com assinatura em produção hoje).
+- [x] **G3** — ~Parcial~ Confirmado que o evento encaminhado **aparece** sob "Todos" (I2). A
+      parte "responsável exibido = destino" não tem prova visual direta hoje: o único evento
+      encaminhado elegível do banco é o ÚNICO indicado do paciente (`393c7e47`) — só 1
+      responsável, chip nem renderiza (regra "solo não mostra chip"). Mecanismo é código
+      idêntico ao dos chips da ficha (R-16, em produção desde 26/07, confirmado funcionando
+      pro MESMO evento na visão da ficha). Fica 🟡 até existir paciente com 2+ responsáveis
+      incluindo um encaminhado.
+- [x] **G4** — ✅ Provado ao vivo: paciente sem nenhuma ficha (agregado=0, fallback=0) abriu
+      direto em "itens" com grid vazio — o desvio pro fallback funciona. Não achei em produção
+      um paciente com ficha **mas** zero indicado (todo paciente do dentista testado tem
+      indicado aberto) pra provar especificamente a etapa "selecionar" do fallback — esse
+      trecho não foi tocado (diff confirma: código idêntico ao de antes do R-53).
+- [x] **G5** — ✅ Provado ao vivo: orçamento real criado (`ficha_id: null`), apareceu certo na
+      lista após reload, abriu o detalhe sem erro, **PDF gerou 200 OK**. Apagado depois pelo
+      fluxo normal (botão Excluir).
 
 **Regressão:**
-- [ ] **G6** — Query de sanidade da premissa do §3:
-      `select count(*) from odontograma_eventos e join fichas f on f.id=e.ficha_id where e.dentista_id <> f.dentista_id`
-      **tem que devolver 0**. Se devolver >0, o modelo ficha-cêntrico passou a mentir e o
-      responsável exibido fica errado — vira item novo antes de seguir.
-- [ ] **G7** — `abrirOrcamentoParaFicha` (botão "gerar orçamento" dentro de uma ficha)
-      continua abrindo o modal sem erro, agora com o agregado.
-- [ ] **G8** — Nenhum embed devolve **300** (família R-44): conferir no Network que a query de
-      fichas volta 200 com os 2 embeds de `dentistas`.
-- [ ] **G9** — 2 contas logadas (regra do projeto pra qualquer coisa que toca autoria):
-      o orçamento do paciente mostra o **mesmo conjunto de itens** pros dois dentistas sob o
-      filtro "Todos" — o dinheiro é da clínica. Só os chips mudam de seleção default.
+- [x] **G6** — ✅ `select count(*) ... where e.dentista_id <> f.dentista_id` → **0**. Premissa
+      do §3 segue segura.
+- [x] **G7** — ✅ Provado ao vivo: clique em "Gerar orçamento" dentro de uma ficha abriu o
+      modal com os 14 itens do agregado do paciente inteiro, não só os 3 da ficha clicada.
+- [x] **G8** — ✅ Nenhum 300: o agregado (que depende do embed `!inner` + `encaminhado_dentista`
+      com `!fkey`) carregou os 14/11/3/1 itens corretamente em 4 testes — um 300 teria jogado
+      pro fallback (comportamento visivelmente diferente) em todos eles.
+- [ ] **G9** — **Não verificado.** Precisa de 2 contas logadas simultâneas — só tinha acesso à
+      conta "teste" nesta sessão (mesma limitação do R-58). Fica pro gate de 2 contas do
+      projeto, como os outros itens que esperam essa verificação.
 
 ## 8. Fora de escopo
 

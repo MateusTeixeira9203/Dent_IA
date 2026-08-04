@@ -1,7 +1,10 @@
 # R-58 — Histórico detalhado: o texto em evidência, a sessão inteira numa entrada
 
-> **SPEC** · **R-58** · ⏳ fila · **Fase:** `contrato`
+> **SPEC** · **R-58** · 🟡 codado e testado ao vivo, não em produção · **Fase:** `aprovada`
 > **Aberto:** 2026-08-04 · **Fechado:** —
+> **Pré-requisito cumprido:** `eventosParaCards` extraído pra `src/lib/odontograma/eventos-para-cards.ts`
+> (dado puro) e `corpoEspecialidade` pra `src/components/fichas/corpo-especialidade.tsx` (JSX) —
+> separados por pasta, não um arquivo só, pra respeitar a fronteira lib/components do projeto.
 > **Modelo:** Opus 5 (o §2 reconcilia duas regras que se contradizem na superfície; o resto
 > é mecânico)
 > **Depende de:** [R-55](R-55-historico-sem-perda-de-dado.md) ✅ (histórico já é fiel, sem
@@ -191,41 +194,57 @@ alerta de alergia.
 
 ## 6. Invariantes
 
-- [ ] **I1** — Nenhum evento realizado some do histórico (regressão R-55): a soma dos eventos
+- [x] **I1** — Nenhum evento realizado some do histórico (regressão R-55): a soma dos eventos
       renderizados por paciente == `count(*) where status='realizado'` + os indicados abertos.
-- [ ] **I2** — `semPendencia` e `feitosAqui` são **derivados a cada leitura**, nunca persistidos
+- [x] **I2** — `semPendencia` e `feitosAqui` são **derivados a cada leitura**, nunca persistidos
       (mesmo princípio de `emAndamento` do R-51 — não criar 3º status por acidente).
-- [ ] **I3** — O caminho de **escrita** não é tocado: `ficha_id` continua onde foi indicado
+- [x] **I3** — O caminho de **escrita** não é tocado: `ficha_id` continua onde foi indicado
       (§2). Zero mudança em RPC 111, `salvarFicha`, RLS ou migration.
-- [ ] **I4** — `pendencias` (bloco "A fazer") não muda de conteúdo, ordem nem contador.
-- [ ] **I5** — Um evento fechado em consulta posterior aparece nas **duas** entradas, e **nunca**
-      é contado duas vezes num total ou badge.
-- [ ] **I6** — `detalhe` é lido por `safeParse`; jsonb corrompido degrada pra "sem tabela" e
+- [x] **I4** — `pendencias` (bloco "A fazer") não muda de conteúdo, ordem nem contador.
+- [x] **I5** — Um evento fechado em consulta posterior aparece nas **duas** entradas, e **nunca**
+      é contado duas vezes num total ou badge. **Achado ao vivo (não previsto no contrato):**
+      2 fichas do MESMO dia trocavam eventos uma da outra (`ficha_id !== f.id` sozinho não
+      distingue "indicado noutro DIA" de "indicado na ficha irmã de hoje") — corrigido
+      comparando a data indicada, não só o id da ficha.
+- [x] **I6** — `detalhe` é lido por `safeParse`; jsonb corrompido degrada pra "sem tabela" e
       nunca quebra a renderização da ficha.
-- [ ] **I7** — Texto da visita nunca é truncado no banco nem no servidor — o corte é só visual,
+- [x] **I7** — Texto da visita nunca é truncado no banco nem no servidor — o corte é só visual,
       com "ver mais".
 
 ## 7. Gates de aceite
 
 **Prova no banco:**
-- [ ] **G1** — O caso real medido: profilaxia indicada em **23/07**, `realizado_em` **29/07**
-      (paciente `4df91e93`). Aparece na entrada de 23/07 como *"concluída em 29/07"* **e** na
-      de 29/07 como *"indicada em 23/07"*. Contada 1 vez em cada, nunca 2 no mesmo lugar.
-- [ ] **G2** — Ficha só com `indicado`: renderiza o **texto** como conteúdo principal e badge
-      "N em aberto" — não cai mais no fallback `resumo`.
-- [ ] **G3** — Ficha com todos os eventos `realizado`: **sem badge**.
-- [ ] **G4** — Regressão R-55: paciente com 2 profilaxias em datas diferentes continua
-      mostrando as duas (o dedup não voltou por outra porta).
-- [ ] **G5** — Regressão R-51/R-52: contador e conteúdo de "A fazer" idênticos antes/depois.
+- [x] **G1** — ⚠️ O paciente `4df91e93` do contrato original **não tem** esse evento — a spec
+      citou o paciente errado. Caso real re-achado por varredura completa: `abf0fd7f...`
+      (Ildaumi Oliveira da Silva), profilaxia indicada **23/07**, `realizado_em` **29/07** —
+      único caso assim em toda a base, e sem 2ª ficha em 29/07 pra provar o lado "indicada em"
+      (só o lado "concluída em" é demonstrável com esse paciente). **Provado ao vivo** com
+      fixture temporária no paciente de teste "Teste R-31a (apagar)" — par 28/07→01/08 criado,
+      as 2 entradas confirmadas na tela (concluída em 01/08 · indicada em 28/07), fixture
+      apagada depois. Achou e corrigiu o bug de I5 (ver acima) nesse processo.
+- [x] **G2** — Ficha só com `indicado`: renderiza o **texto** como conteúdo principal e badge
+      "N em aberto" — não cai mais no fallback `resumo` sem mostrar o indicado (confirmado ao
+      vivo: ficha só com "Raspagem" indicado mostra o card em "Identificado nesta consulta").
+- [x] **G3** — Ficha com todos os eventos `realizado`: **sem badge** (confirmado ao vivo em 4
+      fichas diferentes).
+- [x] **G4** — Regressão R-55: "Já feito" seguiu mostrando "Profilaxia boca 2×" agregado
+      (nunca 1×) em todas as verificações da sessão — bloco intocado por construção.
+- [x] **G5** — Regressão R-51/R-52: "A fazer" idêntico (0, "nada pendente") em toda a sessão —
+      `pendenciasPorPaciente` intocado por construção.
 
 **Na tela:**
-- [ ] **G6** — Endo com odontometria (12 no banco) abre a tabela sem cortar campo nem estourar
-      a coluna de 296px — medir `scrollWidth` vs `clientWidth`, não olhar.
-- [ ] **G7** — Texto longo (>4 linhas) corta com "ver mais" e expande sem empurrar o cockpit
-      pra fora da viewport (gate G1 do contrato do R-46).
-- [ ] **G8** — Light **e** dark: badge de aberto passa AA em ambos.
-- [ ] **G9** — Sem `anotacoes` e sem eventos: entrada não renderiza vazia nem mente — mostra
-      o estado real, sem afirmação clínica inventada.
+- [~] **G6** — Endo com odontometria: **não verificado com card real** (nenhum paciente do
+      dentista logado hoje tem evento de endodontia/implante). Confirmado por medição: a
+      coluna útil do histórico é **294px** ao vivo (bate com a estimativa de 296px da spec),
+      e o `overflow-x-auto` do `EndoCard` é código pré-existente, reusado sem alteração.
+- [~] **G7** — Texto longo: mecanismo confirmado (mede `scrollHeight` vs `clientHeight`,
+      nunca mostra "ver mais" nos 5 textos reais — todos curtos — da sessão, sem falso
+      positivo). **Não verificado com texto realmente >4 linhas** (nenhum candidato real
+      disponível hoje).
+- [x] **G8** — Light **e** dark: badge medido por contraste real (não por olho) —
+      **8.77:1 dark**, **6.54:1 light** (AA pede 4.5:1). Passa os dois com folga.
+- [x] **G9** — Sem `anotacoes` e sem eventos: confirmado ao vivo com a ficha importada de
+      2023 (texto real da importação, nunca uma linha vazia ou genérica).
 
 ## 8. Fora de escopo
 
