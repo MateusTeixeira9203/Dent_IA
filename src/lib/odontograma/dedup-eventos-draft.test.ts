@@ -1,0 +1,87 @@
+/**
+ * R-46d D0 (gate G2) — testes do dedup/merge extraído de FichasTab.tsx. Roda sem framework:
+ *   node --test src/lib/odontograma/dedup-eventos-draft.test.ts
+ */
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { chaveDedupEvento, dedupEventosDraft, mesclarEventosSemPerda } from './dedup-eventos-draft.ts';
+import type { OdontogramaEventoDraft, OdontogramaEventoInput } from '@/types/odontograma';
+
+const draft = (over: Partial<OdontogramaEventoDraft> & { id: string }): OdontogramaEventoDraft => ({
+  tipo: 'carie_restauracao', status: 'indicado', origem: 'clinica',
+  ancora: { nivel: 'dente', dente: 15 }, grupo_id: null, papel_no_grupo: null,
+  observacao: '', realizado_em: null,
+  ...over,
+});
+
+const input = (over: Partial<OdontogramaEventoInput> = {}): OdontogramaEventoInput => ({
+  tipo: 'carie_restauracao', status: 'indicado', origem: 'clinica',
+  ancora: { nivel: 'dente', dente: 15 }, grupo_id: null, papel_no_grupo: null,
+  observacao: '',
+  ...over,
+});
+
+test('dedupEventosDraft: mesma chave, sem assinatura — mantém o de MENOR id', () => {
+  const r = dedupEventosDraft([draft({ id: 'b-maior' }), draft({ id: 'a-menor' })]);
+  assert.equal(r.length, 1);
+  assert.equal(r[0].id, 'a-menor');
+});
+
+test('dedupEventosDraft: evento com assinaturaId NUNCA sai, mesmo com chave repetida', () => {
+  const assinado = draft({ id: 'x', assinaturaId: 'assin-1' });
+  const semAssinatura = draft({ id: 'y' }); // mesma chave semântica de `assinado`
+  const r = dedupEventosDraft([assinado, semAssinatura]);
+  assert.equal(r.length, 2);
+  assert.ok(r.some((e) => e.id === 'x' && e.assinaturaId === 'assin-1'));
+  assert.ok(r.some((e) => e.id === 'y'));
+});
+
+test('dedupEventosDraft: âncoras diferentes (dente diferente) nunca colidem', () => {
+  const r = dedupEventosDraft([
+    draft({ id: 'a', ancora: { nivel: 'dente', dente: 15 } }),
+    draft({ id: 'b', ancora: { nivel: 'dente', dente: 16 } }),
+  ]);
+  assert.equal(r.length, 2);
+});
+
+test('mesclarEventosSemPerda: reextração idêntica é no-op — não duplica nem substitui', () => {
+  const existente = draft({ id: 'ja-no-banco', observacao: 'nota original' });
+  const reextraido = input({ observacao: 'nota que a IA extraiu de novo' }); // mesma chave
+  const r = mesclarEventosSemPerda([existente], [reextraido], '2026-08-04');
+  assert.equal(r.length, 1);
+  assert.equal(r[0].id, 'ja-no-banco');
+  assert.equal(r[0].observacao, 'nota original'); // o que já existia não foi tocado
+});
+
+test('mesclarEventosSemPerda: evento novo com âncora distinta entra', () => {
+  const existente = draft({ id: 'ja-no-banco', ancora: { nivel: 'dente', dente: 15 } });
+  const novo = input({ ancora: { nivel: 'dente', dente: 26 } });
+  const r = mesclarEventosSemPerda([existente], [novo], '2026-08-04');
+  assert.equal(r.length, 2);
+  assert.ok(r.some((e) => e.id === 'ja-no-banco'));
+  assert.ok(r.some((e) => e.ancora.dente === 26 && e.id !== 'ja-no-banco'));
+});
+
+test('mesclarEventosSemPerda: dois eventos NOVOS com a mesma chave entre si dedup antes de entrar', () => {
+  const a = input({ ancora: { nivel: 'dente', dente: 21 } });
+  const b = input({ ancora: { nivel: 'dente', dente: 21 } }); // mesma chave que `a`
+  const r = mesclarEventosSemPerda([], [a, b], '2026-08-04');
+  assert.equal(r.length, 1);
+});
+
+test('mesclarEventosSemPerda: realizado_em só entra pra realizado+clinica (§1.10, invariante #13)', () => {
+  const realizadoClinico = input({ status: 'realizado', origem: 'clinica', ancora: { nivel: 'dente', dente: 11 } });
+  const indicado = input({ status: 'indicado', origem: 'clinica', ancora: { nivel: 'dente', dente: 12 } });
+  const realizadoPreexistente = input({ status: 'realizado', origem: 'preexistente', ancora: { nivel: 'dente', dente: 13 } });
+  const r = mesclarEventosSemPerda([], [realizadoClinico, indicado, realizadoPreexistente], '2026-08-04');
+  const porDente = (d: number) => r.find((e) => e.ancora.dente === d);
+  assert.equal(porDente(11)?.realizado_em, '2026-08-04');
+  assert.equal(porDente(12)?.realizado_em, null);
+  assert.equal(porDente(13)?.realizado_em, null);
+});
+
+test('chaveDedupEvento: faces em ordem diferente geram a MESMA chave (sort interno)', () => {
+  const e1 = draft({ id: 'a', ancora: { nivel: 'face', dente: 15, faces: ['O', 'M'] } });
+  const e2 = draft({ id: 'b', ancora: { nivel: 'face', dente: 15, faces: ['M', 'O'] } });
+  assert.equal(chaveDedupEvento(e1), chaveDedupEvento(e2));
+});

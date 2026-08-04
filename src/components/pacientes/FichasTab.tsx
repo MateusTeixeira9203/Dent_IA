@@ -70,6 +70,7 @@ import { agruparRegistros } from '@/lib/odontograma/agrupar-registros';
 import { agruparPorDente, type SecaoRegistros } from '@/lib/odontograma/agrupar-por-dente';
 import { derivarV2DosEventos } from '@/lib/odontograma/derivar-campos-legado';
 import { agregarGruposAbertos } from '@/lib/odontograma/grupos-abertos';
+import { dedupEventosDraft, mesclarEventosSemPerda } from '@/lib/odontograma/dedup-eventos-draft';
 import type { EvolucaoFormatada } from '@/app/api/dex/formatar-evolucao/route';
 const SignaturePad = dynamic(
   () => import('@/components/fichas/SignaturePad').then(m => m.SignaturePad),
@@ -497,22 +498,6 @@ function eventoViewParaDraft(e: EventoView): OdontogramaEventoDraft {
 }
 
 /**
- * R-30 Parte 2 — colapsa eventos equivalentes antes de montar o payload de save. Entrada
- * repetida do Dex (mesmo tipo/status/origem/âncora/papel) recebia `crypto.randomUUID()`
- * distinto e virava duas linhas cobráveis (achado real: ficha do Renato 27/07, dente 15).
- * Mantém o de menor `id` — determinístico, não depende de ordem de chegada. Evento assinado
- * nunca é candidato a descarte (invariante #2 da R-30): sempre passa direto.
- */
-function chaveDedupEvento(ev: OdontogramaEventoDraft): string {
-  return JSON.stringify([
-    ev.tipo, ev.status, ev.origem,
-    ev.ancora.nivel, ev.ancora.arcada ?? null, ev.ancora.quadrante ?? null, ev.ancora.dente ?? null,
-    [...(ev.ancora.faces ?? [])].sort(),
-    ev.papel_no_grupo,
-  ]);
-}
-
-/**
  * R-30 Parte 3 — une duas notas do mesmo dente em vez de uma substituir a outra: derivada
  * primeiro, texto do formulário depois, sem duplicar linha idêntica.
  */
@@ -521,28 +506,6 @@ function unirObservacoes(derivada: string, doFormulario: string): string {
     .map((l) => l.trim())
     .filter(Boolean);
   return [...new Set(linhas)].join('\n');
-}
-
-function dedupEventosDraft(eventos: OdontogramaEventoDraft[]): OdontogramaEventoDraft[] {
-  const vencedorPorChave = new Map<string, OdontogramaEventoDraft>();
-  const resultado: OdontogramaEventoDraft[] = [];
-
-  for (const ev of eventos) {
-    if (ev.assinaturaId) { resultado.push(ev); continue; }
-
-    const chave = chaveDedupEvento(ev);
-    const atual = vencedorPorChave.get(chave);
-    if (!atual) {
-      vencedorPorChave.set(chave, ev);
-      resultado.push(ev);
-    } else if (ev.id < atual.id) {
-      resultado[resultado.indexOf(atual)] = ev;
-      vencedorPorChave.set(chave, ev);
-    }
-    // senão: `ev` é duplicata com id maior — descartado.
-  }
-
-  return resultado;
 }
 
 /**
@@ -1186,31 +1149,15 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     if (data.alerta_novo) setAlertaNovoDetectado(data.alerta_novo);
     // Camada 2: os eventos viram rascunho, com realizado_em pela mesma regra da consulta
     // (§1.10, invariante #13: só realizado+clínica ganha a data; IA nunca preenche data).
-    // R-47 (achado 1, 31/07; corrigido de novo 31/07 após verificação adversarial) — antes
-    // SUBSTITUÍA eventosDraft inteiro: reabrir uma ficha salva e reorganizar apagava do banco
-    // (RPC 107 deleta por omissão de id) todo evento que a nova extração não recriasse. A 1ª
-    // correção fundia com dedupEventosDraft, mas o desempate de colisão ali é "menor id" —
-    // arbitrário entre um id REAL do banco e um id novo aleatório, ~50% de chance de apagar
-    // o antigo (com detalhe/observação já preenchidos) mesmo assim. Regra segura: o que já
-    // existe NUNCA perde pra uma reextração — se a chave já está em `prev`, o novo é
-    // ignorado (reextrair algo já lançado é no-op). dedupEventosDraft só limpa duplicata
-    // DENTRO da extração nova (seu propósito original, R-30 Parte 2 — a IA emitir o mesmo
-    // evento 2x na mesma leitura). Trade-off aceito e documentado: se o Dex extrai o MESMO
-    // procedimento com status diferente (ex.: indicado → realizado), a chave muda (status
-    // entra na chave) e os dois convivem como cards visíveis — duplicata visível antes de
-    // salvar, não perda silenciosa. Fica pro R-46d resolver com desenho de verdade (merge
-    // de status em vez de ignorar).
-    setEventosDraft((prev) => {
-      const chavesExistentes = new Set(prev.map(chaveDedupEvento));
-      const novos = (data.odontograma_eventos ?? []).map((ev) => ({
-        ...ev,
-        id: crypto.randomUUID(), // R-01 — id estável nasce aqui, na entrada do rascunho
-        realizado_em: ev.status === 'realizado' && ev.origem === 'clinica' ? formData.dataAtendimento : null,
-      }));
-      const novosSemColisao = dedupEventosDraft(novos)
-        .filter((ev) => !chavesExistentes.has(chaveDedupEvento(ev)));
-      return [...prev, ...novosSemColisao];
-    });
+    // R-47 (achado 1, 31/07) + R-46d D0 (extraído pra src/lib/, mesmo comportamento) —
+    // `mesclarEventosSemPerda` nunca deixa o que já existe perder pra uma reextração: se a
+    // chave já está no draft atual, o novo é ignorado (reextrair algo já lançado é no-op).
+    // Trade-off aceito e documentado: se o Dex extrai o MESMO procedimento com status
+    // diferente (ex.: indicado → realizado), a chave muda (status entra na chave) e os dois
+    // convivem como cards visíveis — duplicata visível antes de salvar, não perda silenciosa.
+    setEventosDraft((prev) =>
+      mesclarEventosSemPerda(prev, data.odontograma_eventos ?? [], formData.dataAtendimento),
+    );
     // Mesmo critério do handleEdit (linha 666): sentinela de arcada entre os dentes
     // afetados põe o modo em 'arch' — mantém os botões de seleção coerentes com o
     // que a IA de fato preencheu.    setSharedTeeth([]);
