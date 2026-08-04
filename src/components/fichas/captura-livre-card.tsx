@@ -4,17 +4,15 @@
 // ditado) + anexo (áudio/pdf/docx/txt) → "Organizar com Dex" → preenche o form
 // existente. Não salva nada — quem salva é o FichasTab, dono do formData.
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Mic, MicOff, Paperclip, Loader2, Bot } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useCapturaLivre } from '@/hooks/useCapturaLivre';
+import { extrairTextoDeArquivo } from '@/lib/dex/extrair-texto-arquivo';
 import { VoiceUX } from './voice-ux';
 import { DexAvatar } from '@/components/ui/dex-avatar';
 import type { EvolucaoFormatada } from '@/app/api/dex/formatar-evolucao/route';
-
-const AUDIO_EXTS = ['mp3', 'm4a', 'opus', 'wav', 'webm', 'ogg'];
-const DOC_EXTS = ['pdf', 'docx', 'doc', 'txt'];
 
 // Etapas do feedback progressivo — mesmo texto/timing do modo consulta (§8).
 const ETAPAS = [
@@ -29,9 +27,13 @@ export interface CapturaLivreCardProps {
   /** Form já tem conteúdo? Gate de confirmação antes de sobrescrever (§8 fluxo, passo 4). */
   formDirty: boolean;
   onOrganizado: (evolucao: EvolucaoFormatada) => void;
+  /** R-46d (D8) — "usar este documento de base": `nonce` muda a cada clique, o efeito abaixo
+   *  observa a mudança e faz append no texto atual. Opcional — callers existentes (FichasTab)
+   *  não passam, comportamento 100% preservado. */
+  anexarTexto?: { texto: string; nonce: number };
 }
 
-export function CapturaLivreCard({ pacienteNome, formDirty, onOrganizado }: CapturaLivreCardProps) {
+export function CapturaLivreCard({ pacienteNome, formDirty, onOrganizado, anexarTexto }: CapturaLivreCardProps) {
   const {
     texto,
     setTexto,
@@ -43,6 +45,15 @@ export function CapturaLivreCard({ pacienteNome, formDirty, onOrganizado }: Capt
     detectedProcs,
     isDetecting,
   } = useCapturaLivre({ pacienteNome });
+
+  // R-46d (D8) — append, não substituição: mesmo padrão que `handleArquivo` já usa.
+  const anexarNonceRef = useRef(anexarTexto?.nonce);
+  useEffect(() => {
+    if (anexarTexto == null || anexarTexto.nonce === anexarNonceRef.current) return;
+    anexarNonceRef.current = anexarTexto.nonce;
+    const novo = anexarTexto.texto;
+    setTexto((prev) => (prev ? `${prev}\n\n${novo}` : novo));
+  }, [anexarTexto, setTexto]);
 
   const [isOrganizando, setIsOrganizando] = useState(false);
   const [organizarLabel, setOrganizarLabel] = useState('Organizar com Dex');
@@ -86,31 +97,11 @@ export function CapturaLivreCard({ pacienteNome, formDirty, onOrganizado }: Capt
   const handleArquivo = async (file: File) => {
     setProcessandoArquivo(file.name);
     try {
-      const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-      const isAudio = file.type.startsWith('audio/') || AUDIO_EXTS.includes(ext);
-
-      if (isAudio) {
-        const fd = new FormData();
-        fd.append('audio', file);
-        const res = await fetch('/api/transcrever', { method: 'POST', body: fd });
-        const data = await res.json() as { transcricao?: string; error?: string };
-        if (!res.ok || data.error) throw new Error(data.error ?? 'Erro ao transcrever o áudio.');
-        if (data.transcricao) {
-          const novo = data.transcricao;
-          setTexto(prev => prev ? `${prev}\n${novo}` : novo);
-        }
-      } else if (DOC_EXTS.includes(ext)) {
-        const fd = new FormData();
-        fd.append('arquivo', file);
-        const res = await fetch('/api/extrair-texto', { method: 'POST', body: fd });
-        const data = await res.json() as { texto?: string; error?: string };
-        if (!res.ok || data.error) throw new Error(data.error ?? 'Erro ao extrair texto do arquivo.');
-        if (data.texto) {
-          const novo = data.texto;
-          setTexto(prev => prev ? `${prev}\n${novo}` : novo);
-        }
-      } else {
-        throw new Error('Formato não suportado. Envie áudio, .pdf, .docx, .doc ou .txt.');
+      const resultado = await extrairTextoDeArquivo(file);
+      if (!resultado.ok) throw new Error(resultado.error);
+      if (resultado.texto) {
+        const novo = resultado.texto;
+        setTexto(prev => prev ? `${prev}\n${novo}` : novo);
       }
     } catch (err) {
       console.error('[captura-livre] anexo:', err);
@@ -176,7 +167,7 @@ export function CapturaLivreCard({ pacienteNome, formDirty, onOrganizado }: Capt
             disabled={isTranscribing}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
               micStatus === 'recording'
-                ? 'bg-red-100 text-red-600 hover:bg-red-200 animate-pulse'
+                ? 'bg-coral/10 text-coral-ink hover:bg-coral/20 animate-pulse'
                 : 'bg-teal/10 text-teal-ink hover:bg-teal/20'
             }`}
           >

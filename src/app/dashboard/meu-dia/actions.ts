@@ -9,13 +9,17 @@ import { z } from 'zod';
 import { salvarFicha, type SalvarFichaResult } from '@/server/patients/salvar-ficha';
 import { derivarV2DosEventos } from '@/lib/odontograma/derivar-campos-legado';
 import { hojeBRT } from '@/lib/hora-brt';
-import type { OdontogramaEventoDraft } from '@/types/odontograma';
+import type { OdontogramaEventoDraft, OrtoManutencaoInfo } from '@/types/odontograma';
 
 const salvarVisitaMeuDiaSchema = z.object({
   pacienteId: z.string().uuid(),
   agendamentoId: z.string().uuid(),
   textoVisita: z.string().trim().max(5000),
   eventosDraft: z.array(z.unknown()),
+  alertaNovo: z.string().trim().nullable().optional(), // R-46d D1 — I3
+  // R-46d D1.2 (04/08) — chip "Manutenção ortodôntica" da disclosure "Registrar sem IA".
+  // salvarFicha já aceita este campo (migration 105) — só faltava esta casca repassar.
+  ortoManutencao: z.unknown().nullable().optional(),
 });
 
 export async function salvarVisitaMeuDia(dados: {
@@ -23,6 +27,8 @@ export async function salvarVisitaMeuDia(dados: {
   agendamentoId: string;
   textoVisita: string;
   eventosDraft: OdontogramaEventoDraft[];
+  alertaNovo?: string | null;
+  ortoManutencao?: OrtoManutencaoInfo | null;
 }): Promise<SalvarFichaResult> {
   const parsed = salvarVisitaMeuDiaSchema.safeParse(dados);
   if (!parsed.success) return { ok: false, error: 'Dados inválidos.' };
@@ -43,5 +49,7 @@ export async function salvarVisitaMeuDia(dados: {
     procedimentos: derivado.procedimentos,
     conduta: '',
     odontogramaEventos: dados.eventosDraft,
+    alertaNovo: dados.alertaNovo ?? null,
+    ortoManutencao: dados.ortoManutencao ?? null,
   });
 }

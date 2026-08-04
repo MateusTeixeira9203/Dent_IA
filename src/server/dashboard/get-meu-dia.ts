@@ -145,31 +145,6 @@ export interface MeuDiaVisita {
   importado: boolean;
 }
 
-/** R-55 — 1 ocorrência real de um procedimento (1 linha do banco), dentro de um grupo por
- *  âncora. `data` é a clínica quando existe (fiscalização CRO), senão a de registro. */
-export interface MeuDiaOcorrenciaFeita {
-  id: string;
-  data: string;
-  observacao: string | null;
-  fichaId: string | null;
-}
-
-/** R-55 — acumulado clínico agrupado por âncora (não mais 1 evento solto): a dedup por
- *  âncora do servidor serve só à pendência agora (ver `chaveAncora`); aqui ela vira
- *  AGREGAÇÃO — nenhuma ocorrência realizada é descartada, `ocorrencias` tem todas, mais
- *  recente primeiro. */
-export interface MeuDiaEventoFeito {
-  /** Chave de React (a mesma `chaveAncora` do servidor) — nunca um id de banco. */
-  chave: string;
-  tipo: TipoRegistroOdontograma;
-  dente: number | null;
-  arcada: Arcada | null;
-  quadrante: QuadranteFDI | null;
-  faces: FaceDental[];
-  origem: OrigemRegistro;
-  ocorrencias: MeuDiaOcorrenciaFeita[];
-}
-
 export interface MeuDiaOrto {
   valor: OrtoManutencaoInfo;
   data: string;
@@ -179,8 +154,6 @@ export interface MeuDiaOrto {
 export interface MeuDiaContexto {
   /** C0 — substitui `ultimaVisita`: histórico inteiro (`fichasRecentes`), não só a 1ª. */
   visitas: MeuDiaVisita[];
-  /** C0 — novo. Estado clínico acumulado (painel "Já feito" do cockpit). */
-  jaFeito: MeuDiaEventoFeito[];
   pendencias: MeuDiaPendencia[];
   orto: MeuDiaOrto | null;
   /** R-46g (D9) — mesma fonte e parse do chip de alerta do hero (`next-appointment-hero.tsx`
@@ -565,7 +538,6 @@ export async function getMeuDiaData({
   for (const pid of pacienteIds) {
     const fichas = fichasPorPaciente.get(pid) ?? [];
     const eventosDoPaciente = eventosPorPaciente.get(pid) ?? [];
-    const eventosRealizados = eventosDoPaciente.filter((e) => e.status === 'realizado');
     // R-58 — lookup pra `eventoParaVisita` resolver `indicadoEm`. `fichas` já é TODAS as
     // fichas deste paciente (sem `.limit()`), então todo `ficha_id` referenciado por um
     // evento deste paciente está aqui.
@@ -617,30 +589,6 @@ export async function getMeuDiaData({
       };
     });
 
-    // R-55 — acumulado clínico inteiro (não só a última visita), agrupado por âncora como
-    // AGREGAÇÃO — nenhuma ocorrência é descartada. `eventosRealizados` já vem "mais recente
-    // primeiro" (ordem da query), então tanto os grupos quanto `ocorrencias` dentro de cada
-    // um nascem na ordem certa sem sort extra.
-    const gruposJaFeito = new Map<string, MeuDiaEventoFeito>();
-    for (const e of eventosRealizados) {
-      const chave = chaveAncora(e);
-      let grupo = gruposJaFeito.get(chave);
-      if (!grupo) {
-        grupo = {
-          chave, tipo: e.tipo, dente: e.dente, arcada: e.arcada, quadrante: e.quadrante,
-          faces: e.faces ?? [], origem: e.origem, ocorrencias: [],
-        };
-        gruposJaFeito.set(chave, grupo);
-      }
-      grupo.ocorrencias.push({
-        id: e.id,
-        data: e.realizado_em ?? e.registrado_em,
-        observacao: e.observacao,
-        fichaId: e.ficha_id,
-      });
-    }
-    const jaFeito: MeuDiaEventoFeito[] = [...gruposJaFeito.values()];
-
     // Mesma lógica do `ultimaOrto` (FichasTab.tsx): itera desc, primeira ficha com
     // orto_manutencao decide; se ela já está fora da janela de 120 dias, não há orto ativo.
     let orto: MeuDiaOrto | null = null;
@@ -653,7 +601,6 @@ export async function getMeuDiaData({
 
     contextoPorPaciente[pid] = {
       visitas,
-      jaFeito,
       pendencias: pendenciasPorPaciente.get(pid) ?? [],
       orto,
       alertas: parseAlertas(observacoesPorPaciente.get(pid) ?? null),

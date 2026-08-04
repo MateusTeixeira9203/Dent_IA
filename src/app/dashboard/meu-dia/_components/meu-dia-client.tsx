@@ -15,30 +15,40 @@
 // `key={agendamentoId}` do RegistrarPainel não alcança mais esses 3 campos. O reset ao
 // trocar de paciente vira explícito (comparação de id abaixo) — sem isso, rascunho de um
 // paciente vaza pro próximo (perda/contaminação de dado clínico).
-import { useMemo, useState } from 'react';
+//
+// C6 (04/08) — jaFeito sai de vez. Colunas redistribuídas (§2.6): esquerda ganha "Concluídos
+// hoje" (migrado) + "Anexar documentos" (novo, R-46d D8); direita perde os dois.
+//
+// 04/08 (revisão, ao vivo) — o painel do dente voltou a renderizar em `registrar-painel.tsx`
+// (flutua ao lado do odontograma, card próprio) — `gruposAbertos` volta pra lá também, e
+// `colapsarDireita` (morto pelo C6 original) volta ao `CockpitGrid`: enquanto o painel está
+// aberto, a direita esconde e devolve o espaço pro centro, senão o odontograma perderia
+// largura de verdade (a mesma regressão WCAG que o C6 original mediu e corrigiu).
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { AnimatePresence } from 'motion/react';
 import { AlertCircle } from 'lucide-react';
-import { atualizarStatusEncaminhado, encaminharProcedimento } from '@/app/consulta/[agendamentoId]/actions';
+import {
+  atualizarStatusEncaminhado, encaminharProcedimento, getGruposAbertos,
+} from '@/app/consulta/[agendamentoId]/actions';
 import { EncaminharBar } from '@/components/fichas/encaminhar-bar';
 import { Rail } from './rail';
 import { CockpitGrid } from './cockpit-grid';
 import { HistoricoBloco } from './historico-bloco';
+import { AnexarDocumentosBloco } from './anexar-documentos-bloco';
 import { AFazerBloco } from './a-fazer-bloco';
-import { JaFeitoBloco } from './ja-feito-bloco';
 import { NestaSessaoBloco } from './nesta-sessao-bloco';
 import { RegistrarPainel, pendenciaParaDraft } from './registrar-painel';
 import { hojeBRT } from '@/lib/hora-brt';
 import type { MeuDiaData, MeuDiaPendencia } from '@/server/dashboard/get-meu-dia';
 import type { OdontogramaEventoDraft } from '@/types/odontograma';
+import type { GrupoAberto } from '@/lib/odontograma/grupos-abertos';
 
 interface MeuDiaClientProps extends MeuDiaData {
   agendamentoInicialId?: string;
 }
-
-type AbertoDireita = 'aFazer' | 'jaFeito' | 'concluidosHoje' | 'novosProcedimentos' | null;
 
 export function MeuDiaClient({
   slots, contextoPorPaciente, agendamentoInicialId, catalogoProcedimentos, meuDentistaId,
@@ -61,9 +71,16 @@ export function MeuDiaClient({
   const [eventosDraft, setEventosDraft] = useState<OdontogramaEventoDraft[]>([]);
   const [denteAberto, setDenteAberto] = useState<number | null>(null);
   const [textoVisita, setTextoVisita] = useState('');
+  const [gruposAbertos, setGruposAbertos] = useState<GrupoAberto[]>([]);
+  /** R-46d D8 — "Anexar documentos": preso ao paciente, sem persistência (mesmo reset de
+   *  eventosDraft/textoVisita abaixo). `documentoNonce` sinaliza "usar como base" pro campo
+   *  mágico (append, nunca substituição — captura-livre-card.tsx). */
+  const [documentoNome, setDocumentoNome] = useState<string | null>(null);
+  const [documentoTexto, setDocumentoTexto] = useState<string | null>(null);
+  const [documentoNonce, setDocumentoNonce] = useState(0);
 
   // Reset explícito ao trocar de paciente (contrato §5.4) — o `key={agendamentoId}` do
-  // RegistrarPainel não alcança mais estes 3 campos, que agora moram aqui. Ajuste durante o
+  // RegistrarPainel não alcança mais estes campos, que agora moram aqui. Ajuste durante o
   // render (comparando o id anterior), não `useEffect`: é o padrão que o React recomenda pra
   // "resetar estado quando uma prop muda" — evita o passe de render extra do efeito, e o lint
   // do projeto (`react-hooks/set-state-in-effect`) bloqueia a versão com efeito.
@@ -71,6 +88,15 @@ export function MeuDiaClient({
   const [modoEncaminhar, setModoEncaminhar] = useState(false);
   const [selecionadosEncaminhar, setSelecionadosEncaminhar] = useState<Set<string>>(new Set());
   const [destinoEncaminhar, setDestinoEncaminhar] = useState<string | null>(null);
+
+  // 04/08 (pedido dele, ao vivo) — cada bloco abre/fecha independente. Nada de "1 aberto por
+  // vez": ele quer liberdade de deixar quantos quiser abertos ao mesmo tempo. Substituiu o
+  // antigo `abertoEsquerda`/`abertoDireita` (valor único, fechava os irmãos ao abrir um).
+  const [historicoAberto, setHistoricoAberto] = useState(true);
+  const [anexosAberto, setAnexosAberto] = useState(false);
+  const [concluidosHojeAberto, setConcluidosHojeAberto] = useState(false);
+  const [aFazerAberto, setAFazerAberto] = useState(true);
+  const [novosProcedimentosAberto, setNovosProcedimentosAberto] = useState(false);
 
   const [idAoResetar, setIdAoResetar] = useState(selecionadoId);
   if (selecionadoId !== idAoResetar) {
@@ -83,15 +109,27 @@ export function MeuDiaClient({
     setModoEncaminhar(false);
     setSelecionadosEncaminhar(new Set());
     setDestinoEncaminhar(null);
+    // D8 — documento anexado é do paciente anterior, não sobrevive à troca.
+    setDocumentoNome(null);
+    setDocumentoTexto(null);
   }
 
-  const [abertoEsquerda, setAbertoEsquerda] = useState<'historico' | null>('historico');
-  const [abertoDireita, setAbertoDireita] = useState<AbertoDireita>('aFazer');
   /** R-52 — pendência recebida sendo concluída agora (trava o botão durante a escrita). */
   const [concluindoId, setConcluindoId] = useState<string | null>(null);
 
   const slotSelecionado = selecionadoId ? (slots.find((s) => s.agendamentoId === selecionadoId) ?? null) : null;
   const contexto = slotSelecionado ? contextoPorPaciente[slotSelecionado.pacienteId] : null;
+
+  // C6 — o Sheet precisa da mesma lista que o painel do dente sempre recebeu; migrado de
+  // registrar-painel.tsx (era `useEffect` local ali, key `pacienteId`). Dep proposital só no
+  // id, não no objeto inteiro — refetch só quando o PACIENTE muda, mesmo padrão de antes.
+  useEffect(() => {
+    if (!slotSelecionado) return;
+    let cancelado = false;
+    getGruposAbertos(slotSelecionado.pacienteId).then((g) => { if (!cancelado) setGruposAbertos(g); });
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slotSelecionado?.pacienteId]);
 
   // C2 (§5.6) — trava 1: limpa o rascunho AGORA, local e síncrono, não espera o refresh do
   // servidor. Fecha a janela de corrida de um duplo clique rápido logo após salvar (o
@@ -169,6 +207,16 @@ export function MeuDiaClient({
     router.refresh();
   }
 
+  // R-46d D8 — anexar documento (caixa embaixo do Histórico) e "usar este documento de base"
+  // (empurra pro campo mágico via nonce, append nunca substituição).
+  function handleAnexado(nome: string, texto: string) {
+    setDocumentoNome(nome);
+    setDocumentoTexto(texto);
+  }
+  function handleUsarComoBase() {
+    setDocumentoNonce((n) => n + 1);
+  }
+
   // 03/08 — o rascunho da sessão vira 2 blocos pelo mesmo `status` que o chip Registrar já
   // decide: 'realizado' fica visível em "Concluídos hoje", 'indicado' em "Novos
   // procedimentos" (é o que sobra pendente depois de salvar e vira base do orçamento).
@@ -211,31 +259,53 @@ export function MeuDiaClient({
             </Link>
           </div>
           <CockpitGrid
-            colapsarDireita={denteAberto != null}
             esquerda={
-              <HistoricoBloco
-                visitas={contexto.visitas}
-                pacienteId={slotSelecionado.pacienteId}
-                pacienteNome={slotSelecionado.pacienteNome}
-                onImportado={() => router.refresh()}
-                aberto={abertoEsquerda === 'historico'}
-                onToggle={() => setAbertoEsquerda((a) => (a === 'historico' ? null : 'historico'))}
-              />
+              <>
+                <HistoricoBloco
+                  visitas={contexto.visitas}
+                  pacienteId={slotSelecionado.pacienteId}
+                  pacienteNome={slotSelecionado.pacienteNome}
+                  onImportado={() => router.refresh()}
+                  aberto={historicoAberto}
+                  onToggle={() => setHistoricoAberto((a) => !a)}
+                />
+                <AnexarDocumentosBloco
+                  documentoNome={documentoNome}
+                  documentoTexto={documentoTexto}
+                  onAnexado={handleAnexado}
+                  onUsarComoBase={handleUsarComoBase}
+                  aberto={anexosAberto}
+                  onToggle={() => setAnexosAberto((a) => !a)}
+                />
+                <NestaSessaoBloco
+                  id="concluidos-hoje"
+                  titulo="Concluídos hoje"
+                  vazio="Nada concluído ainda nesta consulta."
+                  eventos={concluidosHoje}
+                  onDenteClick={setDenteAberto}
+                  aberto={concluidosHojeAberto}
+                  onToggle={() => setConcluidosHojeAberto((a) => !a)}
+                />
+              </>
             }
             centro={
               <RegistrarPainel
                 key={slotSelecionado.agendamentoId}
                 pacienteId={slotSelecionado.pacienteId}
                 agendamentoId={slotSelecionado.agendamentoId}
+                pacienteNome={slotSelecionado.pacienteNome}
                 catalogoProcedimentos={catalogoProcedimentos}
                 eventosDraft={eventosDraft}
                 onEventosDraftChange={setEventosDraft}
                 denteAberto={denteAberto}
                 onDenteAbertoChange={setDenteAberto}
+                gruposAbertos={gruposAbertos}
                 textoVisita={textoVisita}
                 onTextoVisitaChange={setTextoVisita}
                 temFichaHoje={slotSelecionado.temFichaHoje}
                 onSalvo={handleSalvo}
+                anexarTexto={documentoTexto != null ? { texto: documentoTexto, nonce: documentoNonce } : undefined}
+                orto={contexto.orto}
               />
             }
             direita={
@@ -251,22 +321,8 @@ export function MeuDiaClient({
                   selecionados={selecionadosEncaminhar}
                   onToggleModoEncaminhar={toggleModoEncaminhar}
                   onToggleSelecao={toggleSelecaoEncaminhar}
-                  aberto={abertoDireita === 'aFazer'}
-                  onToggle={() => setAbertoDireita((a) => (a === 'aFazer' ? null : 'aFazer'))}
-                />
-                <JaFeitoBloco
-                  jaFeito={contexto.jaFeito}
-                  aberto={abertoDireita === 'jaFeito'}
-                  onToggle={() => setAbertoDireita((a) => (a === 'jaFeito' ? null : 'jaFeito'))}
-                />
-                <NestaSessaoBloco
-                  id="concluidos-hoje"
-                  titulo="Concluídos hoje"
-                  vazio="Nada concluído ainda nesta consulta."
-                  eventos={concluidosHoje}
-                  onDenteClick={setDenteAberto}
-                  aberto={abertoDireita === 'concluidosHoje'}
-                  onToggle={() => setAbertoDireita((a) => (a === 'concluidosHoje' ? null : 'concluidosHoje'))}
+                  aberto={aFazerAberto}
+                  onToggle={() => setAFazerAberto((a) => !a)}
                 />
                 <NestaSessaoBloco
                   id="novos-procedimentos"
@@ -274,11 +330,15 @@ export function MeuDiaClient({
                   vazio="Nenhum procedimento novo indicado ainda."
                   eventos={novosProcedimentos}
                   onDenteClick={setDenteAberto}
-                  aberto={abertoDireita === 'novosProcedimentos'}
-                  onToggle={() => setAbertoDireita((a) => (a === 'novosProcedimentos' ? null : 'novosProcedimentos'))}
+                  aberto={novosProcedimentosAberto}
+                  onToggle={() => setNovosProcedimentosAberto((a) => !a)}
                 />
               </>
             }
+            /* 04/08 (revisão) — direita colapsa enquanto o painel do dente está aberto: devolve
+               o espaço pro centro, senão o odontograma+painel juntos espremeriam o dente
+               abaixo de 24px (a mesma regressão que o C6 original mediu e corrigiu). */
+            colapsarDireita={denteAberto != null}
           />
           {/* R-52 — barra do modo seleção, fixa no rodapé (mesmo componente do FichasTab,
               R-04 Fase 3, zero mudança nele). */}

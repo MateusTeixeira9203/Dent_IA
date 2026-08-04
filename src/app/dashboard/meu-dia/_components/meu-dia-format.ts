@@ -1,4 +1,4 @@
-// C1 — helpers compartilhados por historico-bloco/a-fazer-bloco/ja-feito-bloco. Migrados de
+// C1 — helpers compartilhados por historico-bloco/a-fazer-bloco. Migrados de
 // contexto-coluna.tsx (SAI nesta fatia, vira os blocos da coluna direita/esquerda).
 
 import type { Arcada, FaceDental, QuadranteFDI } from '@/types/odontograma';
