@@ -1,6 +1,9 @@
 # R-55 — Histórico sem perda de dado (dedup por âncora só serve à pendência)
 
-> **SPEC** · fase `proposta` — aguardando aprovação
+> **SPEC** · fase **`aprovada`** · 🟡 **codada, testada ao vivo e commitada em 03/08**
+> (`886731c`) — falta só o push. ⚠️ *Cabeçalho corrigido em 03/08 (noite): dizia `proposta —
+> aguardando aprovação` depois de o item já estar no ar, e era a fonte mais autoritativa
+> mentindo (X9 do MAPA).*
 > **Modelo:** Opus 5 (contrato de servidor + decisão de agrupamento na apresentação)
 > **Depende de:** nada. Zero migration, zero escrita nova, zero query nova.
 > **Bloqueia:** histórico detalhado (absorve "Já feito"), C6 do cockpit — nenhum dos dois

@@ -1,50 +1,70 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-08-03 16:00 · sessão #14
-> **Item ativo:** R-46 (Meu dia) — fatia cockpit · **Modo:** nenhum (sessão encerrada)
+> **ESTADO** · atualizado 2026-08-03 (noite) · sessão #15
+> **Item ativo:** R-46 (Meu dia) · **Modo:** planejamento → execução (R-51/R-52 em código)
 
 ## Agora
 
-**O cockpit (C0-C5) está todo codado, testado ao vivo e commitado.** Nesta sessão: testei
-C2/C3 (pendência da anterior) — funcionam; achei e corrigi 2 bugs reais no Registrar (Enter
-não selecionava, boca-toda exigia "onde" que não existe); investiguei e corrigi um bug de
-perda de dado real em produção (R-55 — procedimento repetido sumia do histórico); fechei C5
-(seleção múltipla no odontograma); implementei o R-46c inteiro (colar histórico do Word,
-migration incluída). **9 commits, working tree limpo, nada empurrado.**
+**Sessão de spec + mapa, com execução parcial no meio.** Escrevi 4 specs novas, montei o
+**[MAPA-MEU-DIA.md](MAPA-MEU-DIA.md)** (o documento que passa a decidir o que entra e o que
+não entra no Meu dia), e codei R-51 + metade do R-52.
 
-### Os documentos que governam
-- **Cockpit:** [Spec](specs/R-46-cockpit.md) (`aprovada`) · [Contrato](specs/R-46-cockpit-contrato.md) · [Artefato v2](artefatos/R-46-cockpit.html) (`aprovado`).
-- **R-55:** [spec](specs/R-55-historico-sem-perda-de-dado.md) (`aprovada`, codada).
-- **R-46c:** [spec](specs/R-46c-colar-do-word.md) (`aprovada`, codada — emendada 03/08 pros arquivos reais do cockpit).
+**Nada foi commitado.** 5 arquivos novos em `plans/`, 4 modificados em `src/`, `ROADMAP.md`
+editado. Os 15 commits anteriores continuam sem push (produção está em **31/07**).
 
-### O que falta no R-46
-- **C6** — layout novo que ele descreveu (tirar "Já feito", painel do dente abre na direita,
-  fecha os blocos automaticamente). Só uma decisão fechada (fecha ao abrir o painel) —
-  precisa de spec antes de codar.
-- **R-46d** — campo mágico com IA. **Não é** "adiciona um botão organizar no R-46c" — é 1
-  componente com responsabilidade completa (arquivo, voz, ou estruturar em procedimento).
-  `CapturaLivreCard` (perfil) já faz os 3; a decisão de arquitetura é se ele migra pro Meu dia
-  ou nasce um componente novo compartilhado. Ver `memory/project_campo_magico_unico.md`. Sem
-  spec ainda.
+### O documento que passa a governar
+
+**[MAPA-MEU-DIA.md](MAPA-MEU-DIA.md)** — a função do Meu dia nas palavras dele, a régua de
+admissão (fixo / contextual / sob demanda), 7 defeitos, 10 contradições vivas, 7 buracos sem
+item, e a direção de design. **Ler antes de propor qualquer coisa nova pra esta tela.**
+
+O fato que ele estabelece e governa todo o resto: **a tela tem ~441px de orçamento vertical
+e já está estourada** — o G1 do contrato provavelmente já falha hoje, antes de orçamento,
+retorno e orto entrarem. Coisa nova só entra pagando.
+
+### Specs escritas nesta sessão
+- [R-51-53](specs/R-51-53-modelo-multissessao.md) — multi-sessão · **R-54 ✂️ cortado** (não era defeito)
+- [R-46-C6](specs/R-46-C6-layout-cockpit.md) — `aprovada`. jaFeito sai de vez, painel do dente vira resumo + `Sheet`
+- [R-46d](specs/R-46d-campo-magico.md) — campo mágico · D0 pronta pra codar
+- [R-57](specs/R-57-atrito-faixa-rapida.md) — encaixe · observação · (repetir, ⛔ bloqueada)
+
+### Código escrito (não commitado, 🟡)
+- **R-51** — `vencedorPorAncora` pula evento com `grupo_id`; `indicado` de grupo vira pendência
+  direta; `emAndamento` derivado. Typecheck/lint/build limpos. **Lógica provada com dado
+  sintético**, incluindo reprodução do bug original. Tela **não** verificada ao vivo.
+- **R-52 (metade)** — servidor devolve `dentistaId`/`encaminhadoParaId`/`destinosEncaminhar`/
+  `meuDentistaId`; "A fazer" filtra pra (minha ∧ não encaminhada) ∨ (encaminhada pra mim), com
+  "concluir →" via RPC 109. **Falta:** modo seleção + `EncaminharBar`, e sucesso parcial no
+  `encaminharProcedimento`.
 
 ## Travado
 
-Nada tecnicamente. As decisões pendentes são de **prioridade**, não de bloqueio técnico.
+- **R-57 F3** — conflita com decisão dele de 31/07 ("sem frequência de uso").
+
+Nada mais travado tecnicamente. C6 e R-46d D1 (moldura) fecharam: `Sheet` pro painel do dente
+(C6), expansão in-place pro campo mágico (R-46d D4, já resolvido antes — eram duas decisões
+diferentes, não uma). As 4 contradições C1/C6/C7/C8 e o conflito do `jaFeito` fecharam
+03/08 (noite) — ver specs.
 
 ## Esperando você
 
-- [ ] **Decidir o push** — 9 commits prontos (cockpit C0-C5, R-55, pontual Registrar, R-48,
-      R-46c + migration, docs). Nada foi testado em produção ainda.
-- [ ] **Escrever a spec do R-46d** (campo mágico único) — decisão de arquitetura real: migrar
-      `CapturaLivreCard` pro Meu dia, ou construir um componente novo compartilhado.
-- [ ] **Escrever a spec do C6** (layout novo do cockpit).
-- [ ] **Decidir a ordem:** C6, R-46d, ou a spec do bloco R-51-54 (modelo multi-sessão)?
-- [ ] **R-56** — dois surfaces a mais (`fichasRecentes`, lista do `FichasTab`) vazam ficha sem
-      checar `origem`, achado testando o R-46c hoje. Pequeno, não urgente.
-- [ ] **R-49 A1** — a tabela de especialidade deve abrir sozinha? (66% dos endos vazios)
-- [ ] Itens mais antigos: R-28 Parte 3 · gate de 2 contas · R-40 · R-44.
+- [x] ~~**4 contradições**~~ ✅ resolvidas 03/08 (noite): **C1** orçamento usa
+      `filtro-responsavel.ts` · **C6** CTA é **"Salvar"** até o R-46h · **C7** mantém sem
+      auto-avanço · **C8** responsivo entra em toda fatia, P8 morre.
+- [x] ~~**Conflito do `jaFeito`**~~ ✅ resolvido 03/08 (noite): **some de vez.** *"O já feito
+      será tudo registrado no histórico, referente àquela consulta, aquela data."* O dado
+      sobrevive em `visitas[].eventos` (R-55, já fiel) — nada fica inacessível. Spec C6 §4/§4.0
+      reescritos.
+- [ ] **Push** — 15 commits (não 9: há 5 de 01/08 que nunca subiram, incluindo o que faz o
+      Meu dia virar a porta do atendimento). Ele optou por não subir nesta sessão.
+- [ ] **R-46h e "marcar retorno"** — os dois exemplos que ele deu, e nenhum tem spec.
+- [ ] **R-49 A1** — a tabela de especialidade abre sozinha? (66% dos endos vazios)
+- [ ] Antigos: R-56 · R-28 Parte 3 · gate de 2 contas · R-40 · R-44.
 
 ## Próximo da fila
 
-Push do que está pronto, depois C6/R-46d/R-51-54 (todos precisam de spec antes de codar).
-Fila completa no [ROADMAP](ROADMAP.md).
+Fase 0 fechada (specs corrigidas, aprovadas). Execução em andamento nesta sessão: D1 (queixa
+`null`) → fix do filtro em `a-fazer-bloco.tsx` (usar `filtro-responsavel.ts`) → terminar R-52
+(seleção + `EncaminharBar`) → R-46d D0 → R-53. **R-51 codado mas não verificado ao vivo** —
+precisa do pane do browser exibido; verificação fica pendente até isso. C6 + R-46d D1 (UI
+nova, Sheet) entram depois, com D5 (piso 36px) e a medição real do G1 como gate de entrada.

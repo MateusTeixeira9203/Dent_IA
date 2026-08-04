@@ -76,6 +76,49 @@ Não existe botão de "aceitar tudo" porque **não existe passo de aceite**. A t
 revisão; corrigir uma célula já é conferir a linha. Isso responde ao guarda-corpo do ECRI Rec D
 (≈100% de aceite sem edição = teatro) sem inventar métrica nova.
 
+### ⚠️ EMENDA 04/08 — D1 relaxado: a IA PODE preencher o número
+
+**Decisão dele, 04/08**, revogando parte do D1:
+
+> *"De todo jeito o dentista vai verificar. Se já tiver certo, ótimo, ganhamos pontos; se tiver
+> errado, é uma correção normal. E a gente pode dar prioridade ainda mais pra quando tiver
+> essas operações que entram números, milímetros: o procedimento com a tabela **fica aberto** —
+> o único que vai ficar aberto é esse, porque ele é necessário."*
+
+**Por que a objeção original caiu.** O D1 comparava *número da IA possivelmente errado* contra
+*número certo digitado à mão*. Essa não é a comparação real. O baseline medido nesta mesma spec
+é **66% dos endos com odontometria vazia** — campo em branco não é o estado seguro, é **ausência
+de prontuário**. Uma tabela pré-preenchida que o dentista é obrigado a olhar ganha de um
+formulário que dois terços das vezes nunca é preenchido.
+
+**A trava que torna isso seguro é dele:** a tabela de um procedimento com campo numérico
+**nasce aberta**, e é a **única** que abre por padrão. Isso converte "preenchido em silêncio"
+em "apresentado pra revisão" — que era exatamente o modo de falha que o D1 temia.
+
+**O que muda:**
+
+| | Antes (D1 original) | Depois (emenda 04/08) |
+|---|---|---|
+| Quem lê o número | só parser determinístico | parser determinístico **ou** a IA do campo mágico |
+| Tabela com número | abre como as outras | **abre sozinha, sempre** |
+| Célula preenchida por máquina | borda teal (já previsto) | idem — **provenance continua obrigatória** |
+
+**O que NÃO muda, e fica mais importante ainda:**
+
+- **I5 (recusa em vez de chute) vira o guarda-corpo principal.** Com LLM no caminho, a validação
+  de faixa clínica deixa de ser detalhe: a IA emite `45mm` de comprimento radicular sem piscar,
+  e é a faixa que barra. Número fora da faixa ou fora da resolução da régua (0,5 mm) **continua
+  sendo recusado**, nunca arredondado.
+- **I1** — campo que o texto não mencionou continua `null`. A IA preenche o que **foi dito**,
+  nunca completa o que faltou.
+- **I4** — merge nunca sobrescreve célula já preenchida pelo dentista.
+- O parser determinístico **não morre**: quando o texto vier semi-estruturado
+  (`MV 21,5 lima 15/35`), ele resolve sem gastar token nem inferir.
+
+**Risco aceito conscientemente e registrado:** ancoragem. Número plausível já preenchido recebe
+menos escrutínio que campo vazio. A mitigação é a tabela aberta + a marca de proveniência na
+célula — não há como zerar esse risco, e ele foi aceito com o número dos 66% na mão.
+
 **Estados de célula** (desenhados no artefato do cockpit §4):
 - **Veio do texto/voz:** borda teal, editável no lugar.
 - **Parser recusou:** mostra **o que ouviu**, nunca um palpite — em **coral tracejado**, que é a
@@ -86,7 +129,11 @@ revisão; corrigir uma célula já é conferir a linha. Isso responde ao guarda-
 ## 4. Invariantes
 
 - [ ] **I1** — Campo não ditado fica `null`, **nunca inferido** (herda a I5 do `endo.ts`).
-- [ ] **I2** — Zero LLM no caminho de qualquer número clínico (herda a I6 do `perio.ts`).
+- [ ] ~~**I2**~~ — ⚠️ **REVOGADA em 04/08** (ver emenda no §3). Era *"zero LLM no caminho de
+      qualquer número clínico"*. **Substituída por:** a IA pode preencher número clínico, desde
+      que (a) a tabela do procedimento **abra sozinha**, (b) a célula carregue marca de
+      proveniência, e (c) a **I5 valide a faixa** — a validação de faixa deixa de ser rede de
+      segurança e vira o guarda-corpo principal.
 - [ ] **I3** — Nada sai do texto sem virar **linha ou dúvida**: fragmento com número que não
       ancorou em canal produz dúvida com o texto cru. Silêncio aqui é perda de dado.
 - [ ] **I4** — Merge nunca sobrescreve: canal já preenchido que reaparece com valor diferente
