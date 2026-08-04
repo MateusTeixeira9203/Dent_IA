@@ -18,7 +18,11 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { toast } from 'sonner';
+import { AnimatePresence } from 'motion/react';
 import { AlertCircle } from 'lucide-react';
+import { atualizarStatusEncaminhado, encaminharProcedimento } from '@/app/consulta/[agendamentoId]/actions';
+import { EncaminharBar } from '@/components/fichas/encaminhar-bar';
 import { Rail } from './rail';
 import { CockpitGrid } from './cockpit-grid';
 import { HistoricoBloco } from './historico-bloco';
@@ -36,7 +40,10 @@ interface MeuDiaClientProps extends MeuDiaData {
 
 type AbertoDireita = 'aFazer' | 'jaFeito' | 'concluidosHoje' | 'novosProcedimentos' | null;
 
-export function MeuDiaClient({ slots, contextoPorPaciente, agendamentoInicialId, catalogoProcedimentos }: MeuDiaClientProps) {
+export function MeuDiaClient({
+  slots, contextoPorPaciente, agendamentoInicialId, catalogoProcedimentos, meuDentistaId,
+  destinosEncaminhar,
+}: MeuDiaClientProps) {
   const router = useRouter();
 
   const defaultAgendamentoId = useMemo(() => {
@@ -60,16 +67,28 @@ export function MeuDiaClient({ slots, contextoPorPaciente, agendamentoInicialId,
   // render (comparando o id anterior), não `useEffect`: é o padrão que o React recomenda pra
   // "resetar estado quando uma prop muda" — evita o passe de render extra do efeito, e o lint
   // do projeto (`react-hooks/set-state-in-effect`) bloqueia a versão com efeito.
+  /** R-52 — modo seleção pra encaminhar em lote. Mesmo padrão do FichasTab (R-04 Fase 3). */
+  const [modoEncaminhar, setModoEncaminhar] = useState(false);
+  const [selecionadosEncaminhar, setSelecionadosEncaminhar] = useState<Set<string>>(new Set());
+  const [destinoEncaminhar, setDestinoEncaminhar] = useState<string | null>(null);
+
   const [idAoResetar, setIdAoResetar] = useState(selecionadoId);
   if (selecionadoId !== idAoResetar) {
     setIdAoResetar(selecionadoId);
     setEventosDraft([]);
     setDenteAberto(null);
     setTextoVisita('');
+    // Trocar de paciente com o modo de encaminhar ligado deixaria a barra selecionando
+    // pendência do paciente ERRADO (contexto.pendencias troca, os ids selecionados não).
+    setModoEncaminhar(false);
+    setSelecionadosEncaminhar(new Set());
+    setDestinoEncaminhar(null);
   }
 
   const [abertoEsquerda, setAbertoEsquerda] = useState<'historico' | null>('historico');
   const [abertoDireita, setAbertoDireita] = useState<AbertoDireita>('aFazer');
+  /** R-52 — pendência recebida sendo concluída agora (trava o botão durante a escrita). */
+  const [concluindoId, setConcluindoId] = useState<string | null>(null);
 
   const slotSelecionado = selecionadoId ? (slots.find((s) => s.agendamentoId === selecionadoId) ?? null) : null;
   const contexto = slotSelecionado ? contextoPorPaciente[slotSelecionado.pacienteId] : null;
@@ -88,11 +107,79 @@ export function MeuDiaClient({ slots, contextoPorPaciente, agendamentoInicialId,
     setEventosDraft([...eventosDraft, pendenciaParaDraft(p, hojeBRT())]);
   }
 
+  // R-52 — pendência encaminhada A MIM tem caminho de escrita PRÓPRIO, e isso não é
+  // preferência de UX: o evento pertence a outro dentista, então o upsert do rascunho
+  // (`pendenciaParaDraft` reusa o id original) bate na RLS `odontograma_eventos_write_own`,
+  // afeta 0 linhas, e 0 linhas NÃO é erro no Postgres — gravaria nada dizendo que gravou.
+  // A RPC 109 (`concluir_evento_encaminhado`) é a escrita estreita do destino: valida
+  // clínica + `encaminhado_para = eu` + ficha não assinada, e só toca status/realizado_em.
+  //
+  // Conclui na hora, fora do "Salvar" da visita — o rótulo do botão diz "concluir →" em vez
+  // de "fazer hoje →" justamente pra não prometer o mesmo gesto duas vezes.
+  async function concluirRecebida(p: MeuDiaPendencia) {
+    setConcluindoId(p.id);
+    const res = await atualizarStatusEncaminhado({
+      eventoIds: [p.id],
+      novoStatus: 'realizado',
+      realizadoEm: hojeBRT(),
+    });
+    setConcluindoId(null);
+    if (!res.ok) {
+      toast.error(res.error ?? 'Não foi possível concluir o procedimento.');
+      return;
+    }
+    toast.success('Procedimento concluído.');
+    router.refresh();
+  }
+
+  // R-52 — modo seleção pra encaminhar em lote (mesmo mecanismo do FichasTab, R-04 Fase 3):
+  // liga o modo, marca ids, escolhe 1 destino, confirma em 1 chamada batch.
+  function sairModoEncaminhar() {
+    setModoEncaminhar(false);
+    setSelecionadosEncaminhar(new Set());
+    setDestinoEncaminhar(null);
+  }
+  function toggleModoEncaminhar() {
+    if (modoEncaminhar) sairModoEncaminhar();
+    else setModoEncaminhar(true);
+  }
+  function toggleSelecaoEncaminhar(id: string) {
+    setSelecionadosEncaminhar((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  async function confirmarEncaminhamento() {
+    if (destinoEncaminhar == null || selecionadosEncaminhar.size === 0) return;
+    const ids = [...selecionadosEncaminhar];
+    sairModoEncaminhar();
+    const res = await encaminharProcedimento({ eventoIds: ids, dentistaDestinoId: destinoEncaminhar });
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    // R-52 — sucesso parcial: um lote pode ter id que mudou de estado entre a seleção e o
+    // confirmar (outra aba). Avisa em vez de fingir que os ignorados também foram.
+    if (res.ignorados.length > 0) {
+      toast.warning(`${res.encaminhados.length} encaminhado(s). ${res.ignorados.length} não puderam ser (mudaram de estado).`);
+    } else {
+      toast.success(`${res.encaminhados.length} procedimento(s) encaminhado(s).`);
+    }
+    router.refresh();
+  }
+
   // 03/08 — o rascunho da sessão vira 2 blocos pelo mesmo `status` que o chip Registrar já
   // decide: 'realizado' fica visível em "Concluídos hoje", 'indicado' em "Novos
   // procedimentos" (é o que sobra pendente depois de salvar e vira base do orçamento).
   const concluidosHoje = eventosDraft.filter((e) => e.status === 'realizado');
   const novosProcedimentos = eventosDraft.filter((e) => e.status === 'indicado');
+
+  // R-52 — mesmo critério de "encaminhavel" de a-fazer-bloco.tsx: autoria + não rascunhada
+  // ainda. Recalculado aqui só pra alimentar `totalEncaminhavel` da EncaminharBar.
+  const pendenciasEncaminhaveis = (contexto?.pendencias ?? []).filter(
+    (p) => p.dentistaId === meuDentistaId && !eventosDraft.some((e) => e.id === p.id),
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -157,6 +244,13 @@ export function MeuDiaClient({ slots, contextoPorPaciente, agendamentoInicialId,
                   pendencias={contexto.pendencias}
                   eventosDraft={eventosDraft}
                   onFazerHoje={fazerHoje}
+                  onConcluirRecebida={(p) => void concluirRecebida(p)}
+                  concluindoId={concluindoId}
+                  meuDentistaId={meuDentistaId}
+                  modoEncaminhar={modoEncaminhar}
+                  selecionados={selecionadosEncaminhar}
+                  onToggleModoEncaminhar={toggleModoEncaminhar}
+                  onToggleSelecao={toggleSelecaoEncaminhar}
                   aberto={abertoDireita === 'aFazer'}
                   onToggle={() => setAbertoDireita((a) => (a === 'aFazer' ? null : 'aFazer'))}
                 />
@@ -186,6 +280,23 @@ export function MeuDiaClient({ slots, contextoPorPaciente, agendamentoInicialId,
               </>
             }
           />
+          {/* R-52 — barra do modo seleção, fixa no rodapé (mesmo componente do FichasTab,
+              R-04 Fase 3, zero mudança nele). */}
+          <AnimatePresence>
+            {modoEncaminhar && (
+              <EncaminharBar
+                totalSelecionado={selecionadosEncaminhar.size}
+                totalEncaminhavel={pendenciasEncaminhaveis.length}
+                destinosDisponiveis={destinosEncaminhar}
+                destino={destinoEncaminhar}
+                onDestino={setDestinoEncaminhar}
+                onSelecionarTudo={() => setSelecionadosEncaminhar(new Set(pendenciasEncaminhaveis.map((p) => p.id)))}
+                onLimpar={() => setSelecionadosEncaminhar(new Set())}
+                onConfirmar={() => void confirmarEncaminhamento()}
+                onSair={sairModoEncaminhar}
+              />
+            )}
+          </AnimatePresence>
         </>
       ) : slots.length > 0 ? (
         <div className="rounded-2xl border border-border bg-surface px-5 py-10 text-center">

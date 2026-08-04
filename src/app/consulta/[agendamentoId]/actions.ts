@@ -278,14 +278,18 @@ export async function alternarStatusRegistro(params: {
  * só `encaminhado_para` muda. RLS de escrita (migration 101) já cobre esta coluna pro
  * dono; nenhuma policy nova.
  */
+export type EncaminharResult =
+  | { ok: true; encaminhados: string[]; ignorados: string[] }
+  | { ok: false; error: string };
+
 export async function encaminharProcedimento(params: {
   eventoIds: string[];
   /** null = remove o encaminhamento existente. */
   dentistaDestinoId: string | null;
-}): Promise<{ ok: boolean; error?: string }> {
+}): Promise<EncaminharResult> {
   const { supabase, user, clinicId, role } = await requireClinicContext();
   if (role === 'secretaria') return { ok: false, error: 'Sem permissão.' };
-  if (params.eventoIds.length === 0) return { ok: true };
+  if (params.eventoIds.length === 0) return { ok: true, encaminhados: [], ignorados: [] };
 
   const { data: dentistaPerfil } = await supabase
     .from('dentistas')
@@ -296,8 +300,11 @@ export async function encaminharProcedimento(params: {
 
   if (!dentistaPerfil) return { ok: false, error: 'Perfil de dentista não encontrado.' };
 
-  // Os eventos precisam ser DESTE dentista (autor) e status='indicado' — só o planejado
-  // tem o que encaminhar (assunção da spec R-04).
+  // R-52 (MAPA-MEU-DIA.md §4, R-51-53 spec) — sucesso PARCIAL, não tudo-ou-nada: um lote
+  // selecionado no Meu dia pode ter 1 id que mudou de estado entre a seleção e o confirmar
+  // (outra aba, outra pessoa da clínica assinou a ficha nesse meio-tempo). Abortar o lote
+  // inteiro por causa de 1 id é pior do que encaminhar os N-1 válidos e avisar do resto.
+  // A query já filtra por autor (`dentista_id = eu`) — o que não voltar aqui já é "ignorado".
   const { data: eventos } = await supabase
     .from('odontograma_eventos')
     .select('id, ficha_id, status, paciente_id')
@@ -305,22 +312,30 @@ export async function encaminharProcedimento(params: {
     .eq('clinica_id', clinicId)
     .eq('dentista_id', dentistaPerfil.id);
 
-  if (!eventos || eventos.length !== params.eventoIds.length) {
-    return { ok: false, error: 'Registro não encontrado ou de outro dentista.' };
-  }
-  if (eventos.some((e) => e.status !== 'indicado')) {
-    return { ok: false, error: 'Só é possível encaminhar registros planejados.' };
-  }
+  const idsIndicados = new Set(
+    (eventos ?? []).filter((e) => e.status === 'indicado').map((e) => e.id),
+  );
 
-  const fichaIds = [...new Set(eventos.map((e) => e.ficha_id).filter((f): f is string => f != null))];
+  const fichaIdsCandidatos = [
+    ...new Set((eventos ?? []).map((e) => e.ficha_id).filter((f): f is string => f != null)),
+  ];
   const { data: fichas } = await supabase
     .from('fichas')
     .select('id, assinado_em')
-    .in('id', fichaIds)
+    .in('id', fichaIdsCandidatos)
     .eq('clinica_id', clinicId);
+  const fichasAssinadas = new Set(
+    (fichas ?? []).filter((f) => f.assinado_em != null).map((f) => f.id),
+  );
 
-  if (fichas?.some((f) => f.assinado_em != null)) {
-    return { ok: false, error: 'Esta ficha já foi assinada e não pode mais ser alterada.' };
+  const eventosElegiveis = (eventos ?? []).filter(
+    (e) => idsIndicados.has(e.id) && (e.ficha_id == null || !fichasAssinadas.has(e.ficha_id)),
+  );
+  const idsElegiveis = eventosElegiveis.map((e) => e.id);
+  const ignorados = params.eventoIds.filter((id) => !idsElegiveis.includes(id));
+
+  if (idsElegiveis.length === 0) {
+    return { ok: false, error: 'Nenhum registro elegível pra encaminhar.' };
   }
 
   let destino: { id: string; nome: string } | null = null;
@@ -344,7 +359,7 @@ export async function encaminharProcedimento(params: {
   const { error } = await supabase
     .from('odontograma_eventos')
     .update({ encaminhado_para: params.dentistaDestinoId })
-    .in('id', params.eventoIds)
+    .in('id', idsElegiveis)
     .eq('clinica_id', clinicId)
     .eq('dentista_id', dentistaPerfil.id);
 
@@ -357,7 +372,7 @@ export async function encaminharProcedimento(params: {
     const { data: paciente } = await supabase
       .from('pacientes')
       .select('nome')
-      .eq('id', eventos[0].paciente_id)
+      .eq('id', eventosElegiveis[0].paciente_id)
       .maybeSingle<{ nome: string }>();
 
     await inserirNotificacao(supabase, {
@@ -368,12 +383,12 @@ export async function encaminharProcedimento(params: {
       tipo:          'procedimento_encaminhado',
       titulo:        `Procedimento encaminhado — ${paciente?.nome ?? 'Paciente'}`,
       mensagem:      'Um procedimento planejado foi encaminhado pra você.',
-      href:          `/dashboard/pacientes/${eventos[0].paciente_id}`,
+      href:          `/dashboard/pacientes/${eventosElegiveis[0].paciente_id}`,
     });
   }
 
-  revalidatePath(`/dashboard/pacientes/${eventos[0].paciente_id}`);
-  return { ok: true };
+  revalidatePath(`/dashboard/pacientes/${eventosElegiveis[0].paciente_id}`);
+  return { ok: true, encaminhados: idsElegiveis, ignorados };
 }
 
 /**

@@ -25,11 +25,12 @@ export default async function MeuDiaPage({ searchParams }: MeuDiaPageProps) {
 
   const { ag } = await searchParams;
   const now = new Date();
-  const { slots, contextoPorPaciente, catalogoProcedimentos } = await getMeuDiaData({
-    clinicId: dentista.clinica_id,
-    dentistaId: dentista.id,
-    now,
-  });
+  const { slots, contextoPorPaciente, catalogoProcedimentos, destinosEncaminhar, meuDentistaId } =
+    await getMeuDiaData({
+      clinicId: dentista.clinica_id,
+      dentistaId: dentista.id,
+      now,
+    });
 
   const agendamentoInicialId = ag && slots.some((s) => s.agendamentoId === ag) ? ag : undefined;
 
@@ -49,6 +50,8 @@ export default async function MeuDiaPage({ searchParams }: MeuDiaPageProps) {
         contextoPorPaciente={contextoPorPaciente}
         agendamentoInicialId={agendamentoInicialId}
         catalogoProcedimentos={catalogoProcedimentos}
+        destinosEncaminhar={destinosEncaminhar}
+        meuDentistaId={meuDentistaId}
       />
     </PageContainer>
   );

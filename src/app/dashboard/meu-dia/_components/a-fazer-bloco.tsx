@@ -9,8 +9,10 @@
 // na fila, não as últimas. "ver todas" expande com rolagem interna como rede de segurança.
 
 import { useState } from 'react';
+import { Check, Forward } from 'lucide-react';
 import { TIPO_LABEL, type OdontogramaEventoDraft } from '@/types/odontograma';
 import type { MeuDiaPendencia } from '@/server/dashboard/get-meu-dia';
+import { responsavelPassaFiltro, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
 import { BlocoMoldavel } from './bloco-moldavel';
 import { fmtData, ondeLabel } from './meu-dia-format';
 
@@ -19,6 +21,18 @@ export interface AFazerBlocoProps {
   /** Pra desabilitar "fazer hoje" na pendência que já virou rascunho nesta sessão. */
   eventosDraft: OdontogramaEventoDraft[];
   onFazerHoje: (p: MeuDiaPendencia) => void;
+  /** R-52 — conclui pendência encaminhada A MIM. Caminho de escrita separado (RPC 109):
+   *  o evento é de outro autor, não passa pelo rascunho. */
+  onConcluirRecebida: (p: MeuDiaPendencia) => void;
+  /** Id da pendência recebida sendo concluída agora (trava o botão durante a escrita). */
+  concluindoId: string | null;
+  /** R-52 — quem sou eu. Define o que é "minha" e o que é "recebida". */
+  meuDentistaId: string;
+  /** R-52 — modo seleção pra encaminhar em lote (barra fica em `meu-dia-client`). */
+  modoEncaminhar: boolean;
+  selecionados: Set<string>;
+  onToggleModoEncaminhar: () => void;
+  onToggleSelecao: (id: string) => void;
   aberto: boolean;
   onToggle: () => void;
 }
@@ -26,59 +40,168 @@ export interface AFazerBlocoProps {
 const PREVIA = 5;
 
 function PendenciaLinha({
-  p, jaFeito, onFazerHoje,
+  p, jaFeito, recebida, ocupada, onFazerHoje, onConcluirRecebida,
+  modoEncaminhar, selecionado, onToggleSelecao,
 }: {
   p: MeuDiaPendencia;
   jaFeito: boolean;
+  /** R-52 — encaminhada PRA mim: o evento é de outro autor, tem caminho de escrita próprio. */
+  recebida: boolean;
+  ocupada: boolean;
   onFazerHoje: (p: MeuDiaPendencia) => void;
+  onConcluirRecebida: (p: MeuDiaPendencia) => void;
+  modoEncaminhar: boolean;
+  selecionado: boolean;
+  onToggleSelecao: (id: string) => void;
 }) {
+  // R-52 — só "minha, não encaminhada, sem rascunho ainda" pode entrar no lote:
+  // `encaminharProcedimento` exige autoria (dentista_id = eu), então "recebida" nunca
+  // qualifica — eu não sou o autor. `jaFeito` (já virou rascunho nesta sessão) fica de
+  // fora pelo mesmo motivo que desabilita o botão normal: já está a caminho de ser feito.
+  const encaminhavel = !recebida && !jaFeito;
+  const textoLinha = (
+    <div className="min-w-0 flex-1">
+      <p className="truncate text-xs font-semibold text-text-primary">
+        {TIPO_LABEL[p.tipo]} <span className="font-mono font-normal text-text-secondary">{ondeLabel(p)}</span>
+      </p>
+      <p className="text-[11px] font-mono text-text-secondary">
+        desde {fmtData(p.registradoEm)} · {p.dentistaNome}
+        {/* R-51 — "em andamento" é DERIVADO (grupo com sessão já feita), nunca um 3º
+            status no banco. Marcador de texto de propósito: coral/teal no odontograma já
+            significam "a fazer"/"feito", e um 3º tom aqui competiria com essa gramática. */}
+        {p.emAndamento && ' · em andamento'}
+        {recebida && ' · encaminhado pra você'}
+      </p>
+    </div>
+  );
+
+  if (modoEncaminhar) {
+    // Igual ao modo seleção do FichasTab (R-04 Fase 3): quem não é elegível pro lote
+    // apaga e fica inerte — não dá pra selecionar por engano o que não pode ser encaminhado.
+    if (!encaminhavel) {
+      return (
+        <div className="flex items-center gap-3 py-2 opacity-40 first:pt-0">{textoLinha}</div>
+      );
+    }
+    return (
+      <div
+        role="checkbox"
+        aria-checked={selecionado}
+        tabIndex={0}
+        onClick={() => onToggleSelecao(p.id)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleSelecao(p.id); } }}
+        className="flex cursor-pointer items-center gap-3 py-2 outline-none first:pt-0 focus-visible:ring-1 focus-visible:ring-teal"
+      >
+        <span
+          aria-hidden
+          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors ${
+            selecionado ? 'border-teal bg-teal' : 'border-border bg-surface-alt'
+          }`}
+        >
+          {selecionado && <Check className="h-3.5 w-3.5 text-white" />}
+        </span>
+        {textoLinha}
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center justify-between gap-3 py-2 first:pt-0">
-      <div className="min-w-0">
-        <p className="truncate text-xs font-semibold text-text-primary">
-          {TIPO_LABEL[p.tipo]} <span className="font-mono font-normal text-text-secondary">{ondeLabel(p)}</span>
-        </p>
-        <p className="text-[11px] font-mono text-text-secondary">
-          desde {fmtData(p.registradoEm)} · {p.dentistaNome}
-        </p>
-      </div>
+      {textoLinha}
+      {/* R-52 — DOIS botões diferentes de propósito, porque são duas escritas diferentes:
+          · minha        → entra no rascunho e grava junto com o "Salvar" da visita
+          · recebida     → fecha AGORA pela RPC 109 (escrita estreita do destino), sem
+                           passar pelo rascunho: o evento é de outro autor e o upsert do
+                           rascunho seria barrado pela RLS — em silêncio.
+          O rótulo muda junto pra não prometer o mesmo gesto duas vezes. */}
       <button
         type="button"
-        onClick={() => onFazerHoje(p)}
-        disabled={jaFeito}
+        onClick={() => (recebida ? onConcluirRecebida(p) : onFazerHoje(p))}
+        disabled={jaFeito || ocupada}
         className="shrink-0 whitespace-nowrap rounded border border-teal/35 bg-teal/12 px-2 py-2 text-[11px] font-bold text-teal-ink transition-opacity hover:opacity-80 disabled:opacity-40"
       >
-        {jaFeito ? '✓ feito hoje' : 'fazer hoje →'}
+        {jaFeito ? '✓ feito hoje' : recebida ? 'concluir →' : 'fazer hoje →'}
       </button>
     </div>
   );
 }
 
-export function AFazerBloco({ pendencias, eventosDraft, onFazerHoje, aberto, onToggle }: AFazerBlocoProps) {
+export function AFazerBloco({
+  pendencias, eventosDraft, onFazerHoje, onConcluirRecebida, concluindoId,
+  meuDentistaId, modoEncaminhar, selecionados, onToggleModoEncaminhar, onToggleSelecao,
+  aberto, onToggle,
+}: AFazerBlocoProps) {
   const [expandido, setExpandido] = useState(false);
 
+  // R-52 — "A fazer" é o TRABALHO QUE EU VOU FAZER (decisão dele, 03/08, com o número de
+  // impacto medido no banco antes de fechar). Dois casos entram, dois ficam de fora:
+  //
+  //   ✅ minha e não encaminhada   → é minha, eu faço
+  //   ✅ encaminhada PRA mim       → é trabalho meu, mesmo que o autor seja outro
+  //   ❌ minha, mas eu encaminhei  → saiu da minha mesa
+  //   ❌ de colega, não encaminhada→ não é minha; o panorama do paciente vive na ficha
+  //
+  // Antes disto o bloco listava pendência de qualquer dentista e oferecia "fazer hoje →" em
+  // TODAS. Na pendência de colega isso MENTIA: o upsert reusa o `id` do outro, a RLS barra
+  // a linha, e 0 linhas afetadas não é erro no Postgres — o servidor devolvia `ok:true` e a
+  // tela dizia "feito hoje" sem nada ter sido gravado.
+  //
+  // X1 (MAPA-MEU-DIA.md) — "responsável = encaminhadoParaId ?? dentistaId" é a MESMA regra
+  // que `filtro-responsavel.ts` já usa na ficha (R-16). Reimplementar aqui à mão foi o débito
+  // que a decisão do X1 condenou: duas leituras da mesma regra podem divergir em silêncio.
+  const minhas = pendencias.filter((p) =>
+    responsavelPassaFiltro(p.encaminhadoParaId ?? p.dentistaId, FILTRO_MEUS, meuDentistaId),
+  );
+
+  // Contrato §5.1: contador SEMPRE derivado da lista renderizada, nunca prop solta. Com o
+  // filtro acima isso deixou de ser detalhe e virou correção — contar `pendencias` mostraria
+  // no badge item que não está na lista.
+  //
   // Mais antiga primeiro — `registradoEm` é 'YYYY-MM-DD', ordena como string sem parse.
-  const ordenadas = [...pendencias].sort((a, b) => (a.registradoEm < b.registradoEm ? -1 : 1));
+  const ordenadas = [...minhas].sort((a, b) => (a.registradoEm < b.registradoEm ? -1 : 1));
   const temMais = ordenadas.length > PREVIA;
   const visiveis = expandido ? ordenadas : ordenadas.slice(0, PREVIA);
+
+  // R-52 — só "minha, não encaminhada" tem autoria pra entrar no lote (mesmo critério de
+  // `encaminhavel` em PendenciaLinha, calculado aqui só pra decidir se o gatilho aparece).
+  const temEncaminhavel = minhas.some(
+    (p) => p.dentistaId === meuDentistaId && !eventosDraft.some((e) => e.id === p.id),
+  );
 
   return (
     <BlocoMoldavel
       id="a-fazer"
       titulo="A fazer"
-      contador={pendencias.length}
+      contador={minhas.length}
       resumo={
-        pendencias.length > 0 ? (
-          <span className="text-xs text-text-secondary">{pendencias.length} pendência{pendencias.length > 1 ? 's' : ''}</span>
+        minhas.length > 0 ? (
+          <span className="text-xs text-text-secondary">{minhas.length} pendência{minhas.length > 1 ? 's' : ''}</span>
         ) : undefined
       }
       aberto={aberto}
       onToggle={onToggle}
     >
-      {pendencias.length === 0 ? (
+      {minhas.length === 0 ? (
         <p className="text-sm text-text-secondary">Nada pendente pra este paciente.</p>
       ) : (
         <>
+          {(modoEncaminhar || temEncaminhavel) && (
+            <div className="mb-1.5 flex justify-end">
+              <button
+                type="button"
+                onClick={onToggleModoEncaminhar}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
+              >
+                {modoEncaminhar ? (
+                  'cancelar'
+                ) : (
+                  <>
+                    <Forward className="h-3 w-3" /> encaminhar
+                  </>
+                )}
+              </button>
+            </div>
+          )}
           <div
             className={
               expandido
@@ -91,7 +214,13 @@ export function AFazerBloco({ pendencias, eventosDraft, onFazerHoje, aberto, onT
                 key={p.id}
                 p={p}
                 jaFeito={eventosDraft.some((e) => e.id === p.id)}
+                recebida={p.encaminhadoParaId === meuDentistaId}
+                ocupada={concluindoId === p.id}
                 onFazerHoje={onFazerHoje}
+                onConcluirRecebida={onConcluirRecebida}
+                modoEncaminhar={modoEncaminhar}
+                selecionado={selecionados.has(p.id)}
+                onToggleSelecao={onToggleSelecao}
               />
             ))}
           </div>
