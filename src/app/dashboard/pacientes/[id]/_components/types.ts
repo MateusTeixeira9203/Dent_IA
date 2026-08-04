@@ -57,6 +57,10 @@ export type EventoOdontogramaParaOrc = {
   papel_no_grupo: PapelNoGrupo | null;
   grupo_id: string | null;
   assinatura_id: string | null;
+  /** R-53 — destino do encaminhamento (R-04/R-52). NÃO exclui do orçamento: define o
+   *  responsável exibido (`encaminhado_para ?? autor da ficha`, via filtro-responsavel.ts). */
+  encaminhado_para: string | null;
+  encaminhado_dentista: { nome: string } | null;
 };
 
 export type FichaParaOrc = {
@@ -68,6 +72,10 @@ export type FichaParaOrc = {
   dentes_observacoes: Record<string, string>;
   /** R-30 Parte 4 — fonte real do orçamento gerado (dentes_observacoes vira só descritivo). */
   odontograma_eventos: EventoOdontogramaParaOrc[];
+  /** R-53 — autor da ficha = responsável default dos eventos não encaminhados
+   *  (contrato de filtro-responsavel.ts: FichaResponsavel.autorId/autorNome). */
+  dentista_id: string;
+  dentista: { nome: string } | null;
 };
 
 export type ProcedimentoClinica = {

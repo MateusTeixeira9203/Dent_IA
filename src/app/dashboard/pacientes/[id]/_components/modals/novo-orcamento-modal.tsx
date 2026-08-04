@@ -24,6 +24,8 @@ import { parseValorBR, formatValorBR } from '@/lib/valor-br';
 import { stripDenteDoNome } from '@/lib/arcadas';
 import type { FichaParaOrc, ProcedimentoClinica, NovoOrcItem } from '../types';
 import type { FormaPagamento } from '@/app/dashboard/orcamentos/actions';
+import { ChipsResponsavel } from '@/components/fichas/chips-responsavel';
+import type { FiltroResponsavel } from '@/lib/fichas/filtro-responsavel';
 
 const FORMA_LABEL: Record<FormaPagamento, string> = {
   dinheiro: 'Dinheiro', pix: 'PIX', cartao_credito: 'Cartão de Crédito',
@@ -36,6 +38,11 @@ interface NovoOrcamentoModalProps {
   etapaNovoOrc: 'selecionar' | 'itens';
   setEtapaNovoOrc: (v: 'selecionar' | 'itens') => void;
   fichasParaOrc: FichaParaOrc[];
+  /** R-53 (§4.3) — responsáveis distintos no agregado atual, pros chips. */
+  responsaveisOrc: { id: string; nome: string }[];
+  meuDentistaId: string;
+  filtroResponsavelOrc: FiltroResponsavel;
+  onFiltroResponsavelOrcChange: (v: FiltroResponsavel) => void;
   orcError: string | null;
   novoOrcItens: NovoOrcItem[];
   setNovoOrcItens: React.Dispatch<React.SetStateAction<NovoOrcItem[]>>;
@@ -69,6 +76,10 @@ export function NovoOrcamentoModal({
   etapaNovoOrc,
   setEtapaNovoOrc,
   fichasParaOrc,
+  responsaveisOrc,
+  meuDentistaId,
+  filtroResponsavelOrc,
+  onFiltroResponsavelOrcChange,
   orcError,
   novoOrcItens,
   setNovoOrcItens,
@@ -194,6 +205,15 @@ export function NovoOrcamentoModal({
 
             {/* Coluna clínica — procedimentos */}
             <div className="flex-1 min-w-0 overflow-y-auto p-6 space-y-4">
+              {/* R-53 (§4.3) — mesma faixa de chips da ficha (R-16); default Todos (o dinheiro
+                  é da clínica). Some sozinha com <2 responsáveis (ChipsResponsavel). */}
+              <ChipsResponsavel
+                responsaveis={responsaveisOrc}
+                meuId={meuDentistaId}
+                filtro={filtroResponsavelOrc}
+                onFiltroChange={onFiltroResponsavelOrcChange}
+              />
+
               {isSecretaria && (
                 <div className="space-y-1">
                   <Label className="text-xs text-text-secondary">Dentista responsável *</Label>

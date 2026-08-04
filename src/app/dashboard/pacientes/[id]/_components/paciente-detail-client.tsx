@@ -96,6 +96,7 @@ import {
 } from '@/lib/arcadas';
 import { TIPO_LABEL } from '@/types/odontograma';
 import type { OrcamentoComItens, OrcamentoItem, Pagamento, FichaParaOrc, EventoOdontogramaParaOrc, ProcedimentoClinica, NovoOrcItem, OrcEditItem } from './types';
+import { derivarResponsaveis, eventosVisiveis, type FiltroResponsavel } from '@/lib/fichas/filtro-responsavel';
 import { EditarPacienteModal } from './modals/editar-paciente-modal';
 import { DetalheOrcamentoModal } from './modals/detalhe-orcamento-modal';
 import { ConfirmarDeleteOrcModal } from './modals/confirmar-delete-orc-modal';
@@ -293,6 +294,10 @@ export function PacienteDetailClient({
   const [isLoadingFichaParaOrc, setIsLoadingFichaParaOrc] = useState(false);
   const [fichasParaOrc, setFichasParaOrc] = useState<FichaParaOrc[]>([]);
   const [fichaOrcId, setFichaOrcId] = useState<string | null>(null);
+  // R-53 — filtro de exibição do orçamento agregado (X1: mesma lib da ficha, config própria —
+  // default Todos, porque o dinheiro é da clínica, não do dentista). Nunca decide o que é
+  // gravado (I4) — só quais itens de `fichasParaOrc` viram `novoOrcItens`.
+  const [filtroResponsavelOrc, setFiltroResponsavelOrc] = useState<FiltroResponsavel>(null);
   const [etapaNovoOrc, setEtapaNovoOrc] = useState<'selecionar' | 'itens'>('itens');
   const [novoOrcValorFinal, setNovoOrcValorFinal] = useState<number | null>(null);
   // R-34 — forma de pagamento já na criação (feedback do Mateus testando localhost: parcelar
@@ -1020,16 +1025,16 @@ export function PacienteDetailClient({
    * `grupo_id`, cada evento vira seu próprio item — mesmo tipo em dentes diferentes NÃO se
    * consolida automaticamente, porque era exatamente o casamento por texto livre (não o
    * agrupamento em si) que causava itens duplicados.
+   *
+   * R-53 — vira função PURA sobre uma lista de eventos (antes recebia a `ficha` inteira e
+   * lia `ficha.odontograma_eventos`). O miolo é idêntico; só a entrada muda, pra servir tanto
+   * 1 ficha (fallback) quanto o agregado de N fichas (`itensDoAgregado`, abaixo). Sem evento
+   * elegível, devolve `[]` — quem decide se cai no fallback de texto é o chamador (só faz
+   * sentido por-ficha, não em cima do agregado já filtrado pela query).
    */
-  const fichaParaItens = (ficha: FichaParaOrc): NovoOrcItem[] => {
-    const elegiveis = (ficha.odontograma_eventos ?? []).filter(
-      (ev) => ev.status === 'indicado' && ev.assinatura_id == null,
-    );
-
-    // Sem evento elegível, cai no texto — ver `itensDoTexto`.
-    if (elegiveis.length === 0) {
-      return itensDoTexto(ficha);
-    }
+  const eventosParaItens = (eventos: EventoOdontogramaParaOrc[]): NovoOrcItem[] => {
+    const elegiveis = eventos.filter((ev) => ev.status === 'indicado' && ev.assinatura_id == null);
+    if (elegiveis.length === 0) return [];
 
     const grupos = new Map<string, EventoOdontogramaParaOrc[]>();
     for (const ev of elegiveis) {
@@ -1066,38 +1071,125 @@ export function PacienteDetailClient({
     });
   };
 
+  // R-53 — wrapper de 1 ficha só: preserva o fallback de texto (itensDoTexto) que
+  // `eventosParaItens` (puro, sem `ficha`) não pode mais decidir sozinho. Único chamador
+  // hoje é o caminho por-ficha (fallback G4 e `selecionarFichaParaOrc`).
+  const fichaParaItens = (ficha: FichaParaOrc): NovoOrcItem[] => {
+    const itens = eventosParaItens(ficha.odontograma_eventos ?? []);
+    return itens.length > 0 ? itens : itensDoTexto(ficha);
+  };
+
+  // R-53 (§2.1, X1) — adapta o evento cru (encaminhado_para snake_case + embed do nome) pro
+  // shape que filtro-responsavel.ts espera (RegistroResponsavel.encaminhadoPara). Mesmo
+  // padrão de adaptação que FichasTab.tsx já usa pro EventoView dela.
+  const paraResponsavel = (ev: EventoOdontogramaParaOrc) => ({
+    encaminhadoPara: ev.encaminhado_para
+      ? { id: ev.encaminhado_para, nome: ev.encaminhado_dentista?.nome ?? 'Dentista' }
+      : null,
+  });
+
+  // R-53 — flatten de N fichas (o agregado) pro filtro de responsável + eventosParaItens.
+  // `filtro=null` (Todos) é o default: o dinheiro é da clínica, não do dentista (§2.1).
+  const itensDoAgregado = (fichas: FichaParaOrc[], filtro: FiltroResponsavel): NovoOrcItem[] => {
+    const itens = fichas.flatMap((f) => {
+      const eventosComResponsavel = (f.odontograma_eventos ?? []).map((ev) => ({ ...ev, ...paraResponsavel(ev) }));
+      const visiveis = eventosVisiveis(eventosComResponsavel, f.dentista_id, filtro, dentistaId);
+      return eventosParaItens(visiveis);
+    });
+    return itens.length > 0 ? itens : [{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }];
+  };
+
+  // R-53 — responsáveis distintos no agregado atual, pros chips do modal (§4.3). Vazio/1
+  // responsável → ChipsResponsavel não renderiza (mesma regra da ficha).
+  const responsaveisOrc = useMemo(
+    () => derivarResponsaveis(
+      fichasParaOrc.map((f) => ({
+        autorId: f.dentista_id,
+        autorNome: f.dentista?.nome ?? 'Equipe',
+        eventos: (f.odontograma_eventos ?? []).map(paraResponsavel),
+      })),
+    ),
+    [fichasParaOrc],
+  );
+
+  // R-53 — troca de chip: reprocessa o agregado já carregado (fichasParaOrc), nunca refaz a
+  // query. Display puro (I4) — nunca decide o que é gravado.
+  const handleFiltroResponsavelOrc = (v: FiltroResponsavel) => {
+    setFiltroResponsavelOrc(v);
+    setNovoOrcItens(itensDoAgregado(fichasParaOrc, v));
+  };
+
   // R-30 Parte 4 — embute odontograma_eventos na mesma query (FK ficha_id, sem ambiguidade:
   // é a única FK de odontograma_eventos pra fichas). Evita 2º round-trip pra gerar os itens.
-  const SELECT_FICHA_PARA_ORC =
+  // R-53 — dentista_id/dentista(nome) na ficha (FK única, fichas_dentista_id_fkey — conferido
+  // no banco) e encaminhado_para/encaminhado_dentista no evento (2 FKs de odontograma_eventos
+  // pra dentistas — família R-44, precisa do !fkey) entram pro X1 (filtro-responsavel.ts).
+  const CAMPOS_FICHA_ORC =
     'id, created_at, data_atendimento, queixa_principal, dentes_afetados, dentes_observacoes, ' +
-    'odontograma_eventos(id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, assinatura_id)';
+    'dentista_id, dentista:dentistas(nome)';
+  const CAMPOS_EVENTO_ORC =
+    'id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, assinatura_id, ' +
+    'encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(nome)';
+  const SELECT_FICHA_PARA_ORC = `${CAMPOS_FICHA_ORC}, odontograma_eventos(${CAMPOS_EVENTO_ORC})`;
+  // R-53 (§3) — !inner: só fichas com ≥1 evento indicado/não-assinado voltam, e o embed já
+  // vem filtrado pra esses eventos. Sem `.limit()` (medido: no máx. 6 fichas/paciente).
+  const SELECT_FICHA_PARA_ORC_AGREGADO = `${CAMPOS_FICHA_ORC}, odontograma_eventos!inner(${CAMPOS_EVENTO_ORC})`;
+
+  // R-53 — busca única do agregado (todos os indicados abertos do paciente), reusada pelos
+  // 2 pontos de entrada (botão geral e "gerar orçamento" de dentro de uma ficha — §2 decisão
+  // 1: convergem pro mesmo caminho). `[]` = paciente sem nenhum indicado aberto → cada
+  // chamador decide seu próprio fallback (G4).
+  const carregarFichasAgregado = async (): Promise<FichaParaOrc[]> => {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from('fichas')
+      .select(SELECT_FICHA_PARA_ORC_AGREGADO)
+      .eq('paciente_id', paciente.id)
+      .eq('clinica_id', clinicaId)
+      .eq('odontograma_eventos.status', 'indicado')
+      .is('odontograma_eventos.assinatura_id', null)
+      .order('data_atendimento', { ascending: false });
+    return (data as unknown as FichaParaOrc[]) ?? [];
+  };
 
   const abrirNovoOrcamento = async () => {
     setOrcError(null);
     setIsLoadingFichaParaOrc(true);
     try {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from('fichas')
-        .select(SELECT_FICHA_PARA_ORC)
-        .eq('paciente_id', paciente.id)
-        .eq('clinica_id', clinicaId)
-        .order('data_atendimento', { ascending: false })
-        .limit(10);
+      const agregado = await carregarFichasAgregado();
 
-      const fichas = (data as unknown as FichaParaOrc[]) ?? [];
-      setFichasParaOrc(fichas);
-
-      if (fichas.length > 1) {
-        // Mais de uma ficha: dentista escolhe qual usar
+      if (agregado.length > 0) {
+        // R-53 — caminho novo: todos os indicados abertos do paciente, de qualquer ficha.
+        // fichaOrcId fica null — o orçamento não pertence mais a 1 ficha só (I6).
+        setFichasParaOrc(agregado);
         setFichaOrcId(null);
-        setEtapaNovoOrc('selecionar');
-        setNovoOrcItens([{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
-      } else {
-        // 0 ou 1 ficha: vai direto para os itens
-        setFichaOrcId(fichas.length === 1 ? fichas[0].id : null);
-        setNovoOrcItens(fichas.length === 1 ? fichaParaItens(fichas[0]) : [{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
+        setFiltroResponsavelOrc(null);
+        setNovoOrcItens(itensDoAgregado(agregado, null));
         setEtapaNovoOrc('itens');
+      } else {
+        // G4 — fallback INTACTO: nenhum indicado aberto em ficha nenhuma. Mesmo comportamento
+        // de antes do R-53 (10 fichas recentes, decide selecionar vs. texto).
+        const supabase = createClient();
+        const { data } = await supabase
+          .from('fichas')
+          .select(SELECT_FICHA_PARA_ORC)
+          .eq('paciente_id', paciente.id)
+          .eq('clinica_id', clinicaId)
+          .order('data_atendimento', { ascending: false })
+          .limit(10);
+
+        const fichas = (data as unknown as FichaParaOrc[]) ?? [];
+        setFichasParaOrc(fichas);
+
+        if (fichas.length > 1) {
+          setFichaOrcId(null);
+          setEtapaNovoOrc('selecionar');
+          setNovoOrcItens([{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
+        } else {
+          setFichaOrcId(fichas.length === 1 ? fichas[0].id : null);
+          setNovoOrcItens(fichas.length === 1 ? fichaParaItens(fichas[0]) : [{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
+          setEtapaNovoOrc('itens');
+        }
       }
     } catch {
       setFichasParaOrc([]);
@@ -1121,24 +1213,34 @@ export function PacienteDetailClient({
     setEtapaNovoOrc('itens');
   };
 
-  // #6 — entrada mirada: abre o modal de orçamento já pré-preenchido com os itens
-  // desta ficha, pulando a etapa "selecionar" mesmo quando há várias fichas.
+  // #6 / R-53 (§2 decisão 1) — entrada mirada: converge pro MESMO agregado do botão geral.
+  // `fichaId` é só de onde veio o clique (contexto), nunca a fonte dos itens — se o paciente
+  // não tem indicado nenhum (nem nesta ficha, nem em outra), cai no fallback desta ficha só.
   const abrirOrcamentoParaFicha = async (fichaId: string) => {
     setOrcError(null);
     setIsLoadingFichaParaOrc(true);
     try {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from('fichas')
-        .select(SELECT_FICHA_PARA_ORC)
-        .eq('id', fichaId)
-        .eq('clinica_id', clinicaId)
-        .single();
-      const ficha = data as unknown as FichaParaOrc | null;
-      setFichaOrcId(fichaId);
-      // fichasParaOrc com 1 item → esconde "Voltar" e mantém o foco na ficha clicada
-      setFichasParaOrc(ficha ? [ficha] : []);
-      setNovoOrcItens(ficha ? fichaParaItens(ficha) : [{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
+      const agregado = await carregarFichasAgregado();
+
+      if (agregado.length > 0) {
+        setFichasParaOrc(agregado);
+        setFichaOrcId(null);
+        setFiltroResponsavelOrc(null);
+        setNovoOrcItens(itensDoAgregado(agregado, null));
+      } else {
+        // Fallback intacto pra esta ficha específica (comportamento de antes do R-53).
+        const supabase = createClient();
+        const { data } = await supabase
+          .from('fichas')
+          .select(SELECT_FICHA_PARA_ORC)
+          .eq('id', fichaId)
+          .eq('clinica_id', clinicaId)
+          .single();
+        const ficha = data as unknown as FichaParaOrc | null;
+        setFichaOrcId(fichaId);
+        setFichasParaOrc(ficha ? [ficha] : []);
+        setNovoOrcItens(ficha ? fichaParaItens(ficha) : [{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
+      }
     } catch {
       setFichaOrcId(fichaId);
       setFichasParaOrc([]);
@@ -2113,11 +2215,16 @@ export function PacienteDetailClient({
           if (!open) {
             setEtapaNovoOrc('itens'); setFichasParaOrc([]); setOrcError(null); setNovoOrcValorFinal(null);
             setNovoOrcPlanoForma(null); setNovoOrcNumParcelas('3'); setNovoOrcPrimeiroVencimento(''); setNovoOrcParcelasForma('');
+            setFiltroResponsavelOrc(null);
           }
         }}
         etapaNovoOrc={etapaNovoOrc}
         setEtapaNovoOrc={setEtapaNovoOrc}
         fichasParaOrc={fichasParaOrc}
+        responsaveisOrc={responsaveisOrc}
+        meuDentistaId={dentistaId}
+        filtroResponsavelOrc={filtroResponsavelOrc}
+        onFiltroResponsavelOrcChange={handleFiltroResponsavelOrc}
         orcError={orcError}
         novoOrcItens={novoOrcItens}
         setNovoOrcItens={setNovoOrcItens}
