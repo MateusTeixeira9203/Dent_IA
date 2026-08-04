@@ -1,9 +1,12 @@
 # R-46d — Campo mágico no Meu dia (arquivo, voz e organizar)
 
 > **SPEC** · sub-item do **R-46**
-> **Aberto:** 2026-08-03 · **Fechado:** — · **Fase:** **`aprovada` pra D0 e D1** — D4 (moldura)
-> resolvido; D2 (fusão com `ColarDoWordDialog`) segue como recomendação a confirmar, não
-> bloqueia D0/D1
+> **Aberto:** 2026-08-03 · **Fechado:** — · **Fase:** **`aprovada` pra D0** (já commitado) **·
+> D1 codado, testado ao vivo e ajustado 04/08** — D4 (moldura) resolvido; D2 (fusão com
+> `ColarDoWordDialog`) segue como recomendação a confirmar, não bloqueia. D1.2 (fallback sem
+> IA) foi **testado ao vivo e revisado por ele na hora** (`OndeSeletor` fora, chip de orto
+> dentro, 1 clique abre o resumo — ver D1.2 revisão). **Só D1.3 segue com 1 ponto em aberto**
+> (redundância do botão "Anexar" do `CapturaLivreCard` × a caixa nova do D8, marcado ⚠️ lá)
 > **Modelo:** Sonnet 5 na fatia D0 (extração mecânica, behavior-preserving) · Opus na
 > fatia D1 (decisão de forma visual em aberto + componente compartilhado passa a ter 2 telas
 > consumidoras)
@@ -178,6 +181,99 @@ em `FichasTab.tsx` — não serve ao Meu dia.
 
 ### D1 — o componente no Meu dia (Opus, decisão visual em aberto)
 
+> ⚠️ **04/08 (revisão) — este contrato foi escrito ANTES do D7 (campo mágico substitui a
+> barra inteira, não só "+ texto da visita") e do D12 (chips ONDE/STATUS somem do centro)
+> existirem como decisão.** O texto abaixo, como estava, só substituía o link "+ texto da
+> visita" — a Combobox/`OndeSeletor`/Status continuavam na tela, e nada no §4 removia a barra
+> de verdade. As subseções **D1.1** e **D1.2** fecham essa lacuna; o resto do contrato
+> (props do componente, `aplicar()`, `alertaNovo`, schema) já estava certo e não muda.
+
+#### D1.1 — o que sai de `registrar-painel.tsx` (D7/D12)
+
+`CampoMagicoMeuDia` substitui, no arquivo atual, **todo o bloco entre a `Combobox` e o botão
+Salvar** — não só o link "+ texto da visita":
+
+| Sai (linhas do arquivo atual) | Vira |
+|---|---|
+| `Combobox`/`ComboboxInput`/`ComboboxContent` (busca de tipo + catálogo) | Texto livre no campo mágico — a IA resolve tipo e âncora |
+| Bloco `catalogoPendente` ("qual tipo clínico?") | Não existe mais — não há mais 2 gestos pra resolver nome comercial → tipo estrutural |
+| `OndeSeletor` (chips de região) | **Deletado de vez** (04/08, ver D1.2 revisão) — não sobrevive nem escondido. Clicar o dente resolve "onde" pros tipos por-dente; os de boca resolvem por tipo |
+| Linha de chips Status (`indicado`/`realizado`) | Some da faixa fixa (D12), sobrevive na disclosure "Registrar sem IA". Texto do campo mágico resolve status pelo relato — "vou fazer semana que vem" já traz status |
+| Aviso `tipoPendente` ("aguardando onde") | Não existe mais — não há mais tipo escolhido sem âncora esperando |
+| Trigger "+ texto da visita" + `textarea` (`textoAberto`) | Absorvido pelo campo mágico — `aplicar()` já escreve em `textoVisita` |
+
+**O que fica, sem mudar:** `Odontograma` (só o wrapper simplifica, por C6), `onde`/
+`ancorasDoOnde` como mecanismo interno (agora só dente — região saiu de vez, ver D1.2 revisão),
+bloco `eventosPendentes` (retry de gravação), botão Salvar. **`onToothToggle` muda** (D1.2
+revisão, item 3): 1 clique já mostra o resumo, não precisa mais de 2.
+
+#### D1.2 — Registrar sem IA: o fallback que o §2.1 já exige, agora concreto
+
+O §2.1 já escreve a invariante ("não pode existir estado em que registrar é impossível") mas
+o contrato original nunca dizia COMO ela se cumpre depois que a barra sai. Checagem contra o
+código real (`registrar-painel.tsx` + `ToothDetailPanel.tsx`) achou um buraco: **5 tipos não
+têm nível "dente"** — `profilaxia`, `clareamento`, `fluor`, `exame_periodontal` (sempre
+`{nivel:'boca'}`, auto-resolvido hoje pela própria função `registrar()`) e `raspagem`
+(ambíguo, quadrante OU boca — o único que precisa mesmo do chip `OndeSeletor` pra resolver).
+`ToothDetailPanel` é **inteiramente por-dente** (`CHIPS` em `ToothDetailPanel.tsx:59-69` não
+inclui nenhum dos 5) — clicar um dente no odontograma **não** é caminho pra estes 5 tipos.
+Sem a barra, e com a IA fora do ar, estes 5 tipos ficariam **sem nenhum caminho de registro**.
+Texto livre (`textoVisita`) tem o mesmo problema pela mesma razão: hoje só entra no rascunho
+via `aplicar()` (que depende da chamada de IA ter sucesso) — se `/api/dex/formatar-evolucao`
+falhar, o texto digitado no campo mágico fica preso lá, nunca chega em `textoVisita`.
+
+**Proposta (não é decisão de produto nova — é a leitura mecânica mais direta de "sai da faixa
+fixa, não do código", D12):** o bloco inteiro do D1.1 (Combobox + catalogoPendente +
+`OndeSeletor` + Status + aviso + textarea de "+ texto da visita") **continua existindo,
+código igual, zero mudança de lógica** — só passa a renderizar dentro de uma disclosure
+fechada por padrão, um link tipo "Registrar sem IA" perto do campo mágico. Isso:
+
+- Fecha o buraco dos 5 tipos boca/região (a única UI que sabe criar `{nivel:'boca'|'arcada'|'quadrante'}` continua existindo, só escondida)
+- Fecha o buraco do texto (a `textarea` de `textoVisita` volta a ser um caminho manual, sem depender de `/api/dex/formatar-evolucao`)
+- Preserva o G12 do C6 (seleção múltipla no odontograma) sem tocar em `onToothToggle` — o mecanismo é o mesmo de hoje, só a visibilidade do chip que o representa muda
+- Custo de implementação ~zero — é mover JSX existente pra dentro de um `<details>`/disclosure, não escrever nada novo
+
+```typescript
+// registrar-painel.tsx — novo estado local, só visibilidade
+const [fallbackAberto, setFallbackAberto] = useState(false);
+// o bloco Combobox…Status…tipoPendente…textarea (hoje sempre visível) passa a viver
+// dentro de `{fallbackAberto && (...)}`, atrás de um botão/link "Registrar sem IA"
+```
+
+⚠️ **Isto precisa da sua confirmação antes de virar código** — é a única peça deste contrato
+que não é transcrição de algo já decidido; é uma proposta pra fechar uma invariante que o
+próprio spec já exige. Se preferir outro mecanismo (ex.: um formulário minúsculo só pros 5
+tipos, em vez de reaproveitar a barra inteira), este é o lugar pra dizer.
+
+#### D1.2 — revisão 04/08 (ao vivo): ele testou a proposta e pediu 3 mudanças
+
+A proposta acima (mover a barra pra dentro de uma disclosure, código igual) foi codada,
+testada ao vivo, e ele pediu ajuste na hora — não é mais o que está no ar. Três mudanças:
+
+| # | O quê | Por quê |
+|---|---|---|
+| 1 | **`OndeSeletor` (chips Arc. sup./Arc. inf./Q1-Q4) sai de vez, não só escondido** | Palavra dele: *"entre os cliques e digitar no campo mágico é muito mais fácil digitar"* — clicar direto no dente do odontograma (`onToothToggle`, inalterado) já resolve "onde" pros tipos por-dente; os 4 tipos de boca resolvem sozinhos por tipo (já resolviam, código de `TIPOS_NIVEL_BOCA` nunca dependeu do chip). `onde-seletor.tsx` e `fdi-popover.tsx` **deletados** (zero call site restante) |
+| 2 | **Chip "Manutenção ortodôntica" entra no lugar** | Ortodontia é o 1º tipo real de "não usa o odontograma" (palavra dele). Reusa `OrtoForm` (`src/components/fichas/orto-form.tsx`, já existia, já era `PluginFormProps`-genérico — zero componente novo) e pré-preenche com `contexto.orto` quando existe (mesma herança do R-05b) — sem isso seria "mais um formulário vazio pra preencher toda visita", o oposto do que a régua de atrito do `MAPA §0` pede |
+| 3 | **1 clique no dente já mostra o balão, não 2** | Palavra dele: *"não eu ter que clicar em dente 28 e abrir"* — `onToothToggle` mudou: 1º clique num dente ainda-não-selecionado agora seleciona **e** chama `onDenteAbertoChange` na mesma tacada (antes: só selecionava, precisava de um 2º toque no mesmo dente pra abrir). Multi-seleção sobrevive como efeito colateral — clicar um 2º dente diferente ainda acumula em `onde.dentes` (serve o caso de `tipoPendente` aguardando onde); clicar um dente JÁ selecionado ainda remove ele do lote |
+
+**Consequência pro `raspagem` (o único tipo com nível ambíguo, quadrante OU boca):** sem chip
+de região, ele perde a opção de ancorar por quadrante inteiro sem clicar dente a dente.
+Aceito conscientemente (mesma razão do item 1) — continua 100% registrável via clique direto
+no dente (âncora de dente, mais preciso que quadrante) ou via campo mágico (a IA resolve
+"raspagem no Q2" pelo texto). Não é um buraco novo: é o mesmo trade-off do item 1, só que
+nomeado pro único tipo que ele afeta de verdade.
+
+**Threading do orto (schema, não migration):** `salvarFicha` já aceita `ortoManutencao` desde
+a migration 105 (`orto_manutencao` em `fichas`) — o "bloqueio" que o `MAPA §2.2` registrava
+era só `salvarVisitaMeuDia` (o wrapper fino deste arquivo) não repassar o campo. Mesmo padrão
+do `alertaNovo`: 1 campo a mais no schema Zod + na chamada pra `salvarFicha`, zero coluna nova.
+
+```typescript
+// actions.ts — salvarVisitaMeuDiaSchema ganha 1 campo (mesmo padrão do alertaNovo)
+ortoManutencao: z.unknown().nullable().optional(),
+// dentro da função: salvarFicha({ ..., ortoManutencao: dados.ortoManutencao ?? null })
+```
+
 ```typescript
 // src/app/dashboard/meu-dia/_components/campo-magico-meu-dia.tsx — NOVO
 export interface CampoMagicoMeuDiaProps {
@@ -186,28 +282,40 @@ export interface CampoMagicoMeuDiaProps {
   onEventosDraftChange: (eventos: OdontogramaEventoDraft[]) => void;
   textoVisita: string;
   onTextoVisitaChange: (texto: string) => void;
-  alertaNovo: string | null;
-  onAlertaNovoChange: (alerta: string | null) => void;
+  onAlertaNovoChange: (alerta: string | null) => void; // só escrita — quem lê é handleSalvar (registrar-painel.tsx)
+  anexarTexto?: { texto: string; nonce: number }; // D8 — repassado direto pro CapturaLivreCard
 }
 ```
 
-Renderiza o gatilho (substitui "+ texto da visita") e, aberto, o container tela cheia
-hospedando `<CapturaLivreCard pacienteNome={...} formDirty={eventosDraft.length > 0 ||
+> **04/08 (implementação) — ajuste de 1 campo no contrato acima:** `alertaNovo` (o valor, não
+> o setter) saiu — `CampoMagicoMeuDia` nunca o lê, só escreve via `onAlertaNovoChange`; quem lê
+> é `handleSalvar` no estado local do próprio `registrar-painel.tsx`. Carregar um valor que
+> ninguém consome é exatamente a prop morta que o `ponytail`/CLAUDE.md pedem pra cortar.
+
+Renderiza o gatilho (substitui **a barra inteira**, D1.1 — não só "+ texto da visita" como a
+versão original desta frase dizia) e, aberto, o container tela cheia hospedando
+`<CapturaLivreCard pacienteNome={...} formDirty={eventosDraft.length > 0 ||
 textoVisita.trim() !== ''} onOrganizado={aplicar} />`. `aplicar(data: EvolucaoFormatada)`:
 
 ```typescript
 function aplicar(data: EvolucaoFormatada) {
   onEventosDraftChange(mesclarEventosSemPerda(eventosDraft, data.odontograma_eventos, hojeBRT()));
 
-  const partes = [textoVisita, data.anotacoes, data.conduta && `Conduta: ${data.conduta}`]
-    .filter((s): s is string => Boolean(s));
+  // 04/08 (implementação) — a versão anterior deste exemplo chamava onTextoVisitaChange((t) =>
+  // ...) num prop tipado (texto: string) => void, que não aceita função updater; e chamava a
+  // prop 2× em sequência (2ª leria o `textoVisita` da closure, ainda desatualizado). Corrigido
+  // pra montar a string final numa passada só, orto incluído.
+  const partes = [
+    textoVisita,
+    data.anotacoes,
+    data.conduta && `Conduta: ${data.conduta}`,
+    data.orto_manutencao && `Orto (a estruturar — ver R-50): ${formatarOrto(data.orto_manutencao)}`,
+  ].filter((s): s is string => Boolean(s));
   onTextoVisitaChange(partes.join('\n\n'));
 
   if (data.alerta_novo) onAlertaNovoChange(data.alerta_novo); // I3
-
   if (data.orto_manutencao) { // I2 — sem tabela própria (R-50); nunca descarta em silêncio
     toast('Detectamos manutenção ortodôntica — sem tabela própria no Meu dia ainda; foi para o texto da visita.');
-    onTextoVisitaChange((t) => `${t}\n\nOrto (a estruturar — ver R-50): ${formatarOrto(data.orto_manutencao)}`);
   }
 }
 ```
@@ -230,6 +338,66 @@ const salvarVisitaMeuDiaSchema = z.object({
 
 `captura-livre-card.tsx:179` — `'bg-red-100 text-red-600 hover:bg-red-200 animate-pulse'` vira
 `'bg-coral/10 text-coral-ink hover:bg-coral/20 animate-pulse'` (D5).
+
+#### D1.3 — D8: Anexar documentos (caixa embaixo do Histórico)
+
+> ⚠️ **04/08 (revisão) — D8 estava decidido (§2) mas nunca virou contrato técnico.** Sem
+> arquivo, sem props, sem definir onde o estado do documento vive. Fechado abaixo.
+
+```typescript
+// src/app/dashboard/meu-dia/_components/anexar-documentos-bloco.tsx — NOVO
+export interface AnexarDocumentosBlocoProps {
+  documentoNome: string | null;
+  documentoTexto: string | null;
+  onAnexado: (nome: string, texto: string) => void;
+  onUsarComoBase: () => void;
+  aberto: boolean;
+  onToggle: () => void;
+}
+```
+
+Reusa a MESMA extração de texto que `captura-livre-card.tsx` já faz em `handleArquivo`
+(`/api/transcrever` pra áudio, `/api/extrair-texto` pra pdf/docx/doc/txt) — extraída pra
+`src/lib/dex/extrair-texto-arquivo.ts` (`extrairTextoDeArquivo(file: File): Promise<{ texto:
+string } | { error: string }>`), a mesma função chamada dos dois lugares (esta caixa nova E o
+`handleArquivo` que já existe). Evita duplicar a lógica de decidir áudio vs. documento pela
+extensão, mesmo motivo do D3.
+
+**Onde o estado vive:** `meu-dia-client.tsx`, ao lado de `eventosDraft`/`textoVisita` — **NÃO
+persiste no banco** (nenhuma migration nesta fatia). "Fica no paciente" (§2, D8) significa
+"não reseta junto com o rascunho da visita", mas ainda é estado de cliente: reseta ao trocar
+de paciente, no MESMO bloco de reset explícito do contrato §5.4 (`idAoResetar`). Se ele quiser
+que o documento sobreviva a um F5 ou volte numa sessão futura, é escopo maior — precisa de
+tabela nova, não assumido aqui.
+
+**"Usar este documento de base"** precisa empurrar o texto extraído pra dentro do campo
+mágico — e `CapturaLivreCard` hoje **não tem entrada pra isso** (`texto` é 100% interno ao
+hook `useCapturaLivre`, `CapturaLivreCardProps` não aceita valor inicial nem texto externo).
+Proposta mínima, mesmo padrão de append que `handleArquivo` já usa internamente:
+
+```typescript
+// captura-livre-card.tsx — 1 prop nova, opcional — callers existentes (FichasTab) não passam,
+// comportamento deles 100% preservado
+export interface CapturaLivreCardProps {
+  pacienteNome: string;
+  formDirty: boolean;
+  onOrganizado: (evolucao: EvolucaoFormatada) => void;
+  anexarTexto?: { texto: string; nonce: number }; // NOVO — nonce muda a cada clique em "usar como base"
+}
+// dentro do componente (ou do hook useCapturaLivre): useEffect observando `anexarTexto?.nonce`,
+// faz setTexto(prev => prev ? `${prev}\n\n${anexarTexto.texto}` : anexarTexto.texto) quando muda
+```
+
+`meu-dia-client.tsx` guarda um `nonce` (`useState(0)`) que incrementa em `onUsarComoBase`, e
+passa `{ texto: documentoTexto, nonce }` pro `CampoMagicoMeuDia`, que repassa pro
+`CapturaLivreCard`.
+
+⚠️ **Não decidido — precisa da sua palavra:** `CapturaLivreCard` mantém o próprio botão
+"Anexar" inline (D1 diz que ele é "reusado tal qual") — que dizer que, no Meu dia, existem
+**2** jeitos de anexar um documento (a caixa nova E o botão inline dentro do campo mágico
+aberto), fazendo a mesma coisa por caminhos diferentes. Recomendo aceitar a redundância por
+agora (zero mudança no componente reusado, resolve sozinho se um dia incomodar) em vez de
+abrir uma prop só pra esconder o botão — mas é call sua, não assumo.
 
 ## 5. Referência visual
 
@@ -259,6 +427,8 @@ const salvarVisitaMeuDiaSchema = z.object({
 - [ ] **I5** — `chaveDedupEvento`/`dedupEventosDraft`/`mesclarEventosSemPerda` têm **1 única definição** (`src/lib/odontograma/`) — FichasTab e Meu dia importam, nenhum reimplementa.
 - [ ] **I6** — Trocar de paciente (`agendamentoId` muda) zera o campo mágico junto com `eventosDraft`/`textoVisita` — herda o reset explícito do contrato §5.4.
 - [ ] **I7** — **(D2, fusão)** O componente único **nunca** deixa o destino vazar: o caminho `origem='importado'` continua gravando data retroativa e **jamais** se apresenta como atendimento real (as 3 superfícies + badge do PDF que o R-46c construiu seguem valendo); o caminho "hoje" **jamais** grava `origem='importado'`. Testar os dois destinos no banco, não na tela.
+- [ ] **I8** — **(D1.2, 04/08, revisada)** `profilaxia`/`clareamento`/`fluor`/`exame_periodontal` continuam registráveis via Combobox (disclosure "Registrar sem IA") sem qualquer chamada de IA. `raspagem` continua registrável clicando o dente diretamente no odontograma (âncora de dente — perdeu a opção de quadrante/boca sem clicar dente a dente, aceito 04/08). Texto puro continua gravável via `textarea` de fallback. Nenhum tipo do catálogo fica sem NENHUM caminho de registro com `/api/dex/formatar-evolucao` fora do ar.
+- [ ] **I9** — **(D1.2, 04/08)** `ortoManutencao` do chip "Manutenção ortodôntica" grava em `fichas.orto_manutencao` — conferir no banco, não só na tela (mesma classe de prova que I3/I5 já exigem pro resto do payload).
 
 ## 6b. Q5 — ✂️ CORTADA por ele (03/08)
 
@@ -290,15 +460,28 @@ alimentar o componente com mais eventos.
 - [ ] **G7** — Estado "gravando" usa `coral`, não hex — conferido dark **e** light.
 - [ ] **G8** — Trocar de paciente zera o campo mágico (aberto ou fechado) junto com o resto do rascunho.
 - [ ] **G9** — Falha da chamada `/api/dex/formatar-evolucao` (rede, 500) **não** apaga o texto já digitado — toast de erro, texto continua no campo.
+- [ ] **G10** — (D1.2, I8) Com a disclosure "Registrar sem IA" aberta: registrar profilaxia (ou outro dos 4 tipos de boca) via Combobox, sem tocar em nada de IA, e salvar — evento grava `{nivel:'boca'}`, sem passar por `/api/dex/formatar-evolucao`. `raspagem`: clicar um dente diretamente no odontograma com o tipo escolhido antes ou depois (ordem livre) — grava âncora de dente, também sem IA.
+- [ ] **G11** — (D1.2) Digitar texto na `textarea` de fallback, sem clicar em "Organizar com Dex" em lugar nenhum, e salvar — `textoVisita` grava exatamente o que foi digitado.
+- [ ] **G12** — (D1.2, 04/08 revisado) 1 clique num dente ainda-não-selecionado já mostra o resumo (C6) — não precisa de 2º toque. Clicar um 2º dente diferente acumula seleção (serve `tipoPendente` aguardando onde); clicar um dente JÁ selecionado remove do lote. Testar com a disclosure "Registrar sem IA" fechada OU aberta — comportamento idêntico nos dois estados.
+- [ ] **G13** — (D1.2, 04/08) Chip "Manutenção ortodôntica": abrir sem histórico prévio nasce com `OrtoForm` vazio (arcada "Superior", resto null — `ORTO_VAZIO`); abrir COM `contexto.orto` existente nasce pré-preenchido com a última manutenção real do paciente (herança R-05b). Editar e salvar — grava em `fichas.orto_manutencao` (I9). Visita só-de-orto (zero evento, zero texto) habilita o botão Salvar (não fica preso em "Já registrado hoje").
+- [ ] **G14** — (D8) Anexar um documento na caixa nova extrai o texto (mesmo backend que o anexo de hoje usa) e mostra nome+preview; "usar este documento de base" leva o texto pro campo mágico (aparece na `textarea` dele, sem apagar o que já estava digitado — append, não substituição).
+- [ ] **G15** — (D8) Trocar de paciente limpa o documento anexado (nome+texto), mesmo bloco de reset do `eventosDraft`/`textoVisita` (§5.4).
 
 ## 8. Fora de escopo
 
 - Forma visual final do "tela cheia" — decide no brief/artefato antes de D1 entrar em código.
 - Fundir `ColarDoWordDialog` com o campo mágico novo (D2 — recomendação é não fundir; ele confirma).
 - Resolver o R-50 de verdade (orto sem ativação manual) — o toast/fallback de texto aqui é rede de segurança, não solução.
-- Responsividade/tablet — herdado do P8 do cockpit.
+- ~~Responsividade/tablet — herdado do P8 do cockpit.~~ **REVOGADO — ver nota abaixo.**
 - Trocar `window.confirm` por modal estilizado — debt pré-existente do perfil, não desta fatia.
 - Trocar o `Loader2` ad-hoc do `CapturaLivreCard` pelo `DexLoader` canônico — cosmético, registrado, não expandido sozinho.
+
+> ⚠️ **04/08 (revisão) — a isenção de responsivo acima está desatualizada.** O P8 (P de
+> "polimento", tablet/celular fora de escopo) foi revogado em 03/08 pelo [C6 §2.5](R-46-C6-layout-cockpit.md#25--decidido-por-ele-0308-responsivo-entra-nesta-fatia-o-p8-morre),
+> que diz explicitamente: *"Isso encarece esta fatia e o R-46d D1"* — ou seja, o próprio C6 já
+> contava esta fatia como alcançada pela revogação. `campo-magico-meu-dia.tsx` e
+> `anexar-documentos-bloco.tsx` (D8) entram no mesmo gate de iPad retrato (768px) que o C6/G14
+> mede — não têm isenção própria.
 
 ## 9. Riscos registrados (não bloqueiam D0)
 

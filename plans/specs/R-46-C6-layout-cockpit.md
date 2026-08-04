@@ -8,7 +8,11 @@
 > **Depende de:** [R-46-cockpit.md](R-46-cockpit.md) (aprovada) ·
 > [R-46-cockpit-contrato.md](R-46-cockpit-contrato.md) (C0-C5 codados) ·
 > [R-55](R-55-historico-sem-perda-de-dado.md) (aprovada, codada — Histórico já tem fidelidade
-> total, condição para a Q1 abaixo não perder dado)
+> total, condição para a Q1 abaixo não perder dado) ·
+> [R-46d D1](R-46d-campo-magico.md) (contrato — **acoplado, não mais opcional**: é ele quem
+> entrega o `AnexarDocumentosBloco` que esta spec encaixa na esquerda (D8) e quem esvazia o
+> centro (D12), fechando a redistribuição do §2.6. Sem D1, esta spec sozinha entrega
+> jaFeito-sai + Sheet, mas não fecha as colunas nem o estouro de 37px do `MAPA §1`)
 > **Escopo:** desktop **e responsivo** — ver §2.5. O P8 ("tablet/celular fora") foi
 > **revogado por ele em 03/08**: responsivo passa a ser requisito de toda fatia de UI, não
 > polimento posterior.
@@ -77,7 +81,23 @@ uma linha por evento. Nada fica inacessível no momento em que o bloco sai.
 O "histórico detalhado" (card por procedimento, tabela de endo, observação, autor) continua
 sendo **item próprio e posterior** — ele melhora a leitura, não destrava o C6.
 
-### Q2 — ✅ RESPONDIDA POR ELE (03/08): dois painéis, não um
+> ⚠️⚠️ **04/08 (2ª correção ao vivo, no mesmo dia) — Q2 inteira foi REVOGADA.** Depois de usar
+> o resumo+`Sheet` (abaixo) ao vivo, ele pediu de volta o mecanismo pré-C6: **1 painel só**,
+> completo (`ToothDetailPanel` sem alteração — faces, chips, tabela de especialidade),
+> flutuando **ao lado do odontograma** dentro de `registrar-painel.tsx`, card próprio com
+> `gap-4` de respiro — não mais resumo pequeno na direita + `Sheet` separado. Só que a razão
+> do WCAG que motivou Q2 continua real: painel void a espaço da MESMA linha do odontograma.
+> Solução: `colapsarDireita` — morto por esta spec, **voltou** — some quando `denteAberto !=
+> null`, devolvendo os 312px+gap pro centro. Medido ao vivo: dente continua 43×76px com o
+> painel aberto (idêntico ao estado fechado) — a regressão que motivou Q2 não voltou.
+> `tabelaContainer` (mecanismo R-20, nunca estava aceso no C6/Sheet) foi ligado: selecionar
+> "Canal" abre a ficha endodôntica completa abaixo do odontograma+painel, full-width — era
+> parte do pedido dele ("abaixo do odontograma aparecer o procedimento com a tabela").
+> `dente-resumo-bloco.tsx` e o `Sheet` de `meu-dia-client.tsx` foram **deletados** — zero uso
+> restante. A tabela abaixo (Q2 original) e o texto seguinte descrevem a versão JÁ SUPERADA —
+> mantidos como histórico do raciocínio, não como contrato vigente.
+
+### Q2 — ~~RESPONDIDA POR ELE (03/08)~~ REVOGADA 04/08 (ver acima): dois painéis, não um
 
 **A recomendação original desta seção (painel vira o conteúdo do slot `direita`) foi
 SUPERADA.** Ele decidiu partir em dois, e o motivo é o gate WCAG: se o painel completo ocupa
@@ -86,8 +106,15 @@ encolhe. Nenhum dos dois resolve — a saída é o painel completo **sair do flu
 
 | | Onde | O quê | Edita? |
 |---|---|---|---|
-| **Painel pequeno** | Inline na coluna direita, como **mais um item do acordeão** (fecha os outros, igual aos blocos de hoje) | Resumo do dente selecionado + botão "abrir completo" | **Não** — só leitura |
+| **Painel pequeno** | Inline na coluna direita, **1º item** (topo, mesma linha do odontograma) | Resumo do dente selecionado + botão "abrir completo" | **Não** — só leitura |
 | **Painel completo** | **`Sheet` deslizando da direita**, sobrepondo | O `ToothDetailPanel` de hoje **inteiro, sem alteração** | Sim |
+
+> ⚠️ **04/08 (correção ao vivo) — "fecha os outros, igual aos blocos de hoje" foi testado e
+> revogado por ele na mesma sessão.** Ver Q3 abaixo: não existe mais exclusão mútua em
+> nenhuma coluna. O resumo do dente é o **primeiro** filho da direita (não o último, como a
+> primeira implementação fez) — é isso que garante "mesma linha do odontograma" sem precisar
+> de posição especial: a direita já é coluna fixa, o 1º item dela nasce alinhado ao topo do
+> centro.
 
 **Consequências que isso resolve de graça:**
 
@@ -113,14 +140,20 @@ de leitura, não layout novo.
 | **O que isso desfaz do C3** | O mecanismo `colapsarDireita` inteiro (`cockpit-grid.tsx`) e a renderização do `ToothDetailPanel` dentro de `registrar-painel.tsx` (§5.3 do contrato original) são **substituídos**, não mantidos em paralelo |
 | **Alternativa descartada** | Manter o mecanismo atual (painel flutua no centro, direita colapsa) e só dar ao painel uma "casca" visual parecida com um card de coluna direita. Descarto: não resolve o atrito real (o card que o dentista tocou continua sumindo), e mantém 2 mecanismos de layout fazendo o mesmo trabalho |
 
-### Q3 — "Fecha os blocos automaticamente": só a direita, e volta como estava
+### Q3 — ✅ REVOGADA por ele, 04/08 (ao vivo): nenhum bloco fecha o outro, em nenhuma coluna
+
+A recomendação original desta seção (só a direita fecha, mecanismo de exclusão mútua herdado
+do `abertoDireita`) foi testada ao vivo nesta sessão e rejeitada. Palavra dele: *"quando eu
+abro o histórico, ele fecha anexar... eu não quero, quero que seja tudo aberto ou não"* — ele
+queria **liberdade total**: cada bloco (esquerda e direita, painel do dente incluso) abre e
+fecha **independente**, sem nenhum apagar o outro.
 
 | | |
 |---|---|
-| **Recomendo** | Só a coluna **direita** fecha — é ela que compartilha espaço com o painel; a esquerda (Histórico) não precisa e não tem motivo geométrico pra fechar junto |
-| **Como fecha** | Por construção: `direita` vira `denteAberto != null ? <painel> : <blocos>` — não existe "fechar accordion" separado, o conteúdo troca inteiro. Nenhum estado extra pra zerar |
-| **Ao fechar o painel** | Os 3 blocos voltam no **mesmo estado de acordeão** que tinham antes (`abertoDireita` não é tocado pela abertura/fechamento do painel — só deixa de ser renderizado por um tempo) |
-| **Alternativa descartada** | Fechar a esquerda também (modo foco total). Sem motivo técnico — só estética. Fica pra ele decidir se quiser; não assumo |
+| **Implementado** | `abertoEsquerda`/`abertoDireita` (valor único, radio-style) **saíram**. Cada bloco tem seu próprio `useState<boolean>` (`historicoAberto`, `anexosAberto`, `concluidosHojeAberto`, `aFazerAberto`, `novosProcedimentosAberto`, `denteResumoAberto`) — 6 estados independentes, `BlocoMoldavel` continua controlado do mesmo jeito, só quem manda nele que mudou |
+| **Ao selecionar um dente** | `denteResumoAberto` vira `true` (mesmo se um dente anterior tivesse sido recolhido manualmente) — clicar um dente é sempre "quero ver isso agora". Não mexe em nenhum outro bloco |
+| **Ao fechar o painel/trocar de paciente** | Nenhum bloco muda de estado por causa disso — só `denteAberto`/`sheetAberto` resetam (o resumo para de renderizar, não porque foi "fechado", porque não há mais dente selecionado) |
+| **Descartado (recomendação original)** | Exclusão mútua por coluna (`abertoDireita`/`abertoEsquerda` de valor único) — rejeitada ao vivo, não é mais válida em lugar nenhum do cockpit |
 
 ### Q4 — Coluna direita hoje: correção do inventário
 
@@ -202,15 +235,24 @@ Nada fica inacessível.
 
 ### Arquivos tocados
 
+> ⚠️ **04/08 (revisão) — a tabela e o G2/G8 do §7 foram escritos ANTES da redistribuição do
+> §2.6 ter sido decidida** (a versão anterior sobrevivia com `AbertoDireita` de 4 itens,
+> `Concluídos hoje` incluído — direto contra o que o §2.6 já fechava). A versão abaixo é a
+> primeira a refletir o §2.6 de verdade.
+
 | Arquivo | Muda |
 |---|---|
 | `src/server/dashboard/get-meu-dia.ts` | Remove `jaFeito`, `MeuDiaEventoFeito`, `MeuDiaOcorrenciaFeita`, `realizadosPorPaciente` e o loop que os monta. `pendencias` (via `vencedorPorAncora`) **intocado** |
 | `_components/ja-feito-bloco.tsx` | **Deletar.** Não reaproveita — o "já feito" não tem componente próprio nesta tela; o Histórico é quem mostra |
-| `_components/cockpit-grid.tsx` | Remove `colapsarDireita`; grid sempre `grid-cols-[320px_minmax(0,1fr)_312px]`, em qualquer estado |
-| `_components/registrar-painel.tsx` | Remove o JSX do `ToothDetailPanel` e o efeito `getGruposAbertos` (migram pra `meu-dia-client.tsx`); o wrapper do `Odontograma` some (não compartilha mais linha com painel nenhum) |
-| `_components/meu-dia-client.tsx` | Remove import/render de `JaFeitoBloco`; `AbertoDireita` perde `'jaFeito'`, ganha `'painelDente'`; ganha o fetch de `gruposAbertos` (migrado); `direita` do `CockpitGrid` ganha o 4º item do acordeão (resumo do dente) + o `Sheet` do painel completo, montado fora do `CockpitGrid` (`Sheet` é overlay, não ocupa slot de grid) |
+| `_components/cockpit-grid.tsx` | Remove `colapsarDireita`; grid sempre `grid-cols-[320px_minmax(0,1fr)_312px]`, em qualquer estado. Mecânica inalterada por §2.6 — só o CONTEÚDO dos slots muda, não o grid em si |
+| `_components/registrar-painel.tsx` | Remove o JSX do `ToothDetailPanel` e o efeito `getGruposAbertos` (migram pra `meu-dia-client.tsx`); o wrapper do `Odontograma` some (não compartilha mais linha com painel nenhum). **Não toca** na barra/combobox/`OndeSeletor` — isso é escopo do R-46d D1 (D7/D12), mesmo arquivo, PR conjunta |
+| `_components/meu-dia-client.tsx` | Remove import/render de `JaFeitoBloco`. `abertoDireita`/`abertoEsquerda` (valor único) **saem de vez** (Q3, revogada 04/08) — cada bloco vira `useState<boolean>` próprio (6 no total: `historicoAberto`, `anexosAberto`, `concluidosHojeAberto`, `aFazerAberto`, `novosProcedimentosAberto`, `denteResumoAberto`). Ganha o fetch de `gruposAbertos` (migrado). `direita` do `CockpitGrid` fica com **3** itens — `DenteResumoBloco` **primeiro**, depois `AFazerBloco`, depois `NestaSessaoBloco` de "Novos procedimentos" — + o `Sheet` do painel completo montado fora do grid. `esquerda` fica com **3** itens (`HistoricoBloco`, `AnexarDocumentosBloco` — componente novo do R-46d D8 que esta spec só consome/encaixa — e `NestaSessaoBloco` de "Concluídos hoje", **migrado da direita, zero mudança no componente**, só o slot que o recebe) |
 | **novo** `_components/dente-resumo-bloco.tsx` | Resumo só-leitura do dente selecionado — eventos daquele dente em `eventosDraft`, botão "abrir completo" |
 | `_components/meu-dia-format.ts` | Comentário de topo perde a referência a `ja-feito-bloco` |
+
+**Não é arquivo desta spec, mas ela consome o resultado:** `_components/anexar-documentos-bloco.tsx`
+(novo) é construído pelo [R-46d D1 (D8)](R-46d-campo-magico.md) — C6 só importa e encaixa no
+slot `esquerda`, não define o componente.
 
 **Reuso — não recriar:** `ToothDetailPanel` (vai pro `Sheet` sem alteração), `Odontograma`,
 `AFazerBloco`, `NestaSessaoBloco`, `BlocoMoldavel`, `HistoricoBloco`, `getGruposAbertos`,
@@ -218,18 +260,33 @@ Nada fica inacessível.
 
 ### Types
 
+> ⚠️ **04/08 (correção ao vivo, Q3) — `AbertoDireita`/`AbertoEsquerda` (valor único, exclusão
+> mútua) foram implementados, testados, e REJEITADOS por ele na mesma sessão** ("quero que
+> seja tudo aberto ou não"). Os dois tipos abaixo nunca existiram na versão final — cada bloco
+> tem seu próprio booleano independente. Deixo o histórico riscado porque é exatamente esse
+> tipo de decisão que só aparece testando ao vivo, não lendo a spec.
+
 ```typescript
-// meu-dia-client.tsx — perde 'jaFeito', ganha 'painelDente'
-type AbertoDireita = 'aFazer' | 'concluidosHoje' | 'novosProcedimentos' | 'painelDente' | null;
+// meu-dia-client.tsx — implementado, testado ao vivo, revogado por ele no mesmo dia:
+// ~~type AbertoDireita = 'aFazer' | 'novosProcedimentos' | 'painelDente' | null;~~
+// ~~type AbertoEsquerda = 'historico' | 'anexos' | 'concluidosHoje' | null;~~
+
+// versão final — 1 useState<boolean> por bloco, sem tipo de exclusão nenhum
+const [historicoAberto, setHistoricoAberto] = useState(true);
+const [anexosAberto, setAnexosAberto] = useState(false);
+const [concluidosHojeAberto, setConcluidosHojeAberto] = useState(false);
+const [aFazerAberto, setAFazerAberto] = useState(true);
+const [novosProcedimentosAberto, setNovosProcedimentosAberto] = useState(false);
+const [denteResumoAberto, setDenteResumoAberto] = useState(true);
 
 // cockpit-grid.tsx — sem colapso, nunca existiu conteúdo condicional no slot
 export interface CockpitGridProps {
   esquerda: React.ReactNode;
   centro: React.ReactNode;
-  direita: React.ReactNode; // sempre os 4 itens do acordeão — o Sheet NÃO entra aqui
+  direita: React.ReactNode; // esquerda: 3 itens de acordeão · direita: 3 — Sheet não entra em nenhum
 }
 
-// get-meu-dia.ts — MeuDiaEventoFeito e MeuDiaOcorrenciaFeita SAEM inteiros
+// get-meu-dia.ts — MeuDiaEventoFeito e MeuDiaOcorrenciaFeita SAEM inteiros (inalterado pelo §2.6)
 export interface MeuDiaContexto {
   visitas: MeuDiaVisita[];
   // jaFeito REMOVIDO — o dado equivalente já está em visitas[].eventos (R-55)
@@ -241,15 +298,31 @@ export interface MeuDiaContexto {
 
 ### Comportamento
 
-`direita` do `CockpitGrid` continua sendo **sempre os mesmos 4 itens de acordeão** —
-`AFazerBloco`, os 2 `NestaSessaoBloco`, e o novo `DenteResumoBloco` (só renderiza quando
-`denteAberto != null`; os outros 3 sempre renderizam, mesmo fechados — é o padrão que já existe).
-Selecionar um dente abre o `DenteResumoBloco` e fecha os outros (mesmo mecanismo de
-`abertoDireita`, sem estado novo). O `Sheet` com o `ToothDetailPanel` completo é um **overlay**,
-montado uma vez em `meu-dia-client.tsx`, fora do grid — abre pelo botão "abrir completo" do
-resumo, recebe as mesmas props que o `ToothDetailPanel` já recebe hoje
-(`dente`, `eventos={eventosDraft}`, `onChange={setEventosDraft}`, `onClose`, `dataPadrao`,
-`gruposAbertos`) sem nenhuma delas mudar de forma.
+`direita` do `CockpitGrid` passa a ser **3 itens** — o novo `DenteResumoBloco` **primeiro**
+(só renderiza quando `denteAberto != null`), depois `AFazerBloco`, depois o `NestaSessaoBloco`
+de "Novos procedimentos". Ordem importa (04/08, ao vivo): o resumo vem **antes** dos outros
+dois porque ele "fica na mesma linha do odontograma" — a direita é coluna fixa, o 1º filho
+dela nasce alinhado ao topo do centro, sem precisar de `position: absolute` nem CSS especial.
+Selecionar um dente **mostra** o `DenteResumoBloco` (monta) e força `denteResumoAberto = true`
+— não fecha os outros dois, cada um mantém o que já tinha (§2 Q3, revogada). O `Sheet` com o
+`ToothDetailPanel` completo é um **overlay**, montado uma vez em `meu-dia-client.tsx`, fora do
+grid — abre pelo botão "abrir completo" do resumo, recebe as mesmas props que o
+`ToothDetailPanel` já recebe hoje (`dente`, `eventos={eventosDraft}`, `onChange={setEventosDraft}`,
+`onClose`, `dataPadrao`, `gruposAbertos`) sem nenhuma delas mudar de forma.
+
+`esquerda` passa a ter **3 itens** também: `HistoricoBloco` (nasce aberto, como hoje), o
+`NestaSessaoBloco` de "Concluídos hoje" (**migrado da direita — mesmo componente, mesmas
+props, só troca de slot no JSX de `meu-dia-client.tsx`**) e o novo `AnexarDocumentosBloco`
+(construído e com seu próprio contrato no [R-46d D1 §D8](R-46d-campo-magico.md) — esta spec só
+importa e encaixa, não define comportamento dele). Nenhum dos 3 fecha os outros — cada `aberto`
+é seu próprio `useState`.
+
+⚠️ **Acoplamento com R-46d, não mais opcional (§2.6).** O layout final descrito acima só fecha
+quando o R-46d D1 também entrar: é ele quem esvazia o centro (D12 — barra/chips saem) e quem
+entrega o `AnexarDocumentosBloco` (D8). Codar só esta spec entrega jaFeito-sai + Sheet, mas
+**não** entrega a redistribuição de colunas nem resolve o estouro de 37px medido no `MAPA §1`
+— os dois specs foram desenhados pra fechar juntos, mesmos arquivos (`meu-dia-client.tsx`,
+`registrar-painel.tsx`).
 
 `gruposAbertos` migra: `useState<GrupoAberto[]>([])` + `useEffect` chamando
 `getGruposAbertos(pacienteId)` sobem de `registrar-painel.tsx` (linhas 163-167) para
@@ -291,19 +364,20 @@ irmão pra dividir espaço — o odontograma nunca mais compartilha linha com pa
 ## 7. Gates de aceite
 
 - [ ] **G1** — `grep -r "jaFeito\|MeuDiaEventoFeito\|MeuDiaOcorrenciaFeita\|ja-feito-bloco" src` devolve vazio. Typecheck + build limpos
-- [ ] **G2** — coluna direita mostra sempre os mesmos 4 itens de acordeão (A fazer, Concluídos hoje, Novos procedimentos, [resumo do dente] só quando há seleção) — nunca "Já feito"
-- [ ] **G3** — clicar num dente (odontograma OU linha de "Concluídos hoje"/"Novos procedimentos") abre o **resumo pequeno** na coluna direita, fechando os outros 3 itens do acordeão — sem o odontograma mudar de tamanho
+- [ ] **G2** — coluna direita mostra sempre [resumo do dente, só quando há seleção, PRIMEIRO], A fazer, Novos procedimentos — nunca "Já feito" nem "Concluídos hoje" (foi pra esquerda). Coluna esquerda mostra sempre Histórico, Anexar documentos, Concluídos hoje
+- [ ] **G3** — clicar num dente (odontograma OU linha de "Concluídos hoje"/"Novos procedimentos") mostra o **resumo pequeno** já expandido, como 1º item da coluna direita — sem fechar A fazer/Novos procedimentos (04/08: exclusão mútua saiu, G3 original testava o comportamento errado) e sem o odontograma mudar de tamanho
 - [ ] **G4** — "abrir completo" no resumo abre o **`Sheet`** com o `ToothDetailPanel` intacto — comparar campo a campo com o painel de hoje (nada perdido na migração)
-- [ ] **G5** — fechar o `Sheet` (X, clique fora, Esc) volta pro resumo, sem perder `eventosDraft`; recolher/trocar o item do acordeão restaura os outros 3 blocos **no mesmo estado** de antes
+- [ ] **G5** — fechar o `Sheet` (X, clique fora, Esc) volta pro resumo, sem perder `eventosDraft`; recolher o resumo manualmente não mexe em A fazer/Novos procedimentos (04/08: nenhum bloco depende do estado de outro)
 - [ ] **G6** — regressão WCAG: medir o dente do odontograma com o resumo aberto E o `Sheet` aberto — nos dois casos ≥24px e **idêntico** ao estado neutro (o odontograma nunca varia de tamanho, em nenhum estado)
 - [ ] **G7** — formulário de especialidade (endo/implante) dentro do `Sheet` renderiza sem scroll horizontal nem campo cortado — testar com um dente de canal, e testar a largura real do `Sheet` (não presumir que 312px do resumo se aplica)
-- [ ] **G8** — coluna esquerda (Histórico) não fecha nem muda de estado quando o resumo ou o `Sheet` do dente abrem
-- [ ] **G9** — trocar de paciente com o resumo ou o `Sheet` abertos fecha os dois e restaura a direita — sem regressão da trava §5.4 (C1)
+- [ ] **G8** — todos os 6 blocos (Histórico, Anexar documentos, Concluídos hoje, A fazer, Novos procedimentos, resumo do dente) abrem/fecham 100% independentes — testar os 6 abertos ao mesmo tempo, nenhum fecha nenhum outro (04/08, ao vivo — confirmado: Histórico+Anexar+Concluídos+A fazer simultâneos)
+- [ ] **G9** — trocar de paciente com o resumo ou o `Sheet` abertos fecha os dois (`denteAberto`/`sheetAberto` zeram) — os OUTROS blocos (Histórico, Anexar, Concluídos, A fazer, Novos procedimentos) mantêm o estado aberto/fechado que tinham, sem regressão da trava §5.4 (C1)
 - [ ] **G10** — regressão: "fazer hoje →", contadores e `ToothGroupList` nos 3 blocos remanescentes funcionam exatamente como hoje
 - [ ] **G11** — regressão R-55: Histórico (esquerda) continua sem dedup, toda ocorrência aparece — é ele quem agora carrega sozinho o que "Já feito" mostrava
 - [ ] **G12** — regressão C5: seleção múltipla no odontograma continua funcionando (anel aparece, 2º toque com 2+ selecionados remove do lote) — a mudança na JSX ao redor do `Odontograma` não deve tocar `onToothToggle`
 - [ ] **G13** — `git diff --stat` confirma zero mudança em `salvarVisitaMeuDia`, RLS, migration, `supabase/`
 - [ ] **G14** — responsivo (§2.5): grade de 3 colunas em iPad retrato (768px) não estoura 1,7 tela de rolagem — medir antes/depois. `Sheet` em tela estreita vira largura total sem código extra (comportamento nativo do componente) — confirmar, não presumir
+- [ ] **G15** — medir a altura de esquerda/direita em 1440×900 com o layout FINAL (esta spec + R-46d D1 juntos, paciente com histórico real pós-R-58) e comparar com o `MAPA §1`: a medição de 04/08 (esquerda 237px / direita 269px) foi feita ANTES da redistribuição — esquerda ganhou 2 blocos, direita perdeu 1, não é mais válida como baseline. Gate só fecha com os dois specs no ar juntos — sozinha, esta spec não muda o centro (a peça que realmente estoura os 37px)
 
 ## 8. Fora de escopo
 
