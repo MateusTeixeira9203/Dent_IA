@@ -846,7 +846,7 @@ function HomeView({
         {/* ── Próxima consulta com contexto ───────────────────────────────────── */}
         {ctx && ctx.proximoAgendamentoId && ctx.proximoPaciente && !isConsultaPage && (
           <button
-            onClick={() => onNavigate(`/consulta/${ctx.proximoAgendamentoId!}`)}
+            onClick={() => onNavigate(`/dashboard/meu-dia?ag=${ctx.proximoAgendamentoId!}`)}
             className="w-full rounded-xl px-3.5 py-3 flex items-center gap-3 text-left transition-all hover:brightness-105 active:scale-[0.985]"
             style={{ background: 'rgba(47,156,133,0.07)', border: '1px solid rgba(47,156,133,0.20)' }}
           >

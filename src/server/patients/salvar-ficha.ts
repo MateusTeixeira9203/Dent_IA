@@ -88,10 +88,10 @@ const salvarFichaSchema = z.object({
 
 /**
  * Monta as linhas de `odontograma_eventos` — mesma lógica que
- * `src/app/consulta/[agendamentoId]/actions.ts:montarRowsEventos`. Duplicada aqui em vez de
- * importada porque aquele arquivo é client-facing (server actions de outra rota) e sua função
- * não é exportada; a Fase 2 desta migração remove o caminho antigo, momento em que a duplicação
- * (não a função) desaparece — a próxima leitura desta nota confirma se já foi feito.
+ * `src/server/patients/registro-actions.ts:montarRowsEventos` (movido de `app/consulta/` no
+ * R-72). Duplicada aqui em vez de importada porque sua função não é exportada — a Fase 2
+ * desta migração remove o caminho antigo, momento em que a duplicação (não a função)
+ * desaparece — a próxima leitura desta nota confirma se já foi feito.
  */
 function montarRowsEventos(
   eventos: OdontogramaEventoDraft[],

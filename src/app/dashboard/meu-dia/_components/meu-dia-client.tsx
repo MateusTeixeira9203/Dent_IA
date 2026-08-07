@@ -36,7 +36,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { AlertCircle } from 'lucide-react';
 import {
   atualizarStatusEncaminhado, encaminharProcedimento, getGruposAbertos,
-} from '@/app/consulta/[agendamentoId]/actions';
+} from '@/server/patients/registro-actions';
 import { EncaminharBar } from '@/components/fichas/encaminhar-bar';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Rail } from './rail';

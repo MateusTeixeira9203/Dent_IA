@@ -2079,7 +2079,7 @@ export function PacienteDetailClient({
                             </div>
                             {canWriteClinical && isUpcoming && !['cancelled', 'no_show', 'completed'].includes(ag.status) && (
                               <button
-                                onClick={() => router.push(`/consulta/${ag.id}`)}
+                                onClick={() => router.push(`/dashboard/meu-dia?ag=${ag.id}`)}
                                 className="shrink-0 px-3 py-1.5 bg-teal text-white rounded-lg text-xs font-bold hover:bg-teal-lt transition-colors"
                               >
                                 Iniciar

@@ -1227,7 +1227,7 @@ export function AgendamentosClient({
           }}
           onNewAppointment={abrirNovoAgendamento}
           onVerFicha={(pacienteId) => router.push(`/dashboard/pacientes/${pacienteId}`)}
-          onStartConsulta={(aptId) => router.push(`/consulta/${aptId}`)}
+          onStartConsulta={(aptId) => router.push(`/dashboard/meu-dia?ag=${aptId}`)}
           onRequestAssinatura={(pacienteId, nome, aptId) =>
             setAssinaturaModal({ pacienteId, pacienteNome: nome, aptId })
           }
@@ -2028,7 +2028,7 @@ export function AgendamentosClient({
 
                       {!isSecretaria && selectedApt.paciente && !['cancelled', 'no_show', 'completed'].includes(selectedApt.status) && (
                         <Button
-                          onClick={() => router.push(`/consulta/${selectedApt.id}`)}
+                          onClick={() => router.push(`/dashboard/meu-dia?ag=${selectedApt.id}`)}
                           className="w-full rounded-xl flex items-center justify-center gap-1.5 bg-gradient-to-r from-teal to-teal-lt text-white shadow-[0_4px_16px_rgba(47,156,133,0.3)] hover:-translate-y-0.5 transition-all"
                         >
                           <Stethoscope className="w-4 h-4" />

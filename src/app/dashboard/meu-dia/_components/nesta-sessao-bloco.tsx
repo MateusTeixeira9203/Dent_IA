@@ -9,7 +9,7 @@
 // existia no registro; isso só dá pra ele um lugar visível em vez de decidir uma lista
 // invisível. Nascem fechados; título ganha destaque teal quando há rascunho.
 
-import { ToothGroupList } from '@/app/consulta/[agendamentoId]/_components/tooth-group-list';
+import { ToothGroupList } from '@/components/odontograma/tooth-group-list';
 import type { OdontogramaEventoDraft } from '@/types/odontograma';
 
 export interface NestaSessaoBlocoProps {

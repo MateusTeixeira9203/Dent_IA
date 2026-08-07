@@ -2,7 +2,7 @@
 
 import { requireClinicContext } from '@/server/auth/clinic';
 import { createServiceClient } from '@/lib/supabase/service';
-import { assinarTodosRealizadosDaFicha } from '@/app/consulta/[agendamentoId]/actions';
+import { assinarTodosRealizadosDaFicha } from '@/server/patients/registro-actions';
 
 /**
  * R-03b — uma ficha "falta assinar" de 2 formas agora: granular (algum evento realizado

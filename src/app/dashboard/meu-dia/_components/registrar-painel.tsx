@@ -41,7 +41,7 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { Check, AlertTriangle, Loader2, X } from 'lucide-react';
 import { Odontograma } from '@/components/odontograma/Odontograma';
-import { salvarEventosOdontograma } from '@/app/consulta/[agendamentoId]/actions';
+import { salvarEventosOdontograma } from '@/server/patients/registro-actions';
 import { CampoMagicoMeuDia } from './campo-magico-meu-dia';
 import { OrtoForm } from '@/components/fichas/orto-form';
 import { hojeBRT } from '@/lib/hora-brt';

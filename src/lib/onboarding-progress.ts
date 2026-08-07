@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import type { FocoPrincipal } from '@/lib/persona';
 
 export interface PassoProgresso {
-  id: 'demo' | 'paciente' | 'consulta_real' | 'planejamento' | 'procedimentos';
+  id: 'paciente' | 'consulta_real' | 'planejamento' | 'procedimentos';
   done: boolean;
 }
 
@@ -13,9 +13,10 @@ export interface OnboardingProgresso {
 }
 
 /**
- * Deriva o estado dos 5 passos de ativação a partir do banco.
- * O passo "demo" não persiste no banco (a demo não salva) → vem de flag
- * local no client (o card faz o OR com localStorage).
+ * Deriva o estado dos 4 passos de ativação a partir do banco. (R-72, 07/08: o passo "demo"
+ * saiu — apontava pro modo consulta aposentado, e nunca persistia no banco mesmo.)
+ * `consulta_real` mede `origem='modo_consulta'` — rótulo de dado que o Meu dia ainda grava
+ * (R-11), não depende da rota `/consulta` que foi embora.
  *
  * A ordem dos passos é calibrada pela persona (Workstream B2): o passo-âncora
  * da dor de cada perfil vem primeiro.
@@ -40,7 +41,6 @@ export async function getOnboardingProgresso(
   ]);
 
   const done: Record<PassoProgresso['id'], boolean> = {
-    demo:           false,
     paciente:       (pacientes.count ?? 0) > 0,
     consulta_real:  (consultaReal.count ?? 0) > 0,
     planejamento:   (planejamentos.count ?? 0) > 0,
@@ -49,8 +49,8 @@ export async function getOnboardingProgresso(
 
   const ordem: PassoProgresso['id'][] =
     foco === 'crescer'
-      ? ['demo', 'planejamento', 'paciente', 'consulta_real', 'procedimentos']
-      : ['demo', 'consulta_real', 'paciente', 'planejamento', 'procedimentos'];
+      ? ['planejamento', 'paciente', 'consulta_real', 'procedimentos']
+      : ['consulta_real', 'paciente', 'planejamento', 'procedimentos'];
 
   const passos: PassoProgresso[] = ordem.map((id) => ({ id, done: done[id] }));
   const completos = passos.filter((p) => p.done).length;

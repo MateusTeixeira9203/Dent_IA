@@ -4,17 +4,16 @@
 // classes literais já em produção (today-agenda.tsx / atendimentos-hoje.tsx); o ⚠ "sem
 // registro" é sinal NOVO, camada extra sobre o status real do agendamento — G3 da spec:
 // completed + sem ficha hoje, mesma régua do baseline medido em 31/07.
-// R-46g — o card virou div (seleção e "iniciar consulta" são 2 controles distintos, não dá
-// pra aninhar <a>/<button> dentro de <button>). Seleção troca o contexto embaixo; "iniciar
-// consulta"/"continuar atendimento" só aparece no card selecionado e leva pro /consulta de
-// sempre — nenhum caminho paralelo de atendimento (I3).
+// R-72 (07/08) — o card era div PORQUE "iniciar consulta" era um 2º controle que não podia
+// aninhar em botão (R-46g); esse link levava pro /consulta que R-72 aposentou. Selecionar o
+// slot já é a ação inteira agora (você já ESTÁ no Meu dia) — sem 2º controle, sobrou só o
+// seletor de status manual (R-74).
 //
 // C2 (contrato §5.2) — arrasta pro lado, sem barra visível (scrollbar-hide já existia, o
 // scroll continua funcionando por teclado/wheel — só a barra some). Limiar de 5px: abaixo
 // é clique, acima é arraste, e o clique correspondente é suprimido em fase de captura —
 // sem isso, soltar o arraste em cima de um card troca de paciente sem querer.
 
-import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import type { MeuDiaSlot } from '@/server/dashboard/get-meu-dia';
@@ -46,13 +45,6 @@ const STATUS_COLOR: Record<string, string> = {
   completed: 'bg-surface-alt text-text-secondary',
   no_show: 'bg-coral/10 text-coral',
 };
-
-// Mesma condição de month-view.tsx:379 — I4 da spec: uma regra só de "pode atender" no
-// projeto, não uma cópia divergente. Exportada pro R-46b2 (meu-dia-client.tsx) calcular o
-// "próximo" com a MESMA régua que decide se o rail oferece "Iniciar consulta".
-export function podeAtender(status: string): boolean {
-  return !['cancelled', 'no_show', 'completed'].includes(status);
-}
 
 export interface RailProps {
   slots: MeuDiaSlot[];
@@ -246,14 +238,6 @@ export function Rail({ slots, selecionadoId, onSelecionar, onEncaixe, onMudarSta
                   <p className="mt-1 text-[10px] font-semibold text-coral">⚠ sem registro</p>
                 )}
               </button>
-              {selecionado && podeAtender(slot.statusAgendamento) && (
-                <Link
-                  href={`/consulta/${slot.agendamentoId}`}
-                  className="block border-t border-teal/20 px-3 py-1.5 text-center text-[10.5px] font-bold text-teal transition-colors hover:bg-teal/10"
-                >
-                  {slot.statusAgendamento === 'in_progress' ? 'Continuar atendimento' : 'Iniciar consulta'}
-                </Link>
-              )}
               {selecionado && (
                 <select
                   aria-label="Mudar status do atendimento"

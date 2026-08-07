@@ -2,7 +2,7 @@
 
 // R-46g — era o "Entrar no Modo Consulta" (consulta-cta-button.tsx). Renomeado porque o
 // destino mudou: agora abre o Meu dia, que ganhou a saída pro atendimento por slot (D3).
-// `/consulta/{agendamentoId}` continua existindo — só não é mais o 1º clique.
+// R-72 (07/08) aposentou `/consulta/{agendamentoId}` de vez — este já era o único destino.
 
 import { useRouter } from 'next/navigation';
 import { CalendarClock } from 'lucide-react';

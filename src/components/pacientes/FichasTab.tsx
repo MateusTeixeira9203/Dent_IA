@@ -60,7 +60,7 @@ import type {
   TipoRegistroOdontograma, StatusRegistro, OrigemRegistro, AncoraClinica,
   NivelAncora, Arcada, FaceDental, QuadranteFDI, PapelNoGrupo,
 } from '@/types/odontograma';
-import { alternarStatusRegistro, encaminharProcedimento, atualizarStatusEncaminhado, preencherDetalheEncaminhado, assinarProcedimentos, assinarTodosRealizadosDaFicha } from '@/app/consulta/[agendamentoId]/actions';
+import { alternarStatusRegistro, encaminharProcedimento, atualizarStatusEncaminhado, preencherDetalheEncaminhado, assinarProcedimentos, assinarTodosRealizadosDaFicha } from '@/server/patients/registro-actions';
 import { salvarFicha, deletarFicha, contarVinculosFicha, type VinculosFicha } from '@/server/patients/salvar-ficha';
 import { derivarResponsaveis, eventosVisiveis, fichaVisivel, filtroAindaValido } from '@/lib/fichas/filtro-responsavel';
 import { ChipsResponsavel } from '@/components/fichas/chips-responsavel';

@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useRouter } from 'next/navigation';
 import {
   Calendar, Users, Settings, CheckCircle2, Loader2, ChevronRight,
-  Stethoscope, Building2, Check, Clock, TrendingUp, Play,
+  Stethoscope, Building2, Check, Clock, TrendingUp,
 } from 'lucide-react';
 import {
   iniciarOnboarding, definirPlano, marcarOnboardingCompleto,
@@ -17,7 +17,6 @@ import {
 import { PERSONAS, PERSONA_IDS, getPersona, type FocoPrincipal } from '@/lib/persona';
 import { especialidadesSchema } from '@/lib/especialidades';
 import { EspecialidadeChips } from '@/components/ui/especialidade-chips';
-import { DexMark } from '@/components/dex/dex-mark';
 import { toast } from 'sonner';
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -359,53 +358,10 @@ export function OnboardingClient({ initialStep, focoInicial, nomeInicial }: Onbo
           </motion.div>
         )}
 
-        {/* ── ETAPA 1 — Aha (DEX + demo) ── */}
-        {step === 'aha' && (
-          <motion.div
-            key="aha"
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -16 }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="text-center"
-          >
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.1, type: 'spring', stiffness: 220, damping: 18 }}
-              className="flex justify-center mb-6"
-            >
-              <DexMark size={96} expression="feliz" />
-            </motion.div>
-
-            <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--color-teal)' }}>
-              Oi, eu sou o Dex
-            </p>
-            <h1 className="font-heading text-3xl text-text-primary mb-3 leading-tight">
-              {personaCopy.promessaAha}
-            </h1>
-            <p className="text-text-secondary text-sm mb-8 max-w-sm mx-auto leading-relaxed">
-              Sem teoria. Você fala, eu monto a ficha na sua frente — em uma consulta de demonstração.
-            </p>
-
-            <div className="space-y-3">
-              <button
-                type="button"
-                onClick={() => router.push('/consulta/demo?from=onboarding')}
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-teal to-teal-lt text-white py-3.5 rounded-xl font-bold text-sm transition-all shadow-[0_6px_20px_rgba(47,156,133,0.35)] hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(47,156,133,0.45)]"
-              >
-                <Play className="w-4 h-4" /> Ver agora (1 min)
-              </button>
-              <button
-                type="button"
-                onClick={() => setStep('plano')}
-                className="w-full text-center text-sm font-semibold text-text-secondary hover:text-text-primary py-2 transition-colors"
-              >
-                Pular por agora
-              </button>
-            </div>
-          </motion.div>
-        )}
+        {/* ── ETAPA 1 (aha/demo) removida no R-72 — já estava inalcançável desde a Fase 1
+             (onSubmitIdentidade vai direto pro dashboard, nunca chama setStep('aha')) — e a
+             demonstração que ela levava (`/consulta/demo`) apontava pro modo consulta
+             aposentado. `personaCopy` continua vivo (`.sucesso` no copy da última etapa). */}
 
         {/* ── ETAPA 2 — Seleção de plano ── */}
         {step === 'plano' && (
