@@ -1,8 +1,21 @@
 # R-31b — Paciente único: unificação das duplicatas existentes
 
 **Modelo:** Opus (migração de dado clínico — irreversível se errada)
-**Status:** **aprovada** 30/07 — lista de grupos fechada em 16 (§7), pronta pra execução assim
-que a [R-31a](R-31a-paciente-unico-prevencao.md) estiver no ar
+**Status:** **superada 07/08.** O mecanismo automático deste documento (merge reversível,
+`paciente_merges`, repontamento) **não foi construído** — ele decidiu ao vivo ir por um
+caminho mais simples: um botão de excluir paciente, manual, permanente, pra secretária (fora
+de escopo original desta spec — ver `excluirPaciente` em
+`src/server/patients/excluir-paciente.ts` e o item de roadmap correspondente).
+**⚠️ Isso NÃO é o mesmo mecanismo — não repontua nada.** Apagar a cópia ERRADA de um par
+duplicado (a que tem o histórico de verdade) destrói esse histórico pra sempre, não o move
+pra cópia sobrevivente. **§1 e §1.1 abaixo continuam valendo** como o levantamento de quais
+são os 16 grupos e qual cópia de cada um tem o dado real — é exatamente a informação que
+quem for apagar manualmente precisa conferir antes de excluir a cópia errada.
+**Cortado 07/08.** A limpeza dos 16 grupos não vira item de roadmap — a ferramenta fica
+disponível (`excluirPaciente`), mas ninguém está escalado pra rodar o trabalho manual. Se
+for retomado algum dia, o levantamento acima é o ponto de partida.
+**Status original (30/07):** aprovada — lista de grupos fechada em 16 (§7), pronta pra
+execução assim que a [R-31a](R-31a-paciente-unico-prevencao.md) estiver no ar
 **Origem:** auditoria técnica 29/07. Recorte de 30/07: a R-31 original estourou o teto (324
 linhas) e virou duas. Esta é a **segunda**.
 **Depende de:** [R-31a](R-31a-paciente-unico-prevencao.md) — usa a função `normalizar_nome`

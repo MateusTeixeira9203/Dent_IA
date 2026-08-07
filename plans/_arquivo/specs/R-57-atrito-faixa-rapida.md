@@ -1,7 +1,23 @@
 # R-57 — Atrito da faixa rápida (encaixe · observação · repetir)
 
-> **SPEC** · **R-57** · ⏳ fila
-> **Aberto:** 2026-08-03 · **Fechado:** — · **Fase:** contrato (F1, F2) · ⛔ bloqueada (F3)
+> **SPEC** · **R-57** · 🟡 F1+F2 codadas e confirmadas ao vivo 07/08 · F3 cortada 07/08
+> **Aberto:** 2026-08-03 · **Fechado:** 2026-08-07 (F1+F2, sem gate pendente — falta só o push) ·
+> **Fase:** F1+F2 verificadas ao vivo, F3 cortada
+> **07/08 — código adaptado à deriva real:** a spec assumia `<Combobox>`/`buscaTipo` em
+> `registrar-painel.tsx`; o R-62 (05/08, depois desta spec) removeu os dois de vez — os 17
+> tipos viraram chips dentro do `CampoMagicoMeuDia`. F2 foi implementada sobre a arquitetura
+> atual (concatenação dentro de `criarEventos`, ponto único, cobre os 3 caminhos de criação
+> de evento de uma vez) em vez dos 3 pontos que a spec listava — mesmo resultado, menos
+> código.
+> **Confirmado ao vivo, navegador real dele (Brave, extensão Claude in Chrome)** — pane
+> própria travou de novo, ele ofereceu o navegador dele: **G1** clicou "+ Encaixe", buscou
+> "marcos", criou o encaixe — ficou em `/dashboard/meu-dia` (nunca foi pro `/consulta`), o
+> slot novo apareceu selecionado sozinho assim que o refresh trouxe ele. Agendamento de teste
+> conferido e apagado depois (SQL). **G5** digitou observação, clicou chip local "Extração —
+> dente 44": card nasceu **"Extração — teste F2 observacao"** exato, campo limpou sozinho.
+> Repetido uma 2ª vez (chip "Canal", outro texto) — 2º card não herdou a observação do 1º.
+> Draft nunca salvo (não cliquei Salvar) — zero resíduo no banco. **G2-G4/G6/G8-G10 seguem só
+> por tsc + rastreio de código** — não testados individualmente ao vivo nesta rodada.
 > **Modelo:** Sonnet 5 — as duas fatias vivas reusam mecanismo existente, sem decisão ambígua
 > **Origem:** revisão do Meu dia de 03/08, feita sob a pergunta *"pensando como dentista de
 > clínica com muito atendimento, está faltando alguma coisa?"*
@@ -33,9 +49,9 @@ empurram o dentista pra fora da tela:
 | **F1** — depois de criar, `router.refresh()` e selecionar o slot novo no rail | `router.push('/consulta/{id}')`, como o modal faz hoje | `/consulta` é a rota que o R-15 aposentou (absorvida pelo R-46). Mandar o encaixe pra lá seria alimentar o que está sendo desligado |
 | **F2** — o nome do catálogo **continua** indo pra `observacao`; a observação do dentista é um 2º campo que **concatena**, não sobrescreve | Trocar: a observação do dentista ocupa o campo e o nome do catálogo se perde | O nome comercial está ali de propósito (`registrar-painel.tsx:239`) — não existe de-para confiável entre item de catálogo e os 16 tipos estruturais, então o nome é a única prova do que foi escolhido. Perder isso é perder dado |
 | **F2** — o input aparece **inline no Registrar**, opcional, sem clique extra pra abrir | Abrir um dialog/popover pra digitar observação | Um clique pra abrir o campo de texto anula o ganho — a fatia existe pra tirar gesto, não pra mover gesto de lugar |
-| **F3** — ⛔ **não escrita.** Ver bloqueio abaixo | — | — |
+| **F3** — ✂️ **cortada 07/08** | Escolher entre alfabético (31/07) ou frequência (03/08) | Ele descartou a fatia inteira em vez de escolher um lado — resolve o conflito sem decidir a favor de nenhuma das duas |
 
-### ⛔ F3 — "mais usados" está em conflito com uma decisão dele de 31/07
+### ✂️ F3 — cortada 07/08 (histórico do bloqueio abaixo)
 
 `get-meu-dia.ts:139-142`, em comentário no código:
 
@@ -143,7 +159,7 @@ const [tipoPendente, setTipoPendente] =
 (`:330`, `:749`) continua sendo o caminho de **corrigir depois**; este campo é o de
 **escrever na hora**. Os dois escrevem no mesmo `observacao` do mesmo evento.
 
-### 4.3 F3 — ⛔ não especificada (§2)
+### 4.3 F3 — ✂️ cortada, não especificada (§2)
 
 ## 5. Referência visual
 
@@ -193,7 +209,7 @@ Sem artefato — as duas fatias vivas são 1 botão e 1 input dentro de containe
 
 ## 8. Fora de escopo
 
-- **F3 (repetir / mais usados)** — bloqueada por conflito com decisão de 31/07 (§2).
+- **F3 (repetir / mais usados)** — cortada 07/08. Conflito com decisão de 31/07 (§2) nunca foi resolvido a favor de nenhum lado; ele preferiu descartar a fatia.
 - **`queixaPrincipal` e `conduta` vazios** — o §1 registra o achado, mas preencher isso é do
   **R-46d** (a IA extrai do relato), não desta fatia. F2 dá o lugar de escrever *observação de
   procedimento*, que é outra coisa.

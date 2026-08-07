@@ -1,58 +1,53 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-08-04 13:47 · sessão #18
-> **Item ativo:** R-46 (Meu dia) · **Modo:** nenhum (sessão encerrada)
+> **ESTADO** · atualizado 2026-08-07 (sessão #25) · **Item ativo:** nenhum · **Modo:** nenhum
+> (sessão em andamento, sem item ativo formal)
 
 ## Agora
 
-**C6 + R-46d D1 fechados nesta sessão** — 🟡 codados e testados ao vivo no browser, nada em
-produção. O desenho mudou de verdade em cima do que ele viu funcionando (não foi só
-polimento): acordeões perderam a exclusão mútua (ele quer liberdade de deixar tudo aberto);
-vão vazio do campo mágico corrigido; e o painel do dente foi **reconstruído duas vezes na
-mesma sessão** — 1ª versão (resumo pequeno na direita + `Sheet` separado) foi codada, testada
-ao vivo, e revogada por ele — virou **1 painel completo flutuando ao lado do odontograma**
-(como era antes do C6), com `colapsarDireita` de volta pra não regredir o WCAG que o C6
-original tinha corrigido (medido: dente 43×76px, igual aberto ou fechado).
+**Auditoria pré-produção rodada 07/08** (ficha núcleo + Meu dia + Dex) —
+[relatório completo](auditorias/2026-08-07-pre-producao.md). **Sem achado crítico ou alto.**
+R-47 (Organizar com Dex apagava dado) e orçamento por-ficha reconfirmados com dado real denso
+e chamada de IA de verdade — zero perda, zero vazamento. Cockpit inteiro do Meu dia (nunca em
+produção) rodou ponta a ponta, light e dark, sem quebrar. 2 achados baixos viraram **R-71**
+(warning Base UI em `not-found.tsx`/`error.tsx` + Agenda não rola acima das 07h). **Sidebar
+"Meu dia" confirmada visualmente** — `whitespace-nowrap` renderiza certo, sai da lista de
+pendências.
 
-A barra "Registrar sem IA" também mudou: `OndeSeletor`/`FdiPopover` deletados de vez (clicar
-o dente ou digitar no campo mágico já resolve "onde"), entrou chip de "Manutenção
-ortodôntica" — fecha a metade (b) do R-50, que estava na fila desde 02/08.
+**Fechados, todos os gates confirmados ao vivo, falta só o push:** R-59, R-64, R-57 (F1+F2
+confirmadas, F3 cortada — ele descartou em vez de escolher entre alfabético×frequência).
+Orçamento por-ficha e excluir paciente também confirmados ao vivo no navegador dele (14
+procedimentos → 14 itens, zero vazamento; excluir com cascade + log conferidos no banco).
 
-4 commits organizados e feitos (27 acumulados desde 01/08). Detalhe completo do raciocínio no
-[handoff desta sessão](handoffs/handoff-2026-08-04-1347.md).
-
-**Feito:** C6 (jaFeito sai, colunas redistribuídas, painel único flutuando, `tabelaContainer`
-ligado) · R-46d D1 (campo mágico, fallback sem IA, `OndeSeletor` fora) · R-50 (b).
-
-**Falta:** D9/D11 do R-46d (detecção em tempo real com motion — não entraram nesta rodada) ·
-responsivo do painel novo (nunca testado em tela estreita) · testes que escrevem no banco
-(Salvar de verdade, upload de arquivo, "Organizar com Dex" ponta a ponta — nenhum pedido de
-aprovação feito ainda) · R-50 (a) (schema de IA, fora de escopo de propósito).
+**R-31b cortado** — limpeza dos 16 grupos duplicados não vira item de roadmap; a ferramenta
+(`excluirPaciente`) fica disponível se algum dia for retomado.
 
 ## Travado
 
-Nada tecnicamente.
+Nada travado. A pane do Claude_Browser não foi nem tentada hoje — fui direto de Brave +
+extensão Claude in Chrome (funcionou de novo, sem travar, confirma o padrão da sessão
+passada). Esse é o caminho a abrir primeiro sempre que precisar de prova visual.
 
 ## Esperando você
 
-- [ ] **Push** — 27 commits acumulados, decidiu deixar acumulando e revisar tudo de uma vez
-      depois.
-- [ ] **Conferir visualmente o "respiro" entre odontograma e painel do dente** (`gap-4`,
-      16px) — não tem como eu confirmar se é o tamanho que você imaginou sem você ver.
-- [ ] **Teste de escrita real** (Salvar, upload de documento, Organizar com Dex) — não pedi
-      aprovação ainda; avisa quando quiser fechar esses gates de vez.
-- [ ] **D9/D11** (detecção em tempo real + motion no odontograma) — decidir se entra como
-      próxima fatia ou fica pra depois de R-46h/retorno.
-- [ ] **R-51** — testar em cenário multi-sessão real quando houver paciente de teste com
-      tratamento em grupo.
-- [ ] **G3 do R-53** — responsável exibido = destino do encaminhamento; só prova completa
-      quando existir paciente real com 2+ responsáveis incluindo 1 encaminhado.
-- [ ] **G9 (2 contas)** do R-58 e do R-53 — precisa de você logado em 2 sessões.
-- [ ] **R-46h e "marcar retorno"** — sem spec ainda; espaço abriu com o D12.
-- [ ] Itens antigos: R-56 · R-28 Parte 3 · gate de 2 contas · R-40 · R-44.
+- [ ] **Push** — ~35 commits represados. A auditoria de hoje não achou motivo pra segurar;
+      decisão de quando é dele.
+- [ ] **R-70 (congelado)** — ficha com muitos procedimentos difícil de editar. Precisa saber
+      se o feedback real dos dentistas é "muitos procedimentos numa consulta" (empurra pro
+      Organizar com Dex) ou "tela ruim mesmo com poucos" (aí um scroll interno resolve).
+- [ ] **Status do orçamento vira só quitado/pendente** — tema levantado 06/08, ainda sem
+      item de roadmap.
+- [ ] **4 achados menores da auditoria do R-64** nunca viraram item de roadmap (mistura
+      client/server em `disponibilidade.ts`, grade da secretária mostrando disponibilidade
+      enganosa, `Map` engolindo duplicata silenciosa, `semanaInicioISO` sem validar domingo).
+- [ ] **G10 do R-63/R-62** (`prefers-reduced-motion`, voz real) — gates humanos, sem como
+      emular.
+- [ ] **Gate de 2 contas** (R-30, R-31a, R-41) — pendente de sempre, não é achado novo.
+- [ ] Antigos, sem urgência: apagar dado de teste do "marcos" (agora com +1 encaixe de teste
+      às 01:33 de hoje, sem ficha, inalcançável na Agenda — ver R-71) · motion do C7 no olho ·
+      R-51 · R-60 · G3 do R-53 · R-40 · R-44.
 
 ## Próximo da fila
 
-D9/D11 (motion no odontograma) ou R-46h/"marcar retorno" (specs) — os dois maiores buracos
-vs. a régua do `MAPA-MEU-DIA.md`, agora que o cockpit fechou. Fila completa no
+Ele decide: escolher o próximo entre {R-49, R-56, R-67}. Fila completa no
 [ROADMAP](ROADMAP.md).
