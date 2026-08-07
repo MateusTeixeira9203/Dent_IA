@@ -7,7 +7,8 @@ import { calcularIdade } from '@/lib/paciente-form-helpers';
 import type { AgendamentoStatus } from '@/types/database';
 import type {
   Arcada, QuadranteFDI, NivelAncora, FaceDental, OrigemRegistro, PapelNoGrupo,
-  TipoRegistroOdontograma, OrtoManutencaoInfo, StatusRegistro,
+  TipoRegistroOdontograma, OrtoManutencaoInfo, StatusRegistro, OdontogramaEventoDraft,
+  AncoraClinica,
 } from '@/types/odontograma';
 
 /** Mesma janela do `ultimaOrto` client-side (FichasTab.tsx) — replicada aqui em lote,
@@ -160,6 +161,13 @@ export interface MeuDiaContexto {
    *  `alertas`): `pacientes.observacoes` quebrada por linha. Não é a derivação mais cara do
    *  C4 (5 fichas do `/consulta`) — é reaproveitar o que já existe, não construir de novo. */
   alertas: string[];
+  /**
+   * R-61 — estado persistido da boca (os dois status, todas as fichas), pra CAMADA DE
+   * LEITURA do odontograma. Vem do MESMO `eventosPorPaciente` que o histórico já usa —
+   * zero query nova, só para de descartar o que já foi buscado. NUNCA entra em
+   * `eventosDraft` no cliente — o que `Salvar` grava é só o rascunho (I1 da spec).
+   */
+  boca: OdontogramaEventoDraft[];
 }
 
 export interface MeuDiaCatalogoProcedimento {
@@ -225,6 +233,26 @@ function eventoParaVisita(e: EventoRow, fichaDataPorId: Map<string, string>): Me
     origem: e.origem, grupoId: e.grupo_id, realizadoEm: e.realizado_em,
     indicadoEm: (e.ficha_id ? fichaDataPorId.get(e.ficha_id) : undefined) ?? e.registrado_em,
     registradoEm: e.registrado_em, detalhe: e.detalhe,
+  };
+}
+
+/**
+ * R-61 — `EventoRow` cru → `OdontogramaEventoDraft`, pra camada de LEITURA do odontograma
+ * (`MeuDiaContexto.boca`). Mesmo padrão de âncora que `pendenciaParaDraft`
+ * (registrar-painel.tsx) já usa — **`id` é o `id` real do evento**, obrigatório: é o que
+ * sustenta o dedup por id no `buildResumos` (§4.3 da spec R-61 — rascunho vence persistido
+ * quando "fazer hoje →" reusa o mesmo id).
+ */
+function eventoParaBoca(e: EventoRow): OdontogramaEventoDraft {
+  const ancora: AncoraClinica = { nivel: e.nivel };
+  if (e.dente != null) ancora.dente = e.dente;
+  if (e.arcada != null) ancora.arcada = e.arcada;
+  if (e.quadrante != null) ancora.quadrante = e.quadrante;
+  if ((e.faces ?? []).length > 0) ancora.faces = e.faces ?? [];
+  return {
+    id: e.id, tipo: e.tipo, status: e.status, origem: e.origem, ancora,
+    grupo_id: e.grupo_id, papel_no_grupo: e.papel_no_grupo, observacao: e.observacao ?? '',
+    realizado_em: e.realizado_em, detalhe: e.detalhe,
   };
 }
 
@@ -604,6 +632,10 @@ export async function getMeuDiaData({
       pendencias: pendenciasPorPaciente.get(pid) ?? [],
       orto,
       alertas: parseAlertas(observacoesPorPaciente.get(pid) ?? null),
+      // R-61 — todos os eventos do paciente (os 2 status, exodontia/esfoliação realizada
+      // inclusas: quem decide como renderizar "ausente" é o `buildResumos` do odontograma,
+      // não este filtro). Mesmo array-fonte de `eventosDoPaciente`, zero query nova.
+      boca: eventosDoPaciente.map(eventoParaBoca),
     };
   }
 

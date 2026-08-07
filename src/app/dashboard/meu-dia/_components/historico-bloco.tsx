@@ -16,7 +16,6 @@ import { RegistroCard } from '@/components/fichas/registro-card';
 import { corpoEspecialidade } from '@/components/fichas/corpo-especialidade';
 import { eventosParaCards, type EventoParaCard } from '@/lib/odontograma/eventos-para-cards';
 import type { MeuDiaVisita, MeuDiaEventoVisita } from '@/server/dashboard/get-meu-dia';
-import { BlocoMoldavel } from './bloco-moldavel';
 import { fmtData } from './meu-dia-format';
 import { ColarDoWordDialog } from '@/components/pacientes/colar-do-word-dialog';
 
@@ -25,8 +24,6 @@ export interface HistoricoBlocoProps {
   pacienteId: string;
   pacienteNome: string;
   onImportado: () => void;
-  aberto: boolean;
-  onToggle: () => void;
 }
 
 const PREVIA = 1;
@@ -172,68 +169,52 @@ function VisitaEntry({ v }: { v: MeuDiaVisita }) {
   );
 }
 
-export function HistoricoBloco({ visitas, pacienteId, pacienteNome, onImportado, aberto, onToggle }: HistoricoBlocoProps) {
+export function HistoricoBloco({ visitas, pacienteId, pacienteNome, onImportado }: HistoricoBlocoProps) {
   const [expandido, setExpandido] = useState(false);
   const [colarAberto, setColarAberto] = useState(false);
-  const ultima = visitas[0] ?? null;
   const temMais = visitas.length > PREVIA;
   const visiveis = expandido ? visitas : visitas.slice(0, PREVIA);
 
   return (
     <>
-      <BlocoMoldavel
-        id="historico"
-        titulo="Histórico"
-        contador={visitas.length}
-        resumo={
-          ultima ? (
-            <span className="text-xs text-text-secondary">
-              {fmtData(ultima.data)} · {ultima.importado ? 'Histórico importado' : ultima.dentistaNome}
-            </span>
-          ) : undefined
-        }
-        aberto={aberto}
-        onToggle={onToggle}
-      >
-        {visitas.length === 0 ? (
-          <div className="flex flex-col gap-2">
-            <p className="text-sm text-text-secondary">
-              Sem histórico no sistema ainda — o contexto nasce nesta consulta.
-            </p>
+      {visitas.length === 0 ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-text-secondary">
+            Sem histórico no sistema ainda — o contexto nasce nesta consulta.
+          </p>
+          <button
+            type="button"
+            onClick={() => setColarAberto(true)}
+            className="flex w-fit items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold text-text-secondary transition-colors hover:border-teal/40 hover:text-teal-ink"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Colar histórico do Word
+          </button>
+        </div>
+      ) : (
+        <>
+          <div
+            className={
+              expandido
+                ? 'flex max-h-[420px] flex-col divide-y divide-border overflow-y-auto pr-2'
+                : 'flex flex-col divide-y divide-border'
+            }
+          >
+            {visiveis.map((v) => (
+              <VisitaEntry key={v.fichaId} v={v} />
+            ))}
+          </div>
+          {temMais && (
             <button
               type="button"
-              onClick={() => setColarAberto(true)}
-              className="flex w-fit items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold text-text-secondary transition-colors hover:border-teal/40 hover:text-teal-ink"
+              onClick={() => setExpandido((e) => !e)}
+              className="mt-1 flex h-9 w-full items-center justify-center text-center text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
             >
-              <FileText className="h-3.5 w-3.5" />
-              Colar histórico do Word
+              {expandido ? 'mostrar menos ↑' : `ver as ${visitas.length} visitas aqui mesmo ↓`}
             </button>
-          </div>
-        ) : (
-          <>
-            <div
-              className={
-                expandido
-                  ? 'flex max-h-[420px] flex-col divide-y divide-border overflow-y-auto pr-2'
-                  : 'flex flex-col divide-y divide-border'
-              }
-            >
-              {visiveis.map((v) => (
-                <VisitaEntry key={v.fichaId} v={v} />
-              ))}
-            </div>
-            {temMais && (
-              <button
-                type="button"
-                onClick={() => setExpandido((e) => !e)}
-                className="mt-1 w-full text-center text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
-              >
-                {expandido ? 'mostrar menos ↑' : `ver as ${visitas.length} visitas aqui mesmo ↓`}
-              </button>
-            )}
-          </>
-        )}
-      </BlocoMoldavel>
+          )}
+        </>
+      )}
 
       <ColarDoWordDialog
         pacienteId={pacienteId}

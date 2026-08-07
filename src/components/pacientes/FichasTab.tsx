@@ -534,6 +534,11 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   // (a RPC delete-by-omission trata "não veio no payload" como "apague"). Bloqueia editar/
   // salvar enquanto isto for true, em vez de arriscar apagar dado clínico.
   const [eventosFalharamAoCarregar, setEventosFalharamAoCarregar] = React.useState(false);
+  // R-59 Parte 4 — mesmo espírito da Parte 5 do R-30 acima, agora pro caso de falha ao
+  // SALVAR (não carregar): a ficha grava, mas a RPC de eventos falha. Sem isto o painel
+  // fechava e o rascunho sumia como se tivesse dado certo — só um toast fácil de perder
+  // avisava. Mantém o painel aberto com o rascunho intacto pra permitir retry.
+  const [eventosFalharamAoSalvar, setEventosFalharamAoSalvar] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isPanelOpen, setIsPanelOpen] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);  const [selectedTeeth, setSelectedTeeth] = React.useState<number[]>([]);
@@ -1338,8 +1343,14 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
         return;
       }
       if (result.eventosFalharam) {
-        toast.error("A ficha salvou, mas o odontograma não foi gravado.");
+        // R-59 Parte 4 — painel fica aberto, rascunho intacto: fechar aqui apagaria da tela
+        // o que a RPC não conseguiu gravar, como se tivesse dado certo (I4).
+        setEventosFalharamAoSalvar(true);
+        toast.error("A ficha salvou, mas o odontograma não foi gravado. Tente salvar de novo.");
+        await fetchFichas();
+        return;
       }
+      setEventosFalharamAoSalvar(false);
 
       await fetchFichas();
       closePanel();
@@ -1456,6 +1467,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     setDenteAberto(null);
     setOrtoHerdadaDe(null);
     setAlertaNovoDetectado(null);
+    setEventosFalharamAoSalvar(false);
   };
 
   const updateProcStatus = async (fichaId: string, currentStatus: Record<string, ProcStatus>, procKey: string, newStatus: ProcStatus) => {
@@ -1507,6 +1519,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       detectedSharedGroup ? detectedSharedGroup.notes.split('\n').filter(Boolean) : ['']
     );
     setEditingId(evolution.id);
+    setEventosFalharamAoSalvar(false); // ficha diferente — resíduo da anterior não se aplica
     setOrtoHerdadaDe(null); // editar ficha salva: o orto é o dela, não herdado (R-05b)
     setAlertaNovoDetectado(null); // idem — nada detectado nesta sessão até reorganizar
     setFormData({
@@ -1959,6 +1972,19 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                   </div>
                 )}
               </div>
+
+              {/* R-59 Parte 4 — mesmo padrão do banner de falha ao CARREGAR (acima, fora do
+                  painel): a ficha salvou, mas o odontograma não. Painel fica aberto de
+                  propósito pra isto ficar visível junto do botão de retry. */}
+              {eventosFalharamAoSalvar && (
+                <div className="flex items-center gap-3 bg-coral/5 border border-coral/20 rounded-xl px-4 py-3">
+                  <AlertTriangle className="w-4 h-4 text-coral shrink-0" />
+                  <p className="text-sm font-medium text-coral">
+                    A ficha salvou, mas o odontograma não foi gravado. Tente salvar de novo
+                    antes de sair — cancelar agora perde as mudanças no odontograma.
+                  </p>
+                </div>
+              )}
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/60">
                 <button

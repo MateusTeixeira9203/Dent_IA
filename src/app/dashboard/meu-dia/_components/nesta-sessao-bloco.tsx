@@ -11,42 +11,19 @@
 
 import { ToothGroupList } from '@/app/consulta/[agendamentoId]/_components/tooth-group-list';
 import type { OdontogramaEventoDraft } from '@/types/odontograma';
-import { BlocoMoldavel } from './bloco-moldavel';
 
 export interface NestaSessaoBlocoProps {
-  id: string;
-  titulo: string;
   vazio: string;
   eventos: OdontogramaEventoDraft[];
   onDenteClick: (dente: number) => void;
-  aberto: boolean;
-  onToggle: () => void;
 }
 
-export function NestaSessaoBloco({ id, titulo, vazio, eventos, onDenteClick, aberto, onToggle }: NestaSessaoBlocoProps) {
-  return (
-    <BlocoMoldavel
-      id={id}
-      titulo={titulo}
-      contador={eventos.length}
-      destaque={eventos.length > 0}
-      resumo={
-        eventos.length > 0 ? (
-          <span className="text-xs text-text-secondary">
-            {eventos.length} registro{eventos.length > 1 ? 's' : ''}
-          </span>
-        ) : undefined
-      }
-      aberto={aberto}
-      onToggle={onToggle}
-    >
-      {eventos.length === 0 ? (
-        <p className="text-sm text-text-secondary">{vazio}</p>
-      ) : (
-        <div className="max-h-[420px] overflow-y-auto pr-2">
-          <ToothGroupList eventos={eventos} onDenteClick={onDenteClick} />
-        </div>
-      )}
-    </BlocoMoldavel>
+export function NestaSessaoBloco({ vazio, eventos, onDenteClick }: NestaSessaoBlocoProps) {
+  return eventos.length === 0 ? (
+    <p className="text-sm text-text-secondary">{vazio}</p>
+  ) : (
+    <div className="max-h-[420px] overflow-y-auto pr-2">
+      <ToothGroupList eventos={eventos} onDenteClick={onDenteClick} />
+    </div>
   );
 }

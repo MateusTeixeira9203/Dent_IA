@@ -187,12 +187,15 @@ export interface ResumoDente {
   ponte: CorClinica | null;
   pontePapel: 'pilar' | 'pontico' | null;
   ponteGrupo: string | null;
+  /** R-61 — este dente tem evento no rascunho DESTA sessão (`eventos`, não
+   *  `eventosPersistidos`). Marca aditiva (ponto), independente da cor dominante. */
+  mexido: boolean;
 }
 
 const RESUMO_VAZIO: ResumoDente = {
   cor: null, ausente: false, esfoliado: false, exodontiaIndicada: false, incluso: false,
   canal: null, lesao: false, implante: null, coroa: null, pino: null,
-  selante: null, fratura: false, ponte: null, pontePapel: null, ponteGrupo: null,
+  selante: null, fratura: false, ponte: null, pontePapel: null, ponteGrupo: null, mexido: false,
 };
 
 /** coral vence teal, que vence slate (a pendência é o que não pode sumir da vista). */
@@ -202,9 +205,29 @@ function corDominante(a: CorClinica | null, b: CorClinica): CorClinica {
   return 'slate';
 }
 
-export function buildResumos(eventos: OdontogramaEventoDraft[]): Map<number, ResumoDente> {
+/**
+ * R-61 — `eventos` (rascunho editável) + `eventosPersistidos` (leitura, estado real da
+ * boca) pintam JUNTOS. Dedup por `id`: rascunho vence (§4.3 da spec) — "fazer hoje →" reusa
+ * o id real do evento persistido, então sem isso o dente pintaria 2× e a cor dominante
+ * mentiria (coral do persistido venceria o teal do rascunho, já que `corDominante` prioriza
+ * coral). `mexido` é calculado à parte, por DENTE (não por id): um dente pode ganhar um
+ * evento novo (id nunca visto) enquanto ainda carrega um evento persistido antigo — os dois
+ * contribuem pra cor, só o novo acende o ponto.
+ */
+export function buildResumos(
+  eventos: OdontogramaEventoDraft[],
+  eventosPersistidos: OdontogramaEventoDraft[] = [],
+): Map<number, ResumoDente> {
+  const porId = new Map<string, OdontogramaEventoDraft>();
+  for (const ev of eventosPersistidos) porId.set(ev.id, ev);
+  for (const ev of eventos) porId.set(ev.id, ev);
+
+  const mexidos = new Set(
+    eventos.map((ev) => ev.ancora.dente).filter((d): d is number => d != null),
+  );
+
   const map = new Map<number, ResumoDente>();
-  for (const ev of eventos) {
+  for (const ev of porId.values()) {
     const dente = ev.ancora.dente;
     if (dente == null) continue; // âncoras de arcada/quadrante não pintam dente individual
     const r = map.get(dente) ?? { ...RESUMO_VAZIO };
@@ -238,6 +261,10 @@ export function buildResumos(eventos: OdontogramaEventoDraft[]): Map<number, Res
         break; // rotina (boca/quadrante) nunca chega aqui — sem dente âncora (D5)
     }
     map.set(dente, r);
+  }
+  for (const dente of mexidos) {
+    const r = map.get(dente);
+    if (r) r.mexido = true;
   }
   return map;
 }
@@ -726,6 +753,14 @@ export interface OdontogramaProps {
    * (canal, implante, coroa, X, ausente…). Ignora selection.
    */
   eventos?: OdontogramaEventoDraft[];
+  /**
+   * R-61 — camada de LEITURA: estado persistido da boca (banco), pinta JUNTO com `eventos`
+   * mas nunca chega ao `ToothDetailPanel` — não é editável a partir daqui. Dente com evento
+   * só aqui é lido (clique abre o painel sem oferecer edição daquele evento); dente com
+   * evento em `eventos` (mesmo id ou não) ganha o ponto de "mexido nesta sessão" (§2.4/§4.2
+   * da spec R-61).
+   */
+  eventosPersistidos?: OdontogramaEventoDraft[];
 }
 
 export function Odontograma({
@@ -738,6 +773,7 @@ export function Odontograma({
   compact = false,
   hideFilters = false,
   eventos,
+  eventosPersistidos,
 }: OdontogramaProps) {
   const [hoveredTooth, setHoveredTooth]   = useState<number | null>(null);
   const [tab, setTab]                     = useState<'permanent' | 'deciduous'>('permanent');
@@ -745,8 +781,11 @@ export function Odontograma({
   const [activeFilterId, setActiveFilterId] = useState<string>('arcadas');
   const [legendOpen, setLegendOpen]       = useState(false);
 
-  const clinico = eventos != null;
-  const resumos = useMemo(() => buildResumos(eventos ?? []), [eventos]);
+  const clinico = eventos != null || eventosPersistidos != null;
+  const resumos = useMemo(
+    () => buildResumos(eventos ?? [], eventosPersistidos ?? []),
+    [eventos, eventosPersistidos],
+  );
 
   const upperTeeth = tab === 'permanent' ? TEETH_UPPER : TEETH_UPPER_DEC;
   const lowerTeeth = tab === 'permanent' ? TEETH_LOWER : TEETH_LOWER_DEC;
@@ -826,9 +865,29 @@ export function Odontograma({
               transition: 'transform 0.13s ease',
               gap: 5,
             }}
-            aria-label={`Dente ${num} — ${TOOTH_NAMES[num] ?? ''}${resumo?.cor ? `, ${STATUS_CLINICO_LABEL[resumo.cor]}` : ''}`}
+            aria-label={`Dente ${num} — ${TOOTH_NAMES[num] ?? ''}${resumo?.cor ? `, ${STATUS_CLINICO_LABEL[resumo.cor]}` : ''}${resumo?.mexido ? ', alterado nesta consulta' : ''}`}
             aria-pressed={clinico ? undefined : isActive}
           >
+            {/* R-61 — ponto no canto: dente tem evento no rascunho desta sessão (não
+                confundir com o anel de seleção, que é stroke DENTRO do dente). Cor sozinha
+                não comunica (auditoria UX 19/07) — por isso também entra no aria-label acima. */}
+            {resumo?.mexido && (
+              <span
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  top: -2,
+                  right: 2,
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: 'var(--color-teal)',
+                  border: '1.5px solid var(--color-surface)',
+                  zIndex: 1,
+                }}
+              />
+            )}
+
             {isUpper && (
               <span
                 style={{
@@ -950,9 +1009,14 @@ export function Odontograma({
             key={id}
             type="button"
             onClick={() => setTab(id)}
-            className="relative px-4 py-2 text-[11px] font-bold tracking-wide transition-colors outline-none focus-visible:ring-1 focus-visible:ring-teal"
+            // R-63 F3 (G17) — piso de 36px. Só o modo `compact` (cockpit do Meu dia) tem o
+            // wrapper `zoom: 0.85` (linha ~996), e getBoundingClientRect() mede o valor JÁ
+            // escalado: h-9 (36px de CSS) vira 30.6px de verdade na tela. h-11 (44px) vira
+            // 37.4px, acima do piso — achado medindo ao vivo, não no papel. Sem `compact`
+            // (FichasTab, /consulta, OdontogramaComPainel) não há zoom, h-9 já é 36px reais.
+            className={`relative inline-flex items-center px-4 text-[11px] font-bold tracking-wide transition-colors outline-none focus-visible:ring-1 focus-visible:ring-teal ${compact ? 'h-11' : 'h-9'}`}
             style={{
-              color: tab === id ? 'var(--color-teal)' : 'var(--color-text-secondary)',
+              color: tab === id ? 'var(--color-teal-ink)' : 'var(--color-text-secondary)',
               background: 'transparent',
             }}
           >
@@ -960,7 +1024,7 @@ export function Odontograma({
             {tabCounts[id] > 0 && (
               <span
                 className="ml-1.5 inline-flex items-center justify-center min-w-[15px] h-[15px] px-1 rounded-full text-[9px] font-bold align-middle"
-                style={{ background: 'var(--color-teal)', color: 'white' }}
+                style={{ background: 'var(--color-teal-dark)', color: 'white' }}
               >
                 {tabCounts[id]}
               </span>
@@ -980,8 +1044,8 @@ export function Odontograma({
         <button
           type="button"
           onClick={() => setLegendOpen(v => !v)}
-          className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold transition-colors outline-none focus-visible:ring-1 focus-visible:ring-teal rounded-sm"
-          style={{ color: legendOpen ? 'var(--color-teal)' : 'var(--color-text-secondary)' }}
+          className={`flex items-center gap-1.5 px-3 text-[10px] font-semibold transition-colors outline-none focus-visible:ring-1 focus-visible:ring-teal rounded-sm ${compact ? 'h-11' : 'h-9'}`}
+          style={{ color: legendOpen ? 'var(--color-teal-ink)' : 'var(--color-text-secondary)' }}
           aria-expanded={legendOpen}
           aria-label="Legenda do odontograma"
         >

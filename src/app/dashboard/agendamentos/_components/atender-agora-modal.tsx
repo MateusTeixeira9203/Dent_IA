@@ -20,6 +20,10 @@ import { buildClinicDatetime } from './date-helpers';
 interface AtenderAgoraModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** R-57 F1 — o que fazer depois de criar o encaixe. Default preserva o comportamento de
+   *  hoje (`router.push('/consulta/{id}')`); o Meu dia passa o próprio callback (fica na
+   *  rota, seleciona o slot novo no rail) — `/consulta` é a rota que o R-15 aposentou. */
+  onCriado?: (agendamentoId: string) => void;
 }
 
 /**
@@ -27,7 +31,7 @@ interface AtenderAgoraModalProps {
  * histórico) ou cria rápido com nome+telefone. Cria um encaixe no horário atual e
  * entra direto no Modo Consulta. O encaixe usa o dentista da sessão (criarEncaixe).
  */
-export function AtenderAgoraModal({ open, onOpenChange }: AtenderAgoraModalProps) {
+export function AtenderAgoraModal({ open, onOpenChange, onCriado }: AtenderAgoraModalProps) {
   const router = useRouter();
   const [busca, setBusca] = useState('');
   const [sugestoes, setSugestoes] = useState<{ id: string; nome: string }[]>([]);
@@ -92,7 +96,8 @@ export function AtenderAgoraModal({ open, onOpenChange }: AtenderAgoraModalProps
     }
     onOpenChange(false);
     reset();
-    router.push(`/consulta/${result.id}`);
+    if (onCriado) onCriado(result.id);
+    else router.push(`/consulta/${result.id}`);
   };
 
   const criarEIniciar = async () => {

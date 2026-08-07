@@ -4,11 +4,15 @@
 // porque o pai passa `key={agendamentoId}` (nenhum useEffect de reset aqui — é o padrão mais
 // simples que já resolve).
 //
-// R-46d D1.1/D1.2 (04/08) — o campo mágico (`CampoMagicoMeuDia`) é a entrada principal,
-// substituindo a barra de procedimento inteira. O que a barra fazia (Combobox de 17 tipos +
-// catálogo comercial, Status, "+ texto da visita") não foi deletado — continua existindo,
-// atrás da disclosure "Registrar sem IA" (fechada por padrão): é o fallback obrigatório
-// (§2.1 da spec) pra texto puro e pros tipos sem nível "dente" quando a IA está fora do ar.
+// R-46d D1.1/D1.2 (04/08) — o campo mágico (`CampoMagicoMeuDia`) é a entrada principal.
+//
+// R-62 (05/08) — a disclosure "Registrar sem IA" SAIU de vez: o combobox de 17 tipos e a
+// busca no catálogo viraram chips locais dentro do próprio campo mágico
+// (`casar-procedimento-local.ts`, zero rede, zero IA — mantém o I1 de registrar funcionar
+// com a IA fora do ar). O que sobra AQUI (Status, chip de orto, painel "qual tipo clínico?"
+// do catálogo, "+ texto da visita") não estava escondido nem era exclusivo do combobox — vira
+// uma faixa sempre visível, sem toggle. `registrar()`/`tipoPendente`/`escolherDoCatalogo`
+// são os MESMOS de sempre, só ganham `aplicarSugestaoLocal` como um 2º chamador.
 //
 // 04/08 (pedido dele, ao vivo) — `OndeSeletor` (chips de arcada/quadrante) SAIU da barra
 // sem-IA: clicar direto no dente do odontograma já resolve "onde" pros tipos por-dente, e os
@@ -23,26 +27,29 @@
 // `meu-dia-client`, que também lê "Nesta sessão" (colunas laterais). `denteAberto` idem —
 // dono lá, lido aqui.
 //
-// 04/08 (revisão, ao vivo) — o painel do dente volta a flutuar AO LADO do odontograma (era a
-// leitura original antes do C6/Q2 partir em resumo+Sheet; ele pediu de volta, num card
-// separado com respiro, não a mesma leitura errada de "ele some debaixo do dedo" que motivou
-// o C6 — essa parte continua resolvida porque agora é SEMPRE 1 card visível, nunca substitui
-// o que já tinha). Pra não reproduzir a regressão WCAG que o C6 mediu (dente <24px), a
-// coluna direita volta a colapsar enquanto o painel está aberto (`colapsarDireita`,
-// devolvido ao `cockpit-grid.tsx`) — o centro sozinho tem o mesmo espaço que tinha antes do
-// painel existir, então o odontograma não perde largura de verdade.
+// C7 (04/08) — o painel do dente SAIU daqui. Virou 3º bloco de acordeão na coluna direita
+// (`meu-dia-client.tsx`), igual A Fazer/Novos Procedimentos — sem resumo, sem `Sheet`, painel
+// completo direto. O odontograma aqui nunca mais compartilha linha com painel nenhum, então
+// `colapsarDireita` morreu de vez (não volta desta vez: a largura da direita agora é sempre
+// 312px fixos, o painel mora lá dentro, não rouba espaço do centro). `tabelaContainer` (onde a
+// tabela de especialidade abre, full-width, abaixo do odontograma) continua dono/renderizado
+// AQUI — só a referência sobe pra `meu-dia-client.tsx` via `onTabelaContainerRef`, porque quem
+// agora monta o `ToothDetailPanel` que precisa dela é lá.
 
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Check, AlertTriangle, Loader2, ChevronDown, ChevronUp, X } from 'lucide-react';
-import { Odontograma, TEETH_UPPER, TEETH_LOWER, TEETH_UPPER_DEC, TEETH_LOWER_DEC } from '@/components/odontograma/Odontograma';
-import { ToothDetailPanel } from '@/components/odontograma/ToothDetailPanel';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
+import { Check, AlertTriangle, Loader2, X } from 'lucide-react';
+import { Odontograma } from '@/components/odontograma/Odontograma';
 import { salvarEventosOdontograma } from '@/app/consulta/[agendamentoId]/actions';
-import { Combobox, ComboboxInput, ComboboxContent, ComboboxItem } from '@/components/ui/combobox';
 import { CampoMagicoMeuDia } from './campo-magico-meu-dia';
 import { OrtoForm } from '@/components/fichas/orto-form';
 import { hojeBRT } from '@/lib/hora-brt';
 import { salvarVisitaMeuDia } from '../actions';
+import { criarAgendamento } from '@/app/dashboard/agendamentos/actions';
+import { buildClinicDatetime } from '@/app/dashboard/agendamentos/_components/date-helpers';
+import { MarcarRetornoModal, type MarcarRetornoForm } from '@/components/pacientes/marcar-retorno-modal';
+import { formatHora } from '@/lib/agenda/disponibilidade';
 import {
   TIPO_LABEL,
   type OdontogramaEventoDraft,
@@ -51,38 +58,17 @@ import {
   type TipoRegistroOdontograma,
 } from '@/types/odontograma';
 import type { OrtoManutencaoDetalhe } from '@/lib/especialidades/orto';
+import type { SugestaoLocal } from '@/lib/odontograma/casar-procedimento-local';
+import { ditadoDevolveMapa, type SlotCentral } from '@/lib/odontograma/ditado-devolve-mapa';
 import type { MeuDiaPendencia, MeuDiaCatalogoProcedimento, MeuDiaOrto } from '@/server/dashboard/get-meu-dia';
-import type { GrupoAberto } from '@/lib/odontograma/grupos-abertos';
 
 const TIPOS = Object.entries(TIPO_LABEL) as Array<[TipoRegistroOdontograma, string]>;
-
-const DENTES_VALIDOS = new Set([...TEETH_UPPER, ...TEETH_LOWER, ...TEETH_UPPER_DEC, ...TEETH_LOWER_DEC]);
 
 /** 03/08 — os únicos 4 tipos cuja âncora é 100% determinada pelo tipo (odontograma.ts:85-90,
  *  "Ancora em boca"). Pra estes, "onde" nunca existe. `raspagem` fica de fora de propósito —
  *  é o único tipo com nível ambíguo (quadrante OU boca) e, sem chip de região (04/08), só
  *  resolve clicando dente a dente no odontograma (âncora de dente, mais preciso que quadrante). */
 const TIPOS_NIVEL_BOCA = new Set<TipoRegistroOdontograma>(['profilaxia', 'clareamento', 'fluor', 'exame_periodontal']);
-
-/** 03/08 — "restauração 35" no campo de busca já entende o dente. Só o número — nada de
- *  gramática de região aqui, essa é a metade cara que ficou de fora de propósito. */
-function extrairDenteDoTexto(texto: string): number | null {
-  const numeros = texto.match(/\d{2}/g);
-  if (!numeros) return null;
-  for (const n of numeros) {
-    const dente = Number(n);
-    if (DENTES_VALIDOS.has(dente)) return dente;
-  }
-  return null;
-}
-
-/** Valor de 1 item da busca — ou um tipo estrutural (registra direto), ou um item do
- *  catálogo comercial (vira observação pendente, pede o tipo estrutural em seguida). */
-type ComboboxValor = TipoRegistroOdontograma | MeuDiaCatalogoProcedimento;
-
-function ehItemDoCatalogo(v: ComboboxValor): v is MeuDiaCatalogoProcedimento {
-  return typeof v === 'object';
-}
 
 /** Seleção de dente(s) — única entrada de "onde" restante depois que o chip de região saiu
  *  (04/08). Só dente(s), nunca mais região — mas o tipo continua aberto pra não reabrir esse
@@ -94,17 +80,22 @@ interface RegistrarPainelProps {
   agendamentoId: string;
   /** NOVO (D1) — só pro campo mágico (`CapturaLivreCard` precisa pro prompt da IA). */
   pacienteNome: string;
+  /** R-64 — o "Marcar retorno" do rodapé abre a MESMA grade/modal do perfil do paciente;
+   *  quem marca é sempre o dentista logado (mesmo trava de segurança de lá). */
+  dentistaId: string;
   catalogoProcedimentos: MeuDiaCatalogoProcedimento[];
   /** C1 (§5.4) — dono é `meu-dia-client`; "Nesta sessão" (direita) lê o mesmo estado. */
   eventosDraft: OdontogramaEventoDraft[];
   onEventosDraftChange: (eventos: OdontogramaEventoDraft[]) => void;
-  /** 04/08 — dono continua em `meu-dia-client` (a coluna direita precisa saber quando colapsar),
-   *  mas agora lido AQUI de novo: é este arquivo que renderiza o `ToothDetailPanel`. */
+  /** C7 (04/08) — dono continua em `meu-dia-client`, que agora é quem renderiza o
+   *  `ToothDetailPanel` (3º bloco da direita). Lido aqui só pra saber se mostra o slot da
+   *  tabela de especialidade (`onTabelaContainerRef` abaixo) e pra `onToothToggle` escrever. */
   denteAberto: number | null;
   onDenteAbertoChange: (dente: number | null) => void;
-  /** 04/08 — volta de `meu-dia-client` (migrou lá no C6, migra de volta agora que o painel
-   *  completo renderiza aqui, não mais num `Sheet`). */
-  gruposAbertos: GrupoAberto[];
+  /** C7 (04/08) — o `<div>` que recebe a tabela de especialidade (endo/implante) continua
+   *  renderizando AQUI (abaixo do odontograma, full-width, dentro do card "Registrar") — só a
+   *  referência dele sobe, porque quem monta o `ToothDetailPanel` que a usa é `meu-dia-client`. */
+  onTabelaContainerRef: (el: HTMLDivElement | null) => void;
   textoVisita: string;
   onTextoVisitaChange: (texto: string) => void;
   /** C2 (§5.6, trava 2) — slot já tem ficha hoje: CTA nasce desabilitado com
@@ -120,6 +111,13 @@ interface RegistrarPainelProps {
    *  no servidor). Pré-preenche o chip de orto (mesmo padrão de herança do R-05b) em vez de
    *  nascer vazio toda visita — é o que torna o chip rápido de usar, não só possível de usar. */
   orto: MeuDiaOrto | null;
+  /** R-61 — estado persistido da boca (leitura), pinta o odontograma junto com
+   *  `eventosDraft`. Passado direto pro `<Odontograma eventosPersistidos>`. */
+  boca: OdontogramaEventoDraft[];
+  /** R-63 — true quando o `ToothDetailPanel` (coluna direita) tem uma tabela de
+   *  especialidade aberta pro dente atual. Dono é `meu-dia-client.tsx` (via
+   *  `onDetalheAbertoChange` do painel); aqui só se lê, nunca se escreve. */
+  detalheEspecialidadeAberto: boolean;
 }
 
 /** Converte a pendência (já um evento real no banco, `status='indicado'`) num draft que
@@ -151,30 +149,33 @@ function ancorasDoOnde(v: OndeValor): AncoraClinica[] {
 }
 
 export function RegistrarPainel({
-  pacienteId, agendamentoId, pacienteNome, catalogoProcedimentos,
+  pacienteId, agendamentoId, pacienteNome, dentistaId, catalogoProcedimentos,
   eventosDraft, onEventosDraftChange: setEventosDraft,
   denteAberto, onDenteAbertoChange: setDenteAberto,
-  gruposAbertos,
+  onTabelaContainerRef,
   textoVisita, onTextoVisitaChange: setTextoVisita,
   temFichaHoje,
   onSalvo,
   anexarTexto,
   orto,
+  boca,
+  detalheEspecialidadeAberto,
 }: RegistrarPainelProps) {
-  // 04/08 — slot pra tabela de especialidade (R-20 Fase 2): quando o painel do dente monta
-  // um form com tabela (endo/implante), ela abre AQUI, full-width, abaixo do
-  // odontograma+painel — em vez de espremida dentro do card de 320px do painel.
-  const [tabelaContainer, setTabelaContainer] = useState<HTMLDivElement | null>(null);
   const [textoAberto, setTextoAberto] = useState(false);
-  /** D1.2 — fallback "Registrar sem IA": fechado por padrão, mesmo bloco de sempre por dentro. */
-  const [fallbackAberto, setFallbackAberto] = useState(false);
   /** D1 — só escrita pro campo mágico; quem lê é `handleSalvar` abaixo (I3). */
   const [alertaNovo, setAlertaNovo] = useState<string | null>(null);
 
   const [onde, setOnde] = useState<OndeValor>(null);
   const [status, setStatus] = useState<StatusRegistro>('realizado');
-  const [buscaTipo, setBuscaTipo] = useState('');
-  const [catalogoPendente, setCatalogoPendente] = useState<MeuDiaCatalogoProcedimento | null>(null);
+  /** R-57 F2 — observação livre do dentista, acompanha o PRÓXIMO procedimento registrado.
+   *  Convive com o nome do catálogo (`criarEventos` compõe as duas, nome primeiro) — nunca
+   *  sobrescreve. Reset entre pacientes é de graça (key={agendamentoId} no pai remonta tudo). */
+  const [observacao, setObservacao] = useState('');
+  // R-62 — carrega `dentes` junto (não só o item): quando a sugestão veio do texto do campo
+  // mágico com número ("resina Z350 no 24"), o dente tem que sobreviver até o clique em
+  // "qual tipo clínico?" — sem isso o passo seguinte caía de volta no `onde` (possivelmente
+  // vazio ou de outro dente), mesmo bug de prioridade que `registrar()` tinha.
+  const [catalogoPendente, setCatalogoPendente] = useState<{ item: MeuDiaCatalogoProcedimento; dentes: number[] } | null>(null);
   /** 03/08 — procedimento escolhido antes de haver "onde". Some assim que o onde chegar. */
   const [tipoPendente, setTipoPendente] = useState<{ tipo: TipoRegistroOdontograma; observacao: string } | null>(null);
   /** 04/08 — chip "Manutenção ortodôntica". Pré-preenche com a última manutenção real do
@@ -183,10 +184,57 @@ export function RegistrarPainel({
   const [ortoChipAberto, setOrtoChipAberto] = useState(false);
   const [ortoValor, setOrtoValor] = useState<OrtoManutencaoDetalhe | null>(() => orto?.valor ?? null);
 
+  // R-63 §4.1 — 1 ocupante por vez no slot central. Troca CONDICIONAL: só cede o mapa pra
+  // conteúdo que precisa do espaço e não usa o mapa pra nada (orto, tabela de
+  // especialidade). Os outros 15 de 17 tipos abrem o perfil na direita e o mapa FICA.
+  const slot: SlotCentral = ortoChipAberto
+    ? { tipo: 'orto' }
+    : denteAberto != null && detalheEspecialidadeAberto
+    ? { tipo: 'detalhe', dente: denteAberto }
+    : { tipo: 'mapa' };
+  const reduceMotion = useReducedMotion();
+
   const [isSaving, setIsSaving] = useState(false);
   const [savedFichaId, setSavedFichaId] = useState<string | null>(null);
   const [eventosPendentes, setEventosPendentes] = useState<OdontogramaEventoDraft[] | null>(null);
   const [isRegravando, setIsRegravando] = useState(false);
+
+  // R-64 — "Marcar retorno" do rodapé. Fluxo próprio, independente do rascunho da visita
+  // (agendamentos e fichas são tabelas diferentes) — fica habilitado mesmo com rascunho
+  // pendente de propósito, não faz sentido travar uma coisa pela outra.
+  const [retornoModalAberto, setRetornoModalAberto] = useState(false);
+  const [retornoForm, setRetornoForm] = useState<MarcarRetornoForm>({
+    data: null, minutoDoDia: null, duracao: '30', observacoes: '',
+  });
+  const [retornoSaving, setRetornoSaving] = useState(false);
+  const [retornoError, setRetornoError] = useState<string | null>(null);
+
+  async function handleMarcarRetorno() {
+    if (!retornoForm.data || retornoForm.minutoDoDia == null) {
+      setRetornoError('Escolha um horário na grade.');
+      return;
+    }
+    setRetornoError(null);
+    setRetornoSaving(true);
+    try {
+      const dataHora = buildClinicDatetime(retornoForm.data, formatHora(retornoForm.minutoDoDia));
+      const result = await criarAgendamento({
+        pacienteId,
+        dataHora,
+        duracaoMinutos: parseInt(retornoForm.duracao, 10) || 30,
+        observacoes: retornoForm.observacoes || null,
+      });
+      if (result.error) {
+        setRetornoError(result.error);
+        return;
+      }
+      setRetornoModalAberto(false);
+      setRetornoForm({ data: null, minutoDoDia: null, duracao: '30', observacoes: '' });
+      toast.success('Retorno marcado.');
+    } finally {
+      setRetornoSaving(false);
+    }
+  }
 
   const dataPadrao = hojeBRT();
   // C2 (§5.6) — as duas travas contra ficha duplicada colapsam numa condição só: nada pra
@@ -196,7 +244,23 @@ export function RegistrarPainel({
   // 04/08 — visita só-de-orto (sem evento, sem texto) também é rascunho de verdade.
   const semRascunho = eventosDraft.length === 0 && textoVisita.trim() === '' && ortoValor == null;
 
-  function criarEventos(tipo: TipoRegistroOdontograma, observacao: string, ancoras: AncoraClinica[]): OdontogramaEventoDraft[] {
+  /** R-50 — orto veio da IA: vira estado editável E abre o chip. Abrir é o guarda-corpo (mesma
+   *  razão do `criarDenteTipo` abrir a tabela de endo sozinha): dado extraído nunca entra
+   *  invisível, o dentista vê e corrige antes de salvar. Sobrescreve o que o chip tivesse —
+   *  o relato acabou de ser ditado, é mais recente que a herança do último atendimento. */
+  function handleOrtoDetectado(orto: OrtoManutencaoDetalhe) {
+    setOrtoValor(orto);
+    setOrtoChipAberto(true);
+  }
+
+  /** R-57 F2 — nome do catálogo (quando houver) primeiro, observação do dentista depois;
+   *  as duas coexistem, nenhuma sobrescreve a outra. */
+  function textoObservacao(doCatalogo: string): string {
+    return [doCatalogo, observacao.trim()].filter(Boolean).join(' — ');
+  }
+
+  function criarEventos(tipo: TipoRegistroOdontograma, observacaoDoCatalogo: string, ancoras: AncoraClinica[]): OdontogramaEventoDraft[] {
+    const texto = textoObservacao(observacaoDoCatalogo);
     return ancoras.map((ancora) => ({
       id: crypto.randomUUID(),
       tipo,
@@ -205,43 +269,64 @@ export function RegistrarPainel({
       ancora,
       grupo_id: null,
       papel_no_grupo: null,
-      observacao,
+      observacao: texto,
       realizado_em: status === 'realizado' ? dataPadrao : null,
     }));
   }
 
-  function registrar(tipo: TipoRegistroOdontograma, observacao = '') {
+  // R-62 — `dentesSugeridos` substitui o antigo `extrairDenteDoTexto(buscaTipo)`: o campo de
+  // busca sumiu, o matcher local já entrega o dente extraído do MESMO texto que casou o tipo
+  // (`SugestaoLocal.dentes`).
+  //
+  // PRIORIDADE: dentesSugeridos (o texto ATUAL do campo mágico) vence `onde` (clique no
+  // odontograma), não o contrário — e SOBRESCREVE `onde`, não só o ignora. `onde` nunca é
+  // limpo depois de um registro (comportamento antigo do multi-seleção, C6 §2 Q3: sobrevive
+  // de propósito pro caso "clicar 2 dentes, DEPOIS escolher o tipo"). Sem a sobrescrita, um
+  // 2º chip com dente diferente no texto (ex.: "canal 18" depois de "restauração 34") lia o
+  // `onde` velho (ainda [34]) e o evento nascia no dente ERRADO — achado ao vivo, não por
+  // leitura de código (dois cliques seguidos foram parar os dois no mesmo dente).
+  // R-57 F2 — o parâmetro chama `observacaoDoCatalogo` (não `observacao`) de propósito: o
+  // componente já tem um state `observacao` (a digitada pelo dentista); nomes iguais aqui
+  // esconderiam qual das duas cada linha está lendo. `criarEventos` compõe as duas.
+  function registrar(tipo: TipoRegistroOdontograma, observacaoDoCatalogo = '', dentesSugeridos: number[] = []) {
     // 03/08 — profilaxia/clareamento/flúor/exame periodontal não têm "onde": a âncora é
     // SEMPRE boca, e nenhum dente clicado antes se aplica aqui — não é esquecido, é ignorado
     // de propósito (D5 do R-06-07: nível boca nunca pinta dente).
     if (TIPOS_NIVEL_BOCA.has(tipo)) {
-      setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacao, [{ nivel: 'boca' }])]);
+      setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacaoDoCatalogo, [{ nivel: 'boca' }])]);
       setTipoPendente(null);
-      setBuscaTipo('');
       setCatalogoPendente(null);
+      setObservacao('');
       return;
     }
-    let ancoras = ancorasDoOnde(onde);
-    // Número junto no texto ("restauração 35") resolve o "onde" sozinho, sem esperar o clique.
-    if (ancoras.length === 0) {
-      const dente = extrairDenteDoTexto(buscaTipo);
-      if (dente != null) {
-        setOnde({ dentes: [dente] });
-        ancoras = [{ nivel: 'dente', dente }];
-      }
+    let ancoras: AncoraClinica[];
+    if (dentesSugeridos.length > 0) {
+      ancoras = dentesSugeridos.map((dente): AncoraClinica => ({ nivel: 'dente', dente }));
+      setOnde({ dentes: dentesSugeridos });
+    } else {
+      ancoras = ancorasDoOnde(onde);
     }
     if (ancoras.length === 0) {
       // Ordem livre: guarda o procedimento em vez de descartar. `handleOndeChange` completa
-      // o registro assim que um dente for clicado, em qualquer ordem.
-      setTipoPendente({ tipo, observacao });
-      setBuscaTipo('');
+      // o registro assim que um dente for clicado, em qualquer ordem. A observação digitada
+      // (state, não este parâmetro) fica como está — `criarEventos` lê ela ao vivo quando o
+      // registro finalmente acontecer, não precisa viajar dentro de `tipoPendente`.
+      setTipoPendente({ tipo, observacao: observacaoDoCatalogo });
       setCatalogoPendente(null);
       return;
     }
-    setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacao, ancoras)]);
+    // R-63 §4.3 — ditado devolve o mapa quando há confirmação real a dar (dente diferente
+    // do que a tabela/orto aberta está mostrando). Fecha o ocupante e seleciona o dente
+    // novo pra você ver onde caiu; mesmo dente ou âncora de boca não devolvem (§4.3).
+    if (ditadoDevolveMapa(slot, ancoras)) {
+      setOrtoChipAberto(false);
+      const primeiroDente = ancoras.map((a) => a.dente).find((d): d is number => d != null);
+      if (primeiroDente != null) setDenteAberto(primeiroDente);
+    }
+    setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacaoDoCatalogo, ancoras)]);
     setTipoPendente(null);
-    setBuscaTipo('');
     setCatalogoPendente(null);
+    setObservacao('');
   }
 
   function handleOndeChange(novoOnde: OndeValor) {
@@ -251,6 +336,7 @@ export function RegistrarPainel({
     if (ancoras.length === 0) return;
     setEventosDraft([...eventosDraft, ...criarEventos(tipoPendente.tipo, tipoPendente.observacao, ancoras)]);
     setTipoPendente(null);
+    setObservacao('');
   }
 
   // C5 (contrato §5.5) — toque no odontograma escreve no MESMO "onde" que o resto do painel lê
@@ -272,11 +358,22 @@ export function RegistrarPainel({
     handleOndeChange(resto.length > 0 ? { dentes: resto } : null);
   }
 
-  /** Item do catálogo escolhido na busca — só o nome comercial, nunca o tipo estrutural
-   *  (§A3: sem de-para confiável). Fica pendente até o dentista confirmar qual dos 16 tipos. */
-  function escolherDoCatalogo(item: MeuDiaCatalogoProcedimento) {
-    setCatalogoPendente(item);
-    setBuscaTipo('');
+  /** Item do catálogo escolhido — só o nome comercial, nunca o tipo estrutural (§A3: sem
+   *  de-para confiável). Fica pendente até o dentista confirmar qual dos 16 tipos. `dentes`
+   *  viaja junto (R-62) — é o que o clique em "qual tipo clínico?" usa depois. */
+  function escolherDoCatalogo(item: MeuDiaCatalogoProcedimento, dentes: number[] = []) {
+    setCatalogoPendente({ item, dentes });
+  }
+
+  /** R-62 — clique num chip do campo mágico. Mesmos 2 caminhos que a antiga "Registrar sem
+   *  IA" tinha (tipo direto vs. item de catálogo pedindo o tipo), só que a entrada é a
+   *  sugestão local em vez do valor escolhido no combobox. */
+  function aplicarSugestaoLocal(s: SugestaoLocal) {
+    if (s.catalogo) {
+      escolherDoCatalogo(s.catalogo, s.dentes);
+      return;
+    }
+    if (s.tipo) registrar(s.tipo, '', s.dentes);
   }
 
   // I1 — 1 clique = 1 ficha: `salvarFicha` não é idempotente por agendamentoId, o `disabled`
@@ -320,21 +417,12 @@ export function RegistrarPainel({
     }
   }
 
-  const buscaNormalizada = buscaTipo.trim().toLowerCase();
-  const tiposFiltrados = buscaNormalizada === ''
-    ? TIPOS
-    : TIPOS.filter(([, label]) => label.toLowerCase().includes(buscaNormalizada));
-  // Catálogo só aparece digitando (250+ linhas reais — listar tudo por padrão seria ruído).
-  // Limite de 8: é busca, não navegação — o dentista já sabe o nome, é achar rápido.
-  const catalogoFiltrado = buscaNormalizada === ''
-    ? []
-    : catalogoProcedimentos.filter((p) => p.nome.toLowerCase().includes(buscaNormalizada)).slice(0, 8);
-
   return (
     <div className="rounded-2xl border border-border bg-surface p-5">
       <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-text-secondary">Registrar</p>
 
-      {/* D1 — campo mágico: entrada única, substitui a barra inteira */}
+      {/* D1 — campo mágico: entrada única. R-62: os chips locais (zero IA) vivem dentro
+          dele agora — é o que mata a disclosure "Registrar sem IA" que existia aqui. */}
       <CampoMagicoMeuDia
         pacienteNome={pacienteNome}
         eventosDraft={eventosDraft}
@@ -342,175 +430,169 @@ export function RegistrarPainel({
         textoVisita={textoVisita}
         onTextoVisitaChange={setTextoVisita}
         onAlertaNovoChange={setAlertaNovo}
+        onOrtoDetectado={handleOrtoDetectado}
         anexarTexto={anexarTexto}
+        catalogoProcedimentos={catalogoProcedimentos}
+        onAplicarSugestao={aplicarSugestaoLocal}
       />
 
-      {/* D1.2 — fallback obrigatório (§2.1): texto puro e tipos sem "dente" continuam
-          registráveis com a IA fora do ar (I8), escondido por padrão. */}
-      <div className="mt-3 border-t border-border pt-3">
-        <button
-          type="button"
-          onClick={() => setFallbackAberto((v) => !v)}
-          className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
-        >
-          {fallbackAberto ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-          Registrar sem IA
-        </button>
-
-        {fallbackAberto && (
-          <div className="mt-2.5 flex flex-col gap-2.5">
-            <Combobox<ComboboxValor>
-              inputValue={buscaTipo}
-              onInputValueChange={setBuscaTipo}
-              autoHighlight
-              onValueChange={(v) => {
-                if (!v) return;
-                if (ehItemDoCatalogo(v)) escolherDoCatalogo(v);
-                else registrar(v);
-              }}
-              itemToStringLabel={(v) => (ehItemDoCatalogo(v) ? v.nome : TIPO_LABEL[v])}
-            >
-              <ComboboxInput placeholder="Digite o procedimento…" />
-              <ComboboxContent>
-                {tiposFiltrados.map(([tipo, label]) => (
-                  <ComboboxItem key={tipo} value={tipo}>{label}</ComboboxItem>
-                ))}
-                {catalogoFiltrado.map((item) => (
-                  <ComboboxItem key={item.id} value={item}>
-                    <span className="flex-1">{item.nome}</span>
-                    <span className="text-[10px] text-text-secondary">{item.categoria}</span>
-                  </ComboboxItem>
-                ))}
-              </ComboboxContent>
-            </Combobox>
-
-            {catalogoPendente && (
-              <div className="rounded-lg border border-teal/30 bg-teal/5 px-3 py-2">
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-semibold text-text-primary">
-                    &ldquo;{catalogoPendente.nome}&rdquo; — qual tipo clínico?
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setCatalogoPendente(null)}
-                    aria-label="Cancelar"
-                    className="text-text-secondary hover:text-coral"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {TIPOS.map(([tipo, label]) => (
-                    <button
-                      key={tipo}
-                      type="button"
-                      onClick={() => registrar(tipo, catalogoPendente.nome)}
-                      className="rounded-full border border-teal/30 bg-surface px-2.5 py-1 text-[11px] font-semibold text-teal hover:bg-teal/10"
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Status</span>
-                {([['indicado', 'a fazer'], ['realizado', 'feito']] as const).map(([s, label]) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setStatus(s)}
-                    className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                      status === s
-                        ? 'border-teal bg-teal/10 text-teal'
-                        : 'border-border bg-surface-alt text-text-secondary hover:border-teal/40'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              {/* 04/08 — 1º chip de "não usa o odontograma". Pré-preenchido com a última
-                  manutenção real (herança R-05b) quando existe. */}
+      {/* R-62 — o que sobra do antigo painel "sem IA": nada disso era exclusivo do combobox
+       * (Status/orto/catálogo-pendente sempre foram controles à parte), então vira faixa
+       * sempre visível, sem toggle. "+ texto da visita" fica de propósito (não é redundante:
+       * é o único jeito de salvar uma nota pura sem passar pelo Dex — I1, IA fora do ar). */}
+      <div className="mt-3 flex flex-col gap-2.5 border-t border-border pt-3">
+        {catalogoPendente && (
+          <div className="rounded-lg border border-teal/30 bg-teal/5 px-3 py-2">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold text-text-primary">
+                &ldquo;{catalogoPendente.item.nome}&rdquo; — qual tipo clínico?
+              </p>
               <button
                 type="button"
-                onClick={() => setOrtoChipAberto((v) => !v)}
+                onClick={() => setCatalogoPendente(null)}
+                aria-label="Cancelar"
+                className="text-text-secondary hover:text-coral"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {TIPOS.map(([tipo, label]) => (
+                <button
+                  key={tipo}
+                  type="button"
+                  onClick={() => registrar(tipo, catalogoPendente.item.nome, catalogoPendente.dentes)}
+                  className="rounded-full border border-teal/30 bg-surface px-2.5 py-1 text-[11px] font-semibold text-teal-ink hover:bg-teal/10"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Status</span>
+            {([['indicado', 'a fazer'], ['realizado', 'feito']] as const).map(([s, label]) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setStatus(s)}
                 className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                  ortoChipAberto || ortoValor != null
-                    ? 'border-teal bg-teal/10 text-teal'
+                  status === s
+                    ? 'border-teal bg-teal/10 text-teal-ink'
                     : 'border-border bg-surface-alt text-text-secondary hover:border-teal/40'
                 }`}
               >
-                Manutenção ortodôntica
+                {label}
               </button>
-            </div>
-
-            {tipoPendente && (
-              <p className="text-[11px] font-semibold text-teal-ink">
-                {TIPO_LABEL[tipoPendente.tipo]} aguardando onde — clique no dente no odontograma.
-              </p>
-            )}
-
-            {ortoChipAberto && (
-              <div className="rounded-lg border border-border bg-surface-alt px-3 py-3">
-                <OrtoForm valor={ortoValor} onChange={setOrtoValor} />
-              </div>
-            )}
-
-            {textoAberto ? (
-              <textarea
-                value={textoVisita}
-                onChange={(e) => setTextoVisita(e.target.value)}
-                placeholder="Anotação da visita (opcional)"
-                rows={3}
-                autoFocus
-                className="w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm text-text-primary outline-none focus:border-teal"
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setTextoAberto(true)}
-                className="w-fit text-[11px] font-semibold text-text-secondary hover:text-teal"
-              >
-                + texto da visita
-              </button>
-            )}
+            ))}
           </div>
-        )}
-      </div>
 
-      {/* 04/08 — painel do dente flutua ao lado do odontograma, card próprio, com respiro
-          (gap-4) — não mais resumo+Sheet separados. A direita colapsa (meu-dia-client) pra
-          este `flex-1` não perder largura de verdade. */}
-      <div className="mt-4 flex items-start gap-4">
-        <div className="min-w-0 flex-1">
-          <Odontograma
-            eventos={eventosDraft}
-            selectedTeeth={onde?.dentes ?? []}
-            onToothToggle={onToothToggle}
-            compact
-            hideFilters
+          {/* 04/08 — 1º chip de "não usa o odontograma". Pré-preenchido com a última
+              manutenção real (herança R-05b) quando existe. */}
+          <button
+            type="button"
+            onClick={() => setOrtoChipAberto((v) => !v)}
+            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+              ortoChipAberto || ortoValor != null
+                ? 'border-teal bg-teal/10 text-teal-ink'
+                : 'border-border bg-surface-alt text-text-secondary hover:border-teal/40'
+            }`}
+          >
+            Manutenção ortodôntica
+          </button>
+        </div>
+
+        {/* R-57 F2 — sempre visível, sem clique pra abrir (um clique extra anularia o
+            ganho). Acompanha o PRÓXIMO procedimento registrado; convive com o nome do
+            catálogo, nunca sobrescreve (criarEventos compõe as duas). */}
+        <div className="flex items-center gap-1.5">
+          <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+            Observação
+          </span>
+          <input
+            type="text"
+            value={observacao}
+            onChange={(e) => setObservacao(e.target.value)}
+            placeholder="Opcional — acompanha o próximo procedimento"
+            className="min-w-0 flex-1 rounded-lg border border-border bg-surface-alt px-2.5 py-1 text-[11px] text-text-primary outline-none focus:border-teal"
           />
         </div>
-        {denteAberto != null && (
-          <div className="w-[320px] shrink-0">
-            <ToothDetailPanel
-              dente={denteAberto}
-              eventos={eventosDraft}
-              onChange={setEventosDraft}
-              onClose={() => setDenteAberto(null)}
-              dataPadrao={dataPadrao}
-              gruposAbertos={gruposAbertos}
-              tabelaContainer={tabelaContainer}
-            />
-          </div>
+
+        {tipoPendente && (
+          <p className="text-[11px] font-semibold text-teal-ink">
+            {TIPO_LABEL[tipoPendente.tipo]} aguardando onde — clique no dente no odontograma.
+          </p>
+        )}
+
+        {textoAberto ? (
+          <textarea
+            value={textoVisita}
+            onChange={(e) => setTextoVisita(e.target.value)}
+            placeholder="Anotação da visita (opcional)"
+            rows={3}
+            autoFocus
+            className="w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm text-text-primary outline-none focus:border-teal"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setTextoAberto(true)}
+            className="w-fit text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
+          >
+            + texto da visita
+          </button>
         )}
       </div>
-      {/* Tabela de especialidade (endo/implante) — portal do ToothDetailPanel acima */}
-      {denteAberto != null && <div ref={setTabelaContainer} className="mt-3" />}
+
+      {/* R-63 §4.1 — slot central: 1 ocupante por vez (mapa · tabela de especialidade ·
+          orto), troca CONDICIONAL — só endo/implante e orto tomam o lugar do mapa; os
+          outros 15 de 17 tipos abrem o perfil na direita e o mapa fica (não entra aqui).
+          O container do portal (abaixo) fica SEMPRE montado quando há dente aberto,
+          independente do slot — é o que evita a corrida de ref com o ToothDetailPanel
+          (a troca decide só o que aparece ACIMA dele, nunca desmonta o alvo do portal). */}
+      <AnimatePresence mode="wait" initial={false}>
+        {slot.tipo !== 'detalhe' && (
+          <motion.div
+            key={slot.tipo}
+            initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? undefined : { opacity: 0, y: -6 }}
+            transition={{ duration: reduceMotion ? 0 : 0.18, ease: 'easeOut' }}
+            className="mt-4"
+          >
+            {slot.tipo === 'orto' ? (
+              // bg-surface (não -alt): o OrtoForm já usa bg-surface-alt nos próprios
+              // inputs (orto-form.tsx). Empilhar -alt aqui em cima de -alt zerava o
+              // contraste do input contra o wrapper em light mode — as duas eram
+              // literalmente a mesma cor (confirmado: rgb(218,218,222) nos dois, medido ao
+              // vivo). FichasTab.tsx, o outro lugar que monta o OrtoForm, nunca teve esse
+              // wrapper — por isso só aparecia aqui.
+              <div className="rounded-lg border border-border bg-surface px-3 py-3">
+                <OrtoForm valor={ortoValor} onChange={setOrtoValor} />
+              </div>
+            ) : (
+              <Odontograma
+                eventos={eventosDraft}
+                eventosPersistidos={boca}
+                selectedTeeth={onde?.dentes ?? []}
+                onToothToggle={onToothToggle}
+                compact
+                hideFilters
+              />
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* Tabela de especialidade (endo/implante) — portal do ToothDetailPanel, que
+          renderiza em meu-dia-client.tsx (C7). Slot 'detalhe': é a ÚNICA coisa visível
+          aqui (o mapa acima nem monta). Nos outros casos empilha embaixo do mapa, como
+          sempre. */}
+      {denteAberto != null && (
+        <div ref={onTabelaContainerRef} className={slot.tipo === 'detalhe' ? 'mt-4' : 'mt-3'} />
+      )}
 
       {eventosPendentes && (
         <div role="status" className="mt-4 flex items-start gap-3 rounded-xl border border-warning/40 bg-warning-pale px-4 py-3">
@@ -529,12 +611,19 @@ export function RegistrarPainel({
         </div>
       )}
 
-      <div className="mt-4 border-t border-border pt-4">
+      <div className="mt-4 flex items-center gap-2 border-t border-border pt-4">
+        <button
+          type="button"
+          onClick={() => setRetornoModalAberto(true)}
+          className="flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm font-bold text-text-secondary transition-colors hover:border-teal/40 hover:text-teal-ink"
+        >
+          Marcar retorno
+        </button>
         <button
           type="button"
           onClick={() => void handleSalvar()}
           disabled={isSaving || eventosPendentes != null || semRascunho}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal px-5 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-teal-dark px-5 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {isSaving
             ? <><Loader2 className="h-4 w-4 animate-spin" /> Salvando…</>
@@ -544,6 +633,21 @@ export function RegistrarPainel({
           }
         </button>
       </div>
+
+      <MarcarRetornoModal
+        open={retornoModalAberto}
+        onOpenChange={(open) => {
+          setRetornoModalAberto(open);
+          if (!open) setRetornoError(null);
+        }}
+        pacienteNome={pacienteNome}
+        dentistaId={dentistaId}
+        form={retornoForm}
+        setForm={setRetornoForm}
+        error={retornoError}
+        saving={retornoSaving}
+        onMarcarRetorno={() => void handleMarcarRetorno()}
+      />
     </div>
   );
 }

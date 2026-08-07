@@ -206,8 +206,8 @@ export interface OrtoManutencaoInfo {
   elastico_corrente: string | null;
   /** Entre arcadas, uso domiciliar (ex: "3/16 Classe II, 13→46"). */
   elastico_intermaxilar: string | null;
-  /** 04/08 — só fazem sentido com `arcada === 'ambas'`. Opcionais: registro antigo (ou
-   *  extraído por IA, que ainda não preenche estes) não tem, e isso é válido — nunca `''`. */
+  /** 04/08 — só fazem sentido com `arcada === 'ambas'`. Opcionais: registro antigo não tem, e
+   *  isso é válido — nunca `''`. 05/08 (R-50): a IA passou a preenchê-los também. */
   fio_inferior?: string | null;
   ativacao_inferior?: string | null;
   elastico_corrente_inferior?: string | null;

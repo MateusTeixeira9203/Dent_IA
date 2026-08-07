@@ -6,10 +6,10 @@
 // aqui — o painel só edita o rascunho de eventos; salvar é do "Confirmar e salvar"
 // da tela-mãe (invariante #1).
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronRight, X, Forward } from 'lucide-react';
+import { ChevronRight, ChevronLeft, X, Forward } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { GrupoAberto } from '@/lib/odontograma/grupos-abertos';
 import {
@@ -110,6 +110,13 @@ export interface ToothDetailPanelProps {
    * `resumo` (derivado de `eventos`, abaixo) continua tendo prioridade quando presente.
    */
   state?: ToothState;
+  /**
+   * R-63 — notifica o pai quando uma tabela de especialidade (endo/implante) abre ou fecha,
+   * pro slot central do Meu dia decidir se troca o mapa. Ausente = comportamento de hoje
+   * (I3): os outros 3 consumidores (FichasTab, /consulta, OdontogramaComPainel) não passam
+   * isto e continuam intocados.
+   */
+  onDetalheAbertoChange?: (aberto: boolean) => void;
 }
 
 export function ToothDetailPanel({
@@ -123,6 +130,7 @@ export function ToothDetailPanel({
   readOnly = false,
   className,
   state = 'default',
+  onDetalheAbertoChange,
 }: ToothDetailPanelProps) {
   const superior = (dente >= 11 && dente <= 28) || (dente >= 51 && dente <= 65);
   const doDente = useMemo(
@@ -140,6 +148,23 @@ export function ToothDetailPanel({
   // Detalhe de especialidade (migration 106) — só endo/implante têm Form hoje. Um aberto
   // por vez (regra do artefato de dois-modos §02): abrir outro fecha o anterior.
   const [detalheAbertoIdx, setDetalheAbertoIdx] = useState<number | null>(null);
+  // R-63 — nova seleção de dente nunca herda detalhe aberto do anterior (mesmo princípio do
+  // painelDenteAberto em meu-dia-client.tsx — seleção nova é sempre "do zero"). Ajuste de
+  // estado LOCAL durante o render (padrão idAoResetar já usado no projeto) — não useEffect,
+  // o lint (react-hooks/set-state-in-effect) bloqueia essa versão pra estado próprio.
+  const [denteDoDetalhe, setDenteDoDetalhe] = useState(dente);
+  if (dente !== denteDoDetalhe) {
+    setDenteDoDetalhe(dente);
+    setDetalheAbertoIdx(null);
+  }
+  // R-63 — avisa o pai (slot central do Meu dia) DEPOIS do commit, nunca durante o render de
+  // outro componente: chamar `onDetalheAbertoChange` (que escreve estado em
+  // `meu-dia-client.tsx`) direto no corpo do componente disparava "Cannot update a component
+  // while rendering a different component" — achado ao vivo testando o ditado devolve-mapa.
+  // Ausente = no-op (I3, os outros 3 consumidores não passam a prop).
+  useEffect(() => {
+    onDetalheAbertoChange?.(detalheAbertoIdx != null);
+  }, [detalheAbertoIdx, onDetalheAbertoChange]);
 
   // R-02 Fase 3 — confirmação de amarração pendente: quando criar um evento de um tipo que
   // já tem trabalho aberto neste dente, guarda o que criar até o dentista decidir
@@ -268,7 +293,19 @@ export function ToothDetailPanel({
       (e) => e.tipo === 'carie_restauracao' && e.ancora.dente === dente && (e.ancora.faces ?? []).includes(face),
     );
     if (i === -1) {
-      all.push(novo('carie_restauracao', 'indicado', { nivel: 'face', dente, faces: [face] }));
+      // R-59 Parte 2 (B, 06/08) — outra face de carie_restauracao já indicada neste dente
+      // no rascunho é a MESMA restauração (2ª face clicada antes de salvar), não uma 2ª
+      // restauração. `grupo_id` compartilhado funde as duas em `agrupar-registros.ts`/
+      // orçamento (`eventosParaItens`) sem juntar `faces` numa chave nova — dado antigo
+      // sem grupo_id (gravado como eventos soltos) não é tocado, só o gesto de agora.
+      const irmaoIdx = all.findIndex(
+        (e) => e.tipo === 'carie_restauracao' && e.status === 'indicado' && e.ancora.dente === dente,
+      );
+      const irmao = irmaoIdx === -1 ? null : all[irmaoIdx];
+      const grupoId = irmao ? (irmao.grupo_id ?? irmao.id) : null;
+      const novoEvento = novo('carie_restauracao', 'indicado', { nivel: 'face', dente, faces: [face] });
+      all.push(grupoId ? { ...novoEvento, grupo_id: grupoId } : novoEvento);
+      if (irmao && !irmao.grupo_id) all[irmaoIdx] = { ...irmao, grupo_id: grupoId };
     } else {
       const e = all[i];
       if (e.status === 'indicado') {
@@ -657,9 +694,32 @@ export function ToothDetailPanel({
         </div>
       )}
 
-      {/* ── Eventos do dente (com data clínica editável nos "realizado") ── */}
-      {doDente.length > 0 && (
+      {/* ── Eventos do dente (com data clínica editável nos "realizado") ──
+          C7-motion (04/08, pedido dele ao vivo) — a seção inteira (linha do evento + observação
+          + tabela de especialidade) desce pro centro, abaixo do odontograma, via o mesmo
+          `tabelaContainer` que já levava só a tabela (R-20). Motivo: observação e tabela querem
+          mais largura do que a coluna de 312px tem — mesmo raciocínio do R-20, agora aplicado à
+          seção toda, não só à tabela. Sem container (outros consumidores do painel, ex.
+          FichasTab/consulta) → cai no inline de sempre, comportamento intacto. */}
+      {(() => {
+        if (doDente.length === 0) return null;
+        const secao = (
         <div className="flex flex-col pt-2 border-t" style={{ borderColor: 'var(--color-border)' }}>
+          {/* R-63 — só existe quando portado (tabelaContainer) e há tabela de especialidade
+              aberta: é o gatilho "‹ voltar ao mapa" (§4.2 da spec) — fecha só a tabela, o
+              perfil do dente continua aberto. Fora do portal (outros 3 consumidores) nunca
+              aparece: lá o odontograma não compartilha espaço com esta seção. */}
+          {tabelaContainer && detalheAbertoIdx != null && (
+            <button
+              type="button"
+              onClick={() => setDetalheAbertoIdx(null)}
+              className="mb-2 flex w-fit items-center gap-1 text-[11px] font-semibold outline-none focus-visible:ring-1 focus-visible:ring-teal rounded px-1"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              <ChevronLeft size={12} strokeWidth={2.4} />
+              voltar ao mapa
+            </button>
+          )}
           {doDente.map((ev, i) => {
             const cor = corDoRegistro(ev.status, ev.origem);
             // Só endo/implante têm tabela de especialidade hoje (migration 106).
@@ -761,49 +821,34 @@ export function ToothDetailPanel({
                   </div>
                 )}
 
-                {temDetalhe && aberto && (() => {
-                  const form = (
-                    <>
-                      {ev.tipo === 'endodontia' && (
-                        <EndoForm
-                          valor={(ev.detalhe ?? null) as EndoDetalhe | null}
-                          onChange={(v) => atualizarDetalhe(ev, v)}
-                          readOnly={readOnly}
-                        />
-                      )}
-                      {ev.tipo === 'implante' && (
-                        <ImplanteForm
-                          valor={(ev.detalhe ?? null) as ImplanteDetalhe | null}
-                          onChange={(v) => atualizarDetalhe(ev, v)}
-                          readOnly={readOnly}
-                        />
-                      )}
-                    </>
-                  );
-                  // R-20 Fase 2: com container do pai → tabela abre full-width lá embaixo, num
-                  // card próprio (dente + tipo no cabeçalho, pra saber de quem é a tabela solta);
-                  // sem container → inline (fallback).
-                  return tabelaContainer
-                    ? createPortal(
-                        <div
-                          className="rounded-xl border p-4"
-                          style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-                        >
-                          <div className="flex items-center gap-2 mb-3">
-                            <span className="font-mono font-bold text-[13px]" style={{ color: 'var(--color-text-primary)' }}>{dente}</span>
-                            <span className="text-[12px] font-semibold" style={{ color: 'var(--color-text-secondary)' }}>{TIPO_LABEL[ev.tipo]}</span>
-                          </div>
-                          {form}
-                        </div>,
-                        tabelaContainer,
-                      )
-                    : <div className="pb-3 pl-4">{form}</div>;
-                })()}
+                {/* C7-motion — a seção inteira já portou pro centro (ver acima); a tabela não
+                    precisa mais do próprio card+cabeçalho "27 · Endodontia" separado — a linha
+                    do evento logo acima já diz de qual dente/tipo é. */}
+                {temDetalhe && aberto && (
+                  <div className="pb-3 pl-4">
+                    {ev.tipo === 'endodontia' && (
+                      <EndoForm
+                        valor={(ev.detalhe ?? null) as EndoDetalhe | null}
+                        onChange={(v) => atualizarDetalhe(ev, v)}
+                        readOnly={readOnly}
+                      />
+                    )}
+                    {ev.tipo === 'implante' && (
+                      <ImplanteForm
+                        valor={(ev.detalhe ?? null) as ImplanteDetalhe | null}
+                        onChange={(v) => atualizarDetalhe(ev, v)}
+                        readOnly={readOnly}
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
-      )}
+        );
+        return tabelaContainer ? createPortal(secao, tabelaContainer) : secao;
+      })()}
       {/* ── R-02 Fase 3: confirmação de amarração a trabalho aberto ── */}
       {typeof document !== 'undefined' && createPortal(
         <AnimatePresence>

@@ -12,11 +12,11 @@ import { useState } from 'react';
 import { Check, Forward } from 'lucide-react';
 import { TIPO_LABEL, type OdontogramaEventoDraft } from '@/types/odontograma';
 import type { MeuDiaPendencia } from '@/server/dashboard/get-meu-dia';
-import { responsavelPassaFiltro, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
-import { BlocoMoldavel } from './bloco-moldavel';
 import { fmtData, ondeLabel } from './meu-dia-format';
 
 export interface AFazerBlocoProps {
+  /** R-63 F2 — já filtrada pelo pai ("responsável = eu", `responsavelPassaFiltro`/X1): o
+   *  mesmo array alimenta esta lista E o contador da aba, nunca duas leituras da regra. */
   pendencias: MeuDiaPendencia[];
   /** Pra desabilitar "fazer hoje" na pendência que já virou rascunho nesta sessão. */
   eventosDraft: OdontogramaEventoDraft[];
@@ -33,8 +33,6 @@ export interface AFazerBlocoProps {
   selecionados: Set<string>;
   onToggleModoEncaminhar: () => void;
   onToggleSelecao: (id: string) => void;
-  aberto: boolean;
-  onToggle: () => void;
 }
 
 const PREVIA = 5;
@@ -129,112 +127,72 @@ function PendenciaLinha({
 export function AFazerBloco({
   pendencias, eventosDraft, onFazerHoje, onConcluirRecebida, concluindoId,
   meuDentistaId, modoEncaminhar, selecionados, onToggleModoEncaminhar, onToggleSelecao,
-  aberto, onToggle,
 }: AFazerBlocoProps) {
   const [expandido, setExpandido] = useState(false);
 
-  // R-52 — "A fazer" é o TRABALHO QUE EU VOU FAZER (decisão dele, 03/08, com o número de
-  // impacto medido no banco antes de fechar). Dois casos entram, dois ficam de fora:
-  //
-  //   ✅ minha e não encaminhada   → é minha, eu faço
-  //   ✅ encaminhada PRA mim       → é trabalho meu, mesmo que o autor seja outro
-  //   ❌ minha, mas eu encaminhei  → saiu da minha mesa
-  //   ❌ de colega, não encaminhada→ não é minha; o panorama do paciente vive na ficha
-  //
-  // Antes disto o bloco listava pendência de qualquer dentista e oferecia "fazer hoje →" em
-  // TODAS. Na pendência de colega isso MENTIA: o upsert reusa o `id` do outro, a RLS barra
-  // a linha, e 0 linhas afetadas não é erro no Postgres — o servidor devolvia `ok:true` e a
-  // tela dizia "feito hoje" sem nada ter sido gravado.
-  //
-  // X1 (MAPA-MEU-DIA.md) — "responsável = encaminhadoParaId ?? dentistaId" é a MESMA regra
-  // que `filtro-responsavel.ts` já usa na ficha (R-16). Reimplementar aqui à mão foi o débito
-  // que a decisão do X1 condenou: duas leituras da mesma regra podem divergir em silêncio.
-  const minhas = pendencias.filter((p) =>
-    responsavelPassaFiltro(p.encaminhadoParaId ?? p.dentistaId, FILTRO_MEUS, meuDentistaId),
-  );
-
-  // Contrato §5.1: contador SEMPRE derivado da lista renderizada, nunca prop solta. Com o
-  // filtro acima isso deixou de ser detalhe e virou correção — contar `pendencias` mostraria
-  // no badge item que não está na lista.
-  //
   // Mais antiga primeiro — `registradoEm` é 'YYYY-MM-DD', ordena como string sem parse.
-  const ordenadas = [...minhas].sort((a, b) => (a.registradoEm < b.registradoEm ? -1 : 1));
+  const ordenadas = [...pendencias].sort((a, b) => (a.registradoEm < b.registradoEm ? -1 : 1));
   const temMais = ordenadas.length > PREVIA;
   const visiveis = expandido ? ordenadas : ordenadas.slice(0, PREVIA);
 
   // R-52 — só "minha, não encaminhada" tem autoria pra entrar no lote (mesmo critério de
   // `encaminhavel` em PendenciaLinha, calculado aqui só pra decidir se o gatilho aparece).
-  const temEncaminhavel = minhas.some(
+  const temEncaminhavel = pendencias.some(
     (p) => p.dentistaId === meuDentistaId && !eventosDraft.some((e) => e.id === p.id),
   );
 
-  return (
-    <BlocoMoldavel
-      id="a-fazer"
-      titulo="A fazer"
-      contador={minhas.length}
-      resumo={
-        minhas.length > 0 ? (
-          <span className="text-xs text-text-secondary">{minhas.length} pendência{minhas.length > 1 ? 's' : ''}</span>
-        ) : undefined
-      }
-      aberto={aberto}
-      onToggle={onToggle}
-    >
-      {minhas.length === 0 ? (
-        <p className="text-sm text-text-secondary">Nada pendente pra este paciente.</p>
-      ) : (
-        <>
-          {(modoEncaminhar || temEncaminhavel) && (
-            <div className="mb-1.5 flex justify-end">
-              <button
-                type="button"
-                onClick={onToggleModoEncaminhar}
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
-              >
-                {modoEncaminhar ? (
-                  'cancelar'
-                ) : (
-                  <>
-                    <Forward className="h-3 w-3" /> encaminhar
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-          <div
-            className={
-              expandido
-                ? 'flex max-h-[420px] flex-col divide-y divide-border overflow-y-auto pr-2'
-                : 'flex flex-col divide-y divide-border'
-            }
+  return pendencias.length === 0 ? (
+    <p className="text-sm text-text-secondary">Nada pendente pra este paciente.</p>
+  ) : (
+    <>
+      {(modoEncaminhar || temEncaminhavel) && (
+        <div className="mb-1.5 flex justify-end">
+          <button
+            type="button"
+            onClick={onToggleModoEncaminhar}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
           >
-            {visiveis.map((p) => (
-              <PendenciaLinha
-                key={p.id}
-                p={p}
-                jaFeito={eventosDraft.some((e) => e.id === p.id)}
-                recebida={p.encaminhadoParaId === meuDentistaId}
-                ocupada={concluindoId === p.id}
-                onFazerHoje={onFazerHoje}
-                onConcluirRecebida={onConcluirRecebida}
-                modoEncaminhar={modoEncaminhar}
-                selecionado={selecionados.has(p.id)}
-                onToggleSelecao={onToggleSelecao}
-              />
-            ))}
-          </div>
-          {temMais && (
-            <button
-              type="button"
-              onClick={() => setExpandido((e) => !e)}
-              className="mt-1 w-full text-center text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
-            >
-              {expandido ? 'mostrar menos ↑' : `ver todas as ${ordenadas.length} →`}
-            </button>
-          )}
-        </>
+            {modoEncaminhar ? (
+              'cancelar'
+            ) : (
+              <>
+                <Forward className="h-3 w-3" /> encaminhar
+              </>
+            )}
+          </button>
+        </div>
       )}
-    </BlocoMoldavel>
+      <div
+        className={
+          expandido
+            ? 'flex max-h-[420px] flex-col divide-y divide-border overflow-y-auto pr-2'
+            : 'flex flex-col divide-y divide-border'
+        }
+      >
+        {visiveis.map((p) => (
+          <PendenciaLinha
+            key={p.id}
+            p={p}
+            jaFeito={eventosDraft.some((e) => e.id === p.id)}
+            recebida={p.encaminhadoParaId === meuDentistaId}
+            ocupada={concluindoId === p.id}
+            onFazerHoje={onFazerHoje}
+            onConcluirRecebida={onConcluirRecebida}
+            modoEncaminhar={modoEncaminhar}
+            selecionado={selecionados.has(p.id)}
+            onToggleSelecao={onToggleSelecao}
+          />
+        ))}
+      </div>
+      {temMais && (
+        <button
+          type="button"
+          onClick={() => setExpandido((e) => !e)}
+          className="mt-1 w-full text-center text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
+        >
+          {expandido ? 'mostrar menos ↑' : `ver todas as ${ordenadas.length} →`}
+        </button>
+      )}
+    </>
   );
 }

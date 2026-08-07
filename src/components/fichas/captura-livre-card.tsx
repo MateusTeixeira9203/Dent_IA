@@ -4,15 +4,17 @@
 // ditado) + anexo (áudio/pdf/docx/txt) → "Organizar com Dex" → preenche o form
 // existente. Não salva nada — quem salva é o FichasTab, dono do formData.
 
-import { useEffect, useRef, useState } from 'react';
-import { Mic, MicOff, Paperclip, Loader2, Bot } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Mic, MicOff, Paperclip, Loader2, Bot, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useCapturaLivre } from '@/hooks/useCapturaLivre';
 import { extrairTextoDeArquivo } from '@/lib/dex/extrair-texto-arquivo';
+import { casarProcedimentoLocal, type SugestaoLocal } from '@/lib/odontograma/casar-procedimento-local';
 import { VoiceUX } from './voice-ux';
 import { DexAvatar } from '@/components/ui/dex-avatar';
 import type { EvolucaoFormatada } from '@/app/api/dex/formatar-evolucao/route';
+import type { MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
 
 // Etapas do feedback progressivo — mesmo texto/timing do modo consulta (§8).
 const ETAPAS = [
@@ -31,9 +33,17 @@ export interface CapturaLivreCardProps {
    *  observa a mudança e faz append no texto atual. Opcional — callers existentes (FichasTab)
    *  não passam, comportamento 100% preservado. */
   anexarTexto?: { texto: string; nonce: number };
+  /** R-62 — catálogo pro match local (§3.1). Ausente = o matcher casa só os 17 tipos
+   *  estruturais, sem item comercial. */
+  catalogoProcedimentos?: MeuDiaCatalogoProcedimento[];
+  /** R-62 — clique num chip de sugestão LOCAL (zero rede, zero IA — §1.2/§3.1). Ausente =
+   *  os chips locais nem são calculados (I5: `FichasTab` não passa, fica idêntico a hoje). */
+  onAplicarSugestao?: (sugestao: SugestaoLocal) => void;
 }
 
-export function CapturaLivreCard({ pacienteNome, formDirty, onOrganizado, anexarTexto }: CapturaLivreCardProps) {
+export function CapturaLivreCard({
+  pacienteNome, formDirty, onOrganizado, anexarTexto, catalogoProcedimentos, onAplicarSugestao,
+}: CapturaLivreCardProps) {
   const {
     texto,
     setTexto,
@@ -45,6 +55,13 @@ export function CapturaLivreCard({ pacienteNome, formDirty, onOrganizado, anexar
     detectedProcs,
     isDetecting,
   } = useCapturaLivre({ pacienteNome });
+
+  // R-62 — puro e síncrono: roda a cada tecla, sem debounce, sem rede (I1/I6). Ausência de
+  // `onAplicarSugestao` desliga o cálculo inteiro (I5) — é o que mantém o FichasTab intocado.
+  const sugestoesLocais = useMemo(
+    () => (onAplicarSugestao ? casarProcedimentoLocal(texto, catalogoProcedimentos ?? []) : []),
+    [texto, catalogoProcedimentos, onAplicarSugestao],
+  );
 
   // R-46d (D8) — append, não substituição: mesmo padrão que `handleArquivo` já usa.
   const anexarNonceRef = useRef(anexarTexto?.nonce);
@@ -67,7 +84,16 @@ export function CapturaLivreCard({ pacienteNome, formDirty, onOrganizado, anexar
     // §8 passo 4 — form já preenchido pede confirmação antes de sobrescrever.
     // R-47 (31/07): eventos do odontograma agora se SOMAM aos existentes (não substituem
     // mais — era o achado 1), só o texto/campos do form são substituídos de fato.
-    if (formDirty && !window.confirm('Isso substitui o texto e os campos do formulário. Os registros já lançados no odontograma são mantidos — os novos se somam a eles.')) return;
+    //
+    // 05/08 (achado ao vivo) — cancelar aqui devolvia silêncio total: nenhum toast, nenhuma
+    // mudança visível, o texto continuava no campo do jeito que estava. Parecia que o botão
+    // não tinha feito nada (relatado como "não aparece no odontograma" — na verdade nunca
+    // chegou a chamar a IA). Fica mais comum depois do R-62: os chips locais já preenchem o
+    // draft sem passar por aqui, então `formDirty` chega `true` com mais frequência.
+    if (formDirty && !window.confirm('Isso substitui o texto e os campos do formulário. Os registros já lançados no odontograma são mantidos — os novos se somam a eles.')) {
+      toast.info('Cancelado — nada foi alterado. O texto continua no campo.');
+      return;
+    }
 
     setIsOrganizando(true);
     setOrganizarLabel(ETAPAS[0].label);
@@ -119,7 +145,35 @@ export function CapturaLivreCard({ pacienteNome, formDirty, onOrganizado, anexar
         <span className="text-xs text-text-secondary ml-1">Fale, cole ou anexe — o Dex monta a ficha</span>
       </div>
 
-      {/* Detecção ao vivo */}
+      {/* R-62 — sugestões LOCAIS: instantâneas, acionáveis, zero rede. Distintas das da IA
+          logo abaixo (preenchidas + ícone de raio, vs. outline sozinho) — são sugestão de
+          outra natureza (trecho casado, não o relato inteiro entendido). */}
+      <AnimatePresence>
+        {sugestoesLocais.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="flex flex-wrap gap-1.5 px-4 pb-2">
+              {sugestoesLocais.map((s, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => onAplicarSugestao?.(s)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-teal-ink text-surface hover:opacity-90 transition-opacity"
+                >
+                  <Zap className="w-2.5 h-2.5" />
+                  {s.trecho}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Detecção ao vivo (IA) — informativo, não clicável. */}
       <AnimatePresence>
         {texto.length > 20 && (detectedProcs.length > 0 || isDetecting) && (
           <motion.div

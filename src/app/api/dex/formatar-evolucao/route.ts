@@ -62,12 +62,20 @@ interface OdontogramaEventoWire {
   observacao: string;
 }
 
+// R-50 (05/08) — os 4 campos `_inferior` são a metade que faltava do `arcada: 'ambas'`: o schema
+// já aceitava o valor mas não tinha onde guardar o 2º conjunto, então ditar as duas arcadas
+// guardava um fio só (bug relatado ao vivo em 04/08). Todos opcionais: relato de arcada única e
+// registro antigo nunca os têm.
 interface OrtoManutencaoWire {
   arcada:                string;
   fio?:                  string | null;
   ativacao?:             string | null;
   elastico_corrente?:    string | null;
   elastico_intermaxilar?: string | null;
+  fio_inferior?:                   string | null;
+  ativacao_inferior?:              string | null;
+  elastico_corrente_inferior?:     string | null;
+  elastico_intermaxilar_inferior?: string | null;
 }
 
 // R-06/R-07 (spec R-06-07, Fase 4): enum completo — 'ponte'/'esfoliacao' entraram junto com a
@@ -128,6 +136,11 @@ const EVOLUCAO_SCHEMA: Schema = {
         ativacao:              { type: Type.STRING, nullable: true },
         elastico_corrente:     { type: Type.STRING, nullable: true },
         elastico_intermaxilar: { type: Type.STRING, nullable: true },
+        // R-50: só usados com arcada 'ambas' (base = superior, estes = inferior).
+        fio_inferior:                   { type: Type.STRING, nullable: true },
+        ativacao_inferior:              { type: Type.STRING, nullable: true },
+        elastico_corrente_inferior:     { type: Type.STRING, nullable: true },
+        elastico_intermaxilar_inferior: { type: Type.STRING, nullable: true },
       },
     },
   },
@@ -226,14 +239,28 @@ function parseEventos(wire: unknown, modo: 'consulta' | 'exame_inicial'): Odonto
 function parseOrto(wire: unknown): OrtoManutencaoInfo | null {
   if (!wire || typeof wire !== 'object') return null;
   const w = wire as OrtoManutencaoWire;
+  // R-50 (F2) — backstop no código da regra de recusa do prompt: arcada fora dos 3 valores
+  // (inclusive ausente) devolve null. A IA nunca escolhe arcada por conta própria; sem arcada
+  // dita, não há manutenção estruturada — o relato cai no texto da visita.
   if (w.arcada !== 'superior' && w.arcada !== 'inferior' && w.arcada !== 'ambas') return null;
   const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  // R-50 (F1) — os `_inferior` só fazem sentido com 'ambas'; em arcada única ficam undefined
+  // (o tipo os declara opcionais), não null, pra não gravar campo vazio à toa.
+  const inferior = w.arcada === 'ambas'
+    ? {
+        fio_inferior:                   str(w.fio_inferior),
+        ativacao_inferior:              str(w.ativacao_inferior),
+        elastico_corrente_inferior:     str(w.elastico_corrente_inferior),
+        elastico_intermaxilar_inferior: str(w.elastico_intermaxilar_inferior),
+      }
+    : {};
   return {
     arcada:                w.arcada,
     fio:                   str(w.fio),
     ativacao:              str(w.ativacao),
     elastico_corrente:     str(w.elastico_corrente),
     elastico_intermaxilar: str(w.elastico_intermaxilar),
+    ...inferior,
   };
 }
 
@@ -321,7 +348,9 @@ Para CADA achado/procedimento que você registrou em dentes_observacoes, emita T
 
 orto_manutencao (SÓ manutenção de aparelho ortodôntico):
 Se o relato for APENAS manutenção de aparelho (troca de arco, ativação, borrachinhas/ligaduras, elásticos), preencha orto_manutencao e deixe "odontograma_eventos": []. Caso contrário orto_manutencao: null.
-- arcada: "superior"/"inferior"/"ambas". fio: bitola/tipo do arco (ex: "0.018 NiTi"). ativacao: descrição da ativação (inclui troca de ligadura). elastico_corrente: cadeia elastomérica na MESMA arcada (ex: "corrente de 13 a 23"). elastico_intermaxilar: elástico ENTRE arcadas (ex: "3/16 Classe II").`;
+- arcada: "superior"/"inferior"/"ambas". fio: bitola/tipo do arco (ex: "0.018 NiTi"). ativacao: descrição da ativação (inclui troca de ligadura). elastico_corrente: cadeia elastomérica na MESMA arcada (ex: "corrente de 13 a 23"). elastico_intermaxilar: elástico ENTRE arcadas (ex: "3/16 Classe II").
+- ⛔⛔ ARCADA É OBRIGATÓRIA E NUNCA UM PALPITE — leia com atenção, é o erro mais comum aqui: "ambas" SÓ quando o relato NOMEIA as duas arcadas (ex: "superior… inferior…", "arco de cima e o de baixo", "as duas"). Relato genérico de manutenção SEM nomear nenhuma arcada — mesmo mencionando ativação, troca de ligadura, elástico — NÃO é "ambas": é arcada não dita, e a resposta é "orto_manutencao": null. "Ambas" NÃO é o valor seguro pra quando você não sabe — é o valor pra quando o dentista falou as DUAS explicitamente. Errado: "troquei as ligaduras" → arcada:"ambas" (chute — ligadura sozinha não diz arcada nenhuma). Certo: "troquei as ligaduras" (sem mais nada) → orto_manutencao: null. Certo: "troquei as ligaduras dos dois lados, de cima e de baixo" → arcada:"ambas".
+- DUAS ARCADAS (só depois de confirmar que arcada:"ambas" é legítima pela regra acima): os campos base (fio, ativacao, elastico_corrente, elastico_intermaxilar) descrevem a arcada SUPERIOR, e os campos fio_inferior, ativacao_inferior, elastico_corrente_inferior, elastico_intermaxilar_inferior descrevem a INFERIOR. Preencha os DOIS conjuntos só se o relato disse o que foi feito em CADA arcada separadamente — ex: "superior 0.018 de aço, inferior 0.016 NiTi" → fio:"0.018 aço" E fio_inferior:"0.016 NiTi". NUNCA copie o mesmo valor pros dois conjuntos — se você está prestes a repetir a mesma string em ativacao e ativacao_inferior, isso é sinal de que a arcada não foi dita duas vezes de verdade; reconsidere se não é o caso de "arcada não dita" acima. Em arcada única, deixe os campos _inferior null.`;
 
     const result = await generateStructuredGemini<EvolucaoWire>({
       prompt,

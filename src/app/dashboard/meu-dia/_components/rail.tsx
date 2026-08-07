@@ -16,6 +16,7 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+import { Plus } from 'lucide-react';
 import type { MeuDiaSlot } from '@/server/dashboard/get-meu-dia';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -47,11 +48,29 @@ export interface RailProps {
   slots: MeuDiaSlot[];
   selecionadoId: string | null;
   onSelecionar: (agendamentoId: string) => void;
+  /** R-57 F1 — paciente sem agendamento (chegou sem marcar, urgência). Abre o mesmo modal
+   *  "Atender agora" que a Agenda usa. */
+  onEncaixe: () => void;
 }
 
 const LIMIAR_ARRASTE_PX = 5;
 
-export function Rail({ slots, selecionadoId, onSelecionar }: RailProps) {
+/** R-57 F1 — fora do `<button>` do slot (nota do topo: não aninhar botão em botão). Mesmo
+ *  recorte de tamanho do card de slot; borda tracejada marca "adicionar", não um card real. */
+function BotaoEncaixe({ onEncaixe }: { onEncaixe: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onEncaixe}
+      className="flex min-w-[112px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border px-3 py-2.5 text-text-secondary transition-colors hover:border-teal/40 hover:text-teal [scroll-snap-align:start]"
+    >
+      <Plus className="h-4 w-4" />
+      <span className="text-[10.5px] font-bold">Encaixe</span>
+    </button>
+  );
+}
+
+export function Rail({ slots, selecionadoId, onSelecionar, onEncaixe }: RailProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const arraste = useRef<{ x: number; scrollLeft: number; moveu: boolean } | null>(null);
   const [arrastando, setArrastando] = useState(false);
@@ -101,8 +120,9 @@ export function Rail({ slots, selecionadoId, onSelecionar }: RailProps) {
 
   if (slots.length === 0) {
     return (
-      <div className="rounded-2xl border border-border bg-surface px-5 py-8 text-center">
-        <p className="text-sm font-medium text-text-secondary">Nenhum atendimento hoje.</p>
+      <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-5 py-6">
+        <p className="flex-1 text-sm font-medium text-text-secondary">Nenhum atendimento hoje.</p>
+        <BotaoEncaixe onEncaixe={onEncaixe} />
       </div>
     );
   }
@@ -171,6 +191,7 @@ export function Rail({ slots, selecionadoId, onSelecionar }: RailProps) {
             </div>
           );
         })}
+        <BotaoEncaixe onEncaixe={onEncaixe} />
       </div>
       {temMais && (
         <div

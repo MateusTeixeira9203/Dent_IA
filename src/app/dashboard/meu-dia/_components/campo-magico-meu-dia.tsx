@@ -4,15 +4,23 @@
 // barra de procedimento inteira (Combobox + OndeSeletor + Status), que migrou pra dentro da
 // disclosure "Registrar sem IA" em `registrar-painel.tsx` (D1.2). `CapturaLivreCard` é reusado
 // tal qual (D1 original) — só ganha a prop `anexarTexto` (D8) e o fix de token (D5).
+//
+// R-50 (05/08) — orto detectado deixa de virar TEXTO. Antes o campo mágico recebia
+// `orto_manutencao` estruturado e o degradava pra uma linha no texto da visita ("Orto (a
+// estruturar…)") com um toast avisando — o dado chegava e era jogado fora. Agora ele sobe pro
+// dono do estado (`registrar-painel.tsx`), que abre o chip "Manutenção ortodôntica" já
+// preenchido. A I2 ("nunca descarta em silêncio") continua valendo por construção: ou o orto
+// vira estado editável, ou a rota devolveu null (arcada não dita, F2) e não há o que descartar.
 
 import { useState } from 'react';
-import { toast } from 'sonner';
 import { Bot, ChevronUp } from 'lucide-react';
 import { CapturaLivreCard } from '@/components/fichas/captura-livre-card';
 import { mesclarEventosSemPerda } from '@/lib/odontograma/dedup-eventos-draft';
 import { hojeBRT } from '@/lib/hora-brt';
 import type { OdontogramaEventoDraft, OrtoManutencaoInfo } from '@/types/odontograma';
 import type { EvolucaoFormatada } from '@/app/api/dex/formatar-evolucao/route';
+import type { SugestaoLocal } from '@/lib/odontograma/casar-procedimento-local';
+import type { MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
 
 export interface CampoMagicoMeuDiaProps {
   pacienteNome: string;
@@ -22,25 +30,22 @@ export interface CampoMagicoMeuDiaProps {
   onTextoVisitaChange: (texto: string) => void;
   /** Só escrita — quem lê é `handleSalvar` em `registrar-painel.tsx`, dono do estado local. */
   onAlertaNovoChange: (alerta: string | null) => void;
+  /** R-50 — manutenção ortodôntica extraída pela IA. Mesmo padrão de `onAlertaNovoChange`: só
+   *  escrita, o dono do estado é `registrar-painel.tsx` (que abre o chip já preenchido). */
+  onOrtoDetectado: (orto: OrtoManutencaoInfo) => void;
   /** R-46d D8 — "usar este documento de base" (anexar-documentos-bloco.tsx), repassado direto
    *  pro CapturaLivreCard. */
   anexarTexto?: { texto: string; nonce: number };
-}
-
-/** Sem tabela própria no Meu dia ainda (R-50) — texto simples, nunca descarta em silêncio (I2). */
-function formatarOrto(o: OrtoManutencaoInfo): string {
-  return [
-    `Arcada: ${o.arcada}`,
-    o.fio && `Fio: ${o.fio}`,
-    o.ativacao && `Ativação: ${o.ativacao}`,
-    o.elastico_corrente && `Elástico corrente: ${o.elastico_corrente}`,
-    o.elastico_intermaxilar && `Elástico intermaxilar: ${o.elastico_intermaxilar}`,
-  ].filter(Boolean).join(' · ');
+  /** R-62 — catálogo pro match local, repassado direto pro CapturaLivreCard. */
+  catalogoProcedimentos: MeuDiaCatalogoProcedimento[];
+  /** R-62 — clique num chip de sugestão local. Dono da lógica é `registrar-painel.tsx`
+   *  (mesma função `registrar`/`escolherDoCatalogo` que a antiga "Registrar sem IA" usava). */
+  onAplicarSugestao: (sugestao: SugestaoLocal) => void;
 }
 
 export function CampoMagicoMeuDia({
   pacienteNome, eventosDraft, onEventosDraftChange, textoVisita, onTextoVisitaChange,
-  onAlertaNovoChange, anexarTexto,
+  onAlertaNovoChange, onOrtoDetectado, anexarTexto, catalogoProcedimentos, onAplicarSugestao,
 }: CampoMagicoMeuDiaProps) {
   const [aberto, setAberto] = useState(false);
 
@@ -51,14 +56,11 @@ export function CampoMagicoMeuDia({
       textoVisita,
       data.anotacoes,
       data.conduta && `Conduta: ${data.conduta}`,
-      data.orto_manutencao && `Orto (a estruturar — ver R-50): ${formatarOrto(data.orto_manutencao)}`,
     ].filter((s): s is string => Boolean(s));
     onTextoVisitaChange(partes.join('\n\n'));
 
     if (data.alerta_novo) onAlertaNovoChange(data.alerta_novo); // I3
-    if (data.orto_manutencao) { // I2 — nunca descarta manutenção detectada em silêncio
-      toast('Detectamos manutenção ortodôntica — sem tabela própria no Meu dia ainda; foi para o texto da visita.');
-    }
+    if (data.orto_manutencao) onOrtoDetectado(data.orto_manutencao); // R-50 — vira estado, não texto
   }
 
   if (!aberto) {
@@ -95,6 +97,8 @@ export function CampoMagicoMeuDia({
           formDirty={eventosDraft.length > 0 || textoVisita.trim() !== ''}
           onOrganizado={aplicar}
           anexarTexto={anexarTexto}
+          catalogoProcedimentos={catalogoProcedimentos}
+          onAplicarSugestao={onAplicarSugestao}
         />
       </div>
     </div>
