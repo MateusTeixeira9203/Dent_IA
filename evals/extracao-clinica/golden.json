@@ -117,6 +117,30 @@
       "esperado": { "eventos": [], "orto": { "arcada": "superior", "camposPreenchidos": ["fio", "ativacao"] } }
     },
     {
+      "id": "orto-ambas-arcadas",
+      "cat": "novo",
+      "relato": "manutenção nas duas arcadas: superior 0.018 de aço, inferior 0.016 NiTi, ativei e troquei as ligaduras",
+      "modo": "consulta",
+      "esperado": {
+        "eventos": [],
+        "orto": {
+          "arcada": "ambas",
+          "camposPreenchidos": ["fio", "fio_inferior"],
+          "camposDistintos": ["fio", "fio_inferior"]
+        }
+      }
+    },
+    {
+      "id": "orto-sem-arcada",
+      "cat": "novo",
+      "relato": "fiz a manutenção do aparelho, troquei as ligaduras",
+      "modo": "consulta",
+      "esperado": {
+        "eventos": [],
+        "orto": null
+      }
+    },
+    {
       "id": "ponte-fixa",
       "cat": "novo",
       "relato": "instalei ponte fixa de 24 a 26, com pilares no 24 e no 26 e pôntico no 25",

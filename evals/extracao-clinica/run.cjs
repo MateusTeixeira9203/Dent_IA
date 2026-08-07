@@ -12,11 +12,16 @@ const fs = require('fs');
 const path = require('path');
 
 const BASE = 'http://localhost:3000';
-const AUTH = 'C:/Users/mateu/AppData/Local/Temp/claude/C--Users-mateu-Desktop-Odonto-IA-main/15b2e79b-9e57-419a-aa28-cd1730c02089/scratchpad/audit-auth.json';
-const OUT = 'C:/Users/mateu/AppData/Local/Temp/claude/C--Users-mateu-Desktop-Odonto-IA-main/4ac97326-11b2-4c03-a20b-e8202b1f5643/scratchpad';
+const AUTH = 'C:/Users/mateu/AppData/Local/Temp/claude/C--Users-mateu-Desktop-Odonto-IA-main/e3f4b577-fd87-4960-b2bd-87a3f63afd9f/scratchpad/audit-auth.json';
+const OUT = 'C:/Users/mateu/AppData/Local/Temp/claude/C--Users-mateu-Desktop-Odonto-IA-main/e3f4b577-fd87-4960-b2bd-87a3f63afd9f/scratchpad';
 const GOLDEN = path.join(__dirname, 'golden.json');
 const PACE_MS = 3000;       // espaçamento entre chamadas (rate limit da rota = 20/60s)
-const ORTO_CAMPOS = ['fio', 'ativacao', 'elastico_corrente', 'elastico_intermaxilar'];
+// R-50 (05/08) — os 4 `_inferior` entram aqui, senão `camposPreenchidos` não consegue exigir
+// `fio_inferior` e o caso `orto-ambas-arcadas` passaria sem provar nada.
+const ORTO_CAMPOS = [
+  'fio', 'ativacao', 'elastico_corrente', 'elastico_intermaxilar',
+  'fio_inferior', 'ativacao_inferior', 'elastico_corrente_inferior', 'elastico_intermaxilar_inferior',
+];
 
 const faceSet = (a) => (Array.isArray(a) ? a.slice().sort().join(',') : '');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -65,7 +70,14 @@ function avaliar(caso, resp) {
       const preenchidos = ORTO_CAMPOS.filter((k) => o[k] != null);
       const arcadaOk = o.arcada === esp.orto.arcada;
       const camposOk = (esp.orto.camposPreenchidos || []).every((k) => preenchidos.includes(k));
-      r.ortoOk = arcadaOk && camposOk;
+      // R-50 — `camposDistintos` exige que os campos citados tenham valores DIFERENTES entre si.
+      // Sem isso, "ambas" passaria com a IA repetindo o mesmo fio nas 2 arcadas (ou juntando as
+      // duas numa string só), que é exatamente o modo de falha que o caso testa.
+      const distintos = esp.orto.camposDistintos || [];
+      const vals = distintos.map((k) => (o[k] == null ? null : String(o[k]).trim().toLowerCase()));
+      const distintosOk = distintos.length === 0
+        || (vals.every((v) => v) && new Set(vals).size === vals.length);
+      r.ortoOk = arcadaOk && camposOk && distintosOk;
     } else {
       r.ortoOk = false;
     }
