@@ -159,7 +159,7 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
       .select('id', { count: 'exact', head: true })
       .eq('ficha_id', data.fichaId as string);
 
-    const { error } = await supabase
+    const { data: atualizada, error } = await supabase
       .from('fichas')
       .update({
         data_atendimento:    data.dataAtendimento,
@@ -182,11 +182,22 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
         updated_at:          new Date().toISOString(),
       })
       .eq('id', data.fichaId as string)
-      .eq('clinica_id', clinicId);
+      .eq('clinica_id', clinicId)
+      .select('id');
 
     if (error) {
       console.error('[salvarFicha:update]', error.message);
       return { ok: false, error: 'Erro ao salvar a ficha. Tente novamente.' };
+    }
+
+    // R-59 Parte 3 — mesmo padrão de `deletarFicha` (achado de 28/07): a RLS pode barrar o
+    // UPDATE sem devolver erro (0 linhas afetadas) e isso virava um `ok: true` com a ficha
+    // intacta no banco — a edição "salvava" e sumia. O `fichaAtual` lido acima NÃO protege:
+    // desde a migration 099 a leitura de ficha é compartilhada na clínica, mas a escrita
+    // continua siloada por dentista. Ficha de colega é achada, lida, e o UPDATE não pega.
+    if (!atualizada || atualizada.length === 0) {
+      console.error('[salvarFicha:update] UPDATE bloqueado silenciosamente (RLS?) — 0 linhas para', data.fichaId);
+      return { ok: false, error: 'Não foi possível salvar: esta ficha é de outro dentista.' };
     }
 
     const resultado = await finalizarEventos(supabase, {

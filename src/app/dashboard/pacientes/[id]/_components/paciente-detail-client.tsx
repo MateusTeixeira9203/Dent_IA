@@ -23,6 +23,7 @@ import {
   Activity,
   Bell,
   Paperclip,
+  Trash2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -96,11 +97,14 @@ import {
 } from '@/lib/arcadas';
 import { TIPO_LABEL } from '@/types/odontograma';
 import type { OrcamentoComItens, OrcamentoItem, Pagamento, FichaParaOrc, EventoOdontogramaParaOrc, ProcedimentoClinica, NovoOrcItem, OrcEditItem } from './types';
-import { derivarResponsaveis, eventosVisiveis, type FiltroResponsavel } from '@/lib/fichas/filtro-responsavel';
+import { derivarResponsaveis, eventosVisiveis, FILTRO_MEUS, type FiltroResponsavel } from '@/lib/fichas/filtro-responsavel';
 import { EditarPacienteModal } from './modals/editar-paciente-modal';
 import { DetalheOrcamentoModal } from './modals/detalhe-orcamento-modal';
 import { ConfirmarDeleteOrcModal } from './modals/confirmar-delete-orc-modal';
-import { MarcarRetornoModal, type MarcarRetornoForm } from './modals/marcar-retorno-modal';
+import { ExcluirPacienteModal } from './modals/excluir-paciente-modal';
+import { excluirPaciente } from '@/server/patients/excluir-paciente';
+import { MarcarRetornoModal, type MarcarRetornoForm } from '@/components/pacientes/marcar-retorno-modal';
+import { formatHora as formatHoraRetorno } from '@/lib/agenda/disponibilidade';
 import { EmitirDocumentoModal } from '@/components/pacientes/EmitirDocumentoModal';
 import { NovoOrcamentoModal } from './modals/novo-orcamento-modal';
 import { ApresentarPaciente } from '@/components/pacientes/ApresentarPaciente';
@@ -318,14 +322,19 @@ export function PacienteDetailClient({
   const [orcDeleteSaving, setOrcDeleteSaving] = useState(false);
   const [orcDeleteError, setOrcDeleteError] = useState<string | null>(null);
 
+  // Excluir paciente (decisão dele 07/08) — permanente, cascateia sobre tudo do paciente.
+  const [excluirPacienteAberto, setExcluirPacienteAberto] = useState(false);
+  const [excluindoPaciente, setExcluindoPaciente] = useState(false);
+  const [excluirPacienteError, setExcluirPacienteError] = useState<string | null>(null);
+
   // Contato dropdown (⋯)
 
   // Marcar retorno
   const [isMarcarRetornoOpen, setIsMarcarRetornoOpen] = useState(false);
   const [isEmitirOpen, setIsEmitirOpen] = useState(false);
   const [retornoForm, setRetornoForm] = useState<MarcarRetornoForm>({
-    data: '',
-    hora: '',
+    data: null,
+    minutoDoDia: null,
     duracao: '30',
     observacoes: '',
   });
@@ -1161,10 +1170,13 @@ export function PacienteDetailClient({
       if (agregado.length > 0) {
         // R-53 — caminho novo: todos os indicados abertos do paciente, de qualquer ficha.
         // fichaOrcId fica null — o orçamento não pertence mais a 1 ficha só (I6).
+        // 07/08 — default virou "Meus" (revoga §2.1 do R-53, "dinheiro é da clínica"): cada
+        // dentista responde pelo próprio orçamento, procedimento de colega não pode entrar
+        // sem ação explícita. Chip "Todos" continua disponível pra quem precisar ver junto.
         setFichasParaOrc(agregado);
         setFichaOrcId(null);
-        setFiltroResponsavelOrc(null);
-        setNovoOrcItens(itensDoAgregado(agregado, null));
+        setFiltroResponsavelOrc(FILTRO_MEUS);
+        setNovoOrcItens(itensDoAgregado(agregado, FILTRO_MEUS));
         setEtapaNovoOrc('itens');
       } else {
         // G4 — fallback INTACTO: nenhum indicado aberto em ficha nenhuma. Mesmo comportamento
@@ -1213,34 +1225,28 @@ export function PacienteDetailClient({
     setEtapaNovoOrc('itens');
   };
 
-  // #6 / R-53 (§2 decisão 1) — entrada mirada: converge pro MESMO agregado do botão geral.
-  // `fichaId` é só de onde veio o clique (contexto), nunca a fonte dos itens — se o paciente
-  // não tem indicado nenhum (nem nesta ficha, nem em outra), cai no fallback desta ficha só.
+  // #6 — gerar orçamento a partir de uma ficha é SÓ dela (decisão dele 07/08, revoga o
+  // agregado por-ficha do R-53/R-59 Parte 1): "eu só quero o orçamento daqui, da ficha".
+  // Nunca puxa outra ficha nem outro dentista, aberta ou concluída não importa —
+  // `fichaParaItens` já cobre os dois (eventos 'indicado' elegíveis + fallback de texto do
+  // R-30 Parte 4 se a ficha não tiver evento nenhum). Quem quer ver várias fichas juntas usa
+  // o botão geral "Novo orçamento" (`abrirNovoOrcamento`, que segue agregando — filtrado por
+  // responsável agora, ver ali).
   const abrirOrcamentoParaFicha = async (fichaId: string) => {
     setOrcError(null);
     setIsLoadingFichaParaOrc(true);
     try {
-      const agregado = await carregarFichasAgregado();
-
-      if (agregado.length > 0) {
-        setFichasParaOrc(agregado);
-        setFichaOrcId(null);
-        setFiltroResponsavelOrc(null);
-        setNovoOrcItens(itensDoAgregado(agregado, null));
-      } else {
-        // Fallback intacto pra esta ficha específica (comportamento de antes do R-53).
-        const supabase = createClient();
-        const { data } = await supabase
-          .from('fichas')
-          .select(SELECT_FICHA_PARA_ORC)
-          .eq('id', fichaId)
-          .eq('clinica_id', clinicaId)
-          .single();
-        const ficha = data as unknown as FichaParaOrc | null;
-        setFichaOrcId(fichaId);
-        setFichasParaOrc(ficha ? [ficha] : []);
-        setNovoOrcItens(ficha ? fichaParaItens(ficha) : [{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
-      }
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('fichas')
+        .select(SELECT_FICHA_PARA_ORC)
+        .eq('id', fichaId)
+        .eq('clinica_id', clinicaId)
+        .single();
+      const ficha = data as unknown as FichaParaOrc | null;
+      setFichaOrcId(fichaId);
+      setFichasParaOrc(ficha ? [ficha] : []);
+      setNovoOrcItens(ficha ? fichaParaItens(ficha) : [{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
     } catch {
       setFichaOrcId(fichaId);
       setFichasParaOrc([]);
@@ -1455,45 +1461,64 @@ export function PacienteDetailClient({
   };
 
   const handleMarcarRetorno = async () => {
-    if (!retornoForm.data || !retornoForm.hora) {
-      setRetornoError('Informe data e hora.');
+    if (!retornoForm.data || retornoForm.minutoDoDia == null) {
+      setRetornoError('Escolha um horário na grade.');
       return;
     }
     setRetornoError(null);
     setRetornoSaving(true);
-    // Sem offset explícito, o Postgres grava esse horário como UTC — 3h adiantado em
-    // relação ao horário real da clínica (BRT). buildClinicDatetime é a mesma função
-    // que o modal da própria agenda usa para não repetir esse bug.
-    const dataHora = buildClinicDatetime(retornoForm.data, retornoForm.hora);
-    const result = await criarAgendamento({
-      pacienteId: paciente.id,
-      dataHora,
-      duracaoMinutos: parseInt(retornoForm.duracao, 10) || 30,
-      observacoes: retornoForm.observacoes || null,
-    });
-    if (result.error) {
-      setRetornoError(result.error);
-    } else {
-      // A agenda carrega uma janela por vez: um retorno marcado pra fora dela existe e não
-      // aparece. Um retorno de 30 dias cai fora por definição — então o toast diz a data e
-      // leva até lá. Ler antes de limpar o form.
-      //
-      // A URL da agenda é `?v=…&d=yyyy-MM-dd` (R-13 Fatia 0). O `?mes=` foi removido: um link
-      // com ele hoje é ignorado em silêncio e abre a semana de hoje, que é exatamente o
-      // sumiço que este toast existe pra evitar.
-      const dia = retornoForm.data;
-      const quando = `${format(parseISO(dia), 'dd/MM/yyyy')} às ${retornoForm.hora}`;
-      setIsMarcarRetornoOpen(false);
-      setRetornoForm({ data: '', hora: '', duracao: '30', observacoes: '' });
-      setAgendamentosTabData(null); // força recarregar a aba Agenda na próxima abertura
-      toast.success(`Retorno marcado para ${quando}`, {
-        // Fora da semana corrente já justifica o atalho — a janela agora é a semana, não o mês.
-        action: dia !== format(new Date(), 'yyyy-MM-dd')
-          ? { label: 'Ver na agenda', onClick: () => router.push(`/dashboard/agendamentos?v=dia&d=${dia}`) }
-          : undefined,
+    try {
+      // Sem offset explícito, o Postgres grava esse horário como UTC — 3h adiantado em
+      // relação ao horário real da clínica (BRT). buildClinicDatetime é a mesma função
+      // que o modal da própria agenda usa para não repetir esse bug.
+      const dataHora = buildClinicDatetime(retornoForm.data, formatHoraRetorno(retornoForm.minutoDoDia));
+      const result = await criarAgendamento({
+        pacienteId: paciente.id,
+        dataHora,
+        duracaoMinutos: parseInt(retornoForm.duracao, 10) || 30,
+        observacoes: retornoForm.observacoes || null,
       });
+      if (result.error) {
+        setRetornoError(result.error);
+      } else {
+        // A agenda carrega uma janela por vez: um retorno marcado pra fora dela existe e não
+        // aparece. Um retorno de 30 dias cai fora por definição — então o toast diz a data e
+        // leva até lá. Ler antes de limpar o form.
+        //
+        // A URL da agenda é `?v=…&d=yyyy-MM-dd` (R-13 Fatia 0). O `?mes=` foi removido: um link
+        // com ele hoje é ignorado em silêncio e abre a semana de hoje, que é exatamente o
+        // sumiço que este toast existe pra evitar.
+        const dia = retornoForm.data;
+        const quando = `${format(parseISO(dia), 'dd/MM/yyyy')} às ${formatHoraRetorno(retornoForm.minutoDoDia)}`;
+        setIsMarcarRetornoOpen(false);
+        setRetornoForm({ data: null, minutoDoDia: null, duracao: '30', observacoes: '' });
+        setAgendamentosTabData(null); // força recarregar a aba Agenda na próxima abertura
+        toast.success(`Retorno marcado para ${quando}`, {
+          // Fora da semana corrente já justifica o atalho — a janela agora é a semana, não o mês.
+          action: dia !== format(new Date(), 'yyyy-MM-dd')
+            ? { label: 'Ver na agenda', onClick: () => router.push(`/dashboard/agendamentos?v=dia&d=${dia}`) }
+            : undefined,
+        });
+      }
+    } finally {
+      setRetornoSaving(false);
     }
-    setRetornoSaving(false);
+  };
+
+  const handleExcluirPaciente = async () => {
+    setExcluirPacienteError(null);
+    setExcluindoPaciente(true);
+    try {
+      const result = await excluirPaciente(paciente.id, displayNome);
+      if (!result.ok) {
+        setExcluirPacienteError(result.error ?? 'Erro ao excluir paciente.');
+        return;
+      }
+      toast.success(`${displayNome} foi excluído.`);
+      router.push('/dashboard/pacientes');
+    } finally {
+      setExcluindoPaciente(false);
+    }
   };
 
   return (
@@ -1528,6 +1553,16 @@ export function PacienteDetailClient({
               title="Exportar prontuário"
             >
               <FileDown className="w-4 h-4" />
+            </button>
+            <div className="w-px h-5 bg-border/60 mx-0.5" />
+            {/* Excluir paciente — sem gate de role de propósito (secretária é quem usa,
+                decisão dele 07/08). Confirmação com nome digitado mora no modal. */}
+            <button
+              onClick={() => setExcluirPacienteAberto(true)}
+              className="p-2 rounded-xl border border-border/60 text-text-secondary hover:text-coral hover:border-coral/40 bg-surface transition-colors"
+              title="Excluir paciente"
+            >
+              <Trash2 className="w-4 h-4" />
             </button>
             {canWriteClinical && (
               <button
@@ -2187,6 +2222,15 @@ export function PacienteDetailClient({
         onExcluir={handleExcluirOrc}
       />
 
+      <ExcluirPacienteModal
+        open={excluirPacienteAberto}
+        onOpenChange={(open) => { setExcluirPacienteAberto(open); if (!open) setExcluirPacienteError(null); }}
+        pacienteNome={displayNome}
+        saving={excluindoPaciente}
+        error={excluirPacienteError}
+        onExcluir={handleExcluirPaciente}
+      />
+
       <MarcarRetornoModal
         open={isMarcarRetornoOpen}
         onOpenChange={(open) => {
@@ -2194,6 +2238,7 @@ export function PacienteDetailClient({
           if (!open) setRetornoError(null);
         }}
         pacienteNome={displayNome}
+        dentistaId={dentistaId}
         form={retornoForm}
         setForm={setRetornoForm}
         error={retornoError}

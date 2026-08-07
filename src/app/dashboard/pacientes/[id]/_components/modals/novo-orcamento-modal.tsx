@@ -205,8 +205,10 @@ export function NovoOrcamentoModal({
 
             {/* Coluna clínica — procedimentos */}
             <div className="flex-1 min-w-0 overflow-y-auto p-6 space-y-4">
-              {/* R-53 (§4.3) — mesma faixa de chips da ficha (R-16); default Todos (o dinheiro
-                  é da clínica). Some sozinha com <2 responsáveis (ChipsResponsavel). */}
+              {/* R-53 (§4.3) — mesma faixa de chips da ficha (R-16). 07/08: default virou
+                  "Meus" (revoga o "dinheiro é da clínica" original) — cada dentista só vê o
+                  próprio por padrão, "Todos" fica disponível pra quem escolher ver junto.
+                  Some sozinha com <2 responsáveis (ChipsResponsavel). */}
               <ChipsResponsavel
                 responsaveis={responsaveisOrc}
                 meuId={meuDentistaId}
