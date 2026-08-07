@@ -1,21 +1,17 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · atualizado **2026-08-06** · reorganizado por **importância pro dentista**
-> **07/08 — R-57 fechado** (F1+F2 confirmadas ao vivo no navegador real dele — Brave + Claude
-> in Chrome, pane própria travou de novo —, F3 cortada: ele descartou a fatia em vez de
-> escolher entre alfabético×frequência). Sem gate pendente, falta só o push. **R-31b
-> cortado** (limpeza dos 16 duplicados não vira item; ferramenta de exclusão manual segue
-> disponível).
-> **07/08 — [auditoria pré-produção](auditorias/2026-08-07-pre-producao.md)** (ficha núcleo +
-> Meu dia + Dex, antes do push de ~35 commits): **sem achado crítico ou alto.** Orçamento
-> por-ficha e Organizar com Dex (R-47, "falta teste ao vivo") reconfirmados com dado real
-> denso e chamada de IA de verdade — zero perda, zero vazamento. Cockpit inteiro do Meu dia
-> (nunca em produção) rodou ponta a ponta, light e dark. 2 achados baixos → R-71. Gaps que
-> restam (gate de 2 contas, `prefers-reduced-motion`) já eram conhecidos, não são descoberta
-> de hoje.
-> **R-46 (Meu dia) pausado 🟡** — R-46a ✅ · R-46g/R-46b/R-46b2/R-46c/cockpit(C0-C5)/C5/R-55
-> **🟡 codados, testados ao vivo** — nada em produção ainda (27 commits acumulados desde 01/08,
-> prod em 31/07)
+> **ROADMAP** · atualizado **2026-08-07** · reorganizado por **importância pro dentista**
+> **07/08 — PUSH FEITO.** 37 commits (30 represados + 7 desta sessão) em `main`, deploy Vercel
+> `READY` em `dentia.app.br`. R-57 fechado antes do push (F1+F2 confirmadas ao vivo, F3
+> cortada — ele descartou a fatia em vez de escolher entre alfabético×frequência). R-31b
+> cortado (limpeza dos 16 duplicados não vira item). Auditoria pré-produção (ficha núcleo +
+> Meu dia + Dex, [relatório](auditorias/2026-08-07-pre-producao.md)) não achou motivo pra
+> segurar: sem crítico/alto, R-47 e orçamento por-ficha reconfirmados com dado real denso e
+> IA de verdade, cockpit inteiro rodou ponta a ponta. 2 achados baixos → R-71. **Tudo abaixo
+> marcado "não em produção"/"falta o push" está desatualizado — está no ar desde 07/08, só
+> não tem confirmação visual na tela de produção real ainda** (testado em localhost contra o
+> mesmo banco).
+> **R-46 (Meu dia)** — R-46a ✅ · R-46g/R-46b/R-46b2/R-46c/cockpit(C0-C5)/C5/R-55
 > **04/08 — C6 + R-46d D1 codados juntos, testados ao vivo (3 rodadas de correção na hora):**
 > **[C6](specs/R-46-C6-layout-cockpit.md) 🟡 codado e testado ao vivo** — jaFeito saiu; colunas
 > redistribuídas (esquerda ganha Concluídos hoje + Anexar documentos); painel do dente

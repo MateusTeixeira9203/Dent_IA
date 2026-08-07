@@ -5,6 +5,14 @@
 
 ## Agora
 
+**Push feito 07/08.** 37 commits (30 represados + 7 desta sessão) em `main`, deploy Vercel
+disparado automaticamente (`dpl_Fk6GScfk...`, commit `ee0b4dd`). Organizados em 7 commits por
+área — o cockpit inteiro do Meu dia (R-46/50/53/57/58/61/62/63) virou 1 commit só, sem como
+separar por item depois de semanas em camada sobre os mesmos arquivos sem commit incremental.
+Typecheck e build limpos antes de subir. **Migration do R-64 (`072_horarios_almoco`) está
+aplicada em produção mas não tem arquivo local em `supabase/migrations/`** — foi feita via
+editor SQL do dashboard. Vale backfillar o arquivo pra não perder o histórico.
+
 **Auditoria pré-produção rodada 07/08** (ficha núcleo + Meu dia + Dex) —
 [relatório completo](auditorias/2026-08-07-pre-producao.md). **Sem achado crítico ou alto.**
 R-47 (Organizar com Dex apagava dado) e orçamento por-ficha reconfirmados com dado real denso
@@ -30,8 +38,15 @@ passada). Esse é o caminho a abrir primeiro sempre que precisar de prova visual
 
 ## Esperando você
 
-- [ ] **Push** — ~35 commits represados. A auditoria de hoje não achou motivo pra segurar;
-      decisão de quando é dele.
+- [ ] **Comparação do artefato R-01 vs. implementação real (fim de semana, decisão dele).**
+      Achado principal: o banner "Organizado com Dex" (relato original + "N registros/M
+      especialidades", permanente na ficha salva) nunca foi implementado fora do `/consulta`
+      antigo — `fichas.transcricao` existe no schema mas não é lido nem escrito em lugar
+      nenhum do código atual. Segundo achado, menor: o modal de assinatura ficou mais simples
+      que o artefato (sem lista de revisão nem texto-guia no canvas). Ele quer discutir antes
+      de decidir se vira item de roadmap.
+- [ ] **Backfill do arquivo de migration do R-64** (`072_horarios_almoco`) — aplicada em prod,
+      sem arquivo em `supabase/migrations/`.
 - [ ] **R-70 (congelado)** — ficha com muitos procedimentos difícil de editar. Precisa saber
       se o feedback real dos dentistas é "muitos procedimentos numa consulta" (empurra pro
       Organizar com Dex) ou "tela ruim mesmo com poucos" (aí um scroll interno resolve).
