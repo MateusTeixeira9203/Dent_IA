@@ -21,7 +21,12 @@ export function DockNavItem({ href, icon: Icon, label, isActive, locked }: DockN
           <Icon style={{ width: 20, height: 20 }} className="text-white/20" />
           <Lock className="absolute -bottom-1 -right-1 w-3 h-3 text-teal/40" />
         </div>
-        <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-white/20">
+        {/* whitespace-nowrap — "Meu dia" é o único rótulo com espaço (2 palavras); sem
+            isto ele é o único que quebra linha ("MEU"/"DIA" empilhado), diferente de
+            todo o resto (palavra única, nunca quebra, só cresce a coluna). mr negativo
+            cancela o tracking sobrando depois da última letra, senão o texto "flutua"
+            visualmente à esquerda do centro do ícone acima. */}
+        <span className="text-[10px] font-bold uppercase tracking-[0.1em] mr-[-0.1em] whitespace-nowrap text-white/20">
           {label}
         </span>
       </div>
@@ -50,8 +55,13 @@ export function DockNavItem({ href, icon: Icon, label, isActive, locked }: DockN
             : 'text-white/50 group-hover:text-white/80 group-hover:-translate-y-0.5'
         }`}
       />
+      {/* whitespace-nowrap — "Meu dia" é o único rótulo com espaço (2 palavras); sem
+          isto ele é o único que quebra linha ("MEU"/"DIA" empilhado), diferente de todo
+          o resto (palavra única, nunca quebra, só cresce a coluna). mr negativo cancela
+          o tracking sobrando depois da última letra, senão o texto "flutua" visualmente
+          à esquerda do centro do ícone acima. */}
       <span
-        className={`relative text-[10px] font-bold uppercase tracking-[0.1em] transition-colors ${
+        className={`relative text-[10px] font-bold uppercase tracking-[0.1em] mr-[-0.1em] whitespace-nowrap transition-colors ${
           isActive ? 'text-teal/80' : 'text-white/35 group-hover:text-white/60'
         }`}
       >
