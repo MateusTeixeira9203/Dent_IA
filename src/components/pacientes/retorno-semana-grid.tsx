@@ -1,0 +1,296 @@
+'use client';
+
+// R-64 — grade da semana pro "Marcar retorno". Porta a MESMA ideia da WeekView real da
+// Agenda (hora à esquerda, blocos de ocupado, clique-pra-marcar por posição), só menor e de
+// 1 dentista só — decisão dele ao vivo (v1 do artefato, lista de horários livres, foi
+// rejeitada: "só trazer o que já temos no sistema, só que menor, já resolveria"). Não reusa
+// `WeekView` (acoplada à página inteira da Agenda) — componente novo, mesma linguagem visual.
+
+import { useEffect, useMemo, useState } from 'react';
+import {
+  format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks,
+  addDays, addMonths, addYears, isToday as isDateToday, isSameDay, parseISO,
+} from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { buscarDisponibilidadeSemana } from '@/server/agenda/buscar-disponibilidade';
+import { formatHora, type DisponibilidadeDia } from '@/lib/agenda/disponibilidade';
+
+// spec §8 propunha janela fixa 07h-20h — 13h sempre, mesmo pro dentista que trabalha 6.
+// Pedido dele ao vivo ("podemos deixar maior... sem precisar rolar"): a janela passa a ser
+// o expediente REAL desse dentista (min/max de `livres` na semana carregada), então quem
+// trabalha menos horas ganha uma grade menor de graça, sem scroll. Fallback só pra semana
+// sem NENHUM horário configurado (grade toda hachurada não tem expediente pra medir).
+const HOUR_FALLBACK_START = 8;
+const HOUR_FALLBACK_END = 18;
+// spec §8 propunha 34px (pequeno demais pra ler/clicar) → 48px (grande demais depois que
+// o layout ganhou a coluna fixa ao lado, R-64 D5-bis). 40px é o meio-termo dos dois pedidos.
+const SLOT_HEIGHT = 40;
+const MIN_POR_SLOT = 15; // mesma granularidade de horaDoClique (week-view.tsx)
+const GUTTER_WIDTH = 36;
+
+const SALTOS = [
+  { label: '30 dias', alvo: (hoje: Date) => addDays(hoje, 30) },
+  { label: '60 dias', alvo: (hoje: Date) => addDays(hoje, 60) },
+  { label: '90 dias', alvo: (hoje: Date) => addDays(hoje, 90) },
+  { label: '180 dias', alvo: (hoje: Date) => addDays(hoje, 180) },
+  { label: '6 meses', alvo: (hoje: Date) => addMonths(hoje, 6) },
+  { label: '1 ano', alvo: (hoje: Date) => addYears(hoje, 1) },
+] as const;
+
+/** Janela de horas a mostrar — min/max de `livres` entre os 7 dias carregados, arredondado
+ *  pra hora cheia, expandida se precisar pra caber o horário selecionado (ex.: digitado no
+ *  campo Hora fora do expediente — D10 permite; sem isso a barra de seleção renderiza fora
+ *  da área visível, sem scroll que a alcance). Só dimensiona a grade; não limita o clique —
+ *  pedido dele ao vivo é liberdade total de dia/hora. */
+function janelaHoras(
+  dias: DisponibilidadeDia[] | null,
+  selecionado: { minutoDoDia: number; duracaoMin: number } | null,
+): { inicio: number; fim: number } {
+  const blocos = dias?.flatMap((d) => d.livres) ?? [];
+  const base = blocos.length === 0
+    ? { inicio: HOUR_FALLBACK_START, fim: HOUR_FALLBACK_END }
+    : {
+        inicio: Math.floor(Math.min(...blocos.map((b) => b.inicioMin)) / 60),
+        fim: Math.ceil(Math.max(...blocos.map((b) => b.fimMin)) / 60),
+      };
+  if (!selecionado) return base;
+  const selInicio = Math.floor(selecionado.minutoDoDia / 60);
+  const selFim = Math.ceil((selecionado.minutoDoDia + selecionado.duracaoMin) / 60);
+  return { inicio: Math.min(base.inicio, selInicio), fim: Math.max(base.fim, selFim) };
+}
+
+/** Offset do clique (px) → minuto do dia, arredondado pros 15min mais próximos — mesma
+ *  conta de `horaDoClique` (week-view.tsx), só com o SLOT_HEIGHT desta grade menor. */
+function minutoDoClique(offsetY: number, hourStart: number, hourEnd: number): number {
+  const hourDecimal = hourStart + offsetY / SLOT_HEIGHT;
+  const totalMin = Math.max(hourStart * 60, Math.floor(hourDecimal * 60));
+  const arredondado = totalMin - (totalMin % MIN_POR_SLOT);
+  return Math.min((hourEnd - 1) * 60 + (60 - MIN_POR_SLOT), arredondado);
+}
+
+export interface RetornoSemanaGridProps {
+  dentistaId: string;
+  duracaoMin: number;
+  selecionado: { data: string; minutoDoDia: number } | null;
+  onSelecionar: (data: string, minutoDoDia: number) => void;
+}
+
+export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelecionar }: RetornoSemanaGridProps) {
+  const [semanaInicio, setSemanaInicio] = useState(() => startOfWeek(new Date(), { weekStartsOn: 0 }));
+  const [diaDestacado, setDiaDestacado] = useState<Date | null>(null);
+  const [dias, setDias] = useState<DisponibilidadeDia[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const weekStart = semanaInicio;
+  const weekEnd = endOfWeek(semanaInicio, { weekStartsOn: 0 });
+  const semanaInicioISO = format(weekStart, 'yyyy-MM-dd');
+
+  // Reset síncrono durante o RENDER (não no efeito) quando a semana/dentista muda — mesmo
+  // padrão de meu-dia-client.tsx ("idAoResetar"): evita o passe de render extra do efeito,
+  // e o lint do projeto (react-hooks/set-state-in-effect) bloqueia setState direto no corpo
+  // do efeito. O fetch em si (I/O de verdade) continua no useEffect abaixo.
+  const chaveSemana = `${dentistaId}:${semanaInicioISO}`;
+  const [chaveCarregada, setChaveCarregada] = useState(chaveSemana);
+  if (chaveCarregada !== chaveSemana) {
+    setChaveCarregada(chaveSemana);
+    setDias(null);
+    setErro(null);
+  }
+
+  useEffect(() => {
+    let cancelado = false;
+    buscarDisponibilidadeSemana(dentistaId, semanaInicioISO)
+      .then((r) => { if (!cancelado) setDias(r); })
+      .catch(() => { if (!cancelado) setErro('Não foi possível carregar a agenda.'); });
+    return () => { cancelado = true; };
+  }, [dentistaId, semanaInicioISO]);
+
+  function navegar(proxima: Date) {
+    setSemanaInicio(startOfWeek(proxima, { weekStartsOn: 0 }));
+    setDiaDestacado(null);
+  }
+
+  function aplicarSalto(alvo: Date) {
+    setSemanaInicio(startOfWeek(alvo, { weekStartsOn: 0 }));
+    setDiaDestacado(alvo);
+  }
+
+  const { inicio: hourStart, fim: hourEnd } = useMemo(
+    () => janelaHoras(dias, selecionado ? { minutoDoDia: selecionado.minutoDoDia, duracaoMin } : null),
+    [dias, selecionado, duracaoMin],
+  );
+
+  // Pedido dele ao vivo ("libere o clique no calendário todo") — o clique nunca trava
+  // por horário configurado ou já ocupado; quem decide de verdade é sempre o servidor
+  // (criarAgendamento, I4) no confirmar. A grade aqui é só um jeito rápido de apontar
+  // dia+hora, não um limite de disponibilidade.
+  function handleClickDia(dia: DisponibilidadeDia, offsetY: number) {
+    const minuto = minutoDoClique(offsetY, hourStart, hourEnd);
+    onSelecionar(dia.data, minuto);
+  }
+
+  const totalHeight = (hourEnd - hourStart) * SLOT_HEIGHT;
+  const hours = Array.from({ length: hourEnd - hourStart }, (_, i) => hourStart + i);
+
+  return (
+    <div className="rounded-xl border border-border">
+      <div className="flex flex-wrap gap-1.5 border-b border-border p-2.5">
+        {SALTOS.map((s) => (
+          <button
+            key={s.label}
+            type="button"
+            onClick={() => aplicarSalto(s.alvo(new Date()))}
+            className="rounded-full border border-teal px-2.5 py-1 text-[11px] font-bold text-teal-ink hover:bg-teal/5"
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between border-b border-border bg-surface-alt/40 px-3 py-2">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            aria-label="Semana anterior"
+            onClick={() => navegar(subWeeks(semanaInicio, 1))}
+            className="rounded-lg border border-border p-1 hover:bg-surface"
+          >
+            <ChevronLeft className="h-3.5 w-3.5 text-text-secondary" />
+          </button>
+          <span className="text-xs font-semibold text-text-primary">
+            {format(weekStart, "d 'de' MMM", { locale: ptBR })} – {format(weekEnd, "d 'de' MMM yyyy", { locale: ptBR })}
+          </span>
+          <button
+            type="button"
+            aria-label="Próxima semana"
+            onClick={() => navegar(addWeeks(semanaInicio, 1))}
+            className="rounded-lg border border-border p-1 hover:bg-surface"
+          >
+            <ChevronRight className="h-3.5 w-3.5 text-text-secondary" />
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={() => navegar(new Date())}
+          className="rounded-lg bg-teal/5 px-2.5 py-1 text-[11px] font-semibold text-teal-ink hover:opacity-80"
+        >
+          Hoje
+        </button>
+      </div>
+
+      <div className="flex border-b border-border">
+        <div style={{ width: GUTTER_WIDTH }} className="shrink-0" />
+        {eachDayOfInterval({ start: weekStart, end: weekEnd }).map((day) => {
+          const isToday = isDateToday(day);
+          return (
+            <div key={day.toISOString()} className="flex-1 py-1.5 text-center">
+              <div className={`text-[9px] font-bold uppercase tracking-widest ${isToday ? 'text-teal' : 'text-text-secondary'}`}>
+                {format(day, 'EEE', { locale: ptBR })}
+              </div>
+              <div className={`mx-auto mt-0.5 flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold leading-none ${
+                isToday ? 'bg-teal text-white' : 'text-text-primary'
+              }`}>
+                {format(day, 'd')}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {erro ? (
+        <p className="p-4 text-center text-sm text-coral-ink">{erro}</p>
+      ) : !dias ? (
+        <div className="flex items-center justify-center py-10">
+          <Loader2 className="h-5 w-5 animate-spin text-text-secondary" />
+        </div>
+      ) : (
+        // Sem scroll próprio: 1 scroll só (o do modal inteiro, ver marcar-retorno-modal.tsx)
+        // — 2 scrollboxes aninhadas ("rolar dentro de rolar") era mais confuso que ajudava.
+        // A janela dinâmica de horas (hourStart/hourEnd) é o que evita precisar de QUALQUER
+        // scroll no caso comum; overflow-x continua só pra semana não quebrar em telas estreitas.
+        <div className="overflow-x-auto">
+        <div className="flex" style={{ height: totalHeight }}>
+          <div style={{ width: GUTTER_WIDTH }} className="sticky left-0 z-10 shrink-0 bg-surface">
+            {hours.map((h) => (
+              <div
+                key={h}
+                className="absolute w-full text-right text-[10px]"
+                style={{ top: (h - hourStart) * SLOT_HEIGHT, width: GUTTER_WIDTH }}
+              >
+                <span className="pr-1 font-mono text-text-muted">{String(h).padStart(2, '0')}h</span>
+              </div>
+            ))}
+          </div>
+
+          {dias.map((dia) => {
+            const destacado = !!diaDestacado && isSameDay(parseISO(dia.data), diaDestacado);
+            const selecionadoAqui = selecionado?.data === dia.data ? selecionado : null;
+            return (
+              <div
+                key={dia.data}
+                className={`relative flex-1 border-l border-border/60 transition-colors ${destacado ? 'bg-teal/[0.05]' : ''}`}
+              >
+                {hours.map((h) => (
+                  <div
+                    key={h}
+                    className="absolute w-full border-t border-border/30"
+                    style={{ top: (h - hourStart) * SLOT_HEIGHT }}
+                  />
+                ))}
+
+                <button
+                  type="button"
+                  aria-label={`Marcar retorno em ${format(parseISO(dia.data), "EEEE, d 'de' MMMM", { locale: ptBR })}`}
+                  title="Clique pra marcar o retorno"
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    handleClickDia(dia, e.clientY - rect.top);
+                  }}
+                  className="absolute inset-0 w-full"
+                  style={{ height: totalHeight }}
+                />
+
+                {dia.ocupados
+                  // Fora da janela visível (ex.: um encaixe às 23h com expediente até 18h)
+                  // não desenha — do contrário infla a altura do quadro e forçaria scroll
+                  // por causa de 1 ocorrência isolada, o oposto do que a janela dinâmica
+                  // (hourStart/hourEnd) existe pra resolver.
+                  .filter((o) => o.inicioMin + o.duracaoMin > hourStart * 60 && o.inicioMin < hourEnd * 60)
+                  .map((o, i) => (
+                  <div
+                    key={i}
+                    className="pointer-events-none absolute inset-x-0.5 overflow-hidden rounded px-1 py-0.5"
+                    style={{
+                      top: Math.max((o.inicioMin - hourStart * 60) / 60 * SLOT_HEIGHT, 0),
+                      height: Math.max((o.duracaoMin / 60) * SLOT_HEIGHT - 2, 12),
+                      background: 'var(--color-slate-pale)',
+                      border: '1px solid var(--color-slate)',
+                    }}
+                  >
+                    <p className="truncate text-[10px] font-semibold leading-tight" style={{ color: 'var(--color-slate-ink)' }}>
+                      {formatHora(o.inicioMin)} · {o.pacienteNome?.split(' ')[0] ?? '—'}
+                    </p>
+                  </div>
+                ))}
+
+                {selecionadoAqui && (
+                  <div
+                    className="pointer-events-none absolute inset-x-0.5 flex items-center justify-center overflow-hidden rounded bg-teal-dark"
+                    style={{
+                      top: (selecionadoAqui.minutoDoDia - hourStart * 60) / 60 * SLOT_HEIGHT,
+                      height: Math.max((duracaoMin / 60) * SLOT_HEIGHT - 2, 15),
+                    }}
+                  >
+                    <p className="truncate text-[10px] font-bold text-white">{formatHora(selecionadoAqui.minutoDoDia)}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        </div>
+      )}
+    </div>
+  );
+}

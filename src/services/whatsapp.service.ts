@@ -8,6 +8,8 @@ import { sendText, sendInteractiveList, type ListSection } from '@/lib/whatsapp/
 import { getBotMensagens, parseTemplate, type TemplateVars } from '@/lib/whatsapp/template';
 import { createServiceClient } from '@/lib/supabase/service';
 import { formatEspecialidades, type Especialidade } from '@/lib/especialidades';
+import { buildClinicDatetime } from '@/app/dashboard/agendamentos/_components/date-helpers';
+import { getDisponibilidadeSemana, slotEstaLivre, formatHora } from '@/lib/agenda/disponibilidade';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -25,7 +27,8 @@ export interface DentistListItem {
 }
 
 export interface SlotInfo {
-  /** ISO UTC datetime string */
+  /** ISO 8601 com offset BRT explícito (`buildClinicDatetime`) — `new Date(iso)` continua
+   *  dando o instante certo, é só string diferente de antes (era `.toISOString()`, sufixo Z). */
   iso: string;
   /** Formatted label "14:00" */
   label: string;
@@ -232,62 +235,40 @@ export async function sendHoraList(
   dentistaId: string,
   dateISO: string,
 ): Promise<HoraListResult> {
-  const db = createServiceClient();
-
   const [year, month, day] = dateISO.split('-').map(Number);
   const diaSemana = new Date(year, month - 1, day).getDay();
 
-  const { data: grade } = await db
-    .from('horarios_disponiveis')
-    .select('hora_inicio, hora_fim, intervalo_minutos')
-    .eq('dentista_id', dentistaId)
-    .eq('clinica_id', clinicaId)
-    .eq('dia_semana', diaSemana)
-    .eq('ativo', true);
+  // getDisponibilidadeSemana trabalha por semana (domingo a sábado) — acha o domingo que
+  // contém dateISO. Meio-dia UTC como base, mesmo truque do date-helpers.ts: nenhum fuso
+  // empurra a data pro dia vizinho.
+  const domingo = new Date(Date.UTC(year, month - 1, day - diaSemana, 12));
+  const semanaInicioISO = domingo.toISOString().slice(0, 10);
 
-  if (!grade?.length) {
+  let semana;
+  try {
+    semana = await getDisponibilidadeSemana({ dentistaId, clinicaId, semanaInicioISO });
+  } catch (err) {
+    console.error('[sendHoraList] getDisponibilidadeSemana falhou:', err);
+    await sendText(phoneNumberId, to, 'Não encontrei horários para essa data. Por favor, escolha outra data.');
+    return { slots: [], duracaoMinutos: 30 };
+  }
+  const dia = semana.find((d) => d.data === dateISO);
+
+  if (!dia || dia.livres.length === 0) {
     await sendText(phoneNumberId, to, 'Não encontrei horários para essa data. Por favor, escolha outra data.');
     return { slots: [], duracaoMinutos: 30 };
   }
 
-  const duracaoMinutos = (grade[0].intervalo_minutos as number | null) ?? 30;
-
-  const diaStartUTC = new Date(Date.UTC(year, month - 1, day, BRT_OFFSET_H, 0));
-  const diaEndUTC   = new Date(Date.UTC(year, month - 1, day + 1, BRT_OFFSET_H, 0));
-
-  const { data: agendados } = await db
-    .from('agendamentos')
-    .select('data_hora')
-    .eq('dentista_id', dentistaId)
-    .neq('status', 'cancelled')
-    .gte('data_hora', diaStartUTC.toISOString())
-    .lt('data_hora', diaEndUTC.toISOString());
-
-  const ocupados = new Set(
-    (agendados ?? []).map(a => new Date(a.data_hora as string).toISOString()),
-  );
-
-  const agora  = new Date();
+  // R-64 (I2) — mesmo critério de "livre" da grade do dashboard (slotEstaLivre): sem almoço
+  // configurado dá o MESMO resultado de antes; com almoço, exclui o intervalo (fix de graça).
+  const duracaoMinutos = dia.intervaloMinutos;
+  const agora = new Date();
   const slots: SlotInfo[] = [];
 
-  for (const regra of grade as Array<{ hora_inicio: string; hora_fim: string; intervalo_minutos: number }>) {
-    const [hiH, hiM] = regra.hora_inicio.split(':').map(Number);
-    const [hfH, hfM] = regra.hora_fim.split(':').map(Number);
-    let slotMin = hiH * 60 + hiM;
-    const fimMin = hfH * 60 + hfM;
-
-    while (slotMin < fimMin && slots.length < 10) {
-      const hh = Math.floor(slotMin / 60);
-      const mm = slotMin % 60;
-      const slotUTC = new Date(Date.UTC(year, month - 1, day, hh + BRT_OFFSET_H, mm));
-
-      if (slotUTC > agora && !ocupados.has(slotUTC.toISOString())) {
-        slots.push({
-          iso:   slotUTC.toISOString(),
-          label: `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`,
-        });
-      }
-      slotMin += regra.intervalo_minutos;
+  for (const bloco of dia.livres) {
+    for (let m = bloco.inicioMin; m + duracaoMinutos <= bloco.fimMin && slots.length < 10; m += duracaoMinutos) {
+      if (!slotEstaLivre(m, duracaoMinutos, dia, agora)) continue;
+      slots.push({ iso: buildClinicDatetime(dateISO, formatHora(m)), label: formatHora(m) });
     }
   }
 
