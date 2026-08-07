@@ -41,6 +41,8 @@ import { EncaminharBar } from '@/components/fichas/encaminhar-bar';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Rail } from './rail';
 import { AtenderAgoraModal } from '@/app/dashboard/agendamentos/_components/atender-agora-modal';
+import { atualizarStatusAgendamento } from '@/app/dashboard/agendamentos/actions';
+import type { AgendamentoStatus } from '@/types/database';
 import { CockpitGrid } from './cockpit-grid';
 import { HistoricoBloco } from './historico-bloco';
 import { AnexarDocumentosBloco } from './anexar-documentos-bloco';
@@ -195,6 +197,19 @@ export function MeuDiaClient({
     router.refresh();
   }
 
+  // 07/08 — troca manual de status. `salvarVisitaMeuDia` já marca 'completed' sozinho
+  // (origem='modo_consulta'), mas isso não cobre quem registrou por outro caminho (ficha
+  // rápida do perfil) nem corrige um clique errado — reusa a MESMA escrita que a Agenda usa
+  // (`atualizarStatusAgendamento`), só um 2º ponto de entrada.
+  async function handleMudarStatus(agendamentoId: string, status: AgendamentoStatus) {
+    const res = await atualizarStatusAgendamento(agendamentoId, status);
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
+    router.refresh();
+  }
+
   function fazerHoje(p: MeuDiaPendencia) {
     setEventosDraft([...eventosDraft, pendenciaParaDraft(p, hojeBRT())]);
   }
@@ -315,6 +330,7 @@ export function MeuDiaClient({
         selecionadoId={selecionadoId}
         onSelecionar={setSelecionadoId}
         onEncaixe={() => setEncaixeAberto(true)}
+        onMudarStatus={handleMudarStatus}
       />
       <AtenderAgoraModal
         open={encaixeAberto}

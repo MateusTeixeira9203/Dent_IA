@@ -18,6 +18,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import type { MeuDiaSlot } from '@/server/dashboard/get-meu-dia';
+import type { AgendamentoStatus } from '@/types/database';
 
 const STATUS_LABEL: Record<string, string> = {
   scheduled: 'Aguardando',
@@ -25,8 +26,17 @@ const STATUS_LABEL: Record<string, string> = {
   checked_in: 'Na recepção',
   in_progress: 'Atendendo',
   completed: 'Concluído',
+  cancelled: 'Cancelado',
   no_show: 'Faltou',
 };
+
+// 07/08 — ordem de escolha manual (D1: sem "cancelled"/"no_show" no topo, são exceção, não
+// fluxo comum). Salvar a visita já marca 'completed' via origem='modo_consulta' — este
+// seletor é o escape hatch pra quando isso não aconteceu (ficha rápida, ordem fora do padrão)
+// ou pra corrigir (reabrir um "concluído" clicado sem querer).
+const STATUS_OPTIONS: AgendamentoStatus[] = [
+  'scheduled', 'confirmed', 'checked_in', 'in_progress', 'completed', 'no_show', 'cancelled',
+];
 
 const STATUS_COLOR: Record<string, string> = {
   scheduled: 'bg-surface-alt text-text-secondary',
@@ -51,9 +61,16 @@ export interface RailProps {
   /** R-57 F1 — paciente sem agendamento (chegou sem marcar, urgência). Abre o mesmo modal
    *  "Atender agora" que a Agenda usa. */
   onEncaixe: () => void;
+  /** 07/08 — troca manual de status (pedido dele: salvar nem sempre marca "atendido" —
+   *  ficha rápida fora do fluxo, ou corrigir clique errado). Reusa `atualizarStatusAgendamento`
+   *  já usado pela Agenda — mesma escrita, novo ponto de entrada. */
+  onMudarStatus: (agendamentoId: string, status: AgendamentoStatus) => void;
 }
 
 const LIMIAR_ARRASTE_PX = 5;
+// Distância sozinha classificava tremor de clique como arraste (ver comentário em
+// onPointerMove) — exige também esse tempo mínimo percorrendo o limiar.
+const TEMPO_MIN_ARRASTE_MS = 100;
 
 /** R-57 F1 — fora do `<button>` do slot (nota do topo: não aninhar botão em botão). Mesmo
  *  recorte de tamanho do card de slot; borda tracejada marca "adicionar", não um card real. */
@@ -61,6 +78,7 @@ function BotaoEncaixe({ onEncaixe }: { onEncaixe: () => void }) {
   return (
     <button
       type="button"
+      data-rail-alvo="encaixe"
       onClick={onEncaixe}
       className="flex min-w-[112px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border px-3 py-2.5 text-text-secondary transition-colors hover:border-teal/40 hover:text-teal [scroll-snap-align:start]"
     >
@@ -70,9 +88,20 @@ function BotaoEncaixe({ onEncaixe }: { onEncaixe: () => void }) {
   );
 }
 
-export function Rail({ slots, selecionadoId, onSelecionar, onEncaixe }: RailProps) {
+interface ArrasteState {
+  x: number;
+  scrollLeft: number;
+  t: number;
+  moveu: boolean;
+  /** 07/08 — resolvido no PRÓPRIO pointerdown (ver comentário grande abaixo), não no click
+   *  nativo que vem depois. `null` = pointerdown fora de qualquer alvo reconhecido (padding,
+   *  divisor). */
+  alvo: string | null;
+}
+
+export function Rail({ slots, selecionadoId, onSelecionar, onEncaixe, onMudarStatus }: RailProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const arraste = useRef<{ x: number; scrollLeft: number; moveu: boolean } | null>(null);
+  const arraste = useRef<ArrasteState | null>(null);
   const [arrastando, setArrastando] = useState(false);
   const [temMais, setTemMais] = useState(false);
 
@@ -86,35 +115,71 @@ export function Rail({ slots, selecionadoId, onSelecionar, onEncaixe }: RailProp
     return () => ro.disconnect();
   }, [slots.length]);
 
+  // BUG real (07/08, achado com instrumentação ao vivo, os 2 fixes anteriores não bastavam):
+  // o `click` nativo mira em quem estiver na coordenada de tela NO MOMENTO DO POINTERUP, não
+  // em quem estava lá no pointerdown. Se QUALQUER coisa reflui o rail entre pressionar e
+  // soltar (um card ganha/perde largura, a lista ganha um item), o clique acerta um elemento
+  // diferente do que o dedo/mouse mirou — sem erro nenhum, o clique só "morre" num alvo errado
+  // (foi assim que o Encaixe, sempre o item mais à direita — o mais exposto a qualquer
+  // deslocamento — parou de responder mesmo depois da ref de arrasto parar de vazar). Fix:
+  // resolve QUAL alvo foi pressionado aqui, no pointerdown (antes de qualquer reflow ter
+  // chance de acontecer), guarda em `alvo`, e dispara a ação no pointerup por esse alvo
+  // guardado — nunca pelo que o `click` nativo decidir depois.
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (!scrollRef.current) return;
-    arraste.current = { x: e.clientX, scrollLeft: scrollRef.current.scrollLeft, moveu: false };
+    const alvoEl = e.target instanceof HTMLElement ? e.target : null;
+    // `<select>` de status (abaixo) tem interação nativa própria — não entra no arrasto nem
+    // na resolução de alvo, senão o menu nativo do sistema operacional se comporta esquisito.
+    if (alvoEl?.closest('select')) return;
+    arraste.current = {
+      x: e.clientX,
+      scrollLeft: scrollRef.current.scrollLeft,
+      t: e.timeStamp,
+      moveu: false,
+      alvo: alvoEl?.closest<HTMLElement>('[data-rail-alvo]')?.dataset.railAlvo ?? null,
+    };
     e.currentTarget.setPointerCapture(e.pointerId);
   }
 
+  // Distância sozinha classificava tremor de clique (mouse/trackpad) como arraste — exige
+  // também um tempo mínimo percorrendo o limiar (arraste de verdade leva tempo pra
+  // percorrer 5px; tremor de clique percorre a mesma distância em poucos ms).
   function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
     if (!arraste.current || !scrollRef.current) return;
     const dx = e.clientX - arraste.current.x;
     if (!arraste.current.moveu) {
-      if (Math.abs(dx) < LIMIAR_ARRASTE_PX) return;
+      const dt = e.timeStamp - arraste.current.t;
+      if (Math.abs(dx) < LIMIAR_ARRASTE_PX || dt < TEMPO_MIN_ARRASTE_MS) return;
       arraste.current.moveu = true;
       setArrastando(true);
     }
     scrollRef.current.scrollLeft = arraste.current.scrollLeft - dx;
   }
 
+  // Dispara a ação AQUI, pelo alvo capturado no pointerdown — não espera o click nativo
+  // (que já provou mirar errado quando o rail reflui no meio do gesto). `setTimeout(0)` zera
+  // a ref DEPOIS que `onClickCapture` (mesmo gesto, dispara logo em seguida) já leu e
+  // suprimiu o clique nativo redundante — zerar síncrono aqui deixaria esse clique passar
+  // batido e disparar a ação uma 2ª vez.
   function onPointerUp() {
-    arraste.current = arraste.current ? { ...arraste.current } : null;
     setArrastando(false);
+    const a = arraste.current;
+    if (a && !a.moveu && a.alvo) {
+      if (a.alvo === 'encaixe') onEncaixe();
+      else onSelecionar(a.alvo);
+    }
+    setTimeout(() => { arraste.current = null; }, 0);
   }
 
-  // Fase de captura: se o arraste passou do limiar, o clique que o pointerup dispara em
-  // seguida é suprimido — senão soltar o arraste em cima de um card troca de paciente.
+  // Fase de captura: todo clique nativo que segue um gesto de ponteiro rastreado aqui já foi
+  // despachado (ou ignorado, se foi arraste de verdade) no onPointerUp acima — deixá-lo
+  // seguir dispararia a ação 2×, ou pior, no alvo ERRADO se o layout mudou por baixo do
+  // cursor. `arraste.current` só fica `null` aqui pra clique por TECLADO (Enter/Espaço no
+  // botão focado nunca passa por pointerdown) — esse não é tocado.
   function onClickCapture(e: React.MouseEvent) {
-    if (arraste.current?.moveu) {
+    if (arraste.current) {
       e.preventDefault();
       e.stopPropagation();
-      arraste.current = null;
     }
   }
 
@@ -157,6 +222,7 @@ export function Rail({ slots, selecionadoId, onSelecionar, onEncaixe }: RailProp
             >
               <button
                 type="button"
+                data-rail-alvo={slot.agendamentoId}
                 onClick={() => onSelecionar(slot.agendamentoId)}
                 className="w-full px-3 py-2.5 text-left"
               >
@@ -187,6 +253,19 @@ export function Rail({ slots, selecionadoId, onSelecionar, onEncaixe }: RailProp
                 >
                   {slot.statusAgendamento === 'in_progress' ? 'Continuar atendimento' : 'Iniciar consulta'}
                 </Link>
+              )}
+              {selecionado && (
+                <select
+                  aria-label="Mudar status do atendimento"
+                  value={slot.statusAgendamento}
+                  onChange={(e) => onMudarStatus(slot.agendamentoId, e.target.value as AgendamentoStatus)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="block w-full border-t border-border bg-transparent px-3 py-1.5 text-center text-[10.5px] font-semibold text-text-secondary outline-none transition-colors hover:bg-surface-alt hover:text-text-primary"
+                >
+                  {STATUS_OPTIONS.map((s) => (
+                    <option key={s} value={s}>{STATUS_LABEL[s] ?? s}</option>
+                  ))}
+                </select>
               )}
             </div>
           );
