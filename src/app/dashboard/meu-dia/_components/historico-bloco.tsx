@@ -10,9 +10,10 @@
 // R-46c — botão de colar histórico do Word mora no estado vazio (visitas.length === 0).
 // Independente de pendência/orto por construção do cockpit (blocos separados).
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { FileText } from 'lucide-react';
 import { RegistroCard } from '@/components/fichas/registro-card';
+import { TextoExpansivel } from '@/components/fichas/texto-expansivel';
 import { corpoEspecialidade } from '@/components/fichas/corpo-especialidade';
 import { eventosParaCards, type EventoParaCard } from '@/lib/odontograma/eventos-para-cards';
 import type { MeuDiaVisita, MeuDiaEventoVisita } from '@/server/dashboard/get-meu-dia';
@@ -58,40 +59,6 @@ function paraCard(e: MeuDiaEventoVisita): EventoParaCard {
     assinaturaId: null,
     encaminhadoPara: null,
   };
-}
-
-/** G7 — corta em 4 linhas com "ver mais", só quando o texto REALMENTE transborda (mede
- *  scrollHeight vs clientHeight do próprio parágrafo clampado, não um chute por tamanho
- *  de string). */
-function TextoVisita({ texto }: { texto: string }) {
-  const ref = useRef<HTMLParagraphElement>(null);
-  const [transbordou, setTransbordou] = useState(false);
-  const [expandido, setExpandido] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (el) setTransbordou(el.scrollHeight > el.clientHeight + 1);
-  }, [texto]);
-
-  return (
-    <div className="flex flex-col gap-1">
-      <p
-        ref={ref}
-        className={`whitespace-pre-line text-sm text-text-primary ${expandido ? '' : 'line-clamp-4'}`}
-      >
-        {texto}
-      </p>
-      {(transbordou || expandido) && (
-        <button
-          type="button"
-          onClick={() => setExpandido((v) => !v)}
-          className="w-fit text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
-        >
-          {expandido ? 'mostrar menos ↑' : 'ver mais ↓'}
-        </button>
-      )}
-    </div>
-  );
 }
 
 function VisitaEntry({
@@ -153,7 +120,7 @@ function VisitaEntry({
       </div>
 
       {/* 2. Texto — o elemento de maior peso da entrada (hierarquia invertida, §1a) */}
-      <TextoVisita texto={texto} />
+      <TextoExpansivel texto={texto} className="whitespace-pre-line text-sm text-text-primary" />
 
       {/* 3. Feito nesta consulta — realizados desta ficha + fechados aqui, indicados alhures */}
       {cardsFeito.length > 0 && (
@@ -218,13 +185,9 @@ export function HistoricoBloco({ visitas, pacienteId, pacienteNome, onImportado,
         </div>
       ) : (
         <>
-          <div
-            className={
-              expandido
-                ? 'flex max-h-[420px] flex-col divide-y divide-border overflow-y-auto pr-2'
-                : 'flex flex-col divide-y divide-border'
-            }
-          >
+          {/* R-77 — teto de altura sempre, não só quando expandido: a prévia (1 visita) pode
+              estourar sozinha com texto longo + vários procedimentos. */}
+          <div className="flex max-h-[420px] flex-col divide-y divide-border overflow-y-auto pr-2">
             {visiveis.map((v) => (
               <VisitaEntry key={v.fichaId} v={v} onGerarOrcamento={onGerarOrcamento} meuDentistaId={meuDentistaId} />
             ))}

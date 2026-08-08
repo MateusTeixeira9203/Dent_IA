@@ -11,6 +11,7 @@
 
 import { useState } from 'react';
 import { ChevronRight, Forward, Check, X } from 'lucide-react';
+import { TextoExpansivel } from './texto-expansivel';
 import {
   TIPO_LABEL,
   corDoRegistro,
@@ -187,7 +188,11 @@ export function RegistroCard({
               className="mt-0.5 w-full bg-transparent border-b border-dashed border-border text-xs italic text-text-primary outline-none focus:border-teal transition-colors placeholder:text-text-secondary/60"
             />
           ) : data.observacao && (
-            <p className="text-xs text-text-secondary italic mt-0.5 truncate">&ldquo;{data.observacao}&rdquo;</p>
+            <TextoExpansivel
+              texto={`“${data.observacao}”`}
+              clampLines={2}
+              className="text-xs text-text-secondary italic mt-0.5"
+            />
           )}
           <p className="text-xs text-text-secondary mt-0.5">
             {data.realizadoEm && (
