@@ -52,6 +52,7 @@ export default async function MeuDiaPage({ searchParams }: MeuDiaPageProps) {
         catalogoProcedimentos={catalogoProcedimentos}
         destinosEncaminhar={destinosEncaminhar}
         meuDentistaId={meuDentistaId}
+        clinicaId={dentista.clinica_id}
       />
     </PageContainer>
   );

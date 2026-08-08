@@ -32,7 +32,7 @@ const FORMA_LABEL: Record<FormaPagamento, string> = {
   cartao_debito: 'Cartão de Débito', boleto: 'Boleto', outro: 'Outro',
 };
 
-interface NovoOrcamentoModalProps {
+export interface NovoOrcamentoModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   etapaNovoOrc: 'selecionar' | 'itens';

@@ -118,6 +118,10 @@ interface RegistrarPainelProps {
    *  especialidade aberta pro dente atual. Dono é `meu-dia-client.tsx` (via
    *  `onDetalheAbertoChange` do painel); aqui só se lê, nunca se escreve. */
   detalheEspecialidadeAberto: boolean;
+  /** R-46h F3 — picker geral: lista todas as fichas em aberto do paciente, dentista escolhe
+   *  uma. Independente do estado de "Salvar" — nunca herda `disabled`/`semRascunho`, é ação
+   *  separada (não precisa ter rascunho pra gerar orçamento de uma ficha antiga). */
+  onAbrirPickerOrcamento: () => void;
 }
 
 /** Converte a pendência (já um evento real no banco, `status='indicado'`) num draft que
@@ -160,6 +164,7 @@ export function RegistrarPainel({
   orto,
   boca,
   detalheEspecialidadeAberto,
+  onAbrirPickerOrcamento,
 }: RegistrarPainelProps) {
   const [textoAberto, setTextoAberto] = useState(false);
   /** D1 — só escrita pro campo mágico; quem lê é `handleSalvar` abaixo (I3). */
@@ -618,6 +623,13 @@ export function RegistrarPainel({
           className="flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm font-bold text-text-secondary transition-colors hover:border-teal/40 hover:text-teal-ink"
         >
           Marcar retorno
+        </button>
+        <button
+          type="button"
+          onClick={onAbrirPickerOrcamento}
+          className="flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm font-bold text-text-secondary transition-colors hover:border-teal/40 hover:text-teal-ink"
+        >
+          Gerar orçamento
         </button>
         <button
           type="button"

@@ -177,6 +177,9 @@ export interface MeuDiaCatalogoProcedimento {
   id: string;
   nome: string;
   categoria: string;
+  /** R-46h — mesmo shape que `ProcedimentoClinica` (pacientes/[id]/_components/types.ts):
+   *  pré-preenche o valor do item no picker de orçamento compartilhado. */
+  preco_padrao: number | null;
 }
 
 /** R-52 — destino possível de um encaminhamento. */
@@ -424,7 +427,7 @@ export async function getMeuDiaData({
     // dentista, alfabética, sem frequência (decisão dele, 31/07).
     supabase
       .from('procedimentos')
-      .select('id, nome, categoria')
+      .select('id, nome, categoria, preco_padrao')
       .eq('clinica_id', clinicId)
       .eq('dentista_id', dentistaId)
       .eq('ativo', true)

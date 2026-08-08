@@ -24,6 +24,11 @@ export interface HistoricoBlocoProps {
   pacienteId: string;
   pacienteNome: string;
   onImportado: () => void;
+  /** R-46h — abre o picker de orçamento SÓ desta ficha (mesmo padrão do FichasTab,
+   *  onGerarOrcamento). Só chamado quando a visita tem indicado em aberto (abertos > 0) E é
+   *  do próprio dentista (histórico é compartilhado, mas dinheiro nunca cruza dentista). */
+  onGerarOrcamento: (fichaId: string) => void;
+  meuDentistaId: string;
 }
 
 const PREVIA = 1;
@@ -89,7 +94,13 @@ function TextoVisita({ texto }: { texto: string }) {
   );
 }
 
-function VisitaEntry({ v }: { v: MeuDiaVisita }) {
+function VisitaEntry({
+  v, onGerarOrcamento, meuDentistaId,
+}: {
+  v: MeuDiaVisita;
+  onGerarOrcamento: (fichaId: string) => void;
+  meuDentistaId: string;
+}) {
   const texto = v.texto || v.resumo; // G9 — resumo sempre não-vazio (cai em 'Evolução' no pior caso)
   const abertos = v.eventos.filter((e) => e.status === 'indicado').length;
 
@@ -114,6 +125,20 @@ function VisitaEntry({ v }: { v: MeuDiaVisita }) {
           {/* §4.4 — "nada" quando semPendencia: o silêncio é o estado bom, sem badge. */}
           {!v.semPendencia && (
             <span className="text-[10px] font-bold text-coral-ink">{abertos} em aberto</span>
+          )}
+          {/* R-46h — só quando há indicado em aberto E a ficha é do próprio dentista
+              (histórico é compartilhado da clínica, mas dinheiro nunca cruza dentista —
+              achado ao vivo 08/08). Abre o picker JÁ escopado pra esta ficha (mesmo padrão
+              do FichasTab, nunca funde com outra visita). */}
+          {abertos > 0 && v.dentistaId === meuDentistaId && (
+            <button
+              type="button"
+              onClick={() => onGerarOrcamento(v.fichaId)}
+              title="Gerar orçamento"
+              className="rounded-lg px-1.5 py-0.5 text-[10px] font-bold text-teal-ink transition-colors hover:bg-teal-pale"
+            >
+              Gerar orçamento
+            </button>
           )}
           {/* R-46c (I3) — nunca se apresenta como atendimento: rótulo próprio, nunca o
               nome do dentista como se ele tivesse feito a consulta. */}
@@ -169,7 +194,7 @@ function VisitaEntry({ v }: { v: MeuDiaVisita }) {
   );
 }
 
-export function HistoricoBloco({ visitas, pacienteId, pacienteNome, onImportado }: HistoricoBlocoProps) {
+export function HistoricoBloco({ visitas, pacienteId, pacienteNome, onImportado, onGerarOrcamento, meuDentistaId }: HistoricoBlocoProps) {
   const [expandido, setExpandido] = useState(false);
   const [colarAberto, setColarAberto] = useState(false);
   const temMais = visitas.length > PREVIA;
@@ -201,7 +226,7 @@ export function HistoricoBloco({ visitas, pacienteId, pacienteNome, onImportado 
             }
           >
             {visiveis.map((v) => (
-              <VisitaEntry key={v.fichaId} v={v} />
+              <VisitaEntry key={v.fichaId} v={v} onGerarOrcamento={onGerarOrcamento} meuDentistaId={meuDentistaId} />
             ))}
           </div>
           {temMais && (

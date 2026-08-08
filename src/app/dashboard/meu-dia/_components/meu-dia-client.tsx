@@ -50,6 +50,8 @@ import { AFazerBloco } from './a-fazer-bloco';
 import { NestaSessaoBloco } from './nesta-sessao-bloco';
 import { RegistrarPainel, pendenciaParaDraft } from './registrar-painel';
 import { ToothDetailPanel } from '@/components/odontograma/ToothDetailPanel';
+import { useOrcamentoModal } from '@/app/dashboard/pacientes/[id]/_components/use-orcamento-modal';
+import { NovoOrcamentoModal } from '@/app/dashboard/pacientes/[id]/_components/modals/novo-orcamento-modal';
 import { hojeBRT } from '@/lib/hora-brt';
 import { responsavelPassaFiltro, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
 import type { MeuDiaData, MeuDiaPendencia } from '@/server/dashboard/get-meu-dia';
@@ -76,11 +78,14 @@ function TabBadge({ n }: { n: number }) {
 
 interface MeuDiaClientProps extends MeuDiaData {
   agendamentoInicialId?: string;
+  /** R-46h — o hook de orçamento compartilhado (pacientes/[id]/_components) precisa disto
+   *  pra escopar a query; MeuDiaData não carrega (é parâmetro do fetch, não parte do retorno). */
+  clinicaId: string;
 }
 
 export function MeuDiaClient({
   slots, contextoPorPaciente, agendamentoInicialId, catalogoProcedimentos, meuDentistaId,
-  destinosEncaminhar,
+  destinosEncaminhar, clinicaId,
 }: MeuDiaClientProps) {
   const router = useRouter();
 
@@ -168,6 +173,23 @@ export function MeuDiaClient({
 
   const slotSelecionado = selecionadoId ? (slots.find((s) => s.agendamentoId === selecionadoId) ?? null) : null;
   const contexto = slotSelecionado ? contextoPorPaciente[slotSelecionado.pacienteId] : null;
+
+  // R-46h — picker de orçamento (Histórico por-visita + rodapé do Registrar). Meu dia é
+  // dentista-only (page.tsx redireciona secretaria): isSecretaria sempre false,
+  // dentistasClinica sempre [], sem onOrcamentoCriado (não há lista de orçamentos aqui).
+  // `pacienteId` segue o slot selecionado — os botões que abrem o modal só existem quando
+  // há slotSelecionado, então o fallback '' nunca é de fato usado pra buscar nada.
+  const orcamentoModal = useOrcamentoModal({
+    pacienteId: slotSelecionado?.pacienteId ?? '',
+    clinicaId,
+    meuDentistaId,
+    procedimentosClinica: catalogoProcedimentos,
+    isSecretaria: false,
+    dentistasClinica: [],
+    // R-46h (achado ao vivo 08/08) — histórico é compartilhado da clínica; sem isto o
+    // picker deixava puxar procedimento indicado por outro dentista pro orçamento.
+    restringirAoMeuDentista: true,
+  });
 
   // C6 — o Sheet precisa da mesma lista que o painel do dente sempre recebeu; migrado de
   // registrar-painel.tsx (era `useEffect` local ali, key `pacienteId`). Dep proposital só no
@@ -337,6 +359,7 @@ export function MeuDiaClient({
         onOpenChange={setEncaixeAberto}
         onCriado={handleEncaixeCriado}
       />
+      <NovoOrcamentoModal {...orcamentoModal.modalProps} />
       {slotSelecionado && contexto ? (
         <>
           {/* C1 — migrado de contexto-coluna.tsx (SAI): nome + "ver perfil" + alertas de
@@ -384,6 +407,8 @@ export function MeuDiaClient({
                       pacienteId={slotSelecionado.pacienteId}
                       pacienteNome={slotSelecionado.pacienteNome}
                       onImportado={() => router.refresh()}
+                      onGerarOrcamento={(fichaId) => void orcamentoModal.abrirOrcamentoParaFicha(fichaId)}
+                      meuDentistaId={meuDentistaId}
                     />
                   </TabsContent>
                   <TabsContent value="hoje" className="pt-2.5 px-3 pb-3">
@@ -425,6 +450,7 @@ export function MeuDiaClient({
                 orto={contexto.orto}
                 boca={contexto.boca}
                 detalheEspecialidadeAberto={detalheEspecialidadeAberto}
+                onAbrirPickerOrcamento={() => void orcamentoModal.abrirPickerFichasAbertas()}
               />
             }
             direita={

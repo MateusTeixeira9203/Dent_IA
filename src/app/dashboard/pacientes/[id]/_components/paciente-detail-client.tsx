@@ -70,12 +70,9 @@ import {
   editarPagamento,
   marcarPagamentoPago,
   excluirPagamento,
-  criarOrcamento,
   editarOrcamento,
   excluirOrcamento,
-  criarProcedimentoRapido,
   gerarParcelas,
-  definirPlanoAvista,
   atualizarMostrarValorPorItem,
   type FormaPagamento,
   type StatusOrcamento,
@@ -90,14 +87,7 @@ import { formatarDataFicha } from '@/lib/format-data-ficha';
 import { toast } from 'sonner';
 import { STATUS_ORCAMENTO } from '@/lib/constants/orcamento-status';
 import { parseValorBR, formatValorBR } from '@/lib/valor-br';
-import {
-  stripDenteDoNome, denteLabel,
-  ARCH_SUPERIOR, ARCH_INFERIOR, ARCH_COMPLETA,
-  QUAD_SUP_DIREITO, QUAD_SUP_ESQUERDO, QUAD_INF_DIREITO, QUAD_INF_ESQUERDO,
-} from '@/lib/arcadas';
-import { TIPO_LABEL } from '@/types/odontograma';
-import type { OrcamentoComItens, OrcamentoItem, Pagamento, FichaParaOrc, EventoOdontogramaParaOrc, ProcedimentoClinica, NovoOrcItem, OrcEditItem } from './types';
-import { derivarResponsaveis, eventosVisiveis, FILTRO_MEUS, type FiltroResponsavel } from '@/lib/fichas/filtro-responsavel';
+import type { OrcamentoComItens, OrcamentoItem, Pagamento, ProcedimentoClinica, OrcEditItem } from './types';
 import { EditarPacienteModal } from './modals/editar-paciente-modal';
 import { DetalheOrcamentoModal } from './modals/detalhe-orcamento-modal';
 import { ConfirmarDeleteOrcModal } from './modals/confirmar-delete-orc-modal';
@@ -107,6 +97,7 @@ import { MarcarRetornoModal, type MarcarRetornoForm } from '@/components/pacient
 import { formatHora as formatHoraRetorno } from '@/lib/agenda/disponibilidade';
 import { EmitirDocumentoModal } from '@/components/pacientes/EmitirDocumentoModal';
 import { NovoOrcamentoModal } from './modals/novo-orcamento-modal';
+import { useOrcamentoModal } from './use-orcamento-modal';
 import { ApresentarPaciente } from '@/components/pacientes/ApresentarPaciente';
 
 import type { FichaRecente } from '@/server/patients/get-patient-workspace-data';
@@ -220,8 +211,6 @@ export function PacienteDetailClient({
 
   // Encaminhamento (hierarquia §3) — só a secretária reatribui o dentista responsável.
   const [dentistasClinica, setDentistasClinica] = useState<{ id: string; nome: string }[]>([]);
-  // Dentista responsável pelo orçamento que a secretária está criando (spec 2026-07-15).
-  const [novoOrcDentistaAlvoId, setNovoOrcDentistaAlvoId] = useState('');
   useEffect(() => {
     if (role !== 'secretaria') return;
     const supabase = createClient();
@@ -234,7 +223,6 @@ export function PacienteDetailClient({
       .order('nome')
       .then(({ data }) => {
         setDentistasClinica(data ?? []);
-        setNovoOrcDentistaAlvoId((prev) => prev || (data?.[0]?.id ?? ''));
       });
   }, [role, clinicaId]);
 
@@ -259,12 +247,7 @@ export function PacienteDetailClient({
   const [loadingAgendamentos, setLoadingAgendamentos] = useState(false);
 
   const [detalheOrcId, setDetalheOrcId] = useState<string | null>(null);
-  const [isNovoOrcOpen, setIsNovoOrcOpen] = useState(false);
   const [procedimentosClinica, setProcedimentosClinica] = useState<ProcedimentoClinica[]>([]);
-  const [novoOrcItens, setNovoOrcItens] = useState<NovoOrcItem[]>([
-    { procedimentoId: '', descricao: '', quantidade: 1, preco: '' },
-  ]);
-  const [registeringProcIdx, setRegisteringProcIdx] = useState<number | null>(null);
   const [pagForm, setPagForm] = useState({
     valor: '',
     formaPagamento: 'pix' as FormaPagamento,
@@ -275,9 +258,7 @@ export function PacienteDetailClient({
   const [parcelasForm, setParcelasForm] = useState({ numero: '3', primeiroVencimento: '' });
   const [parcelasSaving, setParcelasSaving] = useState(false);
   const [parcelasError, setParcelasError] = useState<string | null>(null);
-  const [orcSaving, setOrcSaving] = useState(false);
   const [pagSaving, setPagSaving] = useState(false);
-  const [orcError, setOrcError] = useState<string | null>(null);
   const [pagError, setPagError] = useState<string | null>(null);
 
   // R-28 — fechar uma parcela pendente específica via a aba Registrar pagamento
@@ -295,21 +276,6 @@ export function PacienteDetailClient({
   const [editPagError, setEditPagError] = useState<string | null>(null);
   const [confirmDeletePagId, setConfirmDeletePagId] = useState<string | null>(null);
   const [pagDeleteSaving, setPagDeleteSaving] = useState(false);
-  const [isLoadingFichaParaOrc, setIsLoadingFichaParaOrc] = useState(false);
-  const [fichasParaOrc, setFichasParaOrc] = useState<FichaParaOrc[]>([]);
-  const [fichaOrcId, setFichaOrcId] = useState<string | null>(null);
-  // R-53 — filtro de exibição do orçamento agregado (X1: mesma lib da ficha, config própria —
-  // default Todos, porque o dinheiro é da clínica, não do dentista). Nunca decide o que é
-  // gravado (I4) — só quais itens de `fichasParaOrc` viram `novoOrcItens`.
-  const [filtroResponsavelOrc, setFiltroResponsavelOrc] = useState<FiltroResponsavel>(null);
-  const [etapaNovoOrc, setEtapaNovoOrc] = useState<'selecionar' | 'itens'>('itens');
-  const [novoOrcValorFinal, setNovoOrcValorFinal] = useState<number | null>(null);
-  // R-34 — forma de pagamento já na criação (feedback do Mateus testando localhost: parcelar
-  // só existia depois de reabrir o orçamento criado; reduz a fricção de ter os dois passos).
-  const [novoOrcPlanoForma, setNovoOrcPlanoForma] = useState<'avista' | 'parcelado' | null>(null);
-  const [novoOrcNumParcelas, setNovoOrcNumParcelas] = useState('3');
-  const [novoOrcPrimeiroVencimento, setNovoOrcPrimeiroVencimento] = useState('');
-  const [novoOrcParcelasForma, setNovoOrcParcelasForma] = useState<FormaPagamento | ''>('');
 
   // Edição de orçamento
   const [orcEditMode, setOrcEditMode] = useState(false);
@@ -435,14 +401,6 @@ export function PacienteDetailClient({
 
   // Orçamento selecionado no detalhe
   const detalheOrc = orcamentosState.find((o) => o.id === detalheOrcId) ?? null;
-  const novoOrcSubtotal = useMemo(
-    () => novoOrcItens.reduce((s, i) => s + i.quantidade * parseValorBR(i.preco), 0),
-    [novoOrcItens]
-  );
-  const novoOrcTotal = useMemo(
-    () => novoOrcValorFinal !== null ? Math.max(0, novoOrcValorFinal) : novoOrcSubtotal,
-    [novoOrcSubtotal, novoOrcValorFinal]
-  );
 
   const resumoFinanceiro = useMemo(() => {
     const allPagamentos = orcamentosState.flatMap(o => o.pagamentos);
@@ -566,10 +524,22 @@ export function PacienteDetailClient({
     });
   };
 
+  // R-46h — extraído pra use-orcamento-modal.ts (compartilhado com o Meu dia). onOrcamentoCriado
+  // é o único acoplamento de volta: só esta tela mantém uma lista local de orçamentos.
+  const orcamentoModal = useOrcamentoModal({
+    pacienteId: paciente.id,
+    clinicaId,
+    meuDentistaId: dentistaId,
+    procedimentosClinica,
+    isSecretaria: role === 'secretaria',
+    dentistasClinica,
+    onOrcamentoCriado: (novoOrc) => setOrcamentosState((prev) => [novoOrc, ...prev]),
+  });
+
   // Catálogo de procedimentos é privado por dentista. Pra secretária, o dono relevante
   // é o dentista-alvo selecionado no modal de orçamento, não o perfil dela (ela nunca
   // é dona de procedimentos) — reconsulta quando a seleção muda.
-  const procedimentosDonoId = role === 'secretaria' ? novoOrcDentistaAlvoId : dentistaId;
+  const procedimentosDonoId = role === 'secretaria' ? orcamentoModal.modalProps.dentistaAlvoId : dentistaId;
   useEffect(() => {
     if (!procedimentosDonoId) return;
     const supabase = createClient();
@@ -928,476 +898,6 @@ export function PacienteDetailClient({
       toast.success('Pagamento excluído.');
     }
     setPagDeleteSaving(false);
-  };
-
-  // R-30 Parte 4 — sentinela de arcada/quadrante equivalente à âncora do evento, só pra
-  // reusar ARCH_LABELS/denteLabel (AncoraClinica não guarda o número sentinela, guarda
-  // nivel+arcada+quadrante separados — a codificação por sentinela é exclusiva de
-  // fichas.dentes_afetados). null quando a âncora é por dente/face.
-  const sentinelDaAncora = (ev: EventoOdontogramaParaOrc): number | null => {
-    if (ev.nivel === 'boca') return ARCH_COMPLETA;
-    if (ev.nivel === 'arcada') {
-      if (ev.arcada === 'superior') return ARCH_SUPERIOR;
-      if (ev.arcada === 'inferior') return ARCH_INFERIOR;
-      return null;
-    }
-    if (ev.nivel === 'quadrante') {
-      switch (ev.quadrante) {
-        case 1: case 5: return QUAD_SUP_DIREITO;
-        case 2: case 6: return QUAD_SUP_ESQUERDO;
-        case 3: case 7: return QUAD_INF_ESQUERDO;
-        case 4: case 8: return QUAD_INF_DIREITO;
-        default: return null;
-      }
-    }
-    return null;
-  };
-
-  // Match no catálogo pelo RÓTULO CANÔNICO do tipo (TIPO_LABEL), nunca por texto livre —
-  // é o texto livre que fazia "Restauração - planejado (resina)" e "Restauração - planejado"
-  // virarem 2 itens de orçamento diferentes pro mesmo procedimento (a IA escreve diferente
-  // cada vez; o tipo do evento não muda).
-  const matchProcedimentoPorTipo = (tipo: EventoOdontogramaParaOrc['tipo']) => {
-    const rotulo = TIPO_LABEL[tipo].toLowerCase();
-    return procedimentosClinica.find(
-      (p) => p.nome.toLowerCase().includes(rotulo) || rotulo.includes(p.nome.toLowerCase()),
-    );
-  };
-
-  /**
-   * R-30 Parte 4 — FALLBACK de texto, e por que ele existe.
-   *
-   * A Parte 4 troca a fonte do orçamento de `dentes_observacoes` para
-   * `odontograma_eventos`. Medido em produção (30/07): das **87 fichas, 82 têm texto
-   * por dente (94%) e só 24 têm evento `indicado` (28%)**. Ler exclusivamente do evento
-   * tiraria o pré-preenchimento de **58 fichas** — trocaria "o orçamento gerou do
-   * procedimento errado" por "o orçamento não gerou nada", que é pior porque falha em
-   * silêncio, com o dentista na frente do paciente.
-   *
-   * Fonte única se faz por **precedência, não por exclusão**: o evento ganha quando
-   * existe, o texto entra **só** quando não há nenhum evento elegível. Nunca os dois
-   * somados — somar duplicaria o item nas fichas que têm as duas representações (que
-   * são justamente as que a Parte 3 passou a unir).
-   *
-   * Lógica idêntica à que está em produção hoje; não é código novo, é o caminho antigo
-   * preservado como rede.
-   */
-  const itensDoTexto = (ficha: FichaParaOrc): NovoOrcItem[] => {
-    const dentes = ficha.dentes_afetados ?? [];
-    const obs = ficha.dentes_observacoes ?? {};
-    if (dentes.length === 0) return [{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }];
-
-    // Mesmo texto em vários dentes → um item com quantidade N.
-    const procToTeeth = new Map<string, number[]>();
-    for (const tooth of dentes) {
-      const procs = (obs[String(tooth)] ?? '').split('\n').filter(Boolean);
-      for (const proc of procs) {
-        procToTeeth.set(proc, [...(procToTeeth.get(proc) ?? []), tooth]);
-      }
-    }
-
-    if (procToTeeth.size === 0) {
-      return dentes.map((t) => ({ procedimentoId: '', descricao: `Dente ${t}`, quantidade: 1, preco: '' }));
-    }
-
-    return Array.from(procToTeeth.entries()).map(([proc, teeth]) => {
-      const match = procedimentosClinica.find(
-        (p) =>
-          p.nome.toLowerCase().includes(proc.toLowerCase()) ||
-          proc.toLowerCase().includes(p.nome.toLowerCase()),
-      );
-      const descricao =
-        teeth.length > 1
-          ? `${match?.nome ?? proc} (D${teeth.join(', D')})`
-          : match?.nome ?? `D${teeth[0]} — ${proc}`;
-      return {
-        procedimentoId: match?.id ?? '',
-        descricao,
-        quantidade: teeth.length,
-        preco: match?.preco_padrao != null ? formatValorBR(match.preco_padrao) : '',
-      };
-    });
-  };
-
-  /**
-   * R-30 Parte 4 — orçamento novo lê de `odontograma_eventos`, não mais de
-   * `dentes_observacoes`. Corrige a "correção central" da spec: procedimento em nível
-   * boca/arcada/quadrante (profilaxia, raspagem, clareamento, flúor) nunca chegava ao
-   * orçamento, porque `derivarV2DosEventos` (grava o texto) pula evento sem `dente`.
-   *
-   * Só `status='indicado'` entra (realizado já foi feito — incluir seria cobrar retroativo
-   * sem intenção; decisão confirmada 30/07). Evento com `assinatura_id` nunca é sugerido —
-   * já está congelado num orçamento aceito.
-   *
-   * Agrupa por PROCEDIMENTO, não por texto — chave `(tipo, grupo_id ?? id)`. `grupo_id`
-   * junta ponte/multi-dente num item só (mesma semântica de `agrupar-registros.ts`); sem
-   * `grupo_id`, cada evento vira seu próprio item — mesmo tipo em dentes diferentes NÃO se
-   * consolida automaticamente, porque era exatamente o casamento por texto livre (não o
-   * agrupamento em si) que causava itens duplicados.
-   *
-   * R-53 — vira função PURA sobre uma lista de eventos (antes recebia a `ficha` inteira e
-   * lia `ficha.odontograma_eventos`). O miolo é idêntico; só a entrada muda, pra servir tanto
-   * 1 ficha (fallback) quanto o agregado de N fichas (`itensDoAgregado`, abaixo). Sem evento
-   * elegível, devolve `[]` — quem decide se cai no fallback de texto é o chamador (só faz
-   * sentido por-ficha, não em cima do agregado já filtrado pela query).
-   */
-  const eventosParaItens = (eventos: EventoOdontogramaParaOrc[]): NovoOrcItem[] => {
-    const elegiveis = eventos.filter((ev) => ev.status === 'indicado' && ev.assinatura_id == null);
-    if (elegiveis.length === 0) return [];
-
-    const grupos = new Map<string, EventoOdontogramaParaOrc[]>();
-    for (const ev of elegiveis) {
-      const chave = `${ev.tipo}|${ev.grupo_id ?? ev.id}`;
-      const arr = grupos.get(chave);
-      if (arr) arr.push(ev); else grupos.set(chave, [ev]);
-    }
-
-    return Array.from(grupos.values()).map((grupoEventos) => {
-      const primeiro = grupoEventos[0];
-      const match = matchProcedimentoPorTipo(primeiro.tipo);
-      const rotulo = TIPO_LABEL[primeiro.tipo];
-
-      const dentesDistintos = [
-        ...new Set(grupoEventos.map((ev) => ev.dente).filter((d): d is number => d != null)),
-      ];
-      const sentinel = sentinelDaAncora(primeiro);
-
-      // boca/arcada/quadrante: quantidade sempre 1 (é a correção central da Parte 4).
-      const quantidade = dentesDistintos.length > 0 ? dentesDistintos.length : 1;
-      const alcance =
-        sentinel != null
-          ? denteLabel(sentinel)
-          : dentesDistintos.length > 0
-            ? `D${dentesDistintos.join(', D')}`
-            : '';
-
-      return {
-        procedimentoId: match?.id ?? '',
-        descricao: alcance ? `${match?.nome ?? rotulo} — ${alcance}` : (match?.nome ?? rotulo),
-        quantidade,
-        preco: match?.preco_padrao != null ? formatValorBR(match.preco_padrao) : '',
-      };
-    });
-  };
-
-  // R-53 — wrapper de 1 ficha só: preserva o fallback de texto (itensDoTexto) que
-  // `eventosParaItens` (puro, sem `ficha`) não pode mais decidir sozinho. Único chamador
-  // hoje é o caminho por-ficha (fallback G4 e `selecionarFichaParaOrc`).
-  const fichaParaItens = (ficha: FichaParaOrc): NovoOrcItem[] => {
-    const itens = eventosParaItens(ficha.odontograma_eventos ?? []);
-    return itens.length > 0 ? itens : itensDoTexto(ficha);
-  };
-
-  // R-53 (§2.1, X1) — adapta o evento cru (encaminhado_para snake_case + embed do nome) pro
-  // shape que filtro-responsavel.ts espera (RegistroResponsavel.encaminhadoPara). Mesmo
-  // padrão de adaptação que FichasTab.tsx já usa pro EventoView dela.
-  const paraResponsavel = (ev: EventoOdontogramaParaOrc) => ({
-    encaminhadoPara: ev.encaminhado_para
-      ? { id: ev.encaminhado_para, nome: ev.encaminhado_dentista?.nome ?? 'Dentista' }
-      : null,
-  });
-
-  // R-53 — flatten de N fichas (o agregado) pro filtro de responsável + eventosParaItens.
-  // `filtro=null` (Todos) é o default: o dinheiro é da clínica, não do dentista (§2.1).
-  const itensDoAgregado = (fichas: FichaParaOrc[], filtro: FiltroResponsavel): NovoOrcItem[] => {
-    const itens = fichas.flatMap((f) => {
-      const eventosComResponsavel = (f.odontograma_eventos ?? []).map((ev) => ({ ...ev, ...paraResponsavel(ev) }));
-      const visiveis = eventosVisiveis(eventosComResponsavel, f.dentista_id, filtro, dentistaId);
-      return eventosParaItens(visiveis);
-    });
-    return itens.length > 0 ? itens : [{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }];
-  };
-
-  // R-53 — responsáveis distintos no agregado atual, pros chips do modal (§4.3). Vazio/1
-  // responsável → ChipsResponsavel não renderiza (mesma regra da ficha).
-  const responsaveisOrc = useMemo(
-    () => derivarResponsaveis(
-      fichasParaOrc.map((f) => ({
-        autorId: f.dentista_id,
-        autorNome: f.dentista?.nome ?? 'Equipe',
-        eventos: (f.odontograma_eventos ?? []).map(paraResponsavel),
-      })),
-    ),
-    [fichasParaOrc],
-  );
-
-  // R-53 — troca de chip: reprocessa o agregado já carregado (fichasParaOrc), nunca refaz a
-  // query. Display puro (I4) — nunca decide o que é gravado.
-  const handleFiltroResponsavelOrc = (v: FiltroResponsavel) => {
-    setFiltroResponsavelOrc(v);
-    setNovoOrcItens(itensDoAgregado(fichasParaOrc, v));
-  };
-
-  // R-30 Parte 4 — embute odontograma_eventos na mesma query (FK ficha_id, sem ambiguidade:
-  // é a única FK de odontograma_eventos pra fichas). Evita 2º round-trip pra gerar os itens.
-  // R-53 — dentista_id/dentista(nome) na ficha (FK única, fichas_dentista_id_fkey — conferido
-  // no banco) e encaminhado_para/encaminhado_dentista no evento (2 FKs de odontograma_eventos
-  // pra dentistas — família R-44, precisa do !fkey) entram pro X1 (filtro-responsavel.ts).
-  const CAMPOS_FICHA_ORC =
-    'id, created_at, data_atendimento, queixa_principal, dentes_afetados, dentes_observacoes, ' +
-    'dentista_id, dentista:dentistas(nome)';
-  const CAMPOS_EVENTO_ORC =
-    'id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, assinatura_id, ' +
-    'encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(nome)';
-  const SELECT_FICHA_PARA_ORC = `${CAMPOS_FICHA_ORC}, odontograma_eventos(${CAMPOS_EVENTO_ORC})`;
-  // R-53 (§3) — !inner: só fichas com ≥1 evento indicado/não-assinado voltam, e o embed já
-  // vem filtrado pra esses eventos. Sem `.limit()` (medido: no máx. 6 fichas/paciente).
-  const SELECT_FICHA_PARA_ORC_AGREGADO = `${CAMPOS_FICHA_ORC}, odontograma_eventos!inner(${CAMPOS_EVENTO_ORC})`;
-
-  // R-53 — busca única do agregado (todos os indicados abertos do paciente), reusada pelos
-  // 2 pontos de entrada (botão geral e "gerar orçamento" de dentro de uma ficha — §2 decisão
-  // 1: convergem pro mesmo caminho). `[]` = paciente sem nenhum indicado aberto → cada
-  // chamador decide seu próprio fallback (G4).
-  const carregarFichasAgregado = async (): Promise<FichaParaOrc[]> => {
-    const supabase = createClient();
-    const { data } = await supabase
-      .from('fichas')
-      .select(SELECT_FICHA_PARA_ORC_AGREGADO)
-      .eq('paciente_id', paciente.id)
-      .eq('clinica_id', clinicaId)
-      .eq('odontograma_eventos.status', 'indicado')
-      .is('odontograma_eventos.assinatura_id', null)
-      .order('data_atendimento', { ascending: false });
-    return (data as unknown as FichaParaOrc[]) ?? [];
-  };
-
-  const abrirNovoOrcamento = async () => {
-    setOrcError(null);
-    setIsLoadingFichaParaOrc(true);
-    try {
-      const agregado = await carregarFichasAgregado();
-
-      if (agregado.length > 0) {
-        // R-53 — caminho novo: todos os indicados abertos do paciente, de qualquer ficha.
-        // fichaOrcId fica null — o orçamento não pertence mais a 1 ficha só (I6).
-        // 07/08 — default virou "Meus" (revoga §2.1 do R-53, "dinheiro é da clínica"): cada
-        // dentista responde pelo próprio orçamento, procedimento de colega não pode entrar
-        // sem ação explícita. Chip "Todos" continua disponível pra quem precisar ver junto.
-        setFichasParaOrc(agregado);
-        setFichaOrcId(null);
-        setFiltroResponsavelOrc(FILTRO_MEUS);
-        setNovoOrcItens(itensDoAgregado(agregado, FILTRO_MEUS));
-        setEtapaNovoOrc('itens');
-      } else {
-        // G4 — fallback INTACTO: nenhum indicado aberto em ficha nenhuma. Mesmo comportamento
-        // de antes do R-53 (10 fichas recentes, decide selecionar vs. texto).
-        const supabase = createClient();
-        const { data } = await supabase
-          .from('fichas')
-          .select(SELECT_FICHA_PARA_ORC)
-          .eq('paciente_id', paciente.id)
-          .eq('clinica_id', clinicaId)
-          .order('data_atendimento', { ascending: false })
-          .limit(10);
-
-        const fichas = (data as unknown as FichaParaOrc[]) ?? [];
-        setFichasParaOrc(fichas);
-
-        if (fichas.length > 1) {
-          setFichaOrcId(null);
-          setEtapaNovoOrc('selecionar');
-          setNovoOrcItens([{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
-        } else {
-          setFichaOrcId(fichas.length === 1 ? fichas[0].id : null);
-          setNovoOrcItens(fichas.length === 1 ? fichaParaItens(fichas[0]) : [{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
-          setEtapaNovoOrc('itens');
-        }
-      }
-    } catch {
-      setFichasParaOrc([]);
-      setFichaOrcId(null);
-      setNovoOrcItens([{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
-      setEtapaNovoOrc('itens');
-    } finally {
-      setIsLoadingFichaParaOrc(false);
-    }
-    setIsNovoOrcOpen(true);
-  };
-
-  const selecionarFichaParaOrc = (fichaId: string | null) => {
-    setFichaOrcId(fichaId);
-    if (!fichaId) {
-      setNovoOrcItens([{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
-    } else {
-      const ficha = fichasParaOrc.find((f) => f.id === fichaId);
-      setNovoOrcItens(ficha ? fichaParaItens(ficha) : [{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
-    }
-    setEtapaNovoOrc('itens');
-  };
-
-  // #6 — gerar orçamento a partir de uma ficha é SÓ dela (decisão dele 07/08, revoga o
-  // agregado por-ficha do R-53/R-59 Parte 1): "eu só quero o orçamento daqui, da ficha".
-  // Nunca puxa outra ficha nem outro dentista, aberta ou concluída não importa —
-  // `fichaParaItens` já cobre os dois (eventos 'indicado' elegíveis + fallback de texto do
-  // R-30 Parte 4 se a ficha não tiver evento nenhum). Quem quer ver várias fichas juntas usa
-  // o botão geral "Novo orçamento" (`abrirNovoOrcamento`, que segue agregando — filtrado por
-  // responsável agora, ver ali).
-  const abrirOrcamentoParaFicha = async (fichaId: string) => {
-    setOrcError(null);
-    setIsLoadingFichaParaOrc(true);
-    try {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from('fichas')
-        .select(SELECT_FICHA_PARA_ORC)
-        .eq('id', fichaId)
-        .eq('clinica_id', clinicaId)
-        .single();
-      const ficha = data as unknown as FichaParaOrc | null;
-      setFichaOrcId(fichaId);
-      setFichasParaOrc(ficha ? [ficha] : []);
-      setNovoOrcItens(ficha ? fichaParaItens(ficha) : [{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
-    } catch {
-      setFichaOrcId(fichaId);
-      setFichasParaOrc([]);
-      setNovoOrcItens([{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
-    } finally {
-      setEtapaNovoOrc('itens');
-      setIsLoadingFichaParaOrc(false);
-    }
-    setIsNovoOrcOpen(true);
-  };
-
-  // Cadastra no catálogo um procedimento digitado que não bateu com nenhum item existente —
-  // usa o nome (sem a referência de dente) e o valor já preenchidos no item, e vincula o item
-  // ao procedimento recém-criado.
-  const handleCadastrarProcedimento = async (idx: number) => {
-    const item = novoOrcItens[idx];
-    const nome = stripDenteDoNome(item.descricao);
-    if (!nome) return;
-    setRegisteringProcIdx(idx);
-    const precoNum = parseValorBR(item.preco);
-    const result = await criarProcedimentoRapido({
-      nome,
-      precoPadrao: precoNum > 0 ? precoNum : null,
-      dentistaId: role === 'secretaria' ? novoOrcDentistaAlvoId : undefined,
-    });
-    if (result.error || !result.id) {
-      toast.error(result.error ?? 'Não foi possível cadastrar o procedimento.');
-    } else {
-      const novoId = result.id;
-      setProcedimentosClinica((prev) =>
-        [...prev, { id: novoId, nome, preco_padrao: precoNum > 0 ? precoNum : null }]
-          .sort((a, b) => a.nome.localeCompare(b.nome))
-      );
-      setNovoOrcItens((prev) => prev.map((it, i) => (i === idx ? { ...it, procedimentoId: novoId } : it)));
-      toast.success('Procedimento cadastrado no catálogo.');
-    }
-    setRegisteringProcIdx(null);
-  };
-
-  const handleCriarOrcamento = async () => {
-    // Exige ao menos descrição — preço pode ser 0 (dentista define depois)
-    const itensValidos = novoOrcItens.filter((i) => i.descricao.trim());
-    if (itensValidos.length === 0) {
-      setOrcError('Adicione ao menos um procedimento com descrição.');
-      return;
-    }
-    const temSemPreco = itensValidos.some((i) => parseValorBR(i.preco) === 0);
-    if (temSemPreco) {
-      setOrcError('Atenção: alguns procedimentos estão sem valor. Defina o preço antes de continuar.');
-      return;
-    }
-    if (role === 'secretaria' && !novoOrcDentistaAlvoId) {
-      setOrcError('Selecione o dentista responsável.');
-      return;
-    }
-    const numeroParcelas = parseInt(novoOrcNumParcelas, 10);
-    if (novoOrcPlanoForma === 'parcelado' && (!numeroParcelas || numeroParcelas < 2 || numeroParcelas > 24)) {
-      setOrcError('Informe entre 2 e 24 parcelas.');
-      return;
-    }
-    if (novoOrcPlanoForma === 'parcelado' && !novoOrcPrimeiroVencimento) {
-      setOrcError('Informe o primeiro vencimento das parcelas.');
-      return;
-    }
-    setOrcError(null);
-    setOrcSaving(true);
-
-    const subtotalValido = itensValidos.reduce((s, i) => s + i.quantidade * parseValorBR(i.preco), 0);
-    const finalValido    = novoOrcValorFinal !== null ? Math.max(0, novoOrcValorFinal) : subtotalValido;
-    const descontoValor  = Math.max(0, Math.round((subtotalValido - finalValido) * 100) / 100);
-
-    const result = await criarOrcamento({
-      pacienteId: paciente.id,
-      desconto:   descontoValor,
-      fichaId:    fichaOrcId,
-      dentistaId: role === 'secretaria' ? novoOrcDentistaAlvoId : undefined,
-      itens: itensValidos.map((i) => ({
-        procedimentoId: i.procedimentoId || null,
-        descricao: i.descricao,
-        quantidade: i.quantidade,
-        precoUnitario: parseValorBR(i.preco),
-      })),
-    });
-
-    if (result.error) {
-      setOrcError(result.error);
-    } else {
-      const novoTotal = Math.max(0, subtotalValido - descontoValor);
-      const novoOrc: OrcamentoComItens = {
-        id: result.id ?? crypto.randomUUID(),
-        status: 'rascunho',
-        total: novoTotal,
-        desconto: descontoValor,
-        created_at: new Date().toISOString(),
-        validade_dias: 30,
-        condicoes_pagamento: null,
-        // Espelha o default novo do criarOrcamento (actions.ts) — orçamento nasce
-        // sem valor por item, só o total.
-        mostrar_valor_por_item: false,
-        dentista_id: role === 'secretaria' ? novoOrcDentistaAlvoId : dentistaId,
-        itens: itensValidos.map((i, idx) => ({
-          id: `temp-${idx}`,
-          descricao: i.descricao,
-          quantidade: i.quantidade,
-          preco_total: i.quantidade * parseValorBR(i.preco),
-        })),
-        pagamentos: [],
-        aprovado_por: null,
-        aprovado_em: null,
-        aceite: null,
-      };
-      setOrcamentosState((prev) => [novoOrc, ...prev]);
-      setIsNovoOrcOpen(false);
-      setNovoOrcItens([{ procedimentoId: '', descricao: '', quantidade: 1, preco: '' }]);
-
-      // R-34 — plano de pagamento definido junto da criação (opcional). Roda depois do
-      // orçamento existir de verdade (precisa do id real, não do temp/otimista acima).
-      let precisaAtualizar = false;
-      if (result.id && novoOrcPlanoForma === 'parcelado') {
-        const planoResult = await gerarParcelas({
-          orcamentoId: result.id,
-          numeroParcelas,
-          primeiroVencimento: novoOrcPrimeiroVencimento,
-          valorAcordado: novoTotal,
-          parcelasForma: novoOrcParcelasForma || undefined,
-        });
-        if (planoResult.error) {
-          toast.error(`Orçamento criado, mas o parcelamento falhou: ${planoResult.error}`);
-        } else {
-          precisaAtualizar = true;
-        }
-      } else if (result.id && novoOrcPlanoForma === 'avista') {
-        const planoResult = await definirPlanoAvista({ orcamentoId: result.id, valorAcordado: novoTotal });
-        if (planoResult.error) {
-          toast.error(`Orçamento criado, mas a forma de pagamento falhou: ${planoResult.error}`);
-        } else {
-          precisaAtualizar = true;
-        }
-      }
-      setNovoOrcPlanoForma(null);
-      setNovoOrcNumParcelas('3');
-      setNovoOrcPrimeiroVencimento('');
-      setNovoOrcParcelasForma('');
-      if (precisaAtualizar) router.refresh(); // pega condicoes_pagamento/parcelas reais do server
-
-      toast.success('Orçamento criado como rascunho', {
-        description: 'Revise os itens e envie para o paciente quando estiver pronto.',
-        duration: 4000,
-      });
-    }
-    setOrcSaving(false);
   };
 
   const handleOpenEditOrc = () => {
@@ -1854,7 +1354,7 @@ export function PacienteDetailClient({
                         plano={plano}
                         patientName={displayNome}
                         canWrite={canWriteClinical}
-                        onGerarOrcamento={role !== 'secretaria' ? (fichaId) => void abrirOrcamentoParaFicha(fichaId) : undefined}
+                        onGerarOrcamento={role !== 'secretaria' ? (fichaId) => void orcamentoModal.abrirOrcamentoParaFicha(fichaId) : undefined}
                       />
                     )}
                   </TabsContent>
@@ -1867,11 +1367,11 @@ export function PacienteDetailClient({
                       {orcamentosState.length} orçamento{orcamentosState.length !== 1 ? 's' : ''}
                     </span>
                     <button
-                      onClick={() => void abrirNovoOrcamento()}
-                      disabled={isLoadingFichaParaOrc}
+                      onClick={() => void orcamentoModal.abrirNovoOrcamento()}
+                      disabled={orcamentoModal.isLoadingFichaParaOrc}
                       className="bg-teal text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-teal-lt transition-all shadow-md disabled:opacity-60"
                     >
-                      {isLoadingFichaParaOrc ? (
+                      {orcamentoModal.isLoadingFichaParaOrc ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       ) : (
                         <Plus className="w-3.5 h-3.5" />
@@ -2253,49 +1753,7 @@ export function PacienteDetailClient({
         patientName={displayNome}
       />
 
-      <NovoOrcamentoModal
-        open={isNovoOrcOpen}
-        onOpenChange={(open) => {
-          setIsNovoOrcOpen(open);
-          if (!open) {
-            setEtapaNovoOrc('itens'); setFichasParaOrc([]); setOrcError(null); setNovoOrcValorFinal(null);
-            setNovoOrcPlanoForma(null); setNovoOrcNumParcelas('3'); setNovoOrcPrimeiroVencimento(''); setNovoOrcParcelasForma('');
-            setFiltroResponsavelOrc(null);
-          }
-        }}
-        etapaNovoOrc={etapaNovoOrc}
-        setEtapaNovoOrc={setEtapaNovoOrc}
-        fichasParaOrc={fichasParaOrc}
-        responsaveisOrc={responsaveisOrc}
-        meuDentistaId={dentistaId}
-        filtroResponsavelOrc={filtroResponsavelOrc}
-        onFiltroResponsavelOrcChange={handleFiltroResponsavelOrc}
-        orcError={orcError}
-        novoOrcItens={novoOrcItens}
-        setNovoOrcItens={setNovoOrcItens}
-        procedimentosClinica={procedimentosClinica}
-        novoOrcSubtotal={novoOrcSubtotal}
-        novoOrcTotal={novoOrcTotal}
-        novoOrcValorFinal={novoOrcValorFinal}
-        setNovoOrcValorFinal={setNovoOrcValorFinal}
-        orcSaving={orcSaving}
-        onCriarOrcamento={handleCriarOrcamento}
-        onSelecionarFicha={selecionarFichaParaOrc}
-        onCadastrarProcedimento={(idx) => void handleCadastrarProcedimento(idx)}
-        registeringProcIdx={registeringProcIdx}
-        isSecretaria={role === 'secretaria'}
-        dentistasClinica={dentistasClinica}
-        dentistaAlvoId={novoOrcDentistaAlvoId}
-        onDentistaAlvoChange={setNovoOrcDentistaAlvoId}
-        planoForma={novoOrcPlanoForma}
-        setPlanoForma={setNovoOrcPlanoForma}
-        planoNumParcelas={novoOrcNumParcelas}
-        setPlanoNumParcelas={setNovoOrcNumParcelas}
-        planoPrimeiroVencimento={novoOrcPrimeiroVencimento}
-        setPlanoPrimeiroVencimento={setNovoOrcPrimeiroVencimento}
-        planoParcelasForma={novoOrcParcelasForma}
-        setPlanoParcelasForma={setNovoOrcParcelasForma}
-      />
+      <NovoOrcamentoModal {...orcamentoModal.modalProps} />
     </PageContainer>
   );
 }
