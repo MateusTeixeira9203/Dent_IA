@@ -119,6 +119,9 @@ export interface MeuDiaVisita {
   fichaId: string;
   data: string;
   dentistaNome: string;
+  /** R-46h — autor real da ficha (histórico é compartilhado da clínica, pode ser de outro
+   *  dentista). Usado pra esconder "Gerar orçamento" fora das fichas do dentista logado. */
+  dentistaId: string;
   /** R-46a (ajuste 31/07) — frase única, geralmente "Evolução" quando `queixa_principal`/
    *  `procedimentos` estão vazios. Fallback pra visitas sem `texto` nem evento (G9). */
   resumo: string;
@@ -264,6 +267,7 @@ type FichaRow = {
   procedimentos: string[] | null;
   anotacoes: string | null;
   orto_manutencao: OrtoManutencaoInfo | null;
+  dentista_id: string;
   dentista: { nome: string } | null;
   /** R-46c — dispara o rótulo "histórico importado" e o resumo por trecho colado. */
   origem: 'modo_consulta' | 'manual' | 'importado';
@@ -376,7 +380,7 @@ export async function getMeuDiaData({
     // por paciente, que o Postgrest não faz nativamente.
     supabase
       .from('fichas')
-      .select('id, paciente_id, data_atendimento, queixa_principal, procedimentos, anotacoes, orto_manutencao, origem, dentista:dentistas(nome)')
+      .select('id, paciente_id, data_atendimento, queixa_principal, procedimentos, anotacoes, orto_manutencao, origem, dentista_id, dentista:dentistas(nome)')
       .eq('clinica_id', clinicId)
       .in('paciente_id', pacienteIds)
       .order('data_atendimento', { ascending: false })
@@ -603,6 +607,7 @@ export async function getMeuDiaData({
       fichaId: f.id,
       data: f.data_atendimento,
       dentistaNome: f.dentista?.nome ?? 'Equipe',
+      dentistaId: f.dentista_id,
       resumo: importado
         ? (notaDaFicha(f.anotacoes) ?? 'Histórico importado')
         : (f.queixa_principal || (f.procedimentos ?? []).slice(0, 2).join(', ') || 'Evolução'),
