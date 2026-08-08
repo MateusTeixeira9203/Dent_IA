@@ -19,12 +19,18 @@ export interface TextoExpansivelProps {
   clampLines?: number;
   /** Tipografia do <p> — cada chamador mantém a própria (a casa não impõe 1 estilo aqui). */
   className?: string;
+  /**
+   * R-78 F4 (§1.4/G4b) — quando presente, o "ver mais" não expande inline: delega pro
+   * chamador (mesmo padrão do `onAbrirGrande` do RegistroCard). Pro texto de evolução
+   * longo, que só cresce mais na coluna estreita — o gesto certo é ler no espaço grande.
+   */
+  onAbrirGrande?: () => void;
 }
 
 /** G7 — corta em `clampLines` linhas com "ver mais", só quando o texto REALMENTE transborda
  *  (mede scrollHeight vs clientHeight do próprio parágrafo clampado, não um chute por tamanho
  *  de string). */
-export function TextoExpansivel({ texto, clampLines = 4, className = '' }: TextoExpansivelProps) {
+export function TextoExpansivel({ texto, clampLines = 4, className = '', onAbrirGrande }: TextoExpansivelProps) {
   const ref = useRef<HTMLParagraphElement>(null);
   const [transbordou, setTransbordou] = useState(false);
   const [expandido, setExpandido] = useState(false);
@@ -47,11 +53,12 @@ export function TextoExpansivel({ texto, clampLines = 4, className = '' }: Texto
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            setExpandido((v) => !v);
+            if (onAbrirGrande) onAbrirGrande();
+            else setExpandido((v) => !v);
           }}
           className="w-fit text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
         >
-          {expandido ? 'mostrar menos ↑' : 'ver mais ↓'}
+          {onAbrirGrande ? 'ler tudo ⤢' : expandido ? 'mostrar menos ↑' : 'ver mais ↓'}
         </button>
       )}
     </div>

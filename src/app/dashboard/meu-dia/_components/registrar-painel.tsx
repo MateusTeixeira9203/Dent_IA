@@ -1,8 +1,9 @@
 'use client';
 
-// R-46b — "Registrar": odontograma + salvar. Estado local remonta do zero a cada paciente
-// porque o pai passa `key={agendamentoId}` (nenhum useEffect de reset aqui — é o padrão mais
-// simples que já resolve).
+// R-46b — "Registrar": odontograma + salvar. Estado local reseta a cada paciente por
+// comparação de `agendamentoId` durante o render (bloco `agendamentoIdAoResetar`) — até
+// R-78 F0 isso vinha de graça via `key={agendamentoId}` no pai, que remontava tudo; virando
+// hook (F0) não há mais remount, então o reset precisou virar explícito.
 //
 // R-46d D1.1/D1.2 (04/08) — o campo mágico (`CampoMagicoMeuDia`) é a entrada principal.
 //
@@ -35,8 +36,17 @@
 // tabela de especialidade abre, full-width, abaixo do odontograma) continua dono/renderizado
 // AQUI — só a referência sobe pra `meu-dia-client.tsx` via `onTabelaContainerRef`, porque quem
 // agora monta o `ToothDetailPanel` que precisa dela é lá.
+//
+// R-78 F0 (08/08) — vira HOOK (`useRegistrarPainel`, não mais componente): o casco de 3
+// colunas fixas (`CockpitGrid`) morreu, e campo mágico / mapa-espelho / rodapé agora vivem em
+// 3 posições DIFERENTES do novo fluxo vertical (`meu-dia-client.tsx`), não mais um card só.
+// Mesma lógica/estado de sempre — só o retorno muda, de uma `<div>` pra
+// `{campoMagico, slotCentral, rodape}`, que o pai posiciona. `onTabelaContainerRef` SAIU
+// de vez (não só subiu): o portal inteiro morreu (achado dele 08/08 — full-width abaixo da
+// linha ficava sem fundo, "flutuando"). `ToothDetailPanel` sem esse prop já renderiza a
+// tabela de especialidade inline, dentro do próprio card do perfil (555px).
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { Check, AlertTriangle, Loader2, X } from 'lucide-react';
@@ -92,10 +102,6 @@ interface RegistrarPainelProps {
    *  tabela de especialidade (`onTabelaContainerRef` abaixo) e pra `onToothToggle` escrever. */
   denteAberto: number | null;
   onDenteAbertoChange: (dente: number | null) => void;
-  /** C7 (04/08) — o `<div>` que recebe a tabela de especialidade (endo/implante) continua
-   *  renderizando AQUI (abaixo do odontograma, full-width, dentro do card "Registrar") — só a
-   *  referência dele sobe, porque quem monta o `ToothDetailPanel` que a usa é `meu-dia-client`. */
-  onTabelaContainerRef: (el: HTMLDivElement | null) => void;
   textoVisita: string;
   onTextoVisitaChange: (texto: string) => void;
   /** C2 (§5.6, trava 2) — slot já tem ficha hoje: CTA nasce desabilitado com
@@ -106,7 +112,7 @@ interface RegistrarPainelProps {
   onSalvo: () => void;
   /** R-46d D8 — "usar este documento de base" (anexar-documentos-bloco.tsx), repassado pro
    *  campo mágico. */
-  anexarTexto?: { texto: string; nonce: number };
+  anexarTexto?: { texto: string; nonce: number; origem: 'audio' | 'documento' };
   /** 04/08 — última manutenção ortodôntica do paciente (mesmo dado que MAPA §2.2 já calcula
    *  no servidor). Pré-preenche o chip de orto (mesmo padrão de herança do R-05b) em vez de
    *  nascer vazio toda visita — é o que torna o chip rápido de usar, não só possível de usar. */
@@ -152,11 +158,23 @@ function ancorasDoOnde(v: OndeValor): AncoraClinica[] {
   return v.dentes.map((dente): AncoraClinica => ({ nivel: 'dente', dente }));
 }
 
-export function RegistrarPainel({
+export interface RegistrarPainelSlots {
+  /** Card full-width, topo do fluxo: campo mágico + chips (status/orto) + observação. */
+  campoMagico: ReactNode;
+  /** Ocupante default da coluna direita (~555px): mapa espelho ou OrtoForm — nunca os
+   *  dois. Quando `denteAberto` está setado, o pai (`meu-dia-client`) mostra o
+   *  `ToothDetailPanel` no lugar deste slot inteiro (mesma prioridade de sempre: orto
+   *  vence — ver `slot` abaixo). */
+  slotCentral: ReactNode;
+  /** Linha de rodapé (Marcar retorno / Gerar orçamento / Salvar) + aviso de eventos
+   *  pendentes de regravar + o modal de Marcar retorno (portal, posição irrelevante). */
+  rodape: ReactNode;
+}
+
+export function useRegistrarPainel({
   pacienteId, agendamentoId, pacienteNome, dentistaId, catalogoProcedimentos,
   eventosDraft, onEventosDraftChange: setEventosDraft,
   denteAberto, onDenteAbertoChange: setDenteAberto,
-  onTabelaContainerRef,
   textoVisita, onTextoVisitaChange: setTextoVisita,
   temFichaHoje,
   onSalvo,
@@ -165,7 +183,7 @@ export function RegistrarPainel({
   boca,
   detalheEspecialidadeAberto,
   onAbrirPickerOrcamento,
-}: RegistrarPainelProps) {
+}: RegistrarPainelProps): RegistrarPainelSlots {
   const [textoAberto, setTextoAberto] = useState(false);
   /** D1 — só escrita pro campo mágico; quem lê é `handleSalvar` abaixo (I3). */
   const [alertaNovo, setAlertaNovo] = useState<string | null>(null);
@@ -174,7 +192,7 @@ export function RegistrarPainel({
   const [status, setStatus] = useState<StatusRegistro>('realizado');
   /** R-57 F2 — observação livre do dentista, acompanha o PRÓXIMO procedimento registrado.
    *  Convive com o nome do catálogo (`criarEventos` compõe as duas, nome primeiro) — nunca
-   *  sobrescreve. Reset entre pacientes é de graça (key={agendamentoId} no pai remonta tudo). */
+   *  sobrescreve. Reset entre pacientes: ver bloco `agendamentoIdAoResetar` abaixo. */
   const [observacao, setObservacao] = useState('');
   // R-62 — carrega `dentes` junto (não só o item): quando a sugestão veio do texto do campo
   // mágico com número ("resina Z350 no 24"), o dente tem que sobreviver até o clique em
@@ -213,6 +231,35 @@ export function RegistrarPainel({
   });
   const [retornoSaving, setRetornoSaving] = useState(false);
   const [retornoError, setRetornoError] = useState<string | null>(null);
+
+  // R-78 F0 — reset explícito ao trocar de paciente. Antes disto era de graça: o pai
+  // desmontava/remontava o componente inteiro via `key={agendamentoId}` (comentário acima,
+  // em `observacao`, ainda descrevia esse mecanismo). Virando HOOK, não existe mais key que
+  // force remount — sem este bloco, orto/observação/catálogo pendente etc. de um paciente
+  // vazariam pro próximo. Mesmo padrão de "comparar id durante o render" que
+  // `meu-dia-client.tsx` (`idAoResetar`) já usa, pelo mesmo motivo (o lint do projeto,
+  // `react-hooks/set-state-in-effect`, bloqueia a versão com `useEffect`).
+  const [agendamentoIdAoResetar, setAgendamentoIdAoResetar] = useState(agendamentoId);
+  if (agendamentoId !== agendamentoIdAoResetar) {
+    setAgendamentoIdAoResetar(agendamentoId);
+    setTextoAberto(false);
+    setAlertaNovo(null);
+    setOnde(null);
+    setStatus('realizado');
+    setObservacao('');
+    setCatalogoPendente(null);
+    setTipoPendente(null);
+    setOrtoChipAberto(false);
+    setOrtoValor(orto?.valor ?? null);
+    setIsSaving(false);
+    setSavedFichaId(null);
+    setEventosPendentes(null);
+    setIsRegravando(false);
+    setRetornoModalAberto(false);
+    setRetornoForm({ data: null, minutoDoDia: null, duracao: '30', observacoes: '' });
+    setRetornoSaving(false);
+    setRetornoError(null);
+  }
 
   async function handleMarcarRetorno() {
     if (!retornoForm.data || retornoForm.minutoDoDia == null) {
@@ -422,10 +469,11 @@ export function RegistrarPainel({
     }
   }
 
-  return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-text-secondary">Registrar</p>
-
+  // R-78 F0 — campo mágico + faixa de chips/observação, card full-width no topo do novo
+  // fluxo (era o topo do card "Registrar"; o card em si é responsabilidade de quem chama,
+  // ver `campoMagico` abaixo).
+  const campoMagico = (
+    <>
       {/* D1 — campo mágico: entrada única. R-62: os chips locais (zero IA) vivem dentro
           dele agora — é o que mata a disclosure "Registrar sem IA" que existia aqui. */}
       <CampoMagicoMeuDia
@@ -551,56 +599,54 @@ export function RegistrarPainel({
           </button>
         )}
       </div>
+    </>
+  );
 
-      {/* R-63 §4.1 — slot central: 1 ocupante por vez (mapa · tabela de especialidade ·
-          orto), troca CONDICIONAL — só endo/implante e orto tomam o lugar do mapa; os
-          outros 15 de 17 tipos abrem o perfil na direita e o mapa fica (não entra aqui).
-          O container do portal (abaixo) fica SEMPRE montado quando há dente aberto,
-          independente do slot — é o que evita a corrida de ref com o ToothDetailPanel
-          (a troca decide só o que aparece ACIMA dele, nunca desmonta o alvo do portal). */}
-      <AnimatePresence mode="wait" initial={false}>
-        {slot.tipo !== 'detalhe' && (
-          <motion.div
-            key={slot.tipo}
-            initial={reduceMotion ? false : { opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={reduceMotion ? undefined : { opacity: 0, y: -6 }}
-            transition={{ duration: reduceMotion ? 0 : 0.18, ease: 'easeOut' }}
-            className="mt-4"
-          >
-            {slot.tipo === 'orto' ? (
-              // bg-surface (não -alt): o OrtoForm já usa bg-surface-alt nos próprios
-              // inputs (orto-form.tsx). Empilhar -alt aqui em cima de -alt zerava o
-              // contraste do input contra o wrapper em light mode — as duas eram
-              // literalmente a mesma cor (confirmado: rgb(218,218,222) nos dois, medido ao
-              // vivo). FichasTab.tsx, o outro lugar que monta o OrtoForm, nunca teve esse
-              // wrapper — por isso só aparecia aqui.
-              <div className="rounded-lg border border-border bg-surface px-3 py-3">
-                <OrtoForm valor={ortoValor} onChange={setOrtoValor} />
-              </div>
-            ) : (
-              <Odontograma
-                eventos={eventosDraft}
-                eventosPersistidos={boca}
-                selectedTeeth={onde?.dentes ?? []}
-                onToothToggle={onToothToggle}
-                compact
-                hideFilters
-              />
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-      {/* Tabela de especialidade (endo/implante) — portal do ToothDetailPanel, que
-          renderiza em meu-dia-client.tsx (C7). Slot 'detalhe': é a ÚNICA coisa visível
-          aqui (o mapa acima nem monta). Nos outros casos empilha embaixo do mapa, como
-          sempre. */}
-      {denteAberto != null && (
-        <div ref={onTabelaContainerRef} className={slot.tipo === 'detalhe' ? 'mt-4' : 'mt-3'} />
+  // R-63 §4.1 — 1 ocupante por vez: mapa OU orto (troca CONDICIONAL, orto vence — mesma
+  // prioridade de sempre). Endo/implante ('detalhe') NÃO entra mais aqui (R-78 F0): quando
+  // há dente aberto, `meu-dia-client` mostra o `ToothDetailPanel` no lugar deste slot
+  // inteiro, então `slot.tipo` só chega 'detalhe' quando este trecho nem está montado —
+  // guarda mantida por clareza, não por necessidade.
+  const slotCentral = (
+    <AnimatePresence mode="wait" initial={false}>
+      {slot.tipo !== 'detalhe' && (
+        <motion.div
+          key={slot.tipo}
+          initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={reduceMotion ? undefined : { opacity: 0, y: -6 }}
+          transition={{ duration: reduceMotion ? 0 : 0.18, ease: 'easeOut' }}
+        >
+          {slot.tipo === 'orto' ? (
+            // bg-surface (não -alt): o OrtoForm já usa bg-surface-alt nos próprios
+            // inputs (orto-form.tsx). Empilhar -alt aqui em cima de -alt zerava o
+            // contraste do input contra o wrapper em light mode — as duas eram
+            // literalmente a mesma cor (confirmado: rgb(218,218,222) nos dois, medido ao
+            // vivo). FichasTab.tsx, o outro lugar que monta o OrtoForm, nunca teve esse
+            // wrapper — por isso só aparecia aqui.
+            <div className="rounded-lg border border-border bg-surface px-3 py-3">
+              <OrtoForm valor={ortoValor} onChange={setOrtoValor} />
+            </div>
+          ) : (
+            <Odontograma
+              eventos={eventosDraft}
+              eventosPersistidos={boca}
+              selectedTeeth={onde?.dentes ?? []}
+              onToothToggle={onToothToggle}
+              compact
+              zoom={0.68}
+              hideFilters
+            />
+          )}
+        </motion.div>
       )}
+    </AnimatePresence>
+  );
 
+  const rodape = (
+    <>
       {eventosPendentes && (
-        <div role="status" className="mt-4 flex items-start gap-3 rounded-xl border border-warning/40 bg-warning-pale px-4 py-3">
+        <div role="status" className="mb-4 flex items-start gap-3 rounded-xl border border-warning/40 bg-warning-pale px-4 py-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-ink" aria-hidden />
           <div>
             <p className="text-sm text-text-primary">A visita foi salva, mas o desenho do odontograma não gravou.</p>
@@ -616,7 +662,15 @@ export function RegistrarPainel({
         </div>
       )}
 
-      <div className="mt-4 flex items-center gap-2 border-t border-border pt-4">
+      {/* R-78 F5 (§1.3/§3.2/G11) — o estado é informativo, nunca parece bloqueio: o
+          indicador some quando ele salva de novo (semRascunho volta a false), o botão
+          NUNCA vira texto estático ("Já registrado hoje") — sempre é uma ação disponível,
+          só o rótulo muda pra deixar claro que é uma 2ª ficha. Mecanismo intacto: sempre
+          create (§1.3), disabled continua o mesmo (nada pra salvar / salvando / pendência). */}
+      {temFichaHoje && semRascunho && (
+        <p className="mb-2 text-xs font-bold text-teal-ink">✓ 1 ficha hoje</p>
+      )}
+      <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={() => setRetornoModalAberto(true)}
@@ -639,9 +693,7 @@ export function RegistrarPainel({
         >
           {isSaving
             ? <><Loader2 className="h-4 w-4 animate-spin" /> Salvando…</>
-            : temFichaHoje && semRascunho
-              ? <>Já registrado hoje</>
-              : <><Check className="h-4 w-4" /> Salvar e passar</>
+            : <><Check className="h-4 w-4" /> {temFichaHoje ? 'Salvar 2ª ficha' : 'Salvar e passar'}</>
           }
         </button>
       </div>
@@ -660,6 +712,8 @@ export function RegistrarPainel({
         saving={retornoSaving}
         onMarcarRetorno={() => void handleMarcarRetorno()}
       />
-    </div>
+    </>
   );
+
+  return { campoMagico, slotCentral, rodape };
 }

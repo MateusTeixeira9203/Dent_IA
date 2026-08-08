@@ -46,13 +46,7 @@ import { OrtoCard } from '@/components/fichas/orto-card';
 import { OrtoForm, ORTO_VAZIO } from '@/components/fichas/orto-form';
 import { RegistroCard, type RegistroCardData } from '@/components/fichas/registro-card';
 import { DenteGrupoHeader } from '@/components/fichas/dente-grupo-header';
-import type { EndoDetalhe } from '@/lib/especialidades/endo';
-import { EndoForm } from '@/components/fichas/endo-form';
-import type { ImplanteDetalhe } from '@/lib/especialidades/implante';
-import { PSR_VAZIO, type PsrDetalhe } from '@/lib/especialidades/perio';
-import { PsrForm } from '@/components/fichas/psr-form';
-import { ImplanteForm } from '@/components/fichas/implante-form';
-import { corpoEspecialidade } from '@/components/fichas/corpo-especialidade';
+import { corpoEspecialidade, corpoEspecialidadeEditavel } from '@/components/fichas/corpo-especialidade';
 import { eventosParaCards } from '@/lib/odontograma/eventos-para-cards';
 import { TIPO_LABEL, corDoRegistro } from '@/types/odontograma';
 import type {
@@ -311,30 +305,6 @@ function draftsParaCards(
       },
     };
   });
-}
-
-/**
- * Corpo de especialidade EDITÁVEL (rascunho) — espelha corpoEspecialidade (leitura), mas
- * com EndoForm/ImplanteForm em vez de EndoCard/ImplanteCard. Mesmo cast direto que
- * ToothDetailPanel já usa pra detalhe ainda-não-preenchido (`?? null`), não safeParse:
- * um form em branco é um estado válido de edição, diferente da leitura (I3 não se aplica
- * aqui — o card só aparece quando temDetalhe já é true no chamador).
- */
-function corpoEspecialidadeEditavel(
-  tipo: TipoRegistroOdontograma, detalhe: unknown, onChange: (v: unknown) => void,
-): React.ReactNode {
-  if (tipo === 'endodontia') {
-    return <EndoForm valor={(detalhe ?? null) as EndoDetalhe | null} onChange={onChange} />;
-  }
-  if (tipo === 'implante') {
-    return <ImplanteForm valor={(detalhe ?? null) as ImplanteDetalhe | null} onChange={onChange} />;
-  }
-  // R-08b — rastreio PSR. Único de nível 'boca' com detalhe: o form nasce em PSR_VAZIO
-  // (6 sextantes não avaliados), não em null, pra a grade já aparecer clicável.
-  if (tipo === 'exame_periodontal') {
-    return <PsrForm valor={(detalhe ?? PSR_VAZIO) as PsrDetalhe} onChange={onChange} />;
-  }
-  return null;
 }
 
 /**

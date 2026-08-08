@@ -746,6 +746,11 @@ export interface OdontogramaProps {
   showCheckbox?: boolean;
   className?: string;
   compact?: boolean;
+  /** R-78 F0 — sobrescreve o zoom implícito de `compact` (0.85). O espelho (~555px, achado
+   *  A1 da spec) precisa de 0.68: a arcada real (739px em largura de conteúdo) transborda o
+   *  card a 0.85 (628px) — 0.68 é conta, não escolha estética. Sem isto, `compact` sozinho
+   *  continua valendo 0.85 (piso de toque do R-63 F3/G17), comportamento intacto. */
+  zoom?: number;
   hideFilters?: boolean;
   /**
    * v3 — camada clínica: eventos de odontograma (propostos ou salvos). Quando presente,
@@ -771,6 +776,7 @@ export function Odontograma({
   showCheckbox = false,
   className,
   compact = false,
+  zoom,
   hideFilters = false,
   eventos,
   eventosPersistidos,
@@ -993,7 +999,7 @@ export function Odontograma({
       // piso de 24px (achado auditoria UX 19/07, MEDIUM #6) — usado no Modo
       // Consulta chairside, onde errar o dente vizinho é um risco real. 0.85
       // garante >=24.6px no menor dente sem descaracterizar o modo compacto.
-      style={compact ? { zoom: 0.85 } : undefined}
+      style={compact ? { zoom: zoom ?? 0.85 } : undefined}
     >
 
       {/* ── Tab bar + Legenda ── */}

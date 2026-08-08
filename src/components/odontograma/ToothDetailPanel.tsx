@@ -117,6 +117,13 @@ export interface ToothDetailPanelProps {
    * isto e continuam intocados.
    */
   onDetalheAbertoChange?: (aberto: boolean) => void;
+  /**
+   * R-78 (achado dele 08/08) — abre o painel já com a tabela de especialidade DESTE
+   * evento expandida, em vez do dentista precisar clicar "Detalhes" de novo depois de já
+   * ter pedido pra ver a tabela (ex.: "⤢" num card de "Nesta ficha" no Meu dia). Ausente =
+   * comportamento de sempre (nasce fechado, I3 — os outros consumidores não passam isto).
+   */
+  abrirDetalheDoEvento?: string;
 }
 
 export function ToothDetailPanel({
@@ -131,6 +138,7 @@ export function ToothDetailPanel({
   className,
   state = 'default',
   onDetalheAbertoChange,
+  abrirDetalheDoEvento,
 }: ToothDetailPanelProps) {
   const superior = (dente >= 11 && dente <= 28) || (dente >= 51 && dente <= 65);
   const doDente = useMemo(
@@ -147,7 +155,13 @@ export function ToothDetailPanel({
 
   // Detalhe de especialidade (migration 106) — só endo/implante têm Form hoje. Um aberto
   // por vez (regra do artefato de dois-modos §02): abrir outro fecha o anterior.
-  const [detalheAbertoIdx, setDetalheAbertoIdx] = useState<number | null>(null);
+  // `abrirDetalheDoEvento` (R-78) seeda já aberto — só no mount (função de inicialização),
+  // não precisa reagir a mudança de prop: o painel inteiro remonta a cada dente novo.
+  const [detalheAbertoIdx, setDetalheAbertoIdx] = useState<number | null>(() => {
+    if (!abrirDetalheDoEvento) return null;
+    const i = doDente.findIndex((e) => e.id === abrirDetalheDoEvento);
+    return i === -1 ? null : i;
+  });
   // R-63 — nova seleção de dente nunca herda detalhe aberto do anterior (mesmo princípio do
   // painelDenteAberto em meu-dia-client.tsx — seleção nova é sempre "do zero"). Ajuste de
   // estado LOCAL durante o render (padrão idAoResetar já usado no projeto) — não useEffect,

@@ -59,8 +59,12 @@ export interface UseOrcamentoModalResult {
   abrirNovoOrcamento: () => Promise<void>;
   abrirOrcamentoParaFicha: (fichaId: string) => Promise<void>;
   /** NOVO (R-46h) — só o Meu dia usa: abre direto no passo 'selecionar', pulando o "geral vs.
-   *  por-ficha" que a tela do paciente precisa porque lá não há paciente já óbvio de antemão. */
-  abrirPickerFichasAbertas: () => Promise<void>;
+   *  por-ficha" que a tela do paciente precisa porque lá não há paciente já óbvio de antemão.
+   *  R-83 (08/08) — `eventosRascunho`: itens indicados no rascunho ainda não salvo desta
+   *  sessão. Quando presente, junta com o agregado do banco e PULA a etapa 'selecionar' —
+   *  ele já sabe o que quer orçar, é o que acabou de ditar (achado dele: sem isto só dava
+   *  pra orçar depois de salvar, e salvar avança pro próximo paciente — R-76). */
+  abrirPickerFichasAbertas: (eventosRascunho?: EventoOdontogramaParaOrc[]) => Promise<void>;
   isLoadingFichaParaOrc: boolean;
   modalProps: NovoOrcamentoModalProps;
 }
@@ -355,14 +359,27 @@ export function useOrcamentoModal({
 
   // NOVO (R-46h) — picker geral do Meu dia: pula direto pro passo 'selecionar', sem o "geral
   // vs. por-ficha" que abrirNovoOrcamento tem, porque aqui o paciente já é o do slot aberto.
-  const abrirPickerFichasAbertas = async () => {
+  // R-83 (08/08) — com `eventosRascunho`, junta rascunho + agregado do banco e pula direto
+  // pra 'itens': o rascunho é sempre do dentista logado (Meu dia é dele), por isso entra
+  // fixo em FILTRO_MEUS — não faz sentido escolher responsável pro que ele mesmo está ditando.
+  const abrirPickerFichasAbertas = async (eventosRascunho: EventoOdontogramaParaOrc[] = []) => {
     setOrcError(null);
     setIsLoadingFichaParaOrc(true);
     try {
       const fichas = await carregarFichasAgregado();
       setFichasParaOrc(fichas);
       setFichaOrcId(null);
-      setEtapaNovoOrc('selecionar');
+
+      if (eventosRascunho.length > 0) {
+        const itensBanco = itensDoAgregado(fichas, FILTRO_MEUS);
+        const itensBancoReais = itensBanco[0] === ITEM_VAZIO ? [] : itensBanco;
+        const itens = [...eventosParaItens(eventosRascunho), ...itensBancoReais];
+        setFiltroResponsavelOrc(FILTRO_MEUS);
+        setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
+        setEtapaNovoOrc('itens');
+      } else {
+        setEtapaNovoOrc('selecionar');
+      }
     } catch {
       setFichasParaOrc([]);
       setOrcError('Não deu pra carregar as fichas em aberto.');

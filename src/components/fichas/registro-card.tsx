@@ -10,7 +10,8 @@
 // endo, chips de orto) entra como `children`, colapsável.
 
 import { useState } from 'react';
-import { ChevronRight, Forward, Check, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { ChevronRight, Maximize2, Forward, Check, X } from 'lucide-react';
 import { TextoExpansivel } from './texto-expansivel';
 import {
   TIPO_LABEL,
@@ -82,6 +83,15 @@ export interface RegistroCardProps {
   onObservacaoChange?: (valor: string) => void;
   /** Só relevante com editavel=true — remove o registro do rascunho. */
   onRemover?: () => void;
+  /**
+   * R-78 (achado dele 08/08, testando o Meu dia) — quando presente, o card NÃO expande
+   * inline: o clique chama isto em vez de abrir `children` aqui dentro, e o ícone vira
+   * "expandir" (⤢) em vez de "›". Pro chamador redirecionar conteúdo denso (tabela de
+   * endo/implante) pra uma área com mais espaço — ex. o perfil do dente no Meu dia — em
+   * vez de espremer numa coluna estreita (mesmo problema que motivou o redesign do R-78,
+   * §1.4/§1.5 da spec). `children` é ignorado nesse modo.
+   */
+  onAbrirGrande?: () => void;
 }
 
 const PILL: Record<'coral' | 'teal' | 'slate', { label: string; wrap: string; dot: string }> = {
@@ -125,7 +135,7 @@ function resumoAncora(ancoras: AncoraClinica[]): string {
 export function RegistroCard({
   data, children, defaultOpen = false, onToggleStatus,
   selecionavel = false, selecionado = false, onToggleSelecao, onRemoverEncaminhamento,
-  editavel = false, onObservacaoChange, onRemover,
+  editavel = false, onObservacaoChange, onRemover, onAbrirGrande,
 }: RegistroCardProps) {
   const [aberto, setAberto] = useState(defaultOpen);
   const cor = corDoRegistro(data.status, data.origem);
@@ -135,19 +145,26 @@ export function RegistroCard({
   const titulo = `${TIPO_LABEL[data.tipo]}${faces ? ` ${faces}` : ''} · ${resumoAncora(data.ancoras)}`;
 
   const retroativo = data.realizadoEm != null && dataBRT(data.registradoEm) > data.realizadoEm;
-  const temCorpo = children != null;
+  // `onAbrirGrande` sempre vence: o card redireciona em vez de expandir aqui, então o
+  // corpo local nunca monta mesmo que o chamador tenha passado `children` por engano.
+  const abreFora = onAbrirGrande != null;
+  const temCorpo = !abreFora && children != null;
 
   // Modo seleção (variante B): o clique no card marca/desmarca em vez de expandir; o
   // pill e o × ficam inertes (a ação da vez é escolher o que encaminhar).
   const emSelecao = selecionavel;
   const pillClicavel = !emSelecao && onToggleStatus;
-  const containerInterativo = emSelecao || temCorpo;
-  const aoClicar = emSelecao ? onToggleSelecao : temCorpo ? () => setAberto((v) => !v) : undefined;
+  const containerInterativo = emSelecao || temCorpo || abreFora;
+  const aoClicar = emSelecao ? onToggleSelecao : abreFora ? onAbrirGrande : temCorpo ? () => setAberto((v) => !v) : undefined;
 
   return (
-    <article className={`bg-surface border rounded-xl overflow-hidden transition-colors ${
-      emSelecao && selecionado ? 'border-teal ring-1 ring-teal/40' : 'border-border'
-    }`}>
+    <motion.article
+      layout="position"
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+      className={`bg-surface border rounded-xl overflow-hidden transition-colors ${
+        emSelecao && selecionado ? 'border-teal ring-1 ring-teal/40' : 'border-border'
+      }`}
+    >
       <div
         role={emSelecao ? 'checkbox' : 'button'}
         aria-checked={emSelecao ? selecionado : undefined}
@@ -159,6 +176,10 @@ export function RegistroCard({
             : undefined
         }
         aria-expanded={!emSelecao && temCorpo ? aberto : undefined}
+        // Acessibilidade (achado dele 08/08): sem isto o modo "abre fora" lia igual a um
+        // simples expandir/colapsar pro leitor de tela — o rótulo deixa explícito que o
+        // clique LEVA a outro lugar, não revela conteúdo aqui mesmo.
+        aria-label={abreFora ? `${titulo} — abrir tabela no perfil do dente` : undefined}
         // div (não <button>): no modo seleção o checkbox interativo fica aninhado aqui,
         // e o × do badge (fora do modo) também — elemento interativo dentro de <button>
         // é HTML inválido. Por isso role/tabIndex/teclado manuais.
@@ -270,6 +291,9 @@ export function RegistroCard({
           </button>
         )}
 
+        {!emSelecao && abreFora && (
+          <Maximize2 className="w-3.5 h-3.5 shrink-0 text-text-secondary" aria-hidden />
+        )}
         {!emSelecao && temCorpo && (
           <ChevronRight
             className={`w-4 h-4 shrink-0 text-text-secondary transition-transform ${aberto ? 'rotate-90' : ''}`}
@@ -277,9 +301,22 @@ export function RegistroCard({
         )}
       </div>
 
-      {!emSelecao && temCorpo && aberto && (
-        <div className="border-t border-border bg-surface-alt/40 px-4 py-3">{children}</div>
-      )}
-    </article>
+      {/* `layout` no <article> pai + só opacity aqui — Motion anima a mudança de altura via
+          transform (FLIP, GPU), não via `height` (força reflow a cada frame, causa flick). */}
+      <AnimatePresence initial={false}>
+        {!emSelecao && temCorpo && aberto && (
+          <motion.div
+            key="corpo"
+            layout
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+          >
+            <div className="border-t border-border bg-surface-alt/40 px-4 py-3">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.article>
   );
 }

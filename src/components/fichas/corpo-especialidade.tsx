@@ -5,12 +5,15 @@
 // casa. Fica em components/ (não lib/) porque retorna JSX — mesma fronteira que o resto da
 // casa já respeita.
 
-import { endoDetalheSchema } from '@/lib/especialidades/endo';
+import { endoDetalheSchema, type EndoDetalhe } from '@/lib/especialidades/endo';
 import { EndoCard } from '@/components/fichas/endo-card';
-import { implanteDetalheSchema } from '@/lib/especialidades/implante';
+import { EndoForm } from '@/components/fichas/endo-form';
+import { implanteDetalheSchema, type ImplanteDetalhe } from '@/lib/especialidades/implante';
 import { ImplanteCard } from '@/components/fichas/implante-card';
-import { psrDetalheSchema } from '@/lib/especialidades/perio';
+import { ImplanteForm } from '@/components/fichas/implante-form';
+import { psrDetalheSchema, PSR_VAZIO, type PsrDetalhe } from '@/lib/especialidades/perio';
 import { PsrCard } from '@/components/fichas/psr-card';
+import { PsrForm } from '@/components/fichas/psr-form';
 import type { TipoRegistroOdontograma } from '@/types/odontograma';
 
 /**
@@ -30,6 +33,28 @@ export function corpoEspecialidade(tipo: TipoRegistroOdontograma, detalhe: unkno
   if (tipo === 'exame_periodontal') {
     const r = psrDetalheSchema.safeParse(detalhe);
     return r.success ? <PsrCard valor={r.data} /> : null;
+  }
+  return null;
+}
+
+/**
+ * R-02 Fase 1 (extraído de FichasTab.tsx pro R-78 F1 reusar) — corpo de especialidade
+ * EDITÁVEL (rascunho): mesmo tipo que `corpoEspecialidade`, mas com EndoForm/ImplanteForm/
+ * PsrForm em vez dos cards só-leitura. Cast direto (`?? null`/`?? PSR_VAZIO`), não
+ * safeParse: um form em branco é um estado válido de edição — I3 (degradar em silêncio)
+ * não se aplica aqui, o card só aparece quando o chamador já sabe que há tabela pra este tipo.
+ */
+export function corpoEspecialidadeEditavel(
+  tipo: TipoRegistroOdontograma, detalhe: unknown, onChange: (v: unknown) => void,
+): React.ReactNode {
+  if (tipo === 'endodontia') {
+    return <EndoForm valor={(detalhe ?? null) as EndoDetalhe | null} onChange={onChange} />;
+  }
+  if (tipo === 'implante') {
+    return <ImplanteForm valor={(detalhe ?? null) as ImplanteDetalhe | null} onChange={onChange} />;
+  }
+  if (tipo === 'exame_periodontal') {
+    return <PsrForm valor={(detalhe ?? PSR_VAZIO) as PsrDetalhe} onChange={onChange} />;
   }
   return null;
 }

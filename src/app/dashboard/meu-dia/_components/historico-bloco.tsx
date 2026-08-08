@@ -30,6 +30,8 @@ export interface HistoricoBlocoProps {
    *  do próprio dentista (histórico é compartilhado, mas dinheiro nunca cruza dentista). */
   onGerarOrcamento: (fichaId: string) => void;
   meuDentistaId: string;
+  /** R-78 F4 — "ler tudo ⤢" do texto da visita abre a leitura grande no slot direito. */
+  onLerGrande: (visita: MeuDiaVisita) => void;
 }
 
 const PREVIA = 1;
@@ -62,11 +64,12 @@ function paraCard(e: MeuDiaEventoVisita): EventoParaCard {
 }
 
 function VisitaEntry({
-  v, onGerarOrcamento, meuDentistaId,
+  v, onGerarOrcamento, meuDentistaId, onLerGrande,
 }: {
   v: MeuDiaVisita;
   onGerarOrcamento: (fichaId: string) => void;
   meuDentistaId: string;
+  onLerGrande: (visita: MeuDiaVisita) => void;
 }) {
   const texto = v.texto || v.resumo; // G9 — resumo sempre não-vazio (cai em 'Evolução' no pior caso)
   const abertos = v.eventos.filter((e) => e.status === 'indicado').length;
@@ -120,7 +123,11 @@ function VisitaEntry({
       </div>
 
       {/* 2. Texto — o elemento de maior peso da entrada (hierarquia invertida, §1a) */}
-      <TextoExpansivel texto={texto} className="whitespace-pre-line text-sm text-text-primary" />
+      <TextoExpansivel
+        texto={texto}
+        className="whitespace-pre-line text-sm text-text-primary"
+        onAbrirGrande={() => onLerGrande(v)}
+      />
 
       {/* 3. Feito nesta consulta — realizados desta ficha + fechados aqui, indicados alhures */}
       {cardsFeito.length > 0 && (
@@ -161,7 +168,7 @@ function VisitaEntry({
   );
 }
 
-export function HistoricoBloco({ visitas, pacienteId, pacienteNome, onImportado, onGerarOrcamento, meuDentistaId }: HistoricoBlocoProps) {
+export function HistoricoBloco({ visitas, pacienteId, pacienteNome, onImportado, onGerarOrcamento, meuDentistaId, onLerGrande }: HistoricoBlocoProps) {
   const [expandido, setExpandido] = useState(false);
   const [colarAberto, setColarAberto] = useState(false);
   const temMais = visitas.length > PREVIA;
@@ -189,7 +196,7 @@ export function HistoricoBloco({ visitas, pacienteId, pacienteNome, onImportado,
               estourar sozinha com texto longo + vários procedimentos. */}
           <div className="flex max-h-[420px] flex-col divide-y divide-border overflow-y-auto pr-2">
             {visiveis.map((v) => (
-              <VisitaEntry key={v.fichaId} v={v} onGerarOrcamento={onGerarOrcamento} meuDentistaId={meuDentistaId} />
+              <VisitaEntry key={v.fichaId} v={v} onGerarOrcamento={onGerarOrcamento} meuDentistaId={meuDentistaId} onLerGrande={onLerGrande} />
             ))}
           </div>
           {temMais && (
