@@ -256,15 +256,105 @@ lista não repintava o dente: item marcado "feito" com o dente ainda coral. Num 
 é falha grave. Na implementação vem de graça (mesma fonte, `eventosDraft`) — mas **é gate**,
 não detalhe (ver G8).
 
-## 5. Fases (rascunho — reordena depois do §3)
+## 5. Fases
+
+> **F0 fechado 08/08 — codado e verificado por mim (dado real, Marcos), não testado por ele.**
+> As fases abaixo (F1-F5) são de ANTES da decisão final de layout (§3.1, D1-D4) e não
+> cobriam a restruturação de grid — a spec original só previa troca de componente dentro do
+> casco de 3 colunas que já existia. F0 cobriu o casco que faltava:
+> - Grid 3-col fixa (`CockpitGrid`, 320|1fr|312) → fluxo vertical (campo mágico full-width →
+>   [lista ~832px │ espelho 555px] → faixa de gavetas → ações). `cockpit-grid.tsx` apagado (órfão).
+> - `RegistrarPainel` virou hook (`useRegistrarPainel`) — mesma lógica, devolve as peças
+>   posicionáveis. **Achado corrigindo no processo:** o componente resetava estado (17
+>   variáveis: onde/status/orto/catálogo pendente/observação/etc.) via `key={agendamentoId}`
+>   do pai — hook não remonta por key, então o reset virou bloco explícito
+>   (`agendamentoIdAoResetar`), senão vazava estado de um paciente pro próximo.
+> - Espelho: `Odontograma` ganhou prop `zoom` (sobrescreve o `0.85` implícito de `compact`).
+>   **A1 confirmado por medição real, não só pelo artefato:** arcada de 16 dentes mede 460px
+>   de largura no card de 555px com `zoom: .68` — cabe com folga, non transborda (G9).
+> - Direita: ocupante único, mas com uma simplificação deliberada — `denteAberto` mostra o
+>   `ToothDetailPanel` ATUAL (forms completos) no lugar do espelho, não ainda o card compacto
+>   do artefato (hoje/antes, "+ registrar neste dente"). Isso adianta um pedaço do G12/F2 de
+>   graça (structural), mas o VISUAL do perfil ainda não bate com o artefato — isso é F2.
+> - Gavetas: `FaixaGavetas` (novo) — Histórico/A fazer/Anexos, corpos são os MESMOS componentes
+>   de sempre (`HistoricoBloco`/`AFazerBloco`/`AnexarDocumentosBloco`), só re-parented.
+> - Portal da tabela de especialidade (`tabelaContainer`) virou full-width, abaixo da linha
+>   lista+espelho — mesma área que o F4 ("ler grande") deve generalizar depois.
+> - D2 (contador `⏳ N pendentes` na linha do paciente): entrou também, barato o bastante pra
+>   não esperar F1.
+> **Não coberto ainda (F1-F4 seguem de pé):** pill de status ainda só-leitura (`ToothGroupList`,
+> não `RegistroCard`); perfil do dente é o `ToothDetailPanel` antigo, não o card compacto; "ler
+> grande" não tem gatilho próprio ainda; rótulo do rodapé (`✓ N ficha(s) hoje`) não mudou (F5).
+>
+> **Verificação real (Marcos, encaixe criado pra testar — sem atendimento hoje até então):**
+> G7 (1366×768 sem scroll horizontal, medido via `scrollWidth`) ✓ · G9 (arcada 460px em card de
+> 555px, medido) ✓ · troca espelho⇄perfil nos 2 sentidos ✓ · gaveta abre sem empurrar o miolo,
+> fecha ao clicar de novo ✓ · typecheck + lint (arquivos alterados) limpos.
+>
+> **F2 fechado 08/08, mesma sessão — codado e verificado por mim (dado real, Marcos, Brave).**
+> Ele perguntou "era pra parecer histórico ou perfil com faces?" — resposta: histórico (§3.2
+> já dizia isso, F0 tinha implementado errado). Novo componente `dente-historico-card.tsx`:
+> - Linhas "hoje" vêm de `eventosDraft` (rascunho desta sessão); linhas "antes" vêm de
+>   `contexto.visitas` (união de `eventos`+`feitosAqui` de TODAS as visitas, dedup por id —
+>   não sei ao certo se os dois podem repetir o mesmo evento, dedup garante que nunca
+>   duplica venha de onde vier). Aviso de grupo aberto reusa `gruposAbertos` (já buscado).
+> - "+ registrar neste dente" (e "continuar aqui" do aviso) revela o `ToothDetailPanel`
+>   EXISTENTE por cima — zero editor novo, só um 3º nível no ocupante único (`registrandoDenteAberto`,
+>   resetado toda vez que `denteAberto` muda, inclusive no reset de troca de paciente e no `handleSalvo`).
+>   Fechar o editor volta pro histórico, não pro espelho — só "voltar à boca" sai de vez.
+> - **Achado real ao testar** (Marcos, dente 36): 3 procedimentos históricos genuínos em
+>   datas diferentes (canal 08/08 e 07/08, coroa total 24/07) — nenhum tinha `grupo_id`
+>   compartilhado, então G13 (aviso de grupo aberto) não apareceu; card não quebrou nem
+>   inventou nada, mostrou as 3 linhas certas com data/cor corretas.
+> - Verificado: Mirror → toque no dente → histórico → "+ registrar" → editor → fechar → volta
+>   pro histórico (não pro espelho) → "voltar à boca" → espelho. Loop completo, sem erro de
+>   console. (As primeiras tentativas de fechar "não fizeram nada" na tela — era timing da
+>   animação em Brave/HMR, não bug: esperando mais confirmou que funcionava.)
+> **G12 confirmado.** G13/G14 ainda sem teste com grupo aberto real (nenhum dente do Marcos
+> qualificava). Faltam F1 (lista clicável), F3 (gavetas já parecem cobertas, conferir), F4
+> (ler grande), F5 (rótulo do rodapé).
+>
+> **F3/F4/F5 fechados 08/08, sessão #30 — codados e verificados por mim (dado real, Marcos,
+> Brave).** Ele testou F0-F2 pessoalmente nesta sessão e trouxe 3 achados ao vivo:
+> - **Bug:** data e tipo sobrepostos no histórico do dente (`dente-historico-card.tsx`) —
+>   `w-10` (40px) era estreito demais pro formato `DD/MM/AAAA` em mono 11px (~66-70px
+>   necessários), sem `overflow-hidden`; o texto vazava por cima do vizinho. `w-10` → `w-20`.
+> - **Pedido:** animação leve na expansão/retração dos painéis (`FaixaGavetas`, corpo de
+>   especialidade do `RegistroCard`). Primeira tentativa (animar `height: 0→auto` via
+>   Motion) causou um "flick" que ele reportou de imediato — 2 causas reais, não uma:
+>   (1) animar `height` força reflow do browser a cada frame (caro); (2) trocar de gaveta
+>   DIRETO (sem fechar antes) rodava saída+entrada ao mesmo tempo (`AnimatePresence` modo
+>   `sync` default), sobrepondo o conteúdo antigo esmaecendo com o novo surgindo — capturado
+>   ao vivo num frame de transição. Corrigido: `layout` (FLIP via `transform`, GPU) no lugar
+>   de animar `height`, conteúdo cruza só `opacity`, `mode="wait"` na gaveta.
+> - F3 confirmado sem gap: as 3 gavetas (`FaixaGavetas`) abrem/fecham 1 por vez, sem
+>   empurrar o miolo — testei a gaveta Anexos ao vivo (única não testada antes).
+>
+> **F4** — `TextoExpansivel` (R-77) ganhou `onAbrirGrande?` (mesmo padrão do `onAbrirGrande`
+> do `RegistroCard`): quando presente, o "ver mais" delega pro chamador em vez de expandir
+> inline. Novo componente `visita-leitura-card.tsx` (texto completo da visita, leitura —
+> sem caminho de escrita) e novo estado `leituraGrande` no ocupante único da direita (4º
+> nível, mutuamente exclusivo com `denteAberto`). **Achado no processo, não deste código:**
+> o dado de teste do Marcos não tinha texto longo o bastante pra estourar 4 linhas nessa
+> largura de tela — forcei via CSS (`max-w` temporário) pra confirmar o fluxo ponta a ponta
+> (clique → slot direito → "voltar à boca"), revertido depois. No meio do teste o servidor
+> de dev ficou com HMR num estado inconsistente (`useEffect` de medição parava de rodar,
+> mesmo com o JSX atualizado) — reiniciar o servidor resolveu; não é bug do código.
+>
+> **F5** — botão pós-save nunca mais mostra texto estático "Já registrado hoje": indicador
+> `✓ 1 ficha hoje` (fixo — o dado disponível é `temFichaHoje: boolean`, sem contagem real)
+> + botão sempre acionável, rótulo vira "Salvar 2ª ficha". `disabled` não mudou (continua
+> `isSaving || eventosPendentes != null || semRascunho` — T1, mecanismo intacto).
+>
+> Typecheck + lint (arquivos alterados) limpos. Nada commitado — aguardando ele testar.
 
 | Fase | O quê | Risco |
 |---|---|---|
-| F1 | Direita troca `ToothGroupList` por `RegistroCard` — ganha toggle, detalhe colapsável e observação expansível sem código novo | Médio — os dois componentes têm view-models diferentes (`OdontogramaEventoDraft` vs `RegistroCardData`); o adaptador `eventosParaCards` já existe e é o caminho |
-| F2 | Fundir "Hoje" + "Novos" numa lista só; esquerda fica Histórico \| Anexos | Baixo |
-| F3 | Toggle de status escrevendo no rascunho (`eventosDraft`), respeitando T3 | Baixo no rascunho · Alto se estender pra ficha salva (aí é UPDATE real, precisa de `.select()` — R-59) |
-| F4 | **Ler grande**: o slot central recebe qualquer conteúdo denso a partir do Histórico — texto de evolução longo, observação passada entre dentistas, tabela de especialidade (§1.4). Editável conforme T3/T7/T8 | Médio — hoje só o rascunho alimenta o slot; o Histórico nunca passou por ali. O gesto precisa de nome próprio na UI ("expandir"/"ler aqui"), não pode se confundir com o "ver mais" do R-77 (que expande *dentro* da coluna) |
-| F5 | Rótulo do botão pós-save (§1.3) — "Já registrado hoje" deixa de parecer bloqueio | Baixo |
+| F1 ✅ 08/08 | Direita troca `ToothGroupList` por `RegistroCard` — ganha toggle, detalhe colapsável e observação expansível sem código novo. Verificado ao vivo (Marcos): toggle/tudo-feito/remover/observação inline, todos repintando o espelho. `corpoEspecialidadeEditavel` extraído de `FichasTab.tsx` pro shared (`corpo-especialidade.tsx`) — reuso, não duplicata. **Achado ao vivo, não deste código:** testar isto expôs o R-82 (campo mágico trava a aba) | Médio — feito via `eventosParaCards` (adaptador inline), não `draftsParaCards` (essa ficou privada em FichasTab) |
+| F2 ✅ 08/08 | Fundir "Hoje" + "Novos" numa lista só; esquerda fica Histórico \| Anexos | Baixo |
+| F3 ✅ 08/08 | Toggle de status escrevendo no rascunho (`eventosDraft`), respeitando T3 — já coberto pelo F0/F1, confirmado sem gap (gaveta Anexos testada) | Baixo no rascunho · Alto se estender pra ficha salva (aí é UPDATE real, precisa de `.select()` — R-59) |
+| F4 ✅ 08/08 | **Ler grande**: `TextoExpansivel` com `onAbrirGrande` delega pro slot direito (`visita-leitura-card.tsx`) — texto de evolução longo do Histórico, fora da coluna estreita (§1.4) | Médio — hoje só o rascunho alimenta o slot; o Histórico nunca passou por ali. O gesto precisa de nome próprio na UI ("expandir"/"ler aqui"), não pode se confundir com o "ver mais" do R-77 (que expande *dentro* da coluna) |
+| F5 ✅ 08/08 | Rótulo do botão pós-save (§1.3) — "Já registrado hoje" deixa de parecer bloqueio, vira `✓ 1 ficha hoje` + "Salvar 2ª ficha" | Baixo |
 
 ## 6. Gates (rascunho)
 

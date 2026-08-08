@@ -1,24 +1,18 @@
-# Estado — Odonto.IA
-
-> **ESTADO** · atualizado 2026-08-08 01:00 (sessão #28) · **Item ativo:** nenhum · **Modo:**
-> nenhum (sessão encerrada)
-
 ## Agora
 
-**5 commits nesta sessão** (`366cd64`..`bf070a9`): R-46h (botão de orçamento no Meu dia),
-R-76 (Salvar e passar), R-77 (Histórico scroll + observação expansível) e R-80 (fix de
-segurança — orçamento não pode mais puxar procedimento de outro dentista). Todos **codados,
-commitados e verificados por mim no Brave** (cliques reais, escrita conferida no banco onde
-coube) — mas isso não substitui ele testar. Ficam 🟡, não ✅, até ele confirmar pessoalmente.
+**R-78 — Meu dia orientado a fluxo.** F0 (casco: grid vira fluxo vertical, `RegistrarPainel`
+vira hook, espelho a `zoom:.68`), F1 (lista "Nesta ficha" vira `RegistroCard` de verdade —
+pill clicável, observação editável, "✓ tudo feito", remover) e F2 (tocar o dente abre
+histórico, não o editor de faces direto) — **codados e verificados por mim no Brave**, dado
+real (paciente Marcos, IA de verdade, save real gravando no banco). Mais o ⤢ (tabela de
+especialidade abre no perfil do dente, dentro do card — corrigido 2× a partir de prints dele
+até ficar certo). **Tudo 🟡, não ✅** — ele ainda não testou pessoalmente, e **nada foi
+commitado ainda**.
 
-**R-78 (Meu dia orientado a fluxo) — spec aprovada e artefato aprovado por ele**
-("exatamente como o artefato", `plans/artefatos/R-78-meu-dia-fluxo.html`). Redesign das 3
-zonas: odontograma vira espelho, lista única "Nesta ficha" com status clicável, perfil do
-dente como ocupante da direita (espelho ⇄ perfil), "A fazer" e Histórico viram gaveta. Zero
-código ainda — **é o próximo item de execução**, ele já confirmou.
-
-**R-79 (audit trail de edição de ficha) e R-81 (assistente registra pelo dentista)** —
-achados durante o debate do R-78, foram pro ROADMAP sem spec.
+**Falta do R-78:** F3 (gavetas — `FaixaGavetas` já reusa os blocos de sempre, pode já estar
+coberto, não confirmei), F4 (ler grande — só sobrou o caso de observação/evolução longa no
+Histórico; a tabela de especialidade já saiu do escopo, virou o ⤢), F5 (rótulo do rodapé,
+ainda mostra "Já registrado hoje" binário em vez de "✓ N ficha(s) hoje").
 
 ## Travado
 
@@ -26,21 +20,21 @@ Nada travado.
 
 ## Esperando você
 
-- [ ] **Testar pessoalmente R-46h/R-76/R-77/R-80** no Meu dia — os 2 pontos de entrada do
-      orçamento, o avanço automático pro próximo paciente ao salvar, o scroll+observação do
-      Histórico, e confirmar que não aparece mais botão de orçamento em ficha de colega.
-- [ ] **Decidir a ordem: R-78 antes ou depois do R-81?** Se a assistente vai operar essa tela
-      sem ser dentista (R-81), isso muda o que "fica confuso" significa pro R-78 — vale
-      decidir antes de eu começar a codar o redesign, não descobrir no meio.
-- [ ] **Testar upload de documento real (R-75, sessão anterior)** — segue pendente desde
-      07/08, arquivos intocados nesta sessão.
-- [ ] **"Salvar e marcar como concluído"** — comentário dele em sessão anterior, não virou
-      item ainda.
-- [ ] **Etapas 'plano'/'procedimentos'/'sucesso' do onboarding** — ficaram inalcançáveis
-      desde que o passo demo saiu (sessão #27). Não tocado.
-- [ ] R-71 (2 achados restantes — nativeButton warning, Agenda com janela de hora fixa) segue
-      na fila.
+- [ ] **Testar pessoalmente o R-78** (F0+F1+F2+⤢) no Meu dia antes de eu commitar qualquer
+      coisa — dictar, ver a lista, tocar num dente, abrir uma tabela de especialidade.
+- [ ] **R-82 — campo mágico trava a aba** (`captura-livre-card.tsx`, "Maximum update depth
+      exceeded", reproduzido 5× hoje, 1 vez travou de verdade). Achado ao vivo, não
+      investigado. Decidir se entra antes de eu continuar o R-78 ou depois — é o coração do
+      produto (Dex), mas o F3-F5 do R-78 são pequenos e já estão mapeados.
+- [ ] **`.claude/worktrees/eager-antonelli-accfa2/`** — pasta com cópia inteira de `src/`,
+      provável sobra de agente anterior. Causa OOM no `npm run lint` completo (contornei
+      rodando `npx eslint` escopado). Confirmar se pode apagar antes de alguém apagar.
+- [ ] `ROADMAP.md` (254 linhas) e a spec do R-78 (343 linhas) passaram do teto (~200/~300) —
+      decidir se reorganiza agora ou deixa pro R-78 fechar primeiro.
+- [ ] Testar upload de documento real (R-75) — segue pendente desde a sessão #27, arquivos
+      intocados de novo nesta sessão.
 
 ## Próximo da fila
 
-**R-78** — spec aprovada, artefato aprovado, ele já confirmou que é o próximo a executar.
+Ver `plans/ROADMAP.md` — depois do R-78 (F3-F5) e de decidir a prioridade do R-82, a fila
+segue normal ({R-49, R-56, R-67} + o resto do Bloco 1).
