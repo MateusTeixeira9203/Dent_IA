@@ -5,10 +5,12 @@
 // paciente no mesmo dia (retorno) ficariam indistinguíveis por pacienteId. Precedência do
 // default: agendamentoInicialId (veio de ?ag=, se casar com um slot) > em atendimento
 // (in_progress/checked_in) > 1º slot.
-// C2 (P7, 03/08) — `onSalvo` NÃO avança mais pro próximo slot: decisão dele, o dentista já
-// troca de paciente clicando no rail. `onSalvo` só limpa o rascunho (trava §5.6.1) e refaz
-// `router.refresh()` pra puxar `slots`/`contextoPorPaciente` frescos do servidor (✓
-// registrado, pendências fechadas) sem sair da rota (G3/G9).
+// R-76 (08/08) — `onSalvo` volta a avançar pro próximo slot elegível do rail: reverte a
+// decisão de C2 (P7, 03/08, "o dentista já troca de paciente clicando no rail"). `podeAtender`
+// mora aqui agora (só este arquivo usa — a versão antiga vivia em rail.tsx e foi apagada no
+// R-72 junto do link "Iniciar consulta"). Limpa o rascunho local primeiro (trava §5.6.1),
+// depois avança, depois `router.refresh()` pra puxar `slots`/`contextoPorPaciente` frescos do
+// servidor (✓ registrado, pendências fechadas) sem sair da rota (G3/G9).
 //
 // C1 (contrato §5.4) — dono de `eventosDraft`/`denteAberto`/`textoVisita` sobe pra cá: a
 // coluna direita ("Nesta sessão") precisa ler o mesmo rascunho que o centro escreve, e o
@@ -202,6 +204,19 @@ export function MeuDiaClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slotSelecionado?.pacienteId]);
 
+  // R-76 — status que ainda podem ser atendidos (cancelado/faltou/concluído já saíram do dia).
+  function podeAtender(status: string): boolean {
+    return !['cancelled', 'no_show', 'completed'].includes(status);
+  }
+
+  // R-76 — a partir do slot atual, o próximo elegível NA ORDEM do rail. Sem próximo → null
+  // (fim de dia, intencional — nunca cai de volta no slots[0] escondido).
+  function avancarProximo() {
+    const idxAtual = slots.findIndex((s) => s.agendamentoId === selecionadoId);
+    const proximo = idxAtual === -1 ? undefined : slots.slice(idxAtual + 1).find((s) => podeAtender(s.statusAgendamento));
+    setSelecionadoId(proximo?.agendamentoId ?? null);
+  }
+
   // C2 (§5.6) — trava 1: limpa o rascunho AGORA, local e síncrono, não espera o refresh do
   // servidor. Fecha a janela de corrida de um duplo clique rápido logo após salvar (o
   // `router.refresh()` sozinho não seria rápido o bastante pra proteger o 2º clique).
@@ -210,6 +225,7 @@ export function MeuDiaClient({
     setDenteAberto(null);
     setDetalheEspecialidadeAberto(false);
     setTextoVisita('');
+    avancarProximo();
     router.refresh();
   }
 

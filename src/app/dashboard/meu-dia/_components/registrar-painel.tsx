@@ -641,7 +641,7 @@ export function RegistrarPainel({
             ? <><Loader2 className="h-4 w-4 animate-spin" /> Salvando…</>
             : temFichaHoje && semRascunho
               ? <>Já registrado hoje</>
-              : <><Check className="h-4 w-4" /> Salvar</>
+              : <><Check className="h-4 w-4" /> Salvar e passar</>
           }
         </button>
       </div>
