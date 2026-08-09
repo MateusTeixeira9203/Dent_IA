@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from 'motion/react';
 import { Loader2, MicOff } from 'lucide-react';
+import { DexMark } from '@/components/dex/dex-mark';
 
 function WaveBar({ delay }: { delay: number }) {
   return (
@@ -45,21 +46,8 @@ export function VoiceUX({ isRecording, isTranscribing, liveTranscript, elapsedSe
           >
             {/* Dex + waveform + timer */}
             <div className="flex items-center gap-3 mb-3">
-              {/* Dex pulsando */}
-              <motion.div
-                className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-black text-white shrink-0"
-                style={{ background: 'linear-gradient(135deg, #2f9c85, #1d7a68)' }}
-                animate={isRecording ? {
-                  boxShadow: [
-                    '0 0 0 0 rgba(47,156,133,0.5)',
-                    '0 0 0 10px rgba(47,156,133,0)',
-                    '0 0 0 0 rgba(47,156,133,0)',
-                  ],
-                } : {}}
-                transition={{ duration: 1.0, repeat: Infinity }}
-              >
-                D
-              </motion.div>
+              {/* Dex — atento enquanto grava, pensando enquanto transcreve */}
+              <DexMark size={44} expression={isRecording ? 'atento' : 'pensando'} animated />
 
               {/* Waveform */}
               <div className="flex items-center gap-[3px] flex-1 h-6">
