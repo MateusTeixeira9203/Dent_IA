@@ -56,6 +56,7 @@ import { CampoMagicoMeuDia } from './campo-magico-meu-dia';
 import { OrtoForm } from '@/components/fichas/orto-form';
 import { hojeBRT } from '@/lib/hora-brt';
 import { salvarVisitaMeuDia } from '../actions';
+import type { SalvarFichaResult } from '@/server/patients/salvar-ficha';
 import { criarAgendamento } from '@/app/dashboard/agendamentos/actions';
 import { buildClinicDatetime } from '@/app/dashboard/agendamentos/_components/date-helpers';
 import { MarcarRetornoModal, type MarcarRetornoForm } from '@/components/pacientes/marcar-retorno-modal';
@@ -432,9 +433,19 @@ export function useRegistrarPainel({
   // abaixo é a única proteção contra duplo clique/duplo submit (mesmo padrão de consulta-client).
   async function handleSalvar() {
     setIsSaving(true);
-    const resultado = await salvarVisitaMeuDia({
-      pacienteId, agendamentoId, textoVisita, eventosDraft, alertaNovo, ortoManutencao: ortoValor,
-    });
+    // R-86 — achado pela auditoria de 08/08: sem o try/catch (mesmo padrão que
+    // `handleRegravarEventos`, logo abaixo, já usa), uma falha de rede/servidor (503 visto ao
+    // vivo) lançava uma exceção não tratada — `isSaving` nunca voltava a `false`, nenhum toast
+    // aparecia, e o botão ficava travado (disabled) pros cliques seguintes. Parecia "não fez
+    // nada" quando na verdade tinha crashado silenciosamente.
+    let resultado: SalvarFichaResult;
+    try {
+      resultado = await salvarVisitaMeuDia({
+        pacienteId, agendamentoId, textoVisita, eventosDraft, alertaNovo, ortoManutencao: ortoValor,
+      });
+    } catch {
+      resultado = { ok: false, error: 'Falha de conexão. Tente novamente.' };
+    }
     setIsSaving(false);
     if (!resultado.ok) {
       toast.error(resultado.error);
