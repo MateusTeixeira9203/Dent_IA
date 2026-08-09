@@ -251,7 +251,7 @@ export function PacienteDetailClient({
   const [procedimentosClinica, setProcedimentosClinica] = useState<ProcedimentoClinica[]>([]);
   const [pagForm, setPagForm] = useState({
     valor: '',
-    formaPagamento: 'pix' as FormaPagamento,
+    formaPagamento: 'dinheiro' as FormaPagamento,
     data: new Date().toISOString().split('T')[0],
     dataVencimento: '',
   });
@@ -711,7 +711,7 @@ export function PacienteDetailClient({
       );
       setPagForm({
         valor: '',
-        formaPagamento: 'pix',
+        formaPagamento: 'dinheiro',
         data: new Date().toISOString().split('T')[0],
         dataVencimento: '',
       });
@@ -743,7 +743,7 @@ export function PacienteDetailClient({
     setParcelasMode(false);
     setPagForm({
       valor: formatValorBR(pg.valor),
-      formaPagamento: 'pix',
+      formaPagamento: 'dinheiro',
       data: new Date().toISOString().split('T')[0],
       dataVencimento: '',
     });
@@ -754,7 +754,7 @@ export function PacienteDetailClient({
     setClosingPagamentoId(null);
     setPagForm({
       valor: '',
-      formaPagamento: 'pix',
+      formaPagamento: 'dinheiro',
       data: new Date().toISOString().split('T')[0],
       dataVencimento: '',
     });
@@ -1679,7 +1679,7 @@ export function PacienteDetailClient({
           setPagError(null);
           setOrcEditMode(false);
           setOrcEditError(null);
-          setPagForm({ valor: '', formaPagamento: 'pix', data: new Date().toISOString().split('T')[0], dataVencimento: '' });
+          setPagForm({ valor: '', formaPagamento: 'dinheiro', data: new Date().toISOString().split('T')[0], dataVencimento: '' });
           setClosingPagamentoId(null);
           setEditingPagId(null);
           setEditPagError(null);
