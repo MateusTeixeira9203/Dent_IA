@@ -1176,7 +1176,7 @@ export function PacienteDetailClient({
                   key={val}
                   id={tourId}
                   value={val}
-                  className={`flex-1 min-w-[110px] flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold border transition-all duration-300 border-border/60 bg-surface text-text-secondary hover:text-text-primary hover:border-teal/30 data-[state=active]:bg-teal data-[state=active]:text-white data-[state=active]:border-teal data-[state=active]:shadow-[0_4px_14px_rgba(47,156,133,0.3)]${tourId && highlightedTab === tourId ? ' ring-2 ring-teal/60' : ''}`}
+                  className={`flex-1 min-w-[110px] flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold border transition-all duration-300 border-border/60 bg-surface text-text-secondary hover:text-text-primary hover:border-teal/30 data-[active]:bg-teal data-[active]:text-white data-[active]:border-teal data-[active]:shadow-[0_4px_14px_rgba(47,156,133,0.3)]${tourId && highlightedTab === tourId ? ' ring-2 ring-teal/60' : ''}`}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   <span>{label}</span>

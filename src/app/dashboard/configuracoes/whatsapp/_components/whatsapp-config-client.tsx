@@ -32,14 +32,14 @@ export default function WhatsAppConfigClient({
         <TabsList className="grid w-full grid-cols-2 h-14 p-1.5 bg-surface-alt rounded-2xl border border-border">
           <TabsTrigger
             value="conexao"
-            className="flex items-center justify-center gap-2 rounded-xl text-sm font-semibold h-11 text-text-secondary data-[state=active]:bg-surface data-[state=active]:text-teal data-[state=active]:shadow-md transition-all"
+            className="flex items-center justify-center gap-2 rounded-xl text-sm font-semibold h-11 text-text-secondary data-[active]:bg-surface data-[active]:text-teal data-[active]:shadow-md transition-all"
           >
             <Wifi className="w-4 h-4" />
             Conexão
           </TabsTrigger>
           <TabsTrigger
             value="config"
-            className="flex items-center justify-center gap-2 rounded-xl text-sm font-semibold h-11 text-text-secondary data-[state=active]:bg-surface data-[state=active]:text-teal data-[state=active]:shadow-md transition-all"
+            className="flex items-center justify-center gap-2 rounded-xl text-sm font-semibold h-11 text-text-secondary data-[active]:bg-surface data-[active]:text-teal data-[active]:shadow-md transition-all"
           >
             <MessageCircle className="w-4 h-4" />
             Configurações

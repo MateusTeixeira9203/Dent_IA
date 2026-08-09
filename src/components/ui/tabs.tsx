@@ -45,7 +45,7 @@ function TabsTrigger({
         "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-all",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         "disabled:pointer-events-none disabled:opacity-50",
-        "data-[selected]:bg-surface data-[selected]:text-text-primary data-[selected]:shadow-sm",
+        "data-[active]:bg-surface data-[active]:text-text-primary data-[active]:shadow-sm",
         "hover:text-text-primary",
         className
       )}

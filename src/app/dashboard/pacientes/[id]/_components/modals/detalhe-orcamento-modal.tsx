@@ -342,7 +342,7 @@ export function DetalheOrcamentoModal({
                       <TabsTrigger
                         key={t.value}
                         value={t.value}
-                        className="rounded-none border-b-2 border-transparent px-3 py-2.5 font-semibold data-[selected]:bg-transparent data-[selected]:shadow-none data-[selected]:border-teal data-[selected]:text-teal-ink"
+                        className="rounded-none border-b-2 border-transparent px-3 py-2.5 font-semibold data-[active]:bg-transparent data-[active]:shadow-none data-[active]:border-teal data-[active]:text-teal-ink"
                       >
                         {t.label}
                         {t.count !== null && (
