@@ -1,8 +1,7 @@
 # R-28 — Pagamento pendente fecha sem duplicar + `marcado_por_id` gravado
 
 > **SPEC** · **R-28** · Partes (1)/(2): fase **execução — codado e verificado na `Teste01` (29/07)**.
-> Parte (3): fase **plano escrito, aguardando revisão do Mateus** (31/07) — não implementar
-> até aprovação explícita.
+> Parte (3): fase **contrato — aprovada 09/08, D8/D9 fechados abaixo.**
 > **Modelo:** Sonnet (bug fix contido, sem ambiguidade de produto).
 > **Aberto:** 2026-07-29 · **Depende de:** nada (sem migration — schema já tem as colunas).
 > **Escopo desta spec: partes (1), (2) — no ar — e (3), abaixo.** Parte (3) (saldo pendente
@@ -107,11 +106,13 @@ async function handleFecharPagamento(): Promise<void>;          // chama marcarP
 
 ## Parte 3 — Saldo pendente fantasma (reconciliação + fechamento sem duplicar)
 
-> **Status desta parte: plano escrito, 31/07 — aguardando revisão do Mateus.**
-> Não implementar nada abaixo até aprovação explícita. Achado ao vivo nesta sessão e na
-> anterior: orçamento "Gessica" R$250, orçamento "marcos" R$5.360, e de novo hoje — mesmo
-> paciente "Marcos", 2 parcelas de R$250 (1 `PENDENTE` sem nenhum detalhe, 1 `PAGO` via Pix
-> "por Portaria", ambas datadas de hoje 31/07).
+> **Status desta parte: aprovada 09/08 — D8/D9 abaixo fechados em chat.** Achado ao vivo em
+> 31/07: orçamento "Gessica" R$250, orçamento "marcos" R$5.360. Reconciliação rodada de novo
+> em 09/08 (Supabase MCP disponível desta vez): **10 orçamentos reais na Clindent**, todos com
+> `total_pago = valor_devido` exato (Vicente Vass R$1.500 · Eliane Maria da Silva R$1.400 (3
+> parcelas) · Arlene Silveira R$1.250 · Andryelle Gomes R$590 · Edna Maria Rodrigus R$550 ·
+> João Marques Jordão R$300 · Gessica Sousa R$250 · Eliane Pereira R$250 · Lourival R$200 ·
+> Valdineia Alves R$200).
 
 ### Causa raiz (relida no código, 31/07 — bate com o diagnóstico do handoff)
 
@@ -146,14 +147,15 @@ async function handleFecharPagamento(): Promise<void>;          // chama marcarP
 | # | Decisão | Detalhe |
 |---|---|---|
 | D7 | `registrarPagamento` só fecha uma `pendente` existente quando o valor bate **exatamente** (tolerância 1 centavo) — nunca "pega a mais antiga" como `registrarPagamentoRapido` | Alternativa descartada: copiar a regra do rápido. Risco real: um pagamento parcial de R$50 numa parcela de R$100 fecharia a parcela inteira como paga, perdendo R$50 silenciosamente — pior que o bug atual |
-| D8 — **ABERTA** | `receipt-handler.ts` e `abacatepay/route.ts` entram nesta correção agora, ou ficam de fora (uso real não confirmado)? | Ver "Não cobre" abaixo — deixei fora do plano de implementação até você decidir |
-| D9 — **ABERTA** | O que fazer com as duplicatas **já existentes** (Gessica R$250, Marcos R$5.360, e as que a query abaixo achar)? Excluir a linha `pendente` fantasma? Precisa confirmar com o dentista antes de qualquer escrita? | Dado financeiro real de clínica em produção — não decido sozinho |
+| D8 — **fechada 09/08: fora** | `receipt-handler.ts` e `abacatepay/route.ts` **não** entram nesta correção | Nenhum caller confirmado que dispare cobrança AbacatePay vinculada a `orcamento_id` em produção — uso real não confirmado. YAGNI: revisitar se/quando aparecer evidência de uso |
+| D9 — **fechada 09/08: só o fix de código** | As **10 duplicatas existentes na Clindent não são tocadas** nesta spec — nenhum UPDATE/DELETE em dado da Clindent. Só o guard de código (impede novo caso) entra | Clindent é a clínica real da família (produção, dinheiro real) — ver `feedback_clindent_somente_leitura` na memória do projeto. Escrita em dado existente lá exige aprovação explícita por ação, item por item, mesmo com o dado tão inequívoco quanto este |
 
 ### Não cobre (nesta parte)
 
-- `receipt-handler.ts` / `abacatepay/route.ts` — mesma checagem poderia se aplicar, mas fica fora até D8.
+- `receipt-handler.ts` / `abacatepay/route.ts` — fora por D8.
 - Mudar como/quando o placeholder nasce em `atualizarStatusOrcamento` — só conserta o fechamento, não a criação.
-- Escrever no dado já duplicado — fica só como query read-only + decisão D9.
+- **Fechar as 10 parcelas pendentes fantasma já existentes na Clindent** — fora por D9. Fica
+  como trabalho futuro, item por item, só quando/se explicitamente pedido.
 
 ### Plano de implementação (se aprovado)
 
