@@ -3,7 +3,7 @@
 > **SPEC** · **R-NN** · 🔵 ativo
 > **Aberto:** YYYY-MM-DD · **Fechado:** — · **Fase:** debate | plano | contrato | aprovada
 
-<!-- Seções 1–3 nascem no debate/planejamento; 4–7 no contrato.
+<!-- Seções 1–3 nascem no debate/planejamento; 4–9 no contrato.
      Seção sem conteúdo fica com "—", não some: a ausência é informação. -->
 
 ## 1. Problema
@@ -27,7 +27,44 @@ Só o que é específico desta feature — não redocumente o stack.
 Conforme o caso: types TypeScript · schemas Zod · contratos de API (rota/body/response/erros)
 · SQL + RLS · árvore de componentes com Server/Client.
 
-## 5. Referência visual
+## 5. Comportamento — o alvo funcional
+
+> O par funcional da §6. Sem isto, "100% funcional" fica indefinido e a implementação
+> improvisa cada caminho — que é o que faz a funcionalidade demorar a fechar.
+
+### Estados — o vocabulário é quase sempre este. Preencha ou marque N/A
+
+| Estado | Quando acontece | O que a tela mostra | O que a função faz |
+|---|---|---|---|
+| Vazio | sem dados ainda | | |
+| Carregando | server action em voo (`pending`) | | |
+| Sucesso | caminho feliz | | |
+| Erro de validação | Zod `safeParse` falhou | | mostra `fieldErrors`, não grava |
+| Sem permissão | outro `clinica_id` / não é autor / RLS barra | | |
+| Não encontrado / desatualizado | registro sumiu ou mudou sob você | | |
+| Conflito | concorrência (2 dentistas no mesmo dado) | | |
+
+> Marcar N/A é decisão, não esquecimento. "Este dado nunca fica vazio porque X" é uma
+> resposta válida — a ausência de resposta não é.
+
+### Caminho principal — o passo a passo que hoje falta
+
+```
+gatilho (clique / voz / submit)
+  → valida (schema Zod X)
+  → {o que a função faz, passo a passo — de onde lê, o que escreve}
+  → resultado observável (o que muda na tela)
+```
+
+### Exemplos concretos — o que você aprova em 30 segundos, como um mockup
+
+Um por caminho que ramifica. É a versão funcional de "bater o olho no artefato".
+
+| Dado / situação | O sistema faz | Resultado esperado |
+|---|---|---|
+| {ex: ficha sem procedimento} | {ex: renderiza estado vazio com CTA} | {ex: card "nenhum procedimento", botão Adicionar} |
+
+## 6. Referência visual
 
 > Só se a feature tem UI. Sem UI, escreva "—".
 
@@ -38,18 +75,21 @@ Conforme o caso: types TypeScript · schemas Zod · contratos de API (rota/body/
 | Token | Valor |
 |---|---|
 
-## 6. Invariantes
+## 7. Invariantes
 
 Regras que a implementação nunca pode quebrar.
 
 - [ ] {ex: usuário só acessa dados do próprio tenant}
 
-## 7. Gates de aceite
+## 8. Gates de aceite
 
-Condições verificáveis que definem "pronto". Cada uma com um "como eu verifico" óbvio.
+Condições verificáveis que definem "pronto". **Cada estado da §5 vira um gate** — é o que
+transforma "está 100%?" numa checagem finita em vez de uma sensação.
 
 - [ ] {ex: POST /api/x com body válido devolve 201 + { id }}
+- [ ] {ex: ficha vazia mostra o estado vazio, não erro nem tela branca}
+- [ ] {ex: dentista de outra clínica recebe 403, não os dados}
 
-## 8. Fora de escopo
+## 9. Fora de escopo
 
 O que esta spec deliberadamente não cobre.
