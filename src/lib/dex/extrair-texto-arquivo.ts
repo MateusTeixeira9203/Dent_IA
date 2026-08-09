@@ -5,7 +5,13 @@
 const AUDIO_EXTS = ['mp3', 'm4a', 'opus', 'wav', 'webm', 'ogg'];
 const DOC_EXTS = ['pdf', 'docx', 'doc', 'txt'];
 
-export type ExtrairTextoResultado = { ok: true; texto: string } | { ok: false; error: string };
+/** 07/08 — `origem` distingue os dois casos que chegam pela mesma caixa: áudio é o dentista
+ *  narrando (equivalente a ditado ao vivo — verbo no passado continua querendo dizer feito),
+ *  documento é histórico/referência trazido de fora (mesmo verbo no passado NÃO prova que
+ *  ESTA clínica fez — vira `modo: 'exame_inicial'` em quem chama, ver captura-livre-card.tsx). */
+export type ExtrairTextoResultado =
+  | { ok: true; texto: string; origem: 'audio' | 'documento' }
+  | { ok: false; error: string };
 
 /** Áudio vai pro Whisper (`/api/transcrever`), documento pro parser de texto
  *  (`/api/extrair-texto`) — mesmo roteamento por extensão que já existia. */
@@ -19,7 +25,7 @@ export async function extrairTextoDeArquivo(file: File): Promise<ExtrairTextoRes
     const res = await fetch('/api/transcrever', { method: 'POST', body: fd });
     const data = await res.json() as { transcricao?: string; error?: string };
     if (!res.ok || data.error) return { ok: false, error: data.error ?? 'Erro ao transcrever o áudio.' };
-    return { ok: true, texto: data.transcricao ?? '' };
+    return { ok: true, texto: data.transcricao ?? '', origem: 'audio' };
   }
 
   if (DOC_EXTS.includes(ext)) {
@@ -28,7 +34,7 @@ export async function extrairTextoDeArquivo(file: File): Promise<ExtrairTextoRes
     const res = await fetch('/api/extrair-texto', { method: 'POST', body: fd });
     const data = await res.json() as { texto?: string; error?: string };
     if (!res.ok || data.error) return { ok: false, error: data.error ?? 'Erro ao extrair texto do arquivo.' };
-    return { ok: true, texto: data.texto ?? '' };
+    return { ok: true, texto: data.texto ?? '', origem: 'documento' };
   }
 
   return { ok: false, error: 'Formato não suportado. Envie áudio, .pdf, .docx, .doc ou .txt.' };

@@ -31,8 +31,9 @@ export interface CapturaLivreCardProps {
   onOrganizado: (evolucao: EvolucaoFormatada) => void;
   /** R-46d (D8) — "usar este documento de base": `nonce` muda a cada clique, o efeito abaixo
    *  observa a mudança e faz append no texto atual. Opcional — callers existentes (FichasTab)
-   *  não passam, comportamento 100% preservado. */
-  anexarTexto?: { texto: string; nonce: number };
+   *  não passam, comportamento 100% preservado. `origem` (07/08) decide o `modo` que
+   *  `handleOrganizar` manda pro Dex — ver comentário em `veioDeDocumento` abaixo. */
+  anexarTexto?: { texto: string; nonce: number; origem: 'audio' | 'documento' };
   /** R-62 — catálogo pro match local (§3.1). Ausente = o matcher casa só os 17 tipos
    *  estruturais, sem item comercial. */
   catalogoProcedimentos?: MeuDiaCatalogoProcedimento[];
@@ -63,6 +64,15 @@ export function CapturaLivreCard({
     [texto, catalogoProcedimentos, onAplicarSugestao],
   );
 
+  // 07/08 — true assim que QUALQUER trecho de documento (pdf/docx/doc/txt, nunca áudio)
+  // entrar na caixa — nunca volta a false sozinho (o card inteiro reseta ao trocar de
+  // paciente/agendamento, mesmo padrão dos outros estados desta família). Efeito: o relato
+  // INTEIRO desta chamada ao Dex vira `modo:'exame_inicial'` (verbo no passado deixa de
+  // provar "feito por esta clínica hoje") — mistura-se com dictado ao vivo do mesmo jeito
+  // que uma anamnese mistura achado novo com histórico trazido pelo paciente: mais seguro
+  // tratar tudo como "confirmar antes" do que arriscar marcar procedimento alheio como feito.
+  const [veioDeDocumento, setVeioDeDocumento] = useState(false);
+
   // R-46d (D8) — append, não substituição: mesmo padrão que `handleArquivo` já usa.
   const anexarNonceRef = useRef(anexarTexto?.nonce);
   useEffect(() => {
@@ -70,6 +80,7 @@ export function CapturaLivreCard({
     anexarNonceRef.current = anexarTexto.nonce;
     const novo = anexarTexto.texto;
     setTexto((prev) => (prev ? `${prev}\n\n${novo}` : novo));
+    if (anexarTexto.origem === 'documento') setVeioDeDocumento(true);
   }, [anexarTexto, setTexto]);
 
   const [isOrganizando, setIsOrganizando] = useState(false);
@@ -104,7 +115,11 @@ export function CapturaLivreCard({
       const res = await fetch('/api/dex/formatar-evolucao', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texto: relato, pacienteNome }),
+        body: JSON.stringify({
+          texto: relato,
+          pacienteNome,
+          modo: veioDeDocumento ? 'exame_inicial' : 'consulta',
+        }),
       });
       const data = await res.json() as EvolucaoFormatada & { error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? 'Erro ao formatar');
@@ -129,6 +144,7 @@ export function CapturaLivreCard({
         const novo = resultado.texto;
         setTexto(prev => prev ? `${prev}\n${novo}` : novo);
       }
+      if (resultado.origem === 'documento') setVeioDeDocumento(true);
     } catch (err) {
       console.error('[captura-livre] anexo:', err);
       toast.error(err instanceof Error ? err.message : 'Erro ao processar o arquivo.');

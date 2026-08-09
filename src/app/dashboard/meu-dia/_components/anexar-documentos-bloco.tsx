@@ -13,7 +13,9 @@ import { extrairTextoDeArquivo } from '@/lib/dex/extrair-texto-arquivo';
 export interface AnexarDocumentosBlocoProps {
   documentoNome: string | null;
   documentoTexto: string | null;
-  onAnexado: (nome: string, texto: string) => void;
+  /** `origem` (07/08) — repassa pro campo mágico decidir o `modo` da chamada ao Dex (áudio
+   *  narrado continua "consulta"; documento vira "exame_inicial" — ver captura-livre-card.tsx). */
+  onAnexado: (nome: string, texto: string, origem: 'audio' | 'documento') => void;
   onUsarComoBase: () => void;
 }
 
@@ -31,7 +33,7 @@ export function AnexarDocumentosBloco({
       toast.error(resultado.error);
       return;
     }
-    onAnexado(file.name, resultado.texto);
+    onAnexado(file.name, resultado.texto, resultado.origem);
   }
 
   return (

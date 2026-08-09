@@ -171,6 +171,33 @@
       "relato": "raspagem e alisamento radicular no quadrante superior direito",
       "modo": "consulta",
       "esperado": { "eventos": [{ "tipo": "raspagem" }] }
+    },
+    {
+      "id": "upload-historico-ambiguo-vira-indicado",
+      "cat": "novo",
+      "relato": "Histórico trazido de outro consultório: paciente fez tratamento de canal no dente 26 há cerca de dois anos. Também extraiu o dente 38 nessa época. Relatou sensibilidade recente no 14.",
+      "modo": "exame_inicial",
+      "esperado": {
+        "eventos": [
+          { "tipo": "endodontia", "dente": 26, "status": "indicado" },
+          { "tipo": "exodontia", "dente": 38, "status": "indicado" }
+        ],
+        "proibido": [
+          { "tipo": "endodontia", "dente": 26, "status": "realizado" },
+          { "tipo": "exodontia", "dente": 38, "status": "realizado" }
+        ]
+      }
+    },
+    {
+      "id": "upload-historico-completado-explicito-mantem-realizado",
+      "cat": "novo",
+      "relato": "Prontuário anterior anexado: Restauração em resina composta realizada em 15/03/2024, dente 26, face oclusal. Concluída sem intercorrências.",
+      "modo": "exame_inicial",
+      "esperado": {
+        "eventos": [
+          { "tipo": "carie_restauracao", "dente": 26, "status": "realizado", "nivel": "face", "faces": ["O"] }
+        ]
+      }
     }
   ]
 }

@@ -298,6 +298,7 @@ RELATO DO DENTISTA:
 CONTEXTO:
 - Paciente: ${body.pacienteNome ?? 'não informado'}
 - Data: ${new Date().toLocaleDateString('pt-BR')}
+${modo === 'exame_inicial' ? '- Origem do texto: HISTÓRICO/REFERÊNCIA — documento anexado ou colado pelo dentista, não é ele narrando o que fez nesta sessão. Ver regra de status no bloco ODONTOGRAMA abaixo — ela muda pra este modo.' : ''}
 
 Retorne SOMENTE um JSON válido, sem markdown, com exatamente esta estrutura:
 {
@@ -335,6 +336,15 @@ ODONTOGRAMA (camada visual — além dos campos acima):
 Para CADA achado/procedimento que você registrou em dentes_observacoes, emita TAMBÉM o(s) evento(s) visual(is) correspondente(s) em "odontograma_eventos". Um evento descreve o estado clínico de um dente ou face.
 - tipo (escolha o mais específico): "carie_restauracao" (cárie a restaurar OU restauração feita — ancora em FACE), "endodontia" (canal), "exodontia" (extração), "coroa" (coroa total protética UNITÁRIA), "ponte" (prótese fixa multi-dente — ver regra PONTE), "implante", "selante" (sempre face O), "lesao_periapical" (achado radiográfico no ápice), "inclusao" (dente incluso/impactado), "fratura" (trauma dentário), "pino_nucleo" (pino/núcleo intrarradicular), "esfoliacao" (decíduo que caiu naturalmente — SÓ dentes 51-85, sempre "realizado"), "profilaxia" (limpeza — nível boca), "raspagem" (raspagem/alisamento periodontal — nível quadrante; sem quadrante citado, boca), "clareamento" (nível boca), "fluor" (aplicação de flúor — nível boca).
 - status: "indicado" (a fazer/planejado — MESMA regra do PLANEJADO acima) ou "realizado" (feito / verbo no passado).
+${modo === 'exame_inicial' ? `- ⛔⛔ MODO HISTÓRICO/REFERÊNCIA — a regra de status ACIMA NÃO VALE aqui, esta a substitui: o texto é
+  documento trazido de fora (prontuário anterior, histórico importado), não o dentista relatando o
+  que fez agora. Verbo no passado sozinho ("fez o canal", "extraiu o dente", "restaurou o 26") NÃO
+  prova que ESTA clínica concluiu o procedimento hoje — vira "indicado" por padrão, mesmo narrado no
+  passado. Só use "realizado" quando o texto afirma conclusão de forma explícita e inequívoca:
+  data de realização, ou palavras como "concluído"/"finalizado"/"realizado em [data]". Menção vaga
+  ("fez tratamento há uns anos", "já tratou esse dente antes") fica "indicado" — o dentista confirma
+  na tela antes de qualquer coisa virar prontuário definitivo. Perder um "indicado" que devia ser
+  "realizado" o dentista corrige com 1 clique; um "realizado" fantasma pode passar despercebido.` : ''}
 - ⛔ NEGAÇÃO NO EVENTO (erro comum — leia com atenção): se o dentista NEGOU ter feito um procedimento, NÃO emita evento "realizado" pra ele, mesmo que o nome do procedimento apareça no relato. Exemplo obrigatório: "não fiz o canal, só o curativo no 46" → o evento do 46 é NO MÁXIMO {tipo:endodontia, status:"indicado"} (ou nenhum) — JAMAIS {tipo:endodontia, status:"realizado"}. O curativo não vira evento de odontograma (não há tipo pra ele). Regra geral: um tipo de evento só recebe status:"realizado" se AQUELE procedimento foi de fato executado; procedimento citado-e-negado nunca é realizado.
 - nivel decide os campos da âncora:
   · "face": preencha dente (FDI) e faces (array de "O"/"M"/"D"/"V"/"L"). Use para cárie/restauração/selante.

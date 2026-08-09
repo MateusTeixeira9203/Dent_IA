@@ -35,7 +35,7 @@ export interface CampoMagicoMeuDiaProps {
   onOrtoDetectado: (orto: OrtoManutencaoInfo) => void;
   /** R-46d D8 — "usar este documento de base" (anexar-documentos-bloco.tsx), repassado direto
    *  pro CapturaLivreCard. */
-  anexarTexto?: { texto: string; nonce: number };
+  anexarTexto?: { texto: string; nonce: number; origem: 'audio' | 'documento' };
   /** R-62 — catálogo pro match local, repassado direto pro CapturaLivreCard. */
   catalogoProcedimentos: MeuDiaCatalogoProcedimento[];
   /** R-62 — clique num chip de sugestão local. Dono da lógica é `registrar-painel.tsx`
