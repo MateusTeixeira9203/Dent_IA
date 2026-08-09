@@ -170,6 +170,13 @@ export function MeuDiaClient({
   const [documentoTexto, setDocumentoTexto] = useState<string | null>(null);
   const [documentoNonce, setDocumentoNonce] = useState(0);
   const [documentoOrigem, setDocumentoOrigem] = useState<'audio' | 'documento'>('documento');
+  // R-82 — memoizado por valor: sem isso, este objeto nascia de novo a cada render (referência
+  // instável) e o `useEffect` de `captura-livre-card.tsx` que depende dele reavaliava a cada
+  // re-render deste componente inteiro, não só quando o anexo de fato mudava.
+  const anexarTexto = useMemo(
+    () => (documentoTexto != null ? { texto: documentoTexto, nonce: documentoNonce, origem: documentoOrigem } : undefined),
+    [documentoTexto, documentoNonce, documentoOrigem],
+  );
 
   // Reset explícito ao trocar de paciente (contrato §5.4) — o `key={agendamentoId}` do
   // RegistrarPainel não alcança mais estes campos, que agora moram aqui. Ajuste durante o
@@ -251,7 +258,7 @@ export function MeuDiaClient({
     onTextoVisitaChange: setTextoVisita,
     temFichaHoje: slotSelecionado?.temFichaHoje ?? false,
     onSalvo: handleSalvo,
-    anexarTexto: documentoTexto != null ? { texto: documentoTexto, nonce: documentoNonce, origem: documentoOrigem } : undefined,
+    anexarTexto,
     orto: contexto?.orto ?? null,
     boca: contexto?.boca ?? [],
     detalheEspecialidadeAberto,
