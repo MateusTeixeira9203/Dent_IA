@@ -738,7 +738,7 @@ export async function registrarRecebimento(dados: {
   // Garante que o orçamento e o paciente pertencem a esta clínica
   const { data: orc } = await supabase
     .from('orcamentos')
-    .select('id, status, total, valor_acordado')
+    .select('id, status, total, valor_acordado, dentista_id')
     .eq('id', dados.orcamentoId)
     .eq('clinica_id', clinicId)
     .maybeSingle();
@@ -757,10 +757,13 @@ export async function registrarRecebimento(dados: {
     .maybeSingle();
   if (!pac) return { error: 'Paciente não encontrado.' };
 
+  // R-90 — dentista_id nunca era gravado (coluna NOT NULL, todo insert falhava). Vem do
+  // orçamento, não de dados.dentistaId — mesma regra 8 de registrarPagamentoRapido.
   const { error: pagError } = await supabase.from('pagamentos').insert({
     clinica_id:      clinicId,
     orcamento_id:    dados.orcamentoId,
     paciente_id:     dados.pacienteId,
+    dentista_id:     orc.dentista_id,
     valor:           dados.valor,
     status:          'pago',
     forma_pagamento: dados.formaPagamento,
