@@ -67,6 +67,7 @@ import type { PlanoId } from '@/lib/planos';
 import {
   atualizarStatusOrcamento,
   registrarPagamento,
+  registrarPagamentoRapido,
   editarPagamento,
   marcarPagamentoPago,
   excluirPagamento,
@@ -260,6 +261,7 @@ export function PacienteDetailClient({
   const [parcelasError, setParcelasError] = useState<string | null>(null);
   const [pagSaving, setPagSaving] = useState(false);
   const [pagError, setPagError] = useState<string | null>(null);
+  const [pagRapidoSaving, setPagRapidoSaving] = useState(false);
 
   // R-28 — fechar uma parcela pendente específica via a aba Registrar pagamento
   // (em vez de abrir um pagamento novo e duplicar o recebimento).
@@ -715,6 +717,25 @@ export function PacienteDetailClient({
       });
     }
     setPagSaving(false);
+  };
+
+  // R-93 — atalho de 1 clique (R-34 §7.1, já existia no servidor, nunca ligado nesta tela):
+  // fecha a próxima parcela aberta por UPDATE, ou cobra o saldo restante, sempre em dinheiro.
+  const handlePagamentoRapido = async () => {
+    if (!detalheOrcId) return;
+    setPagRapidoSaving(true);
+    const result = await registrarPagamentoRapido({
+      orcamentoId: detalheOrcId,
+      pacienteId: paciente.id,
+      formaPagamento: 'dinheiro',
+    });
+    if (result.error) {
+      setPagError(result.error);
+    } else {
+      toast.success('Recebimento registrado!');
+      router.refresh();
+    }
+    setPagRapidoSaving(false);
   };
 
   const handleIniciarFechamentoPagamento = (pg: Pagamento) => {
@@ -1690,6 +1711,8 @@ export function PacienteDetailClient({
         onStatusChange={handleStatusChange}
         onToggleMostrarValorPorItem={handleToggleMostrarValorPorItem}
         onRegistrarPagamento={closingPagamentoId ? handleFecharPagamento : handleRegistrarPagamento}
+        onRegistrarDinheiroRapido={handlePagamentoRapido}
+        pagRapidoSaving={pagRapidoSaving}
         closingPagamentoId={closingPagamentoId}
         onIniciarFechamentoPagamento={handleIniciarFechamentoPagamento}
         onCancelarFechamentoPagamento={handleCancelarFechamentoPagamento}

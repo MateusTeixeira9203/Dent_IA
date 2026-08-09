@@ -123,6 +123,10 @@ interface Props {
   onSalvarEdicaoOrc: () => void;
   onStatusChange: (id: string, status: StatusOrcamento) => void;
   onRegistrarPagamento: () => void;
+  /** R-93 — atalho de 1 clique (R-34 §7.1): fecha a próxima parcela aberta, ou cobra o saldo
+   *  restante, sempre em dinheiro. Sem isso o caminho mais curto pra receber era 3-4 gestos. */
+  onRegistrarDinheiroRapido: () => void;
+  pagRapidoSaving: boolean;
   /** R-28 — id da parcela pendente sendo fechada; null = Registrar pagamento em modo criar novo. */
   closingPagamentoId: string | null;
   onIniciarFechamentoPagamento: (pg: Pagamento) => void;
@@ -162,6 +166,7 @@ export function DetalheOrcamentoModal({
   orcEditSaving, orcEditError, setOrcEditError,
   onOpenEditOrc, onSalvarEdicaoOrc,
   onStatusChange, onRegistrarPagamento,
+  onRegistrarDinheiroRapido, pagRapidoSaving,
   closingPagamentoId, onIniciarFechamentoPagamento, onCancelarFechamentoPagamento,
   onDeleteClick,
   podeExcluir,
@@ -553,6 +558,17 @@ export function DetalheOrcamentoModal({
                           style={{ width: `${pctPago}%` }}
                         />
                       </div>
+                      {!closingPagamentoId && (
+                        <Button
+                          type="button"
+                          onClick={onRegistrarDinheiroRapido}
+                          disabled={pagRapidoSaving}
+                          className="w-full mt-1 bg-teal text-white hover:bg-teal-lt rounded-xl gap-2 disabled:opacity-50"
+                        >
+                          <Banknote className="w-4 h-4" />
+                          {pagRapidoSaving ? 'Registrando...' : 'Registrar Dinheiro'}
+                        </Button>
+                      )}
                       <button
                         type="button"
                         disabled={restante <= 0}
