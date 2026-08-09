@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { inserirNotificacao } from "@/lib/notificacoes";
 import { registrarLog } from "@/lib/activity-log";
 import { hojeBRT } from "@/lib/hora-brt";
+import { STATUS_ORCAMENTO_SEM_PAGAMENTO, ERRO_ORCAMENTO_SEM_PAGAMENTO } from "@/server/orcamentos/pagamento-guards";
 
 export type FormaPagamento =
   | "dinheiro"
@@ -329,6 +330,19 @@ export async function marcarPagamentoPago(
     return { error: "Este pagamento já está marcado como pago." };
   }
 
+  // R-65 — status do orçamento pai checado ANTES do update (guard) e reaproveitado depois
+  // (D6), em vez de 2 queries separadas como antes.
+  const { data: orcRow } = await supabase
+    .from("orcamentos")
+    .select("total, valor_acordado, status")
+    .eq("id", pagAtual.orcamento_id)
+    .eq("clinica_id", clinicId)
+    .single();
+
+  if (orcRow && STATUS_ORCAMENTO_SEM_PAGAMENTO.has(orcRow.status)) {
+    return { error: ERRO_ORCAMENTO_SEM_PAGAMENTO };
+  }
+
   const { error } = await supabase
     .from("pagamentos")
     .update({
@@ -348,13 +362,6 @@ export async function marcarPagamentoPago(
   // D6 — mesma regra de auto-aprovação do registrarPagamento (paridade, não a
   // reconciliação da parte 3 do achado — essa fica pra decisão de negócio separada).
   let autoAprovado = false;
-  const { data: orcRow } = await supabase
-    .from("orcamentos")
-    .select("total, valor_acordado, status")
-    .eq("id", pagAtual.orcamento_id)
-    .eq("clinica_id", clinicId)
-    .single();
-
   if (orcRow && orcRow.status === "enviado") {
     const { data: pagamentos } = await supabase
       .from("pagamentos")
@@ -526,6 +533,19 @@ export async function registrarPagamento(dados: {
   const hoje = new Date().toISOString().split('T')[0];
   const isAgendado = dados.dataVencimento && dados.dataVencimento > hoje;
 
+  // R-65 — status do orçamento pai checado ANTES do insert (guard) e reaproveitado depois
+  // (D6), em vez de 2 queries separadas como antes.
+  const { data: orcRow } = await supabase
+    .from("orcamentos")
+    .select("total, valor_acordado, status")
+    .eq("id", dados.orcamentoId)
+    .eq("clinica_id", clinicId)
+    .single();
+
+  if (orcRow && STATUS_ORCAMENTO_SEM_PAGAMENTO.has(orcRow.status)) {
+    return { error: ERRO_ORCAMENTO_SEM_PAGAMENTO };
+  }
+
   const { data, error } = await supabase
     .from("pagamentos")
     .insert({
@@ -548,12 +568,6 @@ export async function registrarPagamento(dados: {
   }
 
   let autoAprovado = false;
-  const { data: orcRow } = await supabase
-    .from("orcamentos")
-    .select("total, valor_acordado, status")
-    .eq("id", dados.orcamentoId)
-    .eq("clinica_id", clinicId)
-    .single();
 
   if (orcRow && orcRow.status === "enviado") {
     const { data: pagamentos } = await supabase
@@ -794,6 +808,9 @@ export async function registrarPagamentoRapido(dados: {
     .maybeSingle();
 
   if (!orc) return { error: "Orçamento não encontrado." };
+  if (STATUS_ORCAMENTO_SEM_PAGAMENTO.has(orc.status)) {
+    return { error: ERRO_ORCAMENTO_SEM_PAGAMENTO };
+  }
 
   const { data: pagamentosOrc } = await supabase
     .from("pagamentos")

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { requireClinicContext } from '@/server/auth/clinic';
 import { inserirNotificacao } from '@/lib/notificacoes';
 import { buildCsv } from '@/lib/export/csv';
+import { STATUS_ORCAMENTO_SEM_PAGAMENTO, ERRO_ORCAMENTO_SEM_PAGAMENTO } from '@/server/orcamentos/pagamento-guards';
 
 export type Despesa = {
   id: string;
@@ -144,13 +145,16 @@ export async function calcularSaldoMes(mesISO: string): Promise<SaldoMes> {
     .gte('data', inicioDate)
     .lt('data', fimDate);
 
+  // R-65 — !inner + filtro no embed: pagamento cujo orçamento pai é rascunho/recusado nunca
+  // deveria contar como receita (era dinheiro sem orçamento comprometido por trás).
   let pagamentosQuery = supabase
     .from('pagamentos')
-    .select('valor')
+    .select('valor, orcamentos!inner(status)')
     .eq('clinica_id', clinicId)
     .eq('status', 'pago')
     .gte('data_pagamento', inicioDate)
-    .lt('data_pagamento', fimDate);
+    .lt('data_pagamento', fimDate)
+    .not('orcamentos.status', 'in', '(rascunho,recusado)');
 
   let receitasQuery = supabase
     .from('receitas_manuais')
@@ -199,10 +203,11 @@ export async function listarUltimos7Dias(): Promise<DayPoint[]> {
 
   let pagamentosQuery = supabase
     .from('pagamentos')
-    .select('valor, data_pagamento')
+    .select('valor, data_pagamento, orcamentos!inner(status)')
     .eq('clinica_id', clinicId)
     .eq('status', 'pago')
-    .gte('data_pagamento', inicioDate);
+    .gte('data_pagamento', inicioDate)
+    .not('orcamentos.status', 'in', '(rascunho,recusado)');
 
   if (scopado) {
     despesas7Query  = despesas7Query.eq('dentista_id', dentistaId);
@@ -240,10 +245,11 @@ export async function listarUltimosMeses(n = 6): Promise<ChartPoint[]> {
 
   let pagamentosQuery = supabase
     .from('pagamentos')
-    .select('valor, data_pagamento')
+    .select('valor, data_pagamento, orcamentos!inner(status)')
     .eq('clinica_id', clinicId)
     .eq('status', 'pago')
-    .gte('data_pagamento', inicioJanela.toISOString().split('T')[0]);
+    .gte('data_pagamento', inicioJanela.toISOString().split('T')[0])
+    .not('orcamentos.status', 'in', '(rascunho,recusado)');
 
   let despesasQuery = supabase
     .from('despesas')
@@ -496,9 +502,10 @@ export async function exportarFinanceiroCsv(
     .eq('clinica_id', clinicId).gte('data', inicioDate).lt('data', fimDate);
   let pagamentosQ = supabase
     .from('pagamentos')
-    .select('valor, data_pagamento, forma_pagamento, paciente:pacientes(nome)')
+    .select('valor, data_pagamento, forma_pagamento, paciente:pacientes(nome), orcamentos!inner(status)')
     .eq('clinica_id', clinicId).eq('status', 'pago')
-    .gte('data_pagamento', inicioDate).lt('data_pagamento', fimDate);
+    .gte('data_pagamento', inicioDate).lt('data_pagamento', fimDate)
+    .not('orcamentos.status', 'in', '(rascunho,recusado)'); // R-65
 
   if (scopado) {
     despesasQ   = despesasQ.eq('dentista_id', dentistaId);
@@ -555,11 +562,12 @@ export async function listarPagamentosPagos(mesISO: string): Promise<PagamentoPa
 
   let query = supabase
     .from('pagamentos')
-    .select('id, clinica_id, orcamento_id, paciente_id, dentista_id, valor, forma_pagamento, data_pagamento, created_at, paciente:pacientes(nome)')
+    .select('id, clinica_id, orcamento_id, paciente_id, dentista_id, valor, forma_pagamento, data_pagamento, created_at, paciente:pacientes(nome), orcamentos!inner(status)')
     .eq('clinica_id', clinicId)
     .eq('status', 'pago')
     .gte('data_pagamento', inicioDate)
     .lt('data_pagamento', fimDate)
+    .not('orcamentos.status', 'in', '(rascunho,recusado)') // R-65
     .order('data_pagamento', { ascending: false });
 
   if (role !== 'secretaria') {
@@ -596,9 +604,10 @@ export async function listarPagamentosPendentes(): Promise<PagamentoPendente[]> 
 
   let query = supabase
     .from('pagamentos')
-    .select('id, orcamento_id, paciente_id, dentista_id, valor, data_vencimento, created_at, paciente:pacientes(nome)')
+    .select('id, orcamento_id, paciente_id, dentista_id, valor, data_vencimento, created_at, paciente:pacientes(nome), orcamentos!inner(status)')
     .eq('clinica_id', clinicId)
     .eq('status', 'pendente')
+    .not('orcamentos.status', 'in', '(rascunho,recusado)') // R-65 — "Receita Prevista" não pode contar parcela de orçamento recusado
     .order('data_vencimento', { ascending: true, nullsFirst: false });
 
   if (role !== 'secretaria') {
@@ -699,17 +708,22 @@ export async function registrarRecebimento(dados: {
   formaPagamento: FormaRecebimento;
   data: string;
   dentistaId?: string;
-}): Promise<{ error?: string }> {
+}): Promise<{ error?: string; autoAprovado?: boolean }> {
   const { supabase, clinicId } = await requireClinicContext();
 
   // Garante que o orçamento e o paciente pertencem a esta clínica
   const { data: orc } = await supabase
     .from('orcamentos')
-    .select('id')
+    .select('id, status, total, valor_acordado')
     .eq('id', dados.orcamentoId)
     .eq('clinica_id', clinicId)
     .maybeSingle();
   if (!orc) return { error: 'Orçamento não encontrado.' };
+
+  // R-65 — único dos 4 caminhos de escrita que não checava status antes de aceitar dinheiro.
+  if (STATUS_ORCAMENTO_SEM_PAGAMENTO.has(orc.status)) {
+    return { error: ERRO_ORCAMENTO_SEM_PAGAMENTO };
+  }
 
   const { data: pac } = await supabase
     .from('pacientes')
@@ -731,8 +745,30 @@ export async function registrarRecebimento(dados: {
 
   if (pagError) return { error: pagError.message };
 
+  // R-65 — mesma regra D6 (R-28) que os outros 3 caminhos de pagamento já têm; este era o
+  // único sem paridade. `recusado` nunca auto-aprova (nem aqui, nem nos outros 3).
+  let autoAprovado = false;
+  if (orc.status === 'enviado') {
+    const { data: pagamentos } = await supabase
+      .from('pagamentos')
+      .select('valor')
+      .eq('orcamento_id', dados.orcamentoId)
+      .eq('status', 'pago');
+
+    const totalPago = (pagamentos ?? []).reduce((s, p) => s + p.valor, 0);
+    const valorDevido = orc.valor_acordado ?? orc.total ?? 0; // I1
+    if (totalPago >= valorDevido) {
+      await supabase
+        .from('orcamentos')
+        .update({ status: 'aprovado' })
+        .eq('id', dados.orcamentoId)
+        .eq('clinica_id', clinicId);
+      autoAprovado = true;
+    }
+  }
+
   revalidatePath('/dashboard/financeiro');
   revalidatePath('/dashboard/orcamentos');
-  return {};
+  return { autoAprovado };
 }
 
