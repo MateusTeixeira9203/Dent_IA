@@ -6,6 +6,7 @@ import { Check, Sparkles, Loader2, AlertCircle, Stethoscope, Building2 } from 'l
 import { useRouter } from 'next/navigation';
 import { NeuralBackground } from '@/components/layout/NeuralBackground';
 import { activateTrial, createCheckout } from '../actions';
+import { PLANOS } from '@/lib/planos';
 import Link from 'next/link';
 
 interface PlanosClientProps {
@@ -22,7 +23,7 @@ const plans = [
     name: 'Consultório',
     tagline: 'Para o dentista e seu consultório',
     icon: Stethoscope,
-    price: '249',
+    price: String(PLANOS.SOLO.preco),
     pricePeriod: '/mês',
     description: 'Sistema completo para atendimento clínico — IA, fichas estruturadas, planejamento visual, orçamentos, agenda e secretária. Tudo para atender mais em menos tempo.',
     features: [
@@ -43,7 +44,7 @@ const plans = [
     name: 'Clínica',
     tagline: 'Para consultórios com múltiplos dentistas',
     icon: Building2,
-    price: '179',
+    price: String(PLANOS.CLINICA.preco),
     pricePeriod: '/dentista/mês',
     description: 'Tudo do Consultório, mais secretária com visão unificada de todos os dentistas, WhatsApp integrado com bot e lembretes automáticos.',
     features: [
@@ -280,7 +281,7 @@ export function PlanosClient({
             transition={{ delay: 0.5 }}
             className="text-center text-xs text-text-secondary mt-8"
           >
-            Plano Clínica: mínimo 3 dentistas. Cada dentista paga R$&nbsp;179/mês individualmente.
+            Plano Clínica: mínimo 3 dentistas. Cada dentista paga R$&nbsp;{PLANOS.CLINICA.preco}/mês individualmente.
           </motion.p>
         </section>
 

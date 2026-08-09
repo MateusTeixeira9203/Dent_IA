@@ -15,6 +15,7 @@ import {
   definirProcedimentosPendente, type PlanoClinica,
 } from '../actions';
 import { PERSONAS, PERSONA_IDS, getPersona, type FocoPrincipal } from '@/lib/persona';
+import { PLANOS } from '@/lib/planos';
 import { especialidadesSchema } from '@/lib/especialidades';
 import { EspecialidadeChips } from '@/components/ui/especialidade-chips';
 import { toast } from 'sonner';
@@ -26,7 +27,7 @@ const PLANOS_CONFIG = [
     id: 'SOLO' as PlanoClinica,
     label: 'Solo',
     tagline: 'Para você e sua equipe',
-    preco: 'R$249',
+    preco: `R$${PLANOS.SOLO.preco}`,
     periodo: '/mês',
     minimo: null,
     icon: Stethoscope,
@@ -41,9 +42,9 @@ const PLANOS_CONFIG = [
     id: 'CLINICA' as PlanoClinica,
     label: 'Clínica',
     tagline: 'Para múltiplos dentistas',
-    preco: 'R$179',
+    preco: `R$${PLANOS.CLINICA.preco}`,
     periodo: '/dentista/mês',
-    minimo: 'Mín. 3 dentistas · R$537/mês',
+    minimo: `Mín. 3 dentistas · R$${PLANOS.CLINICA.preco * 3}/mês`,
     badge: 'Popular',
     icon: Building2,
     features: [
@@ -634,7 +635,7 @@ export function OnboardingClient({ initialStep, focoInicial, nomeInicial }: Onbo
                   O plano Clínica exige <span className="font-bold text-text-primary">mínimo 3 dentistas</span>. Você é o dentista 1.
                 </p>
                 <p className="text-sm text-text-secondary mb-5">
-                  A cobrança mínima será <span className="font-bold text-text-primary">R$537/mês</span> (3 × R$179). Cada colega assina individualmente com o próprio cartão.
+                  A cobrança mínima será <span className="font-bold text-text-primary">R${PLANOS.CLINICA.preco * 3}/mês</span> (3 × R${PLANOS.CLINICA.preco}). Cada colega assina individualmente com o próprio cartão.
                 </p>
 
                 <a

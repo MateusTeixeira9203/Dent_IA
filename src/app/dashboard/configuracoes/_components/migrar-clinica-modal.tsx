@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { enviarConvite } from '../usuarios/actions';
 import { ativarPlanoClinica, verificarStatusMigracao } from '../plano-actions';
+import { PLANOS } from '@/lib/planos';
 import { toast } from 'sonner';
 
 interface MigrarClinicaModalProps {
@@ -172,7 +173,7 @@ export function MigrarClinicaModal({
                     <div className="space-y-3 mb-6">
                       {[
                         { n: 1, titulo: 'Convide seus colegas', desc: 'Envie convites por e-mail direto do sistema.' },
-                        { n: 2, titulo: 'Cada um assina individualmente', desc: 'Cada dentista paga R$179/mês com o próprio cartão.' },
+                        { n: 2, titulo: 'Cada um assina individualmente', desc: `Cada dentista paga R$${PLANOS.CLINICA.preco}/mês com o próprio cartão.` },
                         { n: 3, titulo: 'Clínica ativada', desc: 'Com 3+ dentistas confirmados, o plano é ativado.' },
                       ].map(({ n, titulo, desc }) => (
                         <div key={n} className="flex items-start gap-3">
@@ -194,8 +195,8 @@ export function MigrarClinicaModal({
                     <div className="flex items-start gap-2.5 p-3.5 rounded-2xl border border-amber-400/30 bg-amber-400/8 mb-6">
                       <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                       <p className="text-xs text-amber-600 dark:text-amber-400 leading-relaxed">
-                        <span className="font-bold">Cobrança mínima: R$537/mês</span>{' '}
-                        (3 × R$179). O plano Clínica exige no mínimo 3 dentistas ativos.
+                        <span className="font-bold">Cobrança mínima: R${PLANOS.CLINICA.preco * 3}/mês</span>{' '}
+                        (3 × R${PLANOS.CLINICA.preco}). O plano Clínica exige no mínimo 3 dentistas ativos.
                       </p>
                     </div>
 

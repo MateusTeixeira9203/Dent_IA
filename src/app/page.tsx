@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
 import ParticleNetwork from '@/components/ParticleNetwork';
+import { PLANOS as PLANOS_PRECO } from '@/lib/planos';
 
 // ── Brand tokens ──────────────────────────────────────────────────────────────
 const TEAL    = '#2f9c85';
@@ -28,7 +29,7 @@ const fadeIn = {
 // ── Plans ─────────────────────────────────────────────────────────────────────
 const PLANOS = [
   {
-    id: 'SOLO', nome: 'Consultório', preco: '249', precoSuffix: '/mês',
+    id: 'SOLO', nome: 'Consultório', preco: String(PLANOS_PRECO.SOLO.preco), precoSuffix: '/mês',
     desc: 'Sistema completo para atendimento clínico — IA, fichas, planejamento, orçamentos, agenda e secretária.',
     features: [
       '1 Dentista + 1 Secretária',
@@ -41,7 +42,7 @@ const PLANOS = [
     popular: false, cta: '14 dias grátis',
   },
   {
-    id: 'CLINICA', nome: 'Clínica', preco: '179', precoSuffix: '/dentista/mês',
+    id: 'CLINICA', nome: 'Clínica', preco: String(PLANOS_PRECO.CLINICA.preco), precoSuffix: '/dentista/mês',
     desc: 'Tudo do Consultório, mais secretária com visão unificada de todos os dentistas e WhatsApp integrado.',
     features: [
       'A partir de 3 dentistas',
