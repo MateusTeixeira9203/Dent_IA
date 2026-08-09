@@ -222,6 +222,14 @@ export function MeuDiaClient({
   const slotSelecionado = selecionadoId ? (slots.find((s) => s.agendamentoId === selecionadoId) ?? null) : null;
   const contexto = slotSelecionado ? contextoPorPaciente[slotSelecionado.pacienteId] : null;
 
+  // R-84 §3 — discriminador: id já existia no banco antes desta sessão (boca, R-61) vs.
+  // indicação nova desta ficha. Derivado a cada render, nunca persistido — mesmo princípio de
+  // `emAndamento`/`semPendencia` (evita 3º status por acidente, cilada documentada no R-51).
+  const idsDeAntes = useMemo(
+    () => new Set((contexto?.boca ?? []).map((b) => b.id)),
+    [contexto?.boca],
+  );
+
   // R-46h — picker de orçamento (Histórico por-visita + rodapé do Registrar). Meu dia é
   // dentista-only (page.tsx redireciona secretaria): isSecretaria sempre false,
   // dentistasClinica sempre [], sem onOrcamentoCriado (não há lista de orçamentos aqui).
@@ -262,7 +270,12 @@ export function MeuDiaClient({
     orto: contexto?.orto ?? null,
     boca: contexto?.boca ?? [],
     detalheEspecialidadeAberto,
-    onAbrirPickerOrcamento: () => void orcamentoModal.abrirPickerFichasAbertas(eventosDraft.map(draftParaEventoOrc)),
+    // R-84 §5.1 — só o que é indicação NOVA desta ficha vai pro orçamento; o que é pendência
+    // antiga sendo fechada hoje já foi vendido na avaliação (§2.2). Filtro por evento, não por
+    // card: elemento novo acrescentado hoje a um grupo antigo continua sendo venda legítima.
+    onAbrirPickerOrcamento: () => void orcamentoModal.abrirPickerFichasAbertas(
+      eventosDraft.filter((e) => !idsDeAntes.has(e.id)).map(draftParaEventoOrc),
+    ),
   });
 
   // C6 — o Sheet precisa da mesma lista que o painel do dente sempre recebeu; migrado de
@@ -532,6 +545,7 @@ export function MeuDiaClient({
                 eventosDraft={eventosDraft}
                 onEventosDraftChange={setEventosDraft}
                 onAbrirDenteGrande={abrirDenteGrande}
+                idsDeAntes={idsDeAntes}
               />
             </div>
 

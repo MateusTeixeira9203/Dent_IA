@@ -32,6 +32,10 @@ export interface NestaSessaoBlocoProps {
   onEventosDraftChange: (eventos: OdontogramaEventoDraft[]) => void;
   /** R-78 — ⤢ num card com tabela de especialidade chama isto em vez de expandir aqui. */
   onAbrirDenteGrande: (dente: number, eventoId: string) => void;
+  /** R-84 §3/§4 — ids que JÁ EXISTIAM no banco antes desta sessão (boca, R-61). Card com
+   *  qualquer id aqui é trabalho de ficha anterior sendo fechado hoje, não indicação nova
+   *  desta ficha — ganha a legenda "de consulta anterior", mesmo card, mesma lista. */
+  idsDeAntes: ReadonlySet<string>;
 }
 
 /** `OdontogramaEventoDraft` é snake_case (`grupo_id`/`realizado_em`) — `EventoParaCard` não
@@ -57,7 +61,7 @@ function paraCard(e: OdontogramaEventoDraft): EventoParaCard {
 
 const TEM_DETALHE = new Set(['endodontia', 'implante', 'exame_periodontal']);
 
-export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, onAbrirDenteGrande }: NestaSessaoBlocoProps) {
+export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, onAbrirDenteGrande, idsDeAntes }: NestaSessaoBlocoProps) {
   function toggleStatus(ids: string[]) {
     onEventosDraftChange(eventosDraft.map((e) => (ids.includes(e.id)
       ? { ...e, status: e.status === 'realizado' ? 'indicado' : 'realizado' }
@@ -103,16 +107,23 @@ export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, on
           // FichasTab.tsx, renderCardDraft).
           const dente = ids.length === 1 ? data.ancoras[0]?.dente : undefined;
           const temDetalhe = dente != null && TEM_DETALHE.has(data.tipo);
+          // R-84 §4 — grupo misto (ex: ponte que ganhou elemento novo hoje) conta como "de
+          // antes" pra marca visual: QUALQUER id do card já existia no banco.
+          const deAntes = ids.some((id) => idsDeAntes.has(id));
           return (
-            <RegistroCard
-              key={key}
-              data={data}
-              editavel
-              onToggleStatus={() => toggleStatus(ids)}
-              onObservacaoChange={(v) => updateObservacao(ids, v)}
-              onRemover={() => remover(ids)}
-              onAbrirGrande={temDetalhe ? () => onAbrirDenteGrande(dente, ids[0]) : undefined}
-            />
+            <div key={key} className="flex flex-col gap-0.5">
+              <RegistroCard
+                data={data}
+                editavel
+                onToggleStatus={() => toggleStatus(ids)}
+                onObservacaoChange={(v) => updateObservacao(ids, v)}
+                onRemover={() => remover(ids)}
+                onAbrirGrande={temDetalhe ? () => onAbrirDenteGrande(dente, ids[0]) : undefined}
+              />
+              {deAntes && (
+                <p className="px-1 text-[11px] text-text-secondary">de consulta anterior</p>
+              )}
+            </div>
           );
         })}
       </div>

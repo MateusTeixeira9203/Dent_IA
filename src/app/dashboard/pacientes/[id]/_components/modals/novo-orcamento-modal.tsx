@@ -38,6 +38,9 @@ export interface NovoOrcamentoModalProps {
   etapaNovoOrc: 'selecionar' | 'itens';
   setEtapaNovoOrc: (v: 'selecionar' | 'itens') => void;
   fichasParaOrc: FichaParaOrc[];
+  /** R-84 §5.3 — só o picker (não pertence a 1 ficha) oferece trocar de ficha; o caminho
+   *  por-ficha fica fechado mesmo com `fichasParaOrc.length === 1` (decisão 07/08). */
+  podeTrocarFicha: boolean;
   /** R-53 (§4.3) — responsáveis distintos no agregado atual, pros chips. */
   responsaveisOrc: { id: string; nome: string }[];
   meuDentistaId: string;
@@ -76,6 +79,7 @@ export function NovoOrcamentoModal({
   etapaNovoOrc,
   setEtapaNovoOrc,
   fichasParaOrc,
+  podeTrocarFicha,
   responsaveisOrc,
   meuDentistaId,
   filtroResponsavelOrc,
@@ -471,7 +475,7 @@ export function NovoOrcamentoModal({
                 >
                   {orcSaving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</> : 'Criar Orçamento'}
                 </Button>
-                {fichasParaOrc.length > 1 && (
+                {podeTrocarFicha && (
                   <Button
                     variant="outline"
                     onClick={() => setEtapaNovoOrc('selecionar')}

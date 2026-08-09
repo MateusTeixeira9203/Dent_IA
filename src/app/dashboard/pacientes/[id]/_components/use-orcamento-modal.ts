@@ -61,9 +61,10 @@ export interface UseOrcamentoModalResult {
   /** NOVO (R-46h) — só o Meu dia usa: abre direto no passo 'selecionar', pulando o "geral vs.
    *  por-ficha" que a tela do paciente precisa porque lá não há paciente já óbvio de antemão.
    *  R-83 (08/08) — `eventosRascunho`: itens indicados no rascunho ainda não salvo desta
-   *  sessão. Quando presente, junta com o agregado do banco e PULA a etapa 'selecionar' —
-   *  ele já sabe o que quer orçar, é o que acabou de ditar (achado dele: sem isto só dava
-   *  pra orçar depois de salvar, e salvar avança pro próximo paciente — R-76). */
+   *  sessão. Quando presente, PULA a etapa 'selecionar' direto pra 'itens' — ele já sabe o que
+   *  quer orçar, é o que acabou de ditar (achado dele: sem isto só dava pra orçar depois de
+   *  salvar, e salvar avança pro próximo paciente — R-76). R-84 §5.2 — não junta mais com o
+   *  agregado do banco (era o vazamento de pendência já vendida na avaliação). */
   abrirPickerFichasAbertas: (eventosRascunho?: EventoOdontogramaParaOrc[]) => Promise<void>;
   isLoadingFichaParaOrc: boolean;
   modalProps: NovoOrcamentoModalProps;
@@ -359,9 +360,11 @@ export function useOrcamentoModal({
 
   // NOVO (R-46h) — picker geral do Meu dia: pula direto pro passo 'selecionar', sem o "geral
   // vs. por-ficha" que abrirNovoOrcamento tem, porque aqui o paciente já é o do slot aberto.
-  // R-83 (08/08) — com `eventosRascunho`, junta rascunho + agregado do banco e pula direto
-  // pra 'itens': o rascunho é sempre do dentista logado (Meu dia é dele), por isso entra
-  // fixo em FILTRO_MEUS — não faz sentido escolher responsável pro que ele mesmo está ditando.
+  // R-83 (08/08) — com `eventosRascunho`, pula direto pra 'itens': o rascunho é sempre do
+  // dentista logado (Meu dia é dele), por isso entra fixo em FILTRO_MEUS.
+  // R-84 §5.2 — NÃO junta mais com o agregado do banco (era o vazamento: `indicado` em aberto
+  // aqui quer dizer "já vendido na avaliação", não "esquecido" — R-53 §2.2). `carregarFichasAgregado`
+  // continua chamado: `fichasParaOrc` alimenta o `← Voltar` (§5.3), o caminho manual pro backlog.
   const abrirPickerFichasAbertas = async (eventosRascunho: EventoOdontogramaParaOrc[] = []) => {
     setOrcError(null);
     setIsLoadingFichaParaOrc(true);
@@ -371,9 +374,7 @@ export function useOrcamentoModal({
       setFichaOrcId(null);
 
       if (eventosRascunho.length > 0) {
-        const itensBanco = itensDoAgregado(fichas, FILTRO_MEUS);
-        const itensBancoReais = itensBanco[0] === ITEM_VAZIO ? [] : itensBanco;
-        const itens = [...eventosParaItens(eventosRascunho), ...itensBancoReais];
+        const itens = eventosParaItens(eventosRascunho);
         setFiltroResponsavelOrc(FILTRO_MEUS);
         setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
         setEtapaNovoOrc('itens');
@@ -578,6 +579,15 @@ export function useOrcamentoModal({
     etapaNovoOrc,
     setEtapaNovoOrc,
     fichasParaOrc,
+    // R-84 §5.3 — o picker oferece trocar de ficha; o caminho por-ficha (`abrirOrcamentoParaFicha`)
+    // é deliberadamente fechado (decisão 07/08: "orçamento de uma ficha é SÓ dela"). `fichaOrcId`
+    // sozinho não basta como discriminador: `selecionarFichaParaOrc` (a própria tela de seleção do
+    // picker) TAMBÉM o preenche ao escolher uma ficha da lista, o que apagava o botão depois de
+    // escolher — regressão achada pelo typescript-reviewer no gate deste item. `fichasParaOrc.length
+    // > 1` cobre esse caso (o array não encolhe ao selecionar, só `fichaOrcId` muda); o segundo termo
+    // cobre o picker com exatamente 1 ficha (G6b) sem reabrir o caminho por-ficha (que nunca tem mais
+    // de 1 ficha no array, então o primeiro termo nunca o alcança).
+    podeTrocarFicha: fichasParaOrc.length > 1 || (fichaOrcId == null && fichasParaOrc.length > 0),
     responsaveisOrc,
     meuDentistaId,
     filtroResponsavelOrc,
