@@ -351,7 +351,7 @@ export default function LandingPage() {
                 className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-semibold text-white btn-glow"
                 style={{ background: `linear-gradient(135deg, ${TEAL}, ${TEAL_LT})` }}
               >
-                Começar 7 Dias Grátis
+                Começar 14 Dias Grátis
                 <ArrowRight className="w-4 h-4" />
               </Link>
             </div>
@@ -411,7 +411,7 @@ export default function LandingPage() {
                 className="group inline-flex items-center gap-2 h-14 px-10 rounded-full text-lg font-semibold text-white btn-glow transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110"
                 style={{ background: `linear-gradient(135deg, ${TEAL}, ${TEAL_LT})` }}
               >
-                Começar 7 Dias Grátis
+                Começar 14 Dias Grátis
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </Link>
               <a
@@ -831,7 +831,7 @@ export default function LandingPage() {
                   className="inline-flex items-center gap-2 h-16 px-12 rounded-full text-xl font-semibold transition-all duration-300 hover:scale-105"
                   style={{ background: '#ffffff', color: TEAL, boxShadow: '0 8px 32px rgba(0,0,0,0.25)' }}
                 >
-                  Começar 7 Dias Grátis
+                  Começar 14 Dias Grátis
                   <ArrowRight className="w-5 h-5" />
                 </Link>
                 <p className="mt-6 text-sm text-white/60 font-mono">
