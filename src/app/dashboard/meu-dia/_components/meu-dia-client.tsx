@@ -55,6 +55,8 @@ import { AlertCircle, Hourglass } from 'lucide-react';
 import {
   atualizarStatusEncaminhado, encaminharProcedimento, getGruposAbertos,
 } from '@/server/patients/registro-actions';
+import { salvarVisitaMeuDia } from '@/app/dashboard/meu-dia/actions';
+import type { SalvarFichaResult } from '@/server/patients/salvar-ficha';
 import { EncaminharBar } from '@/components/fichas/encaminhar-bar';
 import { Rail } from './rail';
 import { AtenderAgoraModal } from '@/app/dashboard/agendamentos/_components/atender-agora-modal';
@@ -145,6 +147,10 @@ export function MeuDiaClient({
   }
 
   const [eventosDraft, setEventosDraft] = useState<OdontogramaEventoDraft[]>([]);
+  /** R-85 — quando "Gerar orçamento" precisa gravar a ficha cedo (ver `onAbrirPickerOrcamento`
+   *  abaixo) pra não deixar o orçamento sem `ficha_id`. `null` até isso acontecer; o Salvar
+   *  de verdade, depois, EDITA esta mesma ficha em vez de criar uma 2ª. */
+  const [fichaRascunhoId, setFichaRascunhoId] = useState<string | null>(null);
   const [denteAberto, setDenteAberto] = useState<number | null>(null);
   /** R-78 F2 — dente aberto mostra o HISTÓRICO por padrão (§3.2 da spec: leitura antes de
    *  escrita); isto revela o editor de faces/chips (`ToothDetailPanel`, reusado tal qual)
@@ -198,6 +204,7 @@ export function MeuDiaClient({
   if (selecionadoId !== idAoResetar) {
     setIdAoResetar(selecionadoId);
     setEventosDraft([]);
+    setFichaRascunhoId(null); // R-85 — ficha do orçamento antecipado é do paciente anterior
     setDenteAberto(null);
     setDetalheEspecialidadeAberto(false); // R-63 — paciente novo não herda tabela aberta do anterior
     setRegistrandoDenteAberto(false); // R-78 F2 — idem, nunca herda o editor aberto
@@ -265,6 +272,7 @@ export function MeuDiaClient({
     textoVisita,
     onTextoVisitaChange: setTextoVisita,
     temFichaHoje: slotSelecionado?.temFichaHoje ?? false,
+    fichaRascunhoId,
     onSalvo: handleSalvo,
     anexarTexto,
     orto: contexto?.orto ?? null,
@@ -273,9 +281,44 @@ export function MeuDiaClient({
     // R-84 §5.1 — só o que é indicação NOVA desta ficha vai pro orçamento; o que é pendência
     // antiga sendo fechada hoje já foi vendido na avaliação (§2.2). Filtro por evento, não por
     // card: elemento novo acrescentado hoje a um grupo antigo continua sendo venda legítima.
-    onAbrirPickerOrcamento: () => void orcamentoModal.abrirPickerFichasAbertas(
-      eventosDraft.filter((e) => !idsDeAntes.has(e.id)).map(draftParaEventoOrc),
-    ),
+    // R-85 — achado pela auditoria de 08/08: orçar o que é novo ANTES de salvar criava um
+    // orçamento com `ficha_id=null` (nunca virava registro clínico). Se há algo novo pra
+    // orçar, grava agora (sem fechar o atendimento — `finalizarAtendimento: false`) — cria a
+    // ficha na 1ª vez, EDITA nas vezes seguintes (fichaRascunhoId já setado). Sem isto, um 2º
+    // procedimento registrado depois do 1º "Gerar orçamento" entrava no orçamento sem nunca
+    // ter sido gravado (mesmo bug, só que a partir do 2º item em diante). O Salvar de verdade,
+    // depois, edita essa mesma ficha de novo e SÓ ELE fecha o atendimento/avisa a secretária.
+    onAbrirPickerOrcamento: () => {
+      const eventosNovos = eventosDraft.filter((e) => !idsDeAntes.has(e.id));
+      if (eventosNovos.length === 0 || !slotSelecionado) {
+        void orcamentoModal.abrirPickerFichasAbertas(fichaRascunhoId, eventosNovos.map(draftParaEventoOrc));
+        return;
+      }
+      void (async () => {
+        // R-86 — mesmo cuidado do handleSalvar (registrar-painel.tsx): sem o try/catch, uma
+        // falha de rede aqui deixava o clique em "Gerar orçamento" travado sem abrir nada e
+        // sem avisar nada, indistinguível de "não fiz nada".
+        let resultado: SalvarFichaResult;
+        try {
+          resultado = await salvarVisitaMeuDia({
+            fichaId: fichaRascunhoId ?? undefined,
+            pacienteId: slotSelecionado.pacienteId,
+            agendamentoId: slotSelecionado.agendamentoId,
+            textoVisita,
+            eventosDraft: eventosNovos,
+            finalizarAtendimento: false,
+          });
+        } catch {
+          resultado = { ok: false, error: 'Falha de conexão. Tente novamente.' };
+        }
+        if (!resultado.ok) {
+          toast.error(`Não deu pra preparar o orçamento: ${resultado.error}`);
+          return;
+        }
+        setFichaRascunhoId(resultado.fichaId);
+        void orcamentoModal.abrirPickerFichasAbertas(resultado.fichaId, eventosNovos.map(draftParaEventoOrc));
+      })();
+    },
   });
 
   // C6 — o Sheet precisa da mesma lista que o painel do dente sempre recebeu; migrado de
@@ -307,6 +350,7 @@ export function MeuDiaClient({
   // `router.refresh()` sozinho não seria rápido o bastante pra proteger o 2º clique).
   function handleSalvo() {
     setEventosDraft([]);
+    setFichaRascunhoId(null);
     setDenteAberto(null);
     setDetalheEspecialidadeAberto(false);
     setRegistrandoDenteAberto(false);

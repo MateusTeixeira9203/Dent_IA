@@ -64,8 +64,12 @@ export interface UseOrcamentoModalResult {
    *  sessão. Quando presente, PULA a etapa 'selecionar' direto pra 'itens' — ele já sabe o que
    *  quer orçar, é o que acabou de ditar (achado dele: sem isto só dava pra orçar depois de
    *  salvar, e salvar avança pro próximo paciente — R-76). R-84 §5.2 — não junta mais com o
-   *  agregado do banco (era o vazamento de pendência já vendida na avaliação). */
-  abrirPickerFichasAbertas: (eventosRascunho?: EventoOdontogramaParaOrc[]) => Promise<void>;
+   *  agregado do banco (era o vazamento de pendência já vendida na avaliação).
+   *  R-85 (08/08) — `fichaId`: quando vem de `eventosRascunho`, o chamador (meu-dia-client)
+   *  já gravou a ficha antes de chegar aqui (senão o orçamento nascia com `ficha_id=null`,
+   *  sem nenhum registro clínico por trás). `null` só no caminho antigo sem rascunho (agrega
+   *  fichas já existentes — nenhuma delas se beneficia de um fichaId único aqui). */
+  abrirPickerFichasAbertas: (fichaId: string | null, eventosRascunho?: EventoOdontogramaParaOrc[]) => Promise<void>;
   isLoadingFichaParaOrc: boolean;
   modalProps: NovoOrcamentoModalProps;
 }
@@ -365,13 +369,15 @@ export function useOrcamentoModal({
   // R-84 §5.2 — NÃO junta mais com o agregado do banco (era o vazamento: `indicado` em aberto
   // aqui quer dizer "já vendido na avaliação", não "esquecido" — R-53 §2.2). `carregarFichasAgregado`
   // continua chamado: `fichasParaOrc` alimenta o `← Voltar` (§5.3), o caminho manual pro backlog.
-  const abrirPickerFichasAbertas = async (eventosRascunho: EventoOdontogramaParaOrc[] = []) => {
+  const abrirPickerFichasAbertas = async (fichaId: string | null, eventosRascunho: EventoOdontogramaParaOrc[] = []) => {
     setOrcError(null);
     setIsLoadingFichaParaOrc(true);
     try {
       const fichas = await carregarFichasAgregado();
       setFichasParaOrc(fichas);
-      setFichaOrcId(null);
+      // R-85 — antes sempre null (o orçamento nascia órfão). Agora recebe o id real que o
+      // chamador já garantiu existir quando há algo novo do rascunho pra orçar.
+      setFichaOrcId(fichaId);
 
       if (eventosRascunho.length > 0) {
         const itens = eventosParaItens(eventosRascunho);

@@ -44,6 +44,12 @@ export interface SalvarFichaInput {
   pacienteId: string;
   origem: OrigemFicha;
   agendamentoId?: string;
+  /** R-85 — default `true` (preserva o comportamento de sempre). `false` grava a ficha e os
+   *  eventos SEM fechar o agendamento nem notificar a secretária — usado quando "Gerar
+   *  orçamento" precisa de um `ficha_id` real no meio da consulta, antes do dentista ter
+   *  terminado de verdade. Quem chama com `false` é responsável por chamar de novo depois
+   *  (com `fichaId` desta resposta) e `finalizarAtendimento` omitido/`true` pra fechar. */
+  finalizarAtendimento?: boolean;
   dataAtendimento: string;
   queixaPrincipal: string;
   anotacoes: string;
@@ -70,6 +76,7 @@ const salvarFichaSchema = z.object({
   pacienteId:         z.string().uuid(),
   origem:             z.enum(['modo_consulta', 'manual', 'importado']),
   agendamentoId:      z.string().uuid().optional(),
+  finalizarAtendimento: z.boolean().optional(),
   dataAtendimento:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   queixaPrincipal:    z.string().trim().max(500),
   anotacoes:          z.string().trim().max(5000),
@@ -121,6 +128,51 @@ function montarRowsEventos(
         ? (ev.realizado_em ?? (ev.origem === 'clinica' ? hoje : null))
         : null,
   }));
+}
+
+/**
+ * R-85 — side-effects de FIM de consulta, extraídos pra rodar tanto no ramo de criação quanto
+ * no de edição (antes só o de criação alcançava, porque `salvarVisitaMeuDia` nunca editava —
+ * sempre criava fresh). Fecha o agendamento e avisa a secretária SÓ quando `finalizarAtendimento`
+ * não é `false` — quem grava a ficha no meio da consulta (orçamento gerado antes de salvar)
+ * passa `false` e chama de novo, mais tarde, pra rodar isto de verdade.
+ */
+async function finalizarAtendimentoSeAplicavel(
+  supabase: Awaited<ReturnType<typeof requireClinicContext>>['supabase'],
+  ctx: {
+    clinicId: string;
+    dentistaId: string;
+    pacienteId: string;
+    fichaId: string;
+    origem: OrigemFicha;
+    agendamentoId?: string;
+    finalizarAtendimento?: boolean;
+  },
+) {
+  if (ctx.finalizarAtendimento === false) return;
+  if (ctx.origem !== 'modo_consulta' || !ctx.agendamentoId) return;
+
+  await supabase
+    .from('agendamentos')
+    .update({ status: 'completed' })
+    .eq('id', ctx.agendamentoId)
+    .eq('clinica_id', ctx.clinicId);
+
+  const { data: paciente } = await supabase
+    .from('pacientes')
+    .select('nome')
+    .eq('id', ctx.pacienteId)
+    .maybeSingle<{ nome: string }>();
+
+  await inserirNotificacao(supabase, {
+    clinicaId:    ctx.clinicId,
+    paraRole:     'secretaria',
+    deDentistaId: ctx.dentistaId,
+    tipo:         'consulta_finalizada',
+    titulo:       `Consulta finalizada — ${paciente?.nome ?? 'Paciente'}`,
+    mensagem:     'A consulta foi encerrada pelo dentista.',
+    href:         '/dashboard/agendamentos',
+  });
 }
 
 /**
@@ -234,6 +286,16 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
       });
     }
 
+    // R-85 — antes, uma edição nunca fechava o agendamento (só o ramo de criação alcançava
+    // isto). Agora alcança: é o que permite "Gerar orçamento" criar a ficha cedo (finalizarAtendimento:
+    // false) e o Salvar de verdade, depois, EDITAR essa mesma ficha e só então fechar/avisar.
+    if (resultado.ok) {
+      await finalizarAtendimentoSeAplicavel(supabase, {
+        clinicId, dentistaId, pacienteId: data.pacienteId, fichaId: data.fichaId as string,
+        origem: data.origem, agendamentoId: data.agendamentoId, finalizarAtendimento: data.finalizarAtendimento,
+      });
+    }
+
     return resultado;
   }
 
@@ -301,28 +363,13 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
     });
   }
 
-  // Side-effects de fim de consulta — só disparam quando veio de agendamento (modo_consulta).
-  if (data.origem === 'modo_consulta' && data.agendamentoId) {
-    await supabase
-      .from('agendamentos')
-      .update({ status: 'completed' })
-      .eq('id', data.agendamentoId)
-      .eq('clinica_id', clinicId);
-
-    const { data: paciente } = await supabase
-      .from('pacientes')
-      .select('nome')
-      .eq('id', data.pacienteId)
-      .maybeSingle<{ nome: string }>();
-
-    await inserirNotificacao(supabase, {
-      clinicaId:    clinicId,
-      paraRole:     'secretaria',
-      deDentistaId: dentistaId,
-      tipo:         'consulta_finalizada',
-      titulo:       `Consulta finalizada — ${paciente?.nome ?? 'Paciente'}`,
-      mensagem:     'A consulta foi encerrada pelo dentista.',
-      href:         '/dashboard/agendamentos',
+  // R-85 — side-effects de fim de consulta, agora condicionados a `finalizarAtendimento`
+  // (default true). `abrirPickerFichasAbertas` passa `false` pra criar a ficha sem fechar o
+  // agendamento nem avisar a secretária no meio da consulta.
+  if (resultado.ok) {
+    await finalizarAtendimentoSeAplicavel(supabase, {
+      clinicId, dentistaId, pacienteId: data.pacienteId, fichaId,
+      origem: data.origem, agendamentoId: data.agendamentoId, finalizarAtendimento: data.finalizarAtendimento,
     });
   }
 

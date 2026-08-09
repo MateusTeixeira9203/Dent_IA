@@ -108,6 +108,10 @@ interface RegistrarPainelProps {
   /** C2 (§5.6, trava 2) — slot já tem ficha hoje: CTA nasce desabilitado com
    *  "já registrado hoje" até o dentista rascunhar algo novo. */
   temFichaHoje: boolean;
+  /** R-85 — dono é `meu-dia-client` (mesmo padrão de `eventosDraft`). Quando "Gerar orçamento"
+   *  já criou a ficha desta consulta (pra não deixar o orçamento com `ficha_id=null`),
+   *  `handleSalvar` EDITA essa ficha em vez de criar uma 2ª. */
+  fichaRascunhoId: string | null;
   /** C2 (P7) — avisa o pai que a visita salvou (odontograma incluso, ver `eventosFalharam`
    *  abaixo). Nunca chamado enquanto o odontograma não gravou (I4). */
   onSalvo: () => void;
@@ -178,6 +182,7 @@ export function useRegistrarPainel({
   denteAberto, onDenteAbertoChange: setDenteAberto,
   textoVisita, onTextoVisitaChange: setTextoVisita,
   temFichaHoje,
+  fichaRascunhoId,
   onSalvo,
   anexarTexto,
   orto,
@@ -441,6 +446,10 @@ export function useRegistrarPainel({
     let resultado: SalvarFichaResult;
     try {
       resultado = await salvarVisitaMeuDia({
+        // R-85 — se "Gerar orçamento" já criou a ficha (fichaRascunhoId), EDITA em vez de criar
+        // uma 2ª: mesmos eventos por id (upsert), sem duplicar o que o orçamento já gravou.
+        // finalizarAtendimento omitido (default true) — É este clique que fecha o atendimento.
+        fichaId: fichaRascunhoId ?? undefined,
         pacienteId, agendamentoId, textoVisita, eventosDraft, alertaNovo, ortoManutencao: ortoValor,
       });
     } catch {
@@ -704,7 +713,10 @@ export function useRegistrarPainel({
         >
           {isSaving
             ? <><Loader2 className="h-4 w-4 animate-spin" /> Salvando…</>
-            : <><Check className="h-4 w-4" /> {temFichaHoje ? 'Salvar 2ª ficha' : 'Salvar e passar'}</>
+            // R-85 — com fichaRascunhoId, este clique EDITA a ficha que "Gerar orçamento" já
+            // criou (fecha o atendimento agora, pela 1ª vez) — não é uma 2ª ficha de verdade,
+            // mesmo com temFichaHoje=true (o servidor já vê a ficha que acabou de nascer).
+            : <><Check className="h-4 w-4" /> {temFichaHoje && !fichaRascunhoId ? 'Salvar 2ª ficha' : 'Salvar e passar'}</>
           }
         </button>
       </div>
