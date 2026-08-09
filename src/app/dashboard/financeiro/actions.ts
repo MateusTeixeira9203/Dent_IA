@@ -128,7 +128,8 @@ export async function listarDespesas(mesISO: string): Promise<Despesa[]> {
     query = query.eq('dentista_id', dentistaId);
   }
 
-  const { data } = await query;
+  const { data, error } = await query;
+  if (error) throw new Error(`Falha ao carregar despesas: ${error.message}`);
   return (data ?? []) as Despesa[];
 }
 
@@ -169,11 +170,15 @@ export async function calcularSaldoMes(mesISO: string): Promise<SaldoMes> {
     receitasQuery   = receitasQuery.eq('dentista_id', dentistaId);
   }
 
-  const [{ data: pagamentos }, { data: despesasData }, { data: receitasData }] = await Promise.all([
-    pagamentosQuery,
-    despesasQuery,
-    receitasQuery,
-  ]);
+  const [
+    { data: pagamentos, error: errPag },
+    { data: despesasData, error: errDesp },
+    { data: receitasData, error: errRec },
+  ] = await Promise.all([pagamentosQuery, despesasQuery, receitasQuery]);
+
+  if (errPag || errDesp || errRec) {
+    throw new Error(`Falha ao calcular saldo do mês: ${(errPag ?? errDesp ?? errRec)?.message}`);
+  }
 
   const receitaPagamentos = (pagamentos  ?? []).reduce((s, p) => s + Number(p.valor), 0);
   const receitaManuais    = (receitasData ?? []).reduce((s, r) => s + Number(r.valor), 0);
@@ -214,10 +219,13 @@ export async function listarUltimos7Dias(): Promise<DayPoint[]> {
     pagamentosQuery = pagamentosQuery.eq('dentista_id', dentistaId);
   }
 
-  const [{ data: pagamentos }, { data: despesasData }] = await Promise.all([
+  const [{ data: pagamentos, error: errPag }, { data: despesasData, error: errDesp }] = await Promise.all([
     pagamentosQuery,
     despesas7Query,
   ]);
+  if (errPag || errDesp) {
+    throw new Error(`Falha ao carregar últimos 7 dias: ${(errPag ?? errDesp)?.message}`);
+  }
 
   const DIAS_PT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -262,10 +270,13 @@ export async function listarUltimosMeses(n = 6): Promise<ChartPoint[]> {
     despesasQuery   = despesasQuery.eq('dentista_id', dentistaId);
   }
 
-  const [{ data: pagamentos }, { data: despesasData }] = await Promise.all([
+  const [{ data: pagamentos, error: errPag }, { data: despesasData, error: errDesp }] = await Promise.all([
     pagamentosQuery,
     despesasQuery,
   ]);
+  if (errPag || errDesp) {
+    throw new Error(`Falha ao carregar últimos meses: ${(errPag ?? errDesp)?.message}`);
+  }
 
   const result: ChartPoint[] = [];
 
@@ -369,7 +380,8 @@ export async function listarReceitas(mesISO: string): Promise<ReceitaManual[]> {
     query = query.eq('dentista_id', dentistaId);
   }
 
-  const { data } = await query;
+  const { data, error } = await query;
+  if (error) throw new Error(`Falha ao carregar receitas: ${error.message}`);
   return (data ?? []) as ReceitaManual[];
 }
 
@@ -442,7 +454,7 @@ export async function calcularHoraClinica(mesISO: string): Promise<HoraClinicaRe
 
   const { inicioDate, fimDate } = mesWindow(mesISO);
 
-  const [{ data: despesasFixas }, { data: horarios }] = await Promise.all([
+  const [{ data: despesasFixas, error: errDesp }, { data: horarios, error: errHor }] = await Promise.all([
     supabase
       .from('despesas')
       .select('valor')
@@ -456,6 +468,9 @@ export async function calcularHoraClinica(mesISO: string): Promise<HoraClinicaRe
       .eq('clinica_id', clinicId)
       .eq('ativo', true),
   ]);
+  if (errDesp || errHor) {
+    throw new Error(`Falha ao calcular custo por hora: ${(errDesp ?? errHor)?.message}`);
+  }
 
   const totalFixas = (despesasFixas ?? []).reduce((s, d) => s + Number(d.valor), 0);
 
@@ -513,8 +528,15 @@ export async function exportarFinanceiroCsv(
     pagamentosQ = pagamentosQ.eq('dentista_id', dentistaId);
   }
 
-  const [{ data: despesas }, { data: receitas }, { data: pagamentos }] =
-    await Promise.all([despesasQ, receitasQ, pagamentosQ]);
+  const [
+    { data: despesas, error: errDesp },
+    { data: receitas, error: errRec },
+    { data: pagamentos, error: errPag },
+  ] = await Promise.all([despesasQ, receitasQ, pagamentosQ]);
+
+  if (errDesp || errRec || errPag) {
+    throw new Error(`Falha ao exportar CSV: ${(errDesp ?? errRec ?? errPag)?.message}`);
+  }
 
   type RawDesp = { valor: number; data: string; descricao: string | null; categoria: string; tipo: string };
   type RawRec  = { valor: number; data: string; descricao: string | null; forma: string };
@@ -574,7 +596,8 @@ export async function listarPagamentosPagos(mesISO: string): Promise<PagamentoPa
     query = query.eq('dentista_id', dentistaId);
   }
 
-  const { data } = await query;
+  const { data, error } = await query;
+  if (error) throw new Error(`Falha ao carregar pagamentos: ${error.message}`);
 
   type Raw = {
     id: string; clinica_id: string; orcamento_id: string; paciente_id: string;
@@ -614,7 +637,8 @@ export async function listarPagamentosPendentes(): Promise<PagamentoPendente[]> 
     query = query.eq('dentista_id', dentistaId);
   }
 
-  const { data } = await query;
+  const { data, error } = await query;
+  if (error) throw new Error(`Falha ao carregar pagamentos pendentes: ${error.message}`);
 
   type Raw = {
     id: string; orcamento_id: string; paciente_id: string; dentista_id: string;

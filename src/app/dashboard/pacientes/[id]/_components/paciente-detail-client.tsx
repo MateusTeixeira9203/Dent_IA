@@ -1694,6 +1694,7 @@ export function PacienteDetailClient({
         onIniciarFechamentoPagamento={handleIniciarFechamentoPagamento}
         onCancelarFechamentoPagamento={handleCancelarFechamentoPagamento}
         onDeleteClick={setConfirmDeleteOrcId}
+        podeExcluir={detalheOrc?.dentista_id === dentistaId}
         editingPagId={editingPagId}
         editPagForm={editPagForm}
         setEditPagForm={setEditPagForm}

@@ -917,7 +917,23 @@ export async function excluirOrcamento(
   orcamentoId: string,
   pacienteId?: string
 ): Promise<{ error?: string }> {
-  const { supabase, clinicId } = await requireClinicContext();
+  const { supabase, clinicId, dentistaId } = await requireClinicContext();
+
+  // R-66 — checa dono ANTES de tocar em qualquer linha filha. A policy orcamentos_delete_own
+  // é só-dono (sem exceção pra admin/secretaria); sem este check, pagamentos/orcamento_itens
+  // abaixo seriam apagados mesmo quando o DELETE final em orcamentos vai ser bloqueado pela
+  // RLS — deixando o orçamento "furado" (itens/pagamentos sumidos, registro sobrevivendo).
+  const { data: orcDono } = await supabase
+    .from('orcamentos')
+    .select('dentista_id')
+    .eq('id', orcamentoId)
+    .eq('clinica_id', clinicId)
+    .maybeSingle();
+
+  if (!orcDono) return { error: 'Orçamento não encontrado.' };
+  if (orcDono.dentista_id !== dentistaId) {
+    return { error: 'Você não tem permissão para excluir este orçamento — só o dentista responsável pode.' };
+  }
 
   // Protege exclusão de orçamentos com pagamentos já registrados
   const { count: pagoCount } = await supabase
@@ -957,13 +973,20 @@ export async function excluirOrcamento(
     .eq("orcamento_id", orcamentoId)
     .eq("clinica_id", clinicId);
 
-  const { error } = await supabase
+  // R-66 — `error` vem vazio quando a RLS bloqueia (policy orcamentos_delete_own é só dono):
+  // 0 linhas afetadas ainda é "sucesso" pro Postgrest. `.select('id')` é a única forma de
+  // saber se algo de fato saiu da tabela (mesmo padrão de outros updates otimistas do projeto).
+  const { data: deletado, error } = await supabase
     .from("orcamentos")
     .delete()
     .eq("id", orcamentoId)
-    .eq("clinica_id", clinicId);
+    .eq("clinica_id", clinicId)
+    .select("id");
 
   if (error) return { error: error.message };
+  if (!deletado || deletado.length === 0) {
+    return { error: "Você não tem permissão para excluir este orçamento — só o dentista responsável pode." };
+  }
 
   if (pacienteId) revalidatePath(`/dashboard/pacientes/${pacienteId}`);
   revalidatePath("/dashboard/orcamentos");

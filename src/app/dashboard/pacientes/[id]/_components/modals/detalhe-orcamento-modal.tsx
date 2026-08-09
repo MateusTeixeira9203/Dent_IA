@@ -128,6 +128,11 @@ interface Props {
   onIniciarFechamentoPagamento: (pg: Pagamento) => void;
   onCancelarFechamentoPagamento: () => void;
   onDeleteClick: (id: string | null) => void;
+  /** R-66 — a policy `orcamentos_delete_own` só libera DELETE pro dentista dono (sem exceção
+   *  admin/secretaria). Botão só aparece pra quem o clique não vai falhar de qualquer forma —
+   *  o servidor (`excluirOrcamento`) continua sendo a fonte da verdade, isto é só evitar
+   *  oferecer uma ação que sempre nega. */
+  podeExcluir: boolean;
   editingPagId: string | null;
   editPagForm: EditPagForm;
   setEditPagForm: React.Dispatch<React.SetStateAction<EditPagForm>>;
@@ -159,6 +164,7 @@ export function DetalheOrcamentoModal({
   onStatusChange, onRegistrarPagamento,
   closingPagamentoId, onIniciarFechamentoPagamento, onCancelarFechamentoPagamento,
   onDeleteClick,
+  podeExcluir,
   editingPagId, editPagForm, setEditPagForm, editPagSaving, editPagError,
   onIniciarEdicaoPagamento, onCancelarEdicaoPagamento, onSalvarEdicaoPagamento,
   confirmDeletePagId, setConfirmDeletePagId, pagDeleteSaving, onExcluirPagamento,
@@ -956,14 +962,16 @@ export function DetalheOrcamentoModal({
                 </>
               ) : (
                 <>
-                  <Button
-                    variant="outline"
-                    onClick={() => onDeleteClick(detalheOrcId)}
-                    className="rounded-xl border-coral/40 text-coral-ink hover:bg-coral-pale"
-                  >
-                    <Trash2 className="w-4 h-4 mr-1.5" />
-                    Excluir
-                  </Button>
+                  {podeExcluir && (
+                    <Button
+                      variant="outline"
+                      onClick={() => onDeleteClick(detalheOrcId)}
+                      className="rounded-xl border-coral/40 text-coral-ink hover:bg-coral-pale"
+                    >
+                      <Trash2 className="w-4 h-4 mr-1.5" />
+                      Excluir
+                    </Button>
+                  )}
                   <div className="flex items-center gap-2 ml-auto">
                     <Button
                       variant="outline"
