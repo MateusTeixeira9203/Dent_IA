@@ -676,11 +676,11 @@ export async function editarPagamento(
 export async function excluirPagamento(
   pagamentoId: string,
 ): Promise<{ error?: string }> {
-  const { supabase, user, clinicId } = await requireClinicContext();
+  const { supabase, user, clinicId, dentistaId, role } = await requireClinicContext();
 
   const { data: pagAtual } = await supabase
     .from("pagamentos")
-    .select("id, paciente_id, valor, forma_pagamento")
+    .select("id, paciente_id, valor, forma_pagamento, dentista_id")
     .eq("id", pagamentoId)
     .eq("clinica_id", clinicId)
     .maybeSingle();
@@ -689,14 +689,25 @@ export async function excluirPagamento(
     return { error: "Pagamento não encontrado." };
   }
 
-  const { error } = await supabase
+  // Espelha a policy pagamentos_access (is_own_clinical_record): dono OU secretária.
+  // Sem este check, um dentista sem permissão recebe DELETE bloqueado pela RLS em
+  // silêncio (0 linhas, sem erro) — o código seguiria como se tivesse excluído.
+  if (pagAtual.dentista_id !== dentistaId && role !== 'secretaria') {
+    return { error: 'Você não tem permissão para excluir este pagamento.' };
+  }
+
+  const { error, count } = await supabase
     .from("pagamentos")
-    .delete()
+    .delete({ count: 'exact' })
     .eq("id", pagamentoId)
     .eq("clinica_id", clinicId);
 
   if (error) {
     return { error: error.message };
+  }
+
+  if (!count) {
+    return { error: 'Não foi possível excluir este pagamento.' };
   }
 
   const { data: dentistaPerfil } = await supabase
