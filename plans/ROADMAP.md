@@ -1,14 +1,25 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · atualizado **2026-08-08** · ordenado por **importância pro dentista**
-> **Push de 08/08 feito e deployado** (`dentia.app.br`, `dpl_oeSRUa3a`, READY) — R-75/R-82/R-84
-> e o fix do `data-active` estão em produção de verdade, não só commitados.
-> **Fila:** 20⏳ · **🟡 codado/no ar sem verificação pessoal dele:** 36 · **💡 ideia sem spec:** 3 ·
+> **ROADMAP** · atualizado **2026-08-09** · ordenado por **importância pro dentista**
+> **Último push:** 08/08 (`dentia.app.br`, `dpl_oeSRUa3a`, READY) — R-75/R-82/R-84 e o fix do
+> `data-active` em produção. **4 commits de 09/08 (R-85/R-86/R-65/R-66) ainda NÃO subiram.**
+> **Fila:** 22⏳ · **🟡 codado/no ar sem verificação pessoal dele:** 38 · **💡 ideia sem spec:** 3 ·
 > **Concluídos:** 32 · **Congelado:** 3 · **Cortado:** 10
-> **09/08:** R-85/R-86 commitados (sem push) · R-65/R-66/R-28-parte3 codados e testados por
-> mim, working tree, sem commit — ver `ESTADO.md`
-> **Próximo:** fila livre, nenhum item 🔵 ativo — decide com `/planejar` ou `/discutir`
+> **🔵 ATIVO: [R-92 — Fechar para cobrar](specs/R-92-fechar-para-cobrar.md)** (semana 10–16/08).
+> **0 pagantes hoje** — 5 clínicas em trial perpétuo (`trial_ends_at` NULL), checkout nunca
+> processou pagamento, zero analytics no projeto. Meta dele: 100 pagantes em 2026.
 > **Discussão aberta:** [como diminuir o atrito](discussoes/como-diminuir-o-atrito.md) (estado × evento)
+> **Achado sem item, revisado 09/08 (3ª rodada + teste ao vivo):** `excluirPagamento` **tem**
+> policy de DELETE (`cmd=ALL`, dono OU secretária) — a nota de sessão anterior estava errada.
+> Testei ao vivo simulando a RLS de outro dentista: SELECT e DELETE usam a mesma policy, então
+> **não é** a mesma classe do `excluirOrcamento` pré-R-66 (lá SELECT e DELETE divergiam — dava
+> pra ver o orçamento sem poder excluir). Aqui quem não tem permissão já esbarra no SELECT
+> prévio. Corrigido mesmo assim como defesa em profundidade (confere `count` do delete).
+> **09/08, mapa de atrito completo em 3 rodadas:** [rodada 2](../auditorias/2026-08-09-mapa-de-atrito-2.md)
+> (código+SQL) → [rodada 3](../auditorias/2026-08-09-mapa-de-atrito-3-recontagem.md) (14
+> agentes, recontagem de gestos com verificação adversarial — achou 2 erros da rodada 2, já
+> corrigidos nela). **R-90** segue crítico (financeiro nunca funcionou). **R-91** reescrito —
+> a correção existe e funciona em 4/5 telas, só 2 pontos de entrada ficaram de fora.
 
 **Status:** ⏳ fila · 🔵 ativo (máx 1) · 🟡 no ar **não** verificado · ✅ no ar **e** verificado ·
 🧊 congelado · ✂️ cortado · 💡 ideia sem spec.
@@ -70,8 +81,8 @@ prioridade, por melhor que seja.
 | **R-80** | 🐛 Orçamento podia puxar procedimento indicado por OUTRO dentista — histórico é compartilhado da clínica | 🟡 codado, verificado e commitado 08/08 (`366cd64`+`fb4d031`) — `restringirAoMeuDentista`, defesa em profundidade na query. **Ele ainda não testou pessoalmente** | P |
 | **R-79** | 🔧 Ficha editada não deixa rastro — `salvar-ficha.ts` grava só `updated_at`, nem quem editou nem o quê mudou | ⏳ achado 08/08. Não é regressão (vale pra toda edição salva). CFO pede rastreabilidade. Sem spec | M |
 | **R-83** | 🔧 Gerar orçamento não enxergava o rascunho atual — salvar antes empurra pro próximo paciente (R-76) | 🟡 codado 08/08 — `abrirPickerFichasAbertas(eventosRascunho?)` pula direto pra etapa 'itens' sem sair da tela. **R-84 cortou a parte que juntava com o agregado do banco** — agora só o rascunho. Ele ainda não testou pessoalmente | P |
-| **R-85** | 🐛 "Gerar orçamento" a partir do rascunho (antes de Salvar) cobrava sem nenhum vínculo clínico | 🟡 **corrigido 09/08** — `salvarFicha` ganhou `finalizarAtendimento` (separa "gravar a ficha" de "fechar o atendimento/avisar secretária", que antes eram a mesma coisa). "Gerar orçamento" agora grava a ficha de verdade (sem fechar o atendimento) antes de montar o orçamento; o Salvar final EDITA essa mesma ficha e só ele fecha/avisa. **2ª rodada de teste achou o mesmo bug reaparecendo**: só a 1ª chamada gravava — um 2º procedimento registrado e orçado depois (2º clique em "Gerar orçamento") entrava no orçamento sem nunca ter sido salvo. Corrigido: toda chamada grava os itens novos atuais (cria na 1ª vez, edita nas seguintes), não só a 1ª. Testado ao vivo em localhost (Teste01) com cenário completo — 2 procedimentos, 2 cliques em "Gerar orçamento", 1 cancelamento no meio: 1 ficha só, 2 eventos, agendamento fechou 1x no momento certo, 1 notificação, orçamento com `ficha_id` real e os 2 itens. Achou e corrigiu de graça um rótulo errado ("Salvar 2ª ficha" quando na verdade edita a mesma). **Ele ainda não testou pessoalmente nem foi commitado** | G |
-| **R-86** | 🐛 "Salvar e passar" podia falhar sem avisar — POST retornou 503, nada foi persistido | 🟡 **corrigido 09/08** — causa achada por leitura de código: `handleSalvar` chamava `salvarVisitaMeuDia` sem `try/catch` (a função irmã `handleRegravarEventos`, no mesmo arquivo, já tinha essa proteção — só faltou aplicar aqui). Uma falha de rede/servidor virava exceção não tratada: `isSaving` nunca voltava a `false`, nenhum toast aparecia, e o botão ficava travado (disabled) pros cliques seguintes — exatamente o padrão visto na auditoria (1ª tentativa sem efeito, 2ª nem chegou a tentar). Mesmo fix aplicado no quiet-save do R-85 (`onAbrirPickerOrcamento`), que tinha o mesmo buraco. **Causa do 503 em si não isolada** — não achei rate-limit nem lógica própria na rota `/dashboard/meu-dia` (middleware só verifica sessão); provável flakiness de infra, não bug de código. Testado ao vivo interceptando `fetch` pra forçar a falha: toast "Falha de conexão. Tente novamente." aparece, botão não trava, nada sujo no banco durante as falhas, retry sem o interceptor completa normalmente. **Ele ainda não testou pessoalmente nem foi commitado** | M |
+| **R-85** | 🐛 "Gerar orçamento" a partir do rascunho (antes de Salvar) cobrava sem nenhum vínculo clínico | 🟡 corrigido e commitado 09/08 (`a32cd88`) — `salvarFicha` separa "gravar" de "fechar o atendimento"; toda chamada grava os itens atuais (não só a 1ª). Testado ao vivo por mim (Teste01, cenário completo). **Ele ainda não testou pessoalmente. Sem push** | G |
+| **R-86** | 🐛 "Salvar e passar" podia falhar sem avisar — POST 503, nada persistido, botão travava | 🟡 corrigido e commitado 09/08 (`e43e2af`) — `handleSalvar` sem `try/catch`; mesmo fix no quiet-save do R-85. Testado forçando a falha por interceptação de `fetch`. **Causa do 503 não isolada** (provável infra). **Ele ainda não testou. Sem push** | M |
 | **R-87** | 🔧 Erro de hidratação React (#418) em toda navegação — dashboard, orçamentos, pacientes, ficha do paciente | ⏳ achado 08/08 (auditoria completa). Reproduzido 5× em 4 rotas diferentes, mesmo chunk (`4bd1b696…js`). Não travou nenhuma tela nem perdeu dado observado, mas é sistêmico — cheira a componente compartilhado do layout (nav/sino de notificação?) com mismatch servidor/cliente. Sem investigação de causa raiz ainda | P |
 | **R-81** | 👥 Secretária registra PELO dentista — fluxo real relatado por ele 08/08, hoje **bloqueado** (`meu-dia/page.tsx:24` redireciona secretaria) | ⏳ achado 08/08. **Possivelmente mais valioso que o R-78 inteiro** — dentista fica presente e dita em tempo real, ela só executa. Precisa de seletor "dia de quem" + `dentistaId` explícito + gate de 2 contas. Sem spec | G |
 
@@ -84,10 +95,10 @@ prioridade, por melhor que seja.
 | [R-33](specs/R-33-orcamento-tela-unica.md) | Orçamento: uma tela só — mata o painel de `/dashboard/orcamentos`, porta 15 itens | ⏳ espera R-34 e R-39a (define a forma onde os 15 pousam) | G |
 | [R-32](specs/R-32-orcamento-visivel-autor-admin-secretaria.md) | Orçamento visível para autor, admin e secretária | 🟡 aplicado (migration 121), falta o gate — G4/G5 são a prova anti-vazamento | P |
 | [R-28](specs/R-28-pagamento-fecha-sem-duplicar.md) | Pagamento: grava quem registrou + fecha parcela sem duplicar recebimento | 🟡 partes 1+2 verificadas na Teste01, falta confirmar em prod. **Parte 3 codada 09/08** — guard novo (`STATUS_ORCAMENTO_SEM_PAGAMENTO`) impede novo caso; testado ao vivo (Teste01, "Marcar como pago" num orçamento recusado → bloqueado, erro certo, zero escrita). D8 fechada (fora, sem uso confirmado). **D9 fechada: 10 orçamentos reais na Clindent com saldo fantasma NÃO foram tocados** (decisão dele — Clindent é só leitura) | M |
-| **R-65** | 🐛 Receita/Receita Prevista somavam pagamento de orçamento `rascunho`/`recusado` — nenhum dos 4 caminhos de escrita checava status antes de aceitar dinheiro | 🟡 codado e testado ao vivo 09/08 (Teste01) — guard bloqueia nos 4 caminhos (`registrarPagamento`, `registrarPagamentoRapido`, `marcarPagamentoPago`, `registrarRecebimento`, este último ganhou paridade D6 que não tinha); 6 leituras de `financeiro/actions.ts` ganharam filtro `orcamentos!inner(status)`. Prova: "Receita Prevista" do Império parou de contar R$1.050 de um orçamento recusado. **Ele ainda não testou pessoalmente nem foi commitado** | G |
-| **R-66** | 🐛 "Excluir orçamento" mentia sucesso pra quem não é dono (RLS bloqueava, tela dizia que apagou) + 9 leituras de `financeiro/actions.ts` descartavam erro do Supabase | 🟡 codado e testado ao vivo 09/08 (Teste01, 2º dentista temporário) — os 2 lados confirmados: botão some pro não-dono (client) E servidor recusa mesmo com clique em botão já renderizado antes da reatribuição (RLS mudou "por baixo", sem reload — cenário real de corrida). Erro exato: "Você não tem permissão para excluir este orçamento — só o dentista responsável pode." Leituras de `financeiro/actions.ts` lançam erro em vez de devolver zero silencioso (não exercitado ao vivo — banco saudável, sem falha real pra disparar). **Ele ainda não testou pessoalmente nem foi commitado** | M |
-| **R-65** | 🐛 Receita/Receita Prevista somam dinheiro de orçamento recusado e rascunho — nenhuma trava de estado impede isso | ⏳ achado 06/08 (auditoria financeira). Provado: R$105.501,04 pago + R$1.050 pendente presos a 1 orçamento recusado; R$32.353,34 pagos presos a orçamentos rascunho. Sem spec | G |
-| **R-66** | 🐛 Excluir orçamento na ficha do paciente mente sucesso pra secretária (RLS bloqueia, tela finge apagar) + erro do Supabase descartado em silêncio em quase todo `financeiro/actions.ts` | ⏳ achado 06/08, mesma auditoria. Botão já corretamente escondido em `/dashboard/orcamentos` — só a ficha do paciente ficou destravada. Sem spec | M |
+| [R-65](specs/R-65-receita-nao-conta-recusado-rascunho.md) | 🐛 Receita/Receita Prevista somavam pagamento de orçamento `rascunho`/`recusado` — nenhum dos 4 caminhos de escrita checava status antes de aceitar dinheiro | 🟡 codado, testado ao vivo e commitado 09/08 (`0a8df0b`) — guard nos 4 caminhos + filtro `orcamentos!inner(status)` em 6 leituras. Prova: Receita Prevista do Império parou de contar R$1.050 de recusado. **Ele ainda não testou. Sem push** | G |
+| [R-66](specs/R-66-excluir-orcamento-mente-sucesso.md) | 🐛 "Excluir orçamento" mentia sucesso pra quem não é dono (RLS bloqueava em silêncio) + 9 leituras de `financeiro/actions.ts` descartavam erro | 🟡 codado, testado ao vivo dos 2 lados e commitado 09/08 (`0ab1bd1`) — dono checado antes de tocar linha filha; botão some pro não-dono. **Ele ainda não testou. Sem push** | M |
+| **R-90** | 🐛 **"Registrar Recebimento" (tela `/dashboard/financeiro`) não pode ter funcionado nenhuma vez** — insert nunca grava `dentista_id`, coluna é `NOT NULL` sem default; todo envio falha | ⏳ achado 09/08 (re-checagem do [mapa de atrito](../auditorias/2026-08-09-mapa-de-atrito-2.md)). R-65 abriu essa mesma função 09/08 (guard de status) e não pegou este bug, 12 linhas abaixo. Fix de 1 linha: `dentista_id: dados.dentistaId ?? dentistaId` — parâmetro já existe, só não é usado | P |
+| **R-91** | 🔧 Busca de paciente sem acento continua quebrada — "Antonio"/"Antônio" são buscas disjuntas (18% da base) | ⏳ achado 30/07, replanejado 09/08. Spec do R-31a (§3.3) já escolheu a abordagem (coluna normalizada, não `unaccent` cru) mas nunca foi codada — R-31a fechou 🟡 sem essa parte | P |
 | [R-38](specs/R-38-orcamento-apresentacao-ao-paciente.md) | Orçamento: como o paciente vê — PDF sem preço por item, só total e condição | 🟡 codado, testado, commitado e no ar (31/07) — toggle no rodapé, PDF respeita o flag, snapshot do aceite grava o flag (G1-G6 verificados) | P |
 | [R-10](ROADMAP.md) | P2: tirar a observação clínica do documento que o paciente lê | ⏳ P1 ✅ em prod. P2 precisa de decisão — `dentes_observacoes` alimenta orçamento **e** prontuário | P |
 
@@ -119,6 +130,18 @@ prioridade, por melhor que seja.
 | **R-45** | 💡 Retorno automático por tipo de procedimento (recall) — dispara WhatsApp antes do prazo vencer | 💡 ideia 31/07, proativo (diferente do R-26, que é reativo). Ainda não mapeado, não é spec | ? |
 | [R-09](ROADMAP.md) | Voz nas especialidades — `/api/dex/extrair-especialidade` não tem um único chamador | ⏳ sem spec | M |
 
+## Bloco 6 — Aquisição e porta de entrada
+
+**Fora da régua "importância pro dentista"** — a régua mede o produto pra quem já entrou.
+Estes dois medem quem **não** entrou. Vieram do audit visual de 26/07 (R-22): as duas piores
+notas do sistema inteiro (Landing **C**, Auth **D**).
+
+| ID | Item | Estado | Peso |
+|---|---|---|---|
+| [**R-92**](specs/R-92-fechar-para-cobrar.md) | 🔵 **Fechar para cobrar** (semana 10–16/08) — sair de **0 pagantes para 3**, com checkout testado ponta a ponta e placar mínimo medindo. Achado que originou: 5 clínicas em `trial` com `trial_ends_at` NULL, `status_assinatura='ativo'` nunca existiu, checkout nunca processou pagamento | 🔵 **ativo 09/08** — plano por dia com 7 gates. **G5 (um pagamento real) define a semana.** Trava: o preço, que só ele decide | G |
+| **R-88** | **Landing de conversão** — vende 3 coisas que a produção contradiz: **"Modo Consulta" como feature nº 1 e FAQ nº 1 de uma tela DELETADA pelo R-72**, WhatsApp com 0 uso, e "silos" que o R-36 desmonta. Mais design: cores hardcoded, theming em JS, grid de 3 ícones, "7 vs 14 dias", zero OG tag | ⏳ **adiado pelo R-92 (09/08)** — deve ser escrita **depois** do que os 3 primeiros pagantes ensinarem, não com a suposição de hoje. Alvo já decidido: os dois, solo como principal | G |
+| **R-89** | **Auth (login · cadastro · esqueci · redefinir · verifique-email)** — nota D: 5/12 capturas em branco (`opacity:0` sem JS), dark quebrado, AA reprovado, mobile sem logo, 2 sistemas de form diferentes entre login e cadastro | ⏳ depois do R-88 (a landing define a linguagem que o auth herda) | M |
+
 ---
 
 ## 🔬 Em investigação (30/07, rodando)
@@ -139,7 +162,7 @@ aparente (ver a agenda do Dr. Y ≠ ver os agendamentos do paciente X).
 | ID | Item | Descongelar quando |
 |---|---|---|
 | **R-70** | 🐛 Ficha com muitos procedimentos é difícil de editar — 13 dentes numa ficha só empurra o Salvar pra fora da vista | **Congelado 07/08** — falta saber do feedback original se o caso real é "muitos procedimentos" (aponta pra mover o caso pro Organizar com Dex) ou "a tela é ruim mesmo com poucos" (aí um `max-height` com scroll já resolve) |
-| [R-22](auditorias/2026-07-26-relatorio-audit-visual.md) | Audit visual do Fable (115 achados) + [símbolos vs norma](auditorias/2026-07-27-simbolos-odontograma.md) | Quando ele quiser voltar ao design. Lote de emergência já identificado |
+| [R-22](auditorias/2026-07-26-relatorio-audit-visual.md) | Audit visual do Fable (115 achados) + [símbolos vs norma](auditorias/2026-07-27-simbolos-odontograma.md) | Segue congelado **para o dashboard**. **Landing e Auth saíram daqui 09/08** e viraram R-88/R-89 — eram as 2 piores notas (C e D) |
 | **R-60** | Orto (e especialidades que não pintam o odontograma) merece interface própria em vez de chip escondido | **Congelado 04/08** — ele traz um exemplo de ficha real de orto pra basear o desenho. R-50 já resolveu o bloqueio técnico; falta só o desenho |
 
 ## ✅ Concluído
