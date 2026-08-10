@@ -78,6 +78,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { ToggleSwitch } from '@/components/ui/toggle-switch';
 import type { AgendamentoRow, ForaDaJanela } from '../page';
 import {
   atualizarStatusAgendamento,
@@ -89,6 +90,7 @@ import {
   marcarNoShow,
   cancelarComMotivo,
   criarEncaixe,
+  criarPedidoProtetico,
   type StatusAgendamento,
 } from '../actions';
 import { criarPacienteRapido } from '@/app/dashboard/pacientes/[id]/actions';
@@ -141,6 +143,8 @@ interface Props {
   autoOpenNovo?: boolean;
   /** Agendamentos ativos além do mês exibido — null quando não há nenhum. */
   foraDaJanela: ForaDaJanela | null;
+  /** Protéticos ativos da clínica — vazio esconde o bloco "Enviar pro protético" (R-94). */
+  proteticos: { id: string; nome: string }[];
 }
 
 export function AgendamentosClient({
@@ -156,6 +160,7 @@ export function AgendamentosClient({
   canEdit,
   autoOpenNovo = false,
   foraDaJanela,
+  proteticos,
 }: Props) {
   const router = useRouter();
   const isSecretaria = role === 'secretaria';
@@ -326,6 +331,11 @@ export function AgendamentosClient({
     duracao: '30',
     observacoes: '',
     dentistaId: dentistasOrdenados[0]?.id ?? '',
+    // R-94 — pedido pro protético, opcional
+    enviarProtetico: false,
+    proteticoId: proteticos[0]?.id ?? '',
+    dataEntregaProtetico: '',
+    observacaoProtetico: '',
   });
   const [pacienteSugestoes, setPacienteSugestoes] = useState<{ id: string; nome: string }[]>([]);
   const [showSugestoes, setShowSugestoes] = useState(false);
@@ -624,6 +634,10 @@ export function AgendamentosClient({
       duracao: '30',
       observacoes: '',
       dentistaId: dentistaPadraoForm(),
+      enviarProtetico: false,
+      proteticoId: proteticos[0]?.id ?? '',
+      dataEntregaProtetico: '',
+      observacaoProtetico: '',
     });
     setPacienteSugestoes([]);
     setShowSugestoes(false);
@@ -703,6 +717,11 @@ export function AgendamentosClient({
       setSaveError('Selecione um dentista.');
       return;
     }
+    if (novoForm.enviarProtetico) {
+      if (!novoForm.proteticoId) { setSaveError('Selecione o protético.'); return; }
+      if (!novoForm.dataEntregaProtetico) { setSaveError('Escolha a data de entrega do protético.'); return; }
+      if (!novoForm.observacaoProtetico.trim()) { setSaveError('Descreva o que o protético precisa saber.'); return; }
+    }
     setSaveError(null);
     if (!forcar) setConflitoServidor(false);
     setIsSaving(true);
@@ -728,6 +747,24 @@ export function AgendamentosClient({
       setConflitoServidor(result.conflitoDentista === true);
     } else {
       setConflitoServidor(false);
+
+      // R-94 — pedido pro protético, best-effort: o agendamento já foi criado com
+      // sucesso; se isto falhar, avisa mas não desfaz nem trava o fluxo principal.
+      if (novoForm.enviarProtetico && result.id) {
+        const pedidoResult = await criarPedidoProtetico({
+          pacienteId:    novoForm.pacienteId,
+          proteticoId:   novoForm.proteticoId,
+          observacao:    novoForm.observacaoProtetico.trim(),
+          dataEntrega:   novoForm.dataEntregaProtetico,
+          agendamentoId: result.id,
+        });
+        if (pedidoResult.error) {
+          toast.error(`Agendamento criado, mas o pedido pro protético falhou: ${pedidoResult.error}`);
+        } else {
+          toast.success('Enviado pro protético!');
+        }
+      }
+
       const dentistaDoAgt = isSecretaria
         ? dentistas.find((d) => d.id === novoForm.dentistaId) ?? null
         : null;
@@ -1416,6 +1453,69 @@ export function AgendamentosClient({
                   placeholder="Procedimento, observações clínicas..."
                 />
               </div>
+
+              {/* R-94 — pedido pro protético, opcional. Some se a clínica não tem
+                  protético cadastrado: sem isso o dentista veria caixa morta (spec §5). */}
+              {proteticos.length > 0 && (
+                <div className="rounded-2xl border border-teal/30 overflow-hidden">
+                  <div className="flex items-center justify-between gap-3.5 p-3.5 bg-teal/5">
+                    <div>
+                      <p className="text-sm font-semibold text-text-primary">Enviar pro protético</p>
+                      <p className="text-xs text-text-secondary mt-0.5">Cria um pedido na agenda do laboratório</p>
+                    </div>
+                    <ToggleSwitch
+                      checked={novoForm.enviarProtetico}
+                      onCheckedChange={(v) => setNovoForm((f) => ({ ...f, enviarProtetico: v }))}
+                    />
+                  </div>
+                  {novoForm.enviarProtetico && (
+                    <div className="flex flex-col gap-3.5 p-4 border-t border-teal/20">
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
+                          Protético <span className="text-coral-ink">*</span>
+                        </Label>
+                        <Select
+                          value={novoForm.proteticoId}
+                          onValueChange={(v) => v && setNovoForm((f) => ({ ...f, proteticoId: v }))}
+                        >
+                          <SelectTrigger className="rounded-xl bg-surface-alt border-border text-text-primary">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-surface border-border">
+                            {proteticos.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="apt-protetico-data" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
+                          Data de entrega <span className="text-coral-ink">*</span>
+                        </Label>
+                        <Input
+                          id="apt-protetico-data"
+                          type="date"
+                          value={novoForm.dataEntregaProtetico}
+                          onChange={(e) => setNovoForm((f) => ({ ...f, dataEntregaProtetico: e.target.value }))}
+                          className="rounded-xl bg-surface-alt border-border text-text-primary"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="apt-protetico-obs" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
+                          O que o protético precisa saber <span className="text-coral-ink">*</span>
+                        </Label>
+                        <textarea
+                          id="apt-protetico-obs"
+                          value={novoForm.observacaoProtetico}
+                          onChange={(e) => setNovoForm((f) => ({ ...f, observacaoProtetico: e.target.value }))}
+                          className="w-full bg-surface-alt border border-border rounded-xl p-3 text-sm min-h-[70px] focus:ring-2 focus:ring-teal/15 focus:border-teal/30 transition-all resize-none text-text-primary placeholder:text-text-secondary/40"
+                          placeholder="Ex: Coroa e.max no 26, cor A2, contato proximal leve"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Aviso de conflito */}
               {conflitoNovo && (

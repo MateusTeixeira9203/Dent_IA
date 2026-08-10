@@ -103,7 +103,8 @@ export default async function AgendamentosPage({ searchParams }: PageProps) {
   }
 
   // Dados em paralelo: agendamentos + contagem de secretárias + o que está fora da janela
-  const [{ data: agendamentosRaw }, { count: secretariaCount }, { data: proximosRaw }] =
+  // + protéticos ativos (R-94 — popula o bloco "Enviar pro protético" do modal, qualquer role)
+  const [{ data: agendamentosRaw }, { count: secretariaCount }, { data: proximosRaw }, { data: proteticosRaw }] =
     await Promise.all([
       query,
       supabase
@@ -113,6 +114,13 @@ export default async function AgendamentosPage({ searchParams }: PageProps) {
         .eq('role', 'secretaria')
         .eq('ativo', true),
       proximosQuery,
+      supabase
+        .from('dentistas')
+        .select('id, nome')
+        .eq('clinica_id', dentista.clinica_id)
+        .eq('role', 'protetico')
+        .eq('ativo', true)
+        .order('nome', { ascending: true }),
     ]);
 
   const temSecretaria = (secretariaCount ?? 0) > 0;
@@ -144,7 +152,9 @@ export default async function AgendamentosPage({ searchParams }: PageProps) {
       .from('dentistas')
       .select('id, nome')
       .eq('clinica_id', dentista.clinica_id)
-      .neq('role', 'secretaria')
+      // R-94 — .neq('role','secretaria') sozinho deixaria 'protetico' entrar aqui
+      // (não atende consulta, não pode ser "dentista responsável" do agendamento).
+      .in('role', ['admin', 'dentista'])
       .eq('ativo', true)
       .order('created_at', { ascending: true });
     dentistasClinica = (data ?? []).map((d, i) => ({ id: d.id, nome: d.nome, slot: i }));
@@ -175,6 +185,7 @@ export default async function AgendamentosPage({ searchParams }: PageProps) {
         canEdit={canEdit}
         autoOpenNovo={novo === '1'}
         foraDaJanela={foraDaJanela}
+        proteticos={proteticosRaw ?? []}
       />
     </PageTransition>
   );
