@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getDentistaCached } from '@/lib/get-dentista';
 import { createClient } from '@/lib/supabase/server';
+import { PageContainer } from '@/components/layout/page-container';
 import { ProteticoClient } from './_components/protetico-client';
 
 export type PedidoProteticoRow = {
@@ -35,5 +36,9 @@ export default async function ProteticoPage() {
 
   const pedidos = (pedidosRaw ?? []) as unknown as PedidoProteticoRow[];
 
-  return <ProteticoClient pedidos={pedidos} nomeProtetico={dentista.nome} />;
+  return (
+    <PageContainer variant="wide">
+      <ProteticoClient pedidos={pedidos} nomeProtetico={dentista.nome} />
+    </PageContainer>
+  );
 }
