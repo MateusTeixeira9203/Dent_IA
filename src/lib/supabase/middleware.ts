@@ -14,9 +14,18 @@ export interface UpdateSessionResult {
 export async function updateSession(
   request: NextRequest
 ): Promise<UpdateSessionResult> {
+  // R-94 — propaga o pathname pro REQUEST (não pra response, que só o browser vê).
+  // headers() em Server Component lê os headers do request que o Next.js processa
+  // internamente; setar em response.headers não tem efeito nenhum ali. Sem isto,
+  // dashboard/layout.tsx sempre lia pathname='', a condição do gate do protético
+  // era sempre verdadeira, e todo load de /dashboard/protetico virava um redirect
+  // pra /dashboard/protetico — loop infinito (derrubou o servidor de memória).
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-pathname", request.nextUrl.pathname);
+
   const response = NextResponse.next({
     request: {
-      headers: request.headers,
+      headers: requestHeaders,
     },
   });
 
