@@ -1095,14 +1095,19 @@ export function PacienteDetailClient({
                 <FilePlus className="w-4 h-4" />
               </button>
             )}
-            {/* Apresentar — só aparece com ficha pra apresentar (DESIGN-KL §2 / spec 2.1) */}
-            {canViewClinical && fichasRecentes.length > 0 && (
+            {/* Apresentar — R-98a: não depende mais de ter ficha. Antes exigia
+                fichasRecentes.length > 0 (a suposição de que Apresentar só existe em
+                cima de UMA ficha específica) — com bloco imagem/odontograma/modelo
+                reutilizável isso deixou de ser verdade: dá pra montar a apresentação
+                antes de qualquer ficha existir. Com ficha, mantém o picker (contexto
+                certo pro orçamento/procedimentos); sem ficha, abre direto. */}
+            {canViewClinical && (
               <ApresentarPaciente
                 patientId={paciente.id}
                 clinicaId={clinicaId}
                 patientName={displayNome}
                 dentistaId={dentistaId}
-                mode="picker"
+                mode={fichasRecentes.length > 0 ? 'picker' : 'direct'}
                 fichas={fichasRecentes}
                 variant="header"
                 glow={paciente.id === 'demo'}
