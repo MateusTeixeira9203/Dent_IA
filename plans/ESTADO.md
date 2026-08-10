@@ -1,64 +1,47 @@
-# Estado — 2026-08-09 (sessão #34, pausada 04:48)
+# Estado — 2026-08-09 (sessão #35)
 
 ## Agora
 
-**🔵 R-92 — Fechar para cobrar** ([spec](specs/R-92-fechar-para-cobrar.md)), semana **10–16/08**.
-Decisão dele: em vez de fechar a lista inteira que ele trouxe (~2 meses), fechar só o que
-destrava **cobrar** — depois que eu passei o produto pelo checklist do playbook de lançamento
-dele e achei: **5 clínicas em `trial` com `trial_ends_at` NULL, `status_assinatura='ativo'`
-nunca existiu no banco, checkout nunca processou pagamento, zero analytics no projeto.** Meta
-dele é 100 pagantes em 2026 — hoje é 0.
+**🔵 R-94 — Agenda do protético** ([spec](specs/R-94-agenda-do-protetico.md)), spec escrita,
+**código ainda não começou**.
 
-**Feito:**
-- 5 commits antigos (R-85/R-86/R-65/R-66 + docs #33) subiram pro `origin/main`.
-- **Dia 1 — 🟡 codado, não testado ao vivo, não commitado.** Typecheck+build limpos. R-90
-  corrigido (`registrarRecebimento` grava `dentista_id`), atalho "Registrar Dinheiro" (1
-  clique) plugado no modal do orçamento, default de pagamento `pix`→`dinheiro` (5 lugares),
-  carinha do Dex (`DexMark`) no lugar do "D" hardcoded em `voice-ux.tsx`.
-- **Dia 2 — parcial.** Contradição "7 dias" × "14 dias" corrigida na landing (3 CTAs → 14).
-  Placar mínimo (PostHog) **fora do escopo** — ele decidiu não usar ferramenta de analytics
-  por enquanto, depois de eu explicar a consequência (sem isso, G3 da spec não tem como fechar
-  esta semana).
-- **`excluirPagamento` decidido e corrigido.** Testei ao vivo simulando a RLS de outro
-  dentista contra um pagamento fabricado — a suspeita de "mesma classe do R-66" não se
-  confirmou (SELECT e DELETE de pagamentos usam a mesma policy, sempre concordam). Corrigido
-  como defesa em profundidade (confere `count` do delete), não como fix de vulnerabilidade
-  ativa. Ver `plans/ROADMAP.md`.
+Ele pediu pra "matar hoje" a tela do protético e o Apresentar. Eu apontei que os dois estavam
+explicitamente cortados na spec do R-92 que ele aprovou horas antes — **ele decidiu pausar o
+R-92 mesmo assim**. Ordem definida: protético primeiro, Apresentar depois (ainda sem escopo —
+o que ele disse foi só "mais liberdade pro dentista editar a apresentação").
 
-**Falta (pausado aqui, a pedido dele):**
-- Testar o Dia 1 ao vivo e commitar.
-- **O preço** — só ele decide, trava `lib/planos.ts` e o Dia 3 (checkout).
-- Momento de valor/TTV — definição simples, sem instrumentação.
-- Dias 3–6 do plano (checkout real, Mom Test com as 3 clínicas, cobrar, mobile se couber).
+**Escopo fechado com ele:** protético é membro da clínica (1 clínica, não laboratório N:N),
+login criado pelo admin com senha como o da secretária (não usa convite), pedido é solto
+(paciente + observação + data, sem vínculo com procedimento), dentista pede o prazo,
+protético marca "entregue", e ele **vê o nome do paciente** no card.
 
-**R-88 (landing) voltou pra ⏳** — só deve ser escrita depois do que os 3 primeiros pagantes
-ensinarem, não com a suposição de hoje.
+**O achado que dimensiona o item:** a permissão do projeto é **deny-list sem exhaustive
+check** — 63 arquivos com gates negativos (`if role === 'secretaria') nega`), zero `switch`
+sobre role no projeto inteiro. Um role novo **não quebra o build** e nasce enxergando ficha,
+prontuário e financeiro. Mitigação aprovada por ele: **gate de ponto único** no
+`dashboard/layout.tsx` em vez de auditar os 63.
 
 ## Travado
 
-**O preço.** Ele mandou ignorar o R$249/R$179 atual, novo número não fechado. Mercado
-levantado: Simples Dental (60k dentistas) vende voz+IA no plano de R$149,90 **com app**; faixa
-geral R$39,90–349,90.
+**Nada trava o R-94** — dá pra começar a codar.
 
-**Confirmar que a cobrança das 3 clínicas atuais é por conversa + link, nunca paywall
-automático** — apliquei essa premissa preventivamente (Clindent é dado real de terceiro, 302
-pacientes), ele ainda não confirmou explicitamente.
+**O preço** (herdado do R-92, ainda de pé). Ele mandou ignorar o R$249/R$179 atual, número
+novo não fechado. Agora é barato mudar: `lib/planos.ts` virou fonte única (commit `86fc722`).
 
 ## Esperando você
 
-- [ ] **Logar e testar o Dia 1 do R-92** (Teste01, nunca Império/Clindent) — só assim vira
-      commit.
-- [ ] **Definir o preço** — trava o resto da semana.
+- [ ] **9 commits testados, sem push** — o lote do R-92 (`86fc722`..`dc0277e`). Ele pediu pra
+      revisar antes de subir, revisou, e aí virou a sessão pro R-94. **Continua sem subir.**
+- [ ] **Definir o preço** — não trava mais o R-94, mas trava o R-92 quando voltar.
 - [ ] Testar pessoalmente R-85/R-86/R-65/R-66 (herdados do #33, ainda 🟡).
-- [ ] Gate de 2 contas (R-29/R-30/R-31a/R-32/R-34/R-39/R-03c) — 10 dias parado, precisa dele
-      logado nas contas Paula/Renato/Gabriel/secretária.
-- [ ] `templates/spec.md` apareceu modificado no working tree sem eu ter tocado — origem
-      desconhecida, sinalizado no handoff, não revertido.
+- [ ] Gate de 2 contas (R-29/R-30/R-31a/R-32/R-34/R-39/R-03c) — 10 dias parado. **O R-94
+      soma mais um** (G6: protético + dentista logados).
+- [ ] **Escopar o Apresentar** — nunca foi discutido de verdade. Falta saber o que trava hoje
+      pro dentista na apresentação ao paciente.
 
 ## Próximo da fila
 
-Depois do R-92 fechar (ou no que sobrar da semana): mapa de atrito
+Depois do R-94: o Apresentar (sem escopo) e a volta do R-92. Mapa de atrito
 [rodada 2](auditorias/2026-08-09-mapa-de-atrito-2.md) e
 [rodada 3](auditorias/2026-08-09-mapa-de-atrito-3-recontagem.md) têm achados soltos sem item
-próprio ainda — R-90/R-91 já viraram item no ROADMAP, o resto (item 7 do campo mágico, "quem
-faltou" com número pior) segue só documentado. Ver `plans/ROADMAP.md`.
+próprio. Ver `plans/ROADMAP.md`.

@@ -3,11 +3,12 @@
 > **ROADMAP** · atualizado **2026-08-09** · ordenado por **importância pro dentista**
 > **Último push:** 08/08 (`dentia.app.br`, `dpl_oeSRUa3a`, READY) — R-75/R-82/R-84 e o fix do
 > `data-active` em produção. **4 commits de 09/08 (R-85/R-86/R-65/R-66) ainda NÃO subiram.**
-> **Fila:** 22⏳ · **🟡 codado/no ar sem verificação pessoal dele:** 38 · **💡 ideia sem spec:** 3 ·
+> **Fila:** 23⏳ · **🟡 codado/no ar sem verificação pessoal dele:** 38 · **💡 ideia sem spec:** 3 ·
 > **Concluídos:** 32 · **Congelado:** 3 · **Cortado:** 10
-> **🔵 ATIVO: [R-92 — Fechar para cobrar](specs/R-92-fechar-para-cobrar.md)** (semana 10–16/08).
-> **0 pagantes hoje** — 5 clínicas em trial perpétuo (`trial_ends_at` NULL), checkout nunca
-> processou pagamento, zero analytics no projeto. Meta dele: 100 pagantes em 2026.
+> **🔵 ATIVO: [R-94 — Agenda do protético](specs/R-94-agenda-do-protetico.md)** (spec 09/08).
+> **[R-92 — Fechar para cobrar](specs/R-92-fechar-para-cobrar.md) pausado 09/08 a pedido dele**,
+> com 9 commits testados sem push. **0 pagantes segue de pé** — 5 clínicas em trial perpétuo
+> (`trial_ends_at` NULL), checkout nunca processou pagamento. Meta dele: 100 pagantes em 2026.
 > **Discussão aberta:** [como diminuir o atrito](discussoes/como-diminuir-o-atrito.md) (estado × evento)
 > **Achado sem item, revisado 09/08 (3ª rodada + teste ao vivo):** `excluirPagamento` **tem**
 > policy de DELETE (`cmd=ALL`, dono OU secretária) — a nota de sessão anterior estava errada.
@@ -85,6 +86,7 @@ prioridade, por melhor que seja.
 | **R-86** | 🐛 "Salvar e passar" podia falhar sem avisar — POST 503, nada persistido, botão travava | 🟡 corrigido e commitado 09/08 (`e43e2af`) — `handleSalvar` sem `try/catch`; mesmo fix no quiet-save do R-85. Testado forçando a falha por interceptação de `fetch`. **Causa do 503 não isolada** (provável infra). **Ele ainda não testou. Sem push** | M |
 | **R-87** | 🔧 Erro de hidratação React (#418) em toda navegação — dashboard, orçamentos, pacientes, ficha do paciente | ⏳ achado 08/08 (auditoria completa). Reproduzido 5× em 4 rotas diferentes, mesmo chunk (`4bd1b696…js`). Não travou nenhuma tela nem perdeu dado observado, mas é sistêmico — cheira a componente compartilhado do layout (nav/sino de notificação?) com mismatch servidor/cliente. Sem investigação de causa raiz ainda | P |
 | **R-81** | 👥 Secretária registra PELO dentista — fluxo real relatado por ele 08/08, hoje **bloqueado** (`meu-dia/page.tsx:24` redireciona secretaria) | ⏳ achado 08/08. **Possivelmente mais valioso que o R-78 inteiro** — dentista fica presente e dita em tempo real, ela só executa. Precisa de seletor "dia de quem" + `dentistaId` explícito + gate de 2 contas. Sem spec | G |
+| [**R-94**](specs/R-94-agenda-do-protetico.md) | 🔵 **Agenda do protético** — role novo (login como o da secretária), pedido criado no agendamento (paciente + obs + data), calendário só dele, marca "entregue" | 🔵 **ativo 09/08**, spec escrita. **Zero código hoje.** Achado que dimensiona o item: permissão do projeto é deny-list sem exhaustive check — role novo nasce **fail-open** em 63 arquivos. Mitigação: gate de ponto único no layout. **G2/G6 (2 contas) definem o item** | G |
 
 ## Bloco 2 — Orçamento e financeiro
 
@@ -98,6 +100,7 @@ prioridade, por melhor que seja.
 | [R-65](specs/R-65-receita-nao-conta-recusado-rascunho.md) | 🐛 Receita/Receita Prevista somavam pagamento de orçamento `rascunho`/`recusado` — nenhum dos 4 caminhos de escrita checava status antes de aceitar dinheiro | 🟡 codado, testado ao vivo e commitado 09/08 (`0a8df0b`) — guard nos 4 caminhos + filtro `orcamentos!inner(status)` em 6 leituras. Prova: Receita Prevista do Império parou de contar R$1.050 de recusado. **Ele ainda não testou. Sem push** | G |
 | [R-66](specs/R-66-excluir-orcamento-mente-sucesso.md) | 🐛 "Excluir orçamento" mentia sucesso pra quem não é dono (RLS bloqueava em silêncio) + 9 leituras de `financeiro/actions.ts` descartavam erro | 🟡 codado, testado ao vivo dos 2 lados e commitado 09/08 (`0ab1bd1`) — dono checado antes de tocar linha filha; botão some pro não-dono. **Ele ainda não testou. Sem push** | M |
 | **R-90** | 🐛 **"Registrar Recebimento" (tela `/dashboard/financeiro`) não pode ter funcionado nenhuma vez** — insert nunca grava `dentista_id`, coluna é `NOT NULL` sem default; todo envio falha | ⏳ achado 09/08 (re-checagem do [mapa de atrito](../auditorias/2026-08-09-mapa-de-atrito-2.md)). R-65 abriu essa mesma função 09/08 (guard de status) e não pegou este bug, 12 linhas abaixo. Fix de 1 linha: `dentista_id: dados.dentistaId ?? dentistaId` — parâmetro já existe, só não é usado | P |
+| **R-93** | 🔧 Atalho "Registrar Dinheiro" no modal do orçamento — fecha parcela em 1 clique (`registrarPagamentoRapido` já existia no servidor, R-34 §7.1, nunca ligado nesta tela) | 🟡 codado, testado ao vivo e commitado 09/08 (`d958c47`). **Linha criada retroativamente** — o ID já estava em comentário no código sem existir no mapa. **Ele ainda não testou. Sem push** | P |
 | **R-91** | 🔧 Busca de paciente sem acento continua quebrada — "Antonio"/"Antônio" são buscas disjuntas (18% da base) | ⏳ achado 30/07, replanejado 09/08. Spec do R-31a (§3.3) já escolheu a abordagem (coluna normalizada, não `unaccent` cru) mas nunca foi codada — R-31a fechou 🟡 sem essa parte | P |
 | [R-38](specs/R-38-orcamento-apresentacao-ao-paciente.md) | Orçamento: como o paciente vê — PDF sem preço por item, só total e condição | 🟡 codado, testado, commitado e no ar (31/07) — toggle no rodapé, PDF respeita o flag, snapshot do aceite grava o flag (G1-G6 verificados) | P |
 | [R-10](ROADMAP.md) | P2: tirar a observação clínica do documento que o paciente lê | ⏳ P1 ✅ em prod. P2 precisa de decisão — `dentes_observacoes` alimenta orçamento **e** prontuário | P |
@@ -120,6 +123,7 @@ prioridade, por melhor que seja.
 | **R-44** | Varredura de embeds Postgrest com FK ambígua (mesmo padrão do bug do PDF, R-34) | ⏳ achado 30/07, confirmado ao vivo (300 real nos logs). `get-patient-workspace-data.ts:110`, `get-visible-timeline-events.ts:66/75` — 2 achadas a mais na busca (`command-palette.tsx:105`, `atender-agora-modal.tsx:57`). 5 abertas no total | P |
 | [R-25](ROADMAP.md) | 24 `setState` síncronos dentro de `useEffect` (cascading renders) | ⏳ dívida de performance, não quebra runtime | M |
 | **R-47** | Ficha rápida: Organizar com Dex apagava dado sem aviso + `alerta_novo` nunca persistia | 🟡 [corrigido 31/07](auditorias/2026-07-31-fase0-dex-ficha-rapida.md#correção-r-47--2-rodadas-3107), 2 rodadas de verificação adversarial. Typecheck/lint/build limpos, falta teste ao vivo | G |
+| **R-95** | Varredura de código morto — rotas/exports/deps sem uso, e separado disso o que é vivo mas arriscado (`any`, secret, RLS comentada) | ⏳ agente `dead-code-reviewer` pronto (setup 09/08), ainda não rodado — adiado a pedido dele pra não competir com o R-92/R-94 desta semana. Read-only por tool: entrega lista, nunca deleta sozinho | M |
 
 ## Bloco 5 — Depois
 
@@ -138,7 +142,7 @@ notas do sistema inteiro (Landing **C**, Auth **D**).
 
 | ID | Item | Estado | Peso |
 |---|---|---|---|
-| [**R-92**](specs/R-92-fechar-para-cobrar.md) | 🔵 **Fechar para cobrar** (semana 10–16/08) — sair de **0 pagantes para 3**, com checkout testado ponta a ponta e placar mínimo medindo. Achado que originou: 5 clínicas em `trial` com `trial_ends_at` NULL, `status_assinatura='ativo'` nunca existiu, checkout nunca processou pagamento | 🔵 **ativo 09/08** — plano por dia com 7 gates. **G5 (um pagamento real) define a semana.** Trava: o preço, que só ele decide | G |
+| [**R-92**](specs/R-92-fechar-para-cobrar.md) | **Fechar para cobrar** — sair de **0 pagantes para 3**, com checkout testado ponta a ponta e placar mínimo medindo. Achado que originou: 5 clínicas em `trial` com `trial_ends_at` NULL, `status_assinatura='ativo'` nunca existiu, checkout nunca processou pagamento | ⏳ **pausado 09/08 a pedido dele** (virou R-94). Dia 1 codado, testado ao vivo e commitado; Dia 2 parcial. **9 commits sem push.** Trava: o preço, que só ele decide | G |
 | **R-88** | **Landing de conversão** — vende 3 coisas que a produção contradiz: **"Modo Consulta" como feature nº 1 e FAQ nº 1 de uma tela DELETADA pelo R-72**, WhatsApp com 0 uso, e "silos" que o R-36 desmonta. Mais design: cores hardcoded, theming em JS, grid de 3 ícones, "7 vs 14 dias", zero OG tag | ⏳ **adiado pelo R-92 (09/08)** — deve ser escrita **depois** do que os 3 primeiros pagantes ensinarem, não com a suposição de hoje. Alvo já decidido: os dois, solo como principal | G |
 | **R-89** | **Auth (login · cadastro · esqueci · redefinir · verifique-email)** — nota D: 5/12 capturas em branco (`opacity:0` sem JS), dark quebrado, AA reprovado, mobile sem logo, 2 sistemas de form diferentes entre login e cadastro | ⏳ depois do R-88 (a landing define a linguagem que o auth herda) | M |
 
