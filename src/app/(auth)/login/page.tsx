@@ -9,7 +9,7 @@ import { z } from "zod";
 import { motion } from "motion/react";
 import { ArrowRight, AlertCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { hasDentistaRegistro } from "@/lib/auth";
+import { getDentistaLoginInfo } from "@/lib/auth";
 import { toast } from "sonner";
 import { AuthBrandPanel } from "@/components/brand/brand-lockup";
 
@@ -84,9 +84,13 @@ function LoginFormContent(): React.JSX.Element {
       }
 
       if (authData.session) {
-        const temDentista = await hasDentistaRegistro(supabase);
+        const { existe, role } = await getDentistaLoginInfo(supabase);
         toast.success("Login realizado com sucesso!");
-        router.push(temDentista ? redirectTo : "/onboarding");
+        // R-94 — protético não tem lugar em /dashboard (redirectTo default): manda reto
+        // pra própria agenda, senão ele paga a query pesada do dashboard normal só pra
+        // ser redirecionado de novo pelo gate em dashboard/layout.tsx.
+        const destino = !existe ? "/onboarding" : role === "protetico" ? "/dashboard/protetico" : redirectTo;
+        router.push(destino);
         router.refresh();
       }
     } catch {
