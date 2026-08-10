@@ -439,7 +439,9 @@ export async function getMeuDiaData({
       .from('dentistas')
       .select('id, nome')
       .eq('clinica_id', clinicId)
-      .neq('role', 'secretaria')
+      // R-94 — .neq('role','secretaria') sozinho deixaria 'protetico' virar destino
+      // de encaminhamento clínico; ele não atende paciente.
+      .in('role', ['admin', 'dentista'])
       .eq('ativo', true)
       .neq('id', dentistaId)
       .order('nome', { ascending: true }),

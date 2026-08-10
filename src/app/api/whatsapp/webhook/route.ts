@@ -136,7 +136,9 @@ async function processarMensagem(
     .from('dentistas')
     .select('id')
     .eq('clinica_id', clinicaId)
-    .neq('role', 'secretaria')
+    // R-94 — .neq('role','secretaria') sozinho deixaria 'protetico' virar o
+    // "dentista principal" que o bot vincula a pacientes novos.
+    .in('role', ['admin', 'dentista'])
     .eq('ativo', true)
     .order('created_at', { ascending: true })
     .limit(1)

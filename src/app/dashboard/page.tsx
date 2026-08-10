@@ -52,7 +52,8 @@ async function SecretaryDashboardServer({
       .from('dentistas')
       .select('id, nome')
       .eq('clinica_id', clinicaId)
-      .neq('role', 'secretaria')
+      // R-94 — .neq('role','secretaria') sozinho deixaria 'protetico' entrar aqui.
+      .in('role', ['admin', 'dentista'])
       .eq('ativo', true)
       .order('nome', { ascending: true }),
     supabase

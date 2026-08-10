@@ -80,7 +80,9 @@ export default async function OrcamentosPage() {
       .from('dentistas')
       .select('id, nome')
       .eq('clinica_id', dentista.clinica_id)
-      .neq('role', 'secretaria')
+      // R-94 — .neq('role','secretaria') sozinho deixaria 'protetico' entrar nas
+      // abas de orçamento por dentista.
+      .in('role', ['admin', 'dentista'])
       .eq('ativo', true)
       .order('nome', { ascending: true });
     dentistasClinica = data ?? [];

@@ -16,7 +16,9 @@ export default async function NovoPacientePage() {
       .from('dentistas')
       .select('id, nome')
       .eq('clinica_id', dentista.clinica_id)
-      .neq('role', 'secretaria')
+      // R-94 — .neq('role','secretaria') sozinho deixaria 'protetico' entrar no
+      // seletor de dentista responsável pelo paciente novo.
+      .in('role', ['admin', 'dentista'])
       .eq('ativo', true)
       .order('nome', { ascending: true });
     dentistas = data ?? [];

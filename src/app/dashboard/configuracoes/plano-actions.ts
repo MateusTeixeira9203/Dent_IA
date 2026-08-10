@@ -21,7 +21,9 @@ export async function verificarStatusMigracao(): Promise<
       .from('dentistas')
       .select('id', { count: 'exact', head: true })
       .eq('clinica_id', clinicId)
-      .neq('role', 'secretaria')
+      // R-94 — conta pra decidir migração de plano (cobrança por dentista); protético
+      // não é dentista pagante, .neq('role','secretaria') sozinho o incluiria aqui.
+      .in('role', ['admin', 'dentista'])
       .eq('ativo', true),
   ]);
 
@@ -53,7 +55,9 @@ export async function ativarPlanoClinica(): Promise<
     .from('dentistas')
     .select('id', { count: 'exact', head: true })
     .eq('clinica_id', clinicId)
-    .neq('role', 'secretaria')
+    // R-94 — mesma contagem de verificarStatusMigracao acima; protético não conta
+    // pra cobrança do plano Clínica.
+    .in('role', ['admin', 'dentista'])
     .eq('ativo', true);
 
   if ((count ?? 0) < 2) {

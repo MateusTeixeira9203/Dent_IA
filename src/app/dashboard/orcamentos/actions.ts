@@ -447,7 +447,9 @@ export async function criarOrcamento(dados: {
       .eq("id", dados.dentistaId)
       .eq("clinica_id", clinicId)
       .eq("ativo", true)
-      .neq("role", "secretaria")
+      // R-94 — .neq("role","secretaria") sozinho deixaria 'protetico' virar
+      // "dentista responsável" de um orçamento.
+      .in("role", ["admin", "dentista"])
       .maybeSingle();
     if (!alvo) {
       return { error: "Dentista selecionado inválido." };
@@ -1040,7 +1042,9 @@ export async function criarProcedimentoRapido(dados: {
       .eq("id", dados.dentistaId)
       .eq("clinica_id", clinicId)
       .eq("ativo", true)
-      .neq("role", "secretaria")
+      // R-94 — .neq("role","secretaria") sozinho deixaria 'protetico' virar
+      // "dentista responsável" de um orçamento.
+      .in("role", ["admin", "dentista"])
       .maybeSingle();
     if (!alvo) {
       return { error: "Dentista selecionado inválido." };

@@ -347,7 +347,9 @@ export async function encaminharProcedimento(params: {
       .select('id, nome')
       .eq('id', params.dentistaDestinoId)
       .eq('clinica_id', clinicId)
-      .neq('role', 'secretaria')
+      // R-94 — .neq('role','secretaria') sozinho deixaria 'protetico' virar destino
+      // de encaminhamento clínico; ele não atende paciente.
+      .in('role', ['admin', 'dentista'])
       .eq('ativo', true)
       .neq('id', dentistaPerfil.id)
       .maybeSingle();
