@@ -167,6 +167,31 @@
 
   .pair{display:grid;grid-template-columns:1fr 1fr;gap:18px}
   @media(max-width:900px){.pair{grid-template-columns:1fr}}
+
+  /* ── F: anotação sobre a radiografia (pedido 10/08) ────────────────── */
+  .anot-mark{position:absolute;display:flex;flex-direction:column;align-items:center;gap:5px;
+             transform:translate(-50%,-50%);pointer-events:none}
+  .anot-sym{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+            border:2.5px solid var(--color-coral);background:rgba(61,31,31,.55);
+            backdrop-filter:blur(2px);box-shadow:0 0 0 4px rgba(8,12,11,.45)}
+  .anot-sym svg{width:24px;height:24px}
+  .anot-lbl{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.08em;
+            text-transform:uppercase;color:#fff;background:rgba(8,12,11,.82);padding:3px 8px;
+            border-radius:5px;white-space:nowrap}
+  .anot-sym.feito{border-color:var(--color-teal);background:rgba(30,58,53,.55)}
+
+  /* Paleta de procedimentos — chrome de EDIÇÃO, some na apresentação */
+  .paleta{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);display:flex;gap:7px;
+          padding:9px 11px;border-radius:13px;background:rgba(17,17,18,.94);
+          border:1px solid var(--color-border);box-shadow:0 12px 34px -10px rgba(0,0,0,.8);z-index:3}
+  .chip{display:flex;align-items:center;gap:6px;padding:7px 11px;border-radius:9px;font-size:12px;
+        font-weight:600;background:var(--color-surface-alt);color:var(--color-text-secondary);
+        border:1px solid transparent;white-space:nowrap}
+  .chip.on{border-color:var(--color-coral);color:var(--color-coral);background:rgba(239,154,154,.1)}
+  .chip i{width:8px;height:8px;border-radius:2px;background:currentColor;display:block;opacity:.85}
+  .badge-modo{position:absolute;top:14px;left:16px;z-index:3;font-family:var(--font-mono);font-size:10px;
+              letter-spacing:.16em;text-transform:uppercase;padding:5px 10px;border-radius:6px;
+              background:rgba(17,17,18,.9);border:1px solid var(--color-border);color:var(--color-text-secondary)}
 </style>
 </head>
 <body>
@@ -249,6 +274,98 @@
       <span class="st-nav">&#8592; anterior</span>
       <div class="st-dots"><span class="st-dot"></span><span class="st-dot on"></span><span class="st-dot"></span><span class="st-dot"></span></div>
       <span class="st-nav">próximo &#8594;</span>
+    </div>
+  </div>
+
+  <!-- ── F: anotação sobre a radiografia ───────────────────────────── -->
+  <p class="sec-label">Bloco A+ — anotar a radiografia (pedido 10/08)</p>
+  <p class="sec-desc">O dentista escolhe o procedimento numa paleta e marca <b>em cima</b> da
+     radiografia onde ele entra. A paleta é chrome de <b>edição</b> — some na apresentação, mesma
+     regra do <code>presentationMode</code> do odontograma. Aqui: canal + coroa no dente de trás,
+     e uma marca teal do que já foi feito.</p>
+  <p class="doc-note" style="margin:-8px 0 16px">⚠ <b>Os símbolos abaixo são indicativos, não são os
+     de produção.</b> Diferente do odontograma (que é o render real), aqui eu desenhei marcadores só
+     para mostrar a interação — o conjunto final deve sair do mesmo catálogo do odontograma
+     (<code>TipoRegistroOdontograma</code>: endodontia, coroa, ponte, implante, pino_núcleo…), o que
+     ainda precisa ser decidido e desenhado.</p>
+
+  <div class="pair">
+    <!-- editor -->
+    <div class="stage" style="aspect-ratio:4/3">
+      <span class="badge-modo">Editando</span>
+      <div class="img-full">
+        <svg class="radio" viewBox="0 0 640 360" role="img" aria-label="Radiografia com anotações (simulada)">
+          <rect width="640" height="360" fill="url(#rg2)"/>
+          <defs>
+            <radialGradient id="rg2" cx="50%" cy="46%" r="62%">
+              <stop offset="0%" stop-color="#5c5c5c"/><stop offset="55%" stop-color="#262626"/>
+              <stop offset="100%" stop-color="#0b0b0b"/>
+            </radialGradient>
+            <linearGradient id="bone2" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#8e8e8e"/><stop offset="100%" stop-color="#3a3a3a"/>
+            </linearGradient>
+          </defs>
+          <g fill="url(#bone2)" opacity=".93">
+            <path d="M232 128h50l-6 78c-2 22-32 22-34 0z"/>
+            <path d="M292 124h56l-7 84c-2 24-38 24-40 0z"/>
+            <path d="M358 126h60l-8 82c-2 24-42 24-44 0z"/>
+          </g>
+          <ellipse cx="388" cy="216" rx="17" ry="13" fill="#0d0d0d" opacity=".82"/>
+          <rect x="196" y="196" width="252" height="9" fill="#9a9a9a" opacity=".55"/>
+        </svg>
+      </div>
+      <div class="anot-mark" style="left:60%;top:52%">
+        <span class="anot-sym"><svg viewBox="0 0 24 24" fill="none" stroke="#ef9a9a" stroke-width="2.2" stroke-linecap="round"><path d="M10 3v13M14 3v13"/><path d="M9 16h6l-3 5z"/></svg></span>
+        <span class="anot-lbl">Canal</span>
+      </div>
+      <div class="anot-mark" style="left:60%;top:24%">
+        <span class="anot-sym"><svg viewBox="0 0 24 24" fill="none" stroke="#ef9a9a" stroke-width="2.2" stroke-linejoin="round"><path d="M4 9l4-4h8l4 4-8 11z"/></svg></span>
+        <span class="anot-lbl">Coroa</span>
+      </div>
+      <div class="anot-mark" style="left:41%;top:26%">
+        <span class="anot-sym feito"><svg viewBox="0 0 24 24" fill="none" stroke="#2f9c85" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l6 6L20 6"/></svg></span>
+        <span class="anot-lbl">Feito</span>
+      </div>
+      <div class="paleta">
+        <span class="chip on"><i></i> Canal</span>
+        <span class="chip"><i></i> Coroa</span>
+        <span class="chip"><i></i> Prótese</span>
+        <span class="chip"><i></i> Implante</span>
+        <span class="chip"><i></i> Pino</span>
+      </div>
+    </div>
+
+    <!-- apresentação -->
+    <div class="stage" style="aspect-ratio:4/3">
+      <span class="badge-modo">Apresentando</span>
+      <div class="img-full">
+        <svg class="radio" viewBox="0 0 640 360" role="img" aria-label="Radiografia anotada, vista do paciente">
+          <rect width="640" height="360" fill="url(#rg2)"/>
+          <g fill="url(#bone2)" opacity=".93">
+            <path d="M232 128h50l-6 78c-2 22-32 22-34 0z"/>
+            <path d="M292 124h56l-7 84c-2 24-38 24-40 0z"/>
+            <path d="M358 126h60l-8 82c-2 24-42 24-44 0z"/>
+          </g>
+          <ellipse cx="388" cy="216" rx="17" ry="13" fill="#0d0d0d" opacity=".82"/>
+          <rect x="196" y="196" width="252" height="9" fill="#9a9a9a" opacity=".55"/>
+        </svg>
+      </div>
+      <div class="anot-mark" style="left:60%;top:52%">
+        <span class="anot-sym"><svg viewBox="0 0 24 24" fill="none" stroke="#ef9a9a" stroke-width="2.2" stroke-linecap="round"><path d="M10 3v13M14 3v13"/><path d="M9 16h6l-3 5z"/></svg></span>
+        <span class="anot-lbl">Canal</span>
+      </div>
+      <div class="anot-mark" style="left:60%;top:24%">
+        <span class="anot-sym"><svg viewBox="0 0 24 24" fill="none" stroke="#ef9a9a" stroke-width="2.2" stroke-linejoin="round"><path d="M4 9l4-4h8l4 4-8 11z"/></svg></span>
+        <span class="anot-lbl">Coroa</span>
+      </div>
+      <div class="anot-mark" style="left:41%;top:26%">
+        <span class="anot-sym feito"><svg viewBox="0 0 24 24" fill="none" stroke="#2f9c85" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l6 6L20 6"/></svg></span>
+        <span class="anot-lbl">Feito</span>
+      </div>
+      <div class="img-cap">
+        <span class="tag">Radiografia · 07/08</span>
+        <p>Aqui entra o canal, e por cima a coroa. O da frente já está pronto.</p>
+      </div>
     </div>
   </div>
 
