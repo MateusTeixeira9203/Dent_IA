@@ -19,21 +19,31 @@ export type CriarSecretariaResult =
   | { ok: true }
   | { ok: false; error: string };
 
+type ProvisionarMembroRole = 'secretaria' | 'protetico';
+
+const ROLE_LABEL_ERRO: Record<ProvisionarMembroRole, string> = {
+  secretaria: 'secretárias',
+  protetico:  'protéticos',
+};
+
 /**
- * Cria uma secretária com rollback compensatório.
+ * Provisiona um membro de equipe (secretária ou protético) com rollback compensatório.
+ * Compartilhada por criarSecretaria() e criarProtetico() — mesmo fluxo, role diferente.
  *
  * Fluxo:
  *  1. Pré-check: email já é membro ativo desta clínica? (UX — evita round-trip desnecessário)
  *  2. auth.admin.createUser() — fora de qualquer transação SQL (Supabase Auth é externo ao Postgres)
- *  3. rpc('provision_secretaria') — 4 inserts em transação única: users, dentistas, clinica_usuarios, secretarias
+ *  3. rpc('provision_secretaria') — inserts em transação única: users, dentistas, clinica_usuarios
+ *     (+ secretarias, só quando role='secretaria')
  *  4. Se a RPC falhar → auth.admin.deleteUser() como rollback compensatório (evita auth user órfão)
  */
-export async function criarSecretaria(
+async function provisionarMembroEquipe(
+  role: ProvisionarMembroRole,
   ctx: { userId: string; clinicId: string; role: string },
   input: CriarSecretariaInput,
 ): Promise<CriarSecretariaResult> {
   if (ctx.role !== 'admin') {
-    return { ok: false, error: 'Apenas administradores podem criar secretárias.' };
+    return { ok: false, error: `Apenas administradores podem criar ${ROLE_LABEL_ERRO[role]}.` };
   }
 
   const { nome, email, senha, telefone } = input;
@@ -80,7 +90,7 @@ export async function criarSecretaria(
     if (msg.includes('already') || msg.includes('registered')) {
       return { ok: false, error: 'Este email já possui uma conta no sistema.' };
     }
-    console.error('[criarSecretaria] Erro ao criar auth user:', { email, clinicId: ctx.clinicId, message: msg });
+    console.error('[provisionarMembroEquipe] Erro ao criar auth user:', { role, email, clinicId: ctx.clinicId, message: msg });
     return { ok: false, error: msg || 'Erro ao criar usuário.' };
   }
 
@@ -94,16 +104,18 @@ export async function criarSecretaria(
     p_clinica_id: ctx.clinicId,
     p_telefone:   telefone ?? null,
     p_invited_by: ctx.userId,
+    p_role:       role,
   });
 
   if (rpcError) {
-    // Rollback compensatório — Postgres reverteu automaticamente os 4 inserts,
+    // Rollback compensatório — Postgres reverteu automaticamente os inserts,
     // mas o auth user já foi criado e precisa ser removido manualmente.
     const { error: deleteError } = await db.auth.admin.deleteUser(uid);
 
     if (deleteError) {
       // Estado crítico: auth user órfão não removível. Requer intervenção manual.
-      console.error('[criarSecretaria] CRITICAL: rollback compensatório falhou — auth user órfão', {
+      console.error('[provisionarMembroEquipe] CRITICAL: rollback compensatório falhou — auth user órfão', {
+        role,
         uid,
         email,
         clinicId:    ctx.clinicId,
@@ -111,7 +123,8 @@ export async function criarSecretaria(
         deleteError: deleteError.message,
       });
     } else {
-      console.warn('[criarSecretaria] auth user removido após falha no provisioning', {
+      console.warn('[provisionarMembroEquipe] auth user removido após falha no provisioning', {
+        role,
         uid,
         email,
         clinicId:   ctx.clinicId,
@@ -123,10 +136,24 @@ export async function criarSecretaria(
       return { ok: false, error: 'Este usuário já é membro desta clínica.' };
     }
 
-    return { ok: false, error: 'Erro ao provisionar secretária. Tente novamente.' };
+    return { ok: false, error: `Erro ao provisionar ${role === 'secretaria' ? 'secretária' : 'protético'}. Tente novamente.` };
   }
 
   return { ok: true };
+}
+
+export async function criarSecretaria(
+  ctx: { userId: string; clinicId: string; role: string },
+  input: CriarSecretariaInput,
+): Promise<CriarSecretariaResult> {
+  return provisionarMembroEquipe('secretaria', ctx, input);
+}
+
+export async function criarProtetico(
+  ctx: { userId: string; clinicId: string; role: string },
+  input: CriarSecretariaInput,
+): Promise<CriarSecretariaResult> {
+  return provisionarMembroEquipe('protetico', ctx, input);
 }
 
 /**
