@@ -16,11 +16,21 @@ import {
   ChevronLeft,
   ChevronRight,
   LayoutGrid,
+  Type,
+  ScanFace,
 } from 'lucide-react';
 import Image from 'next/image';
 import { HelpTooltip } from '@/components/ui/help-tooltip';
 import { getSectionStatus } from '@/lib/constants/treatment-status';
 import type { Tratamento } from '@/app/dashboard/pacientes/[id]/tratamento-actions';
+import type { SectionTipo } from '@/hooks/usePlanejamentoPaciente';
+import { Odontograma } from '@/components/odontograma/Odontograma';
+import type { OdontogramaEventoDraft } from '@/types/odontograma';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 // ─── Types (mirrored from PlanejamentoTab) ──────────────────────────────────
 
@@ -34,12 +44,19 @@ interface Document {
 
 interface Section {
   id: string;
+  tipo: SectionTipo;
   title: string;
   content: string;
   imageIds: string[];
   status: 'pendente' | 'em_andamento' | 'concluido';
   dataEstimada: string | null;
 }
+
+const TIPO_BLOCO: { tipo: SectionTipo; label: string; icon: typeof Type }[] = [
+  { tipo: 'texto', label: 'Texto', icon: Type },
+  { tipo: 'imagem', label: 'Imagem', icon: ImageIcon },
+  { tipo: 'odontograma', label: 'Odontograma', icon: ScanFace },
+];
 
 interface PlanProc {
   id: string;
@@ -78,6 +95,8 @@ export interface ApresentarPanelProps {
   documents: Document[];
   budgetProcedures: BudgetProcedure[];
   budgetExists: boolean;
+  /** R-98a — bloco odontograma deriva sozinho daqui, sem escolha manual de dente. */
+  odontogramaEventos: OdontogramaEventoDraft[];
   concluidosCount: number;
   progressPercent: number;
   totalBudget: number;
@@ -87,11 +106,106 @@ export interface ApresentarPanelProps {
   setIsImagePickerOpen: (id: string | null) => void;
   onUpdateSection: (id: string, field: keyof Section, value: string | string[]) => void;
   onRemoveSection: (id: string) => Promise<void>;
-  onAddSection: () => Promise<void>;
+  onAddSection: (tipo: SectionTipo) => Promise<void>;
   onGenerateSectionWithAI: (id: string) => Promise<void>;
   onToggleImageSelection: (sectionId: string, imageId: string) => void;
   onGenerateFullPlanWithAI: () => Promise<void>;
   onSaveSectionToDb: (id: string) => Promise<void>;
+}
+
+// ─── Corpo do bloco imagem (R-98a) — picker de 1 doc + legenda ──────────────
+// Nome e responsabilidade vêm do §4.2 da spec (árvore de componentes) — corpo próprio
+// porque o layout (imagem grande + legenda) não tem nada em comum com o de texto.
+
+function ImagemSectionBody({
+  section, documents, onUpdateSection, onOpenPicker,
+}: {
+  section: Section;
+  documents: Document[];
+  onUpdateSection: (id: string, field: keyof Section, value: string | string[]) => void;
+  onOpenPicker: () => void;
+}) {
+  const doc = documents.find(d => d.id === section.imageIds[0]);
+  return (
+    <div className="p-8 space-y-4">
+      {doc ? (
+        <div className="relative aspect-[16/9] rounded-2xl overflow-hidden border border-border/60 group/img">
+          <Image src={doc.thumbnail} alt={doc.name} fill className="object-cover" referrerPolicy="no-referrer" />
+          <button
+            onClick={onOpenPicker}
+            className="absolute top-3 right-3 px-3 py-1.5 rounded-lg bg-black/60 text-white text-xs font-bold opacity-0 group-hover/img:opacity-100 transition-opacity"
+          >
+            Trocar imagem
+          </button>
+        </div>
+      ) : (
+        <div
+          onClick={onOpenPicker}
+          className="h-48 border-2 border-dashed border-border rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-surface-alt/50 transition-colors"
+        >
+          <ImageIcon className="w-6 h-6 text-text-secondary" />
+          <span className="text-xs font-medium text-text-secondary">Escolher radiografia ou foto</span>
+        </div>
+      )}
+      <div className="space-y-2">
+        <label className="text-xs font-bold text-text-secondary uppercase tracking-widest">
+          Legenda (opcional)
+        </label>
+        <textarea
+          value={section.content}
+          onChange={(e) => onUpdateSection(section.id, 'content', e.target.value)}
+          placeholder="Ex: Aqui entra o canal, e por cima a coroa."
+          className="w-full h-20 bg-surface-alt/50 border border-border/60 rounded-2xl p-4 text-sm text-text-primary leading-relaxed outline-none focus:border-teal transition-colors resize-none"
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Corpo do bloco odontograma (R-98a) — sem picker, deriva sozinho ────────
+// Invariante §7: nunca escolha manual de dente. Editor mostra o Odontograma REAL (não
+// presentationMode) — o dentista precisa da legenda/abas pra conferir o que vai aparecer;
+// presentationMode só entra no slide, com o paciente olhando (ver SlidePresentation).
+
+function OdontogramaSectionBody({
+  section, eventos, onUpdateSection,
+}: {
+  section: Section;
+  eventos: OdontogramaEventoDraft[];
+  onUpdateSection: (id: string, field: keyof Section, value: string | string[]) => void;
+}) {
+  return (
+    <div className="p-8 space-y-4">
+      {eventos.length > 0 ? (
+        <div className="bg-surface-alt/30 border border-border/60 rounded-2xl p-4">
+          <Odontograma
+            selectedTeeth={[]}
+            onToothToggle={() => {}}
+            showCheckbox={false}
+            eventosPersistidos={eventos}
+          />
+        </div>
+      ) : (
+        <div className="h-40 border-2 border-dashed border-border rounded-2xl flex flex-col items-center justify-center gap-2 text-center px-6">
+          <ScanFace className="w-6 h-6 text-text-secondary" />
+          <span className="text-xs font-medium text-text-secondary">
+            Nenhum evento registrado no odontograma deste paciente ainda
+          </span>
+        </div>
+      )}
+      <div className="space-y-2">
+        <label className="text-xs font-bold text-text-secondary uppercase tracking-widest">
+          Nota (opcional)
+        </label>
+        <textarea
+          value={section.content}
+          onChange={(e) => onUpdateSection(section.id, 'content', e.target.value)}
+          placeholder="Ex: O que eu proponho pra você"
+          className="w-full h-16 bg-surface-alt/50 border border-border/60 rounded-2xl p-4 text-sm text-text-primary leading-relaxed outline-none focus:border-teal transition-colors resize-none"
+        />
+      </div>
+    </div>
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -106,6 +220,7 @@ export function ApresentarPanel({
   documents,
   budgetProcedures,
   budgetExists,
+  odontogramaEventos,
   concluidosCount,
   progressPercent,
   totalBudget,
@@ -126,8 +241,16 @@ export function ApresentarPanel({
   const [slideDirection, setSlideDirection] = useState(1);
   const [overviewMode, setOverviewMode] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  // R-98a — confirmação destrutiva usa AlertDialog, nunca window.confirm (o paciente está
+  // vendo a tela). O hook só executa; decidir SE confirma é do editor.
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
+  const [pendingRegenerate, setPendingRegenerate] = useState(false);
+  const [addingTipo, setAddingTipo] = useState(false);
 
   const totalSlides = sections.length + 2;
+  // R-98a — slide de conteúdo (1..sections.length) muda de layout por tipo de bloco.
+  const currentSection = currentSlide >= 1 && currentSlide <= sections.length ? sections[currentSlide - 1] : null;
+  const isImagemSlide = currentSection?.tipo === 'imagem';
 
   useEffect(() => setIsMounted(true), []);
 
@@ -254,7 +377,10 @@ export function ApresentarPanel({
                           </p>
                         </div>
                         <button
-                          onClick={() => void onGenerateFullPlanWithAI()}
+                          onClick={() => {
+                            if (sections.length > 0) setPendingRegenerate(true);
+                            else void onGenerateFullPlanWithAI();
+                          }}
                           disabled={isGeneratingAI !== null}
                           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-border text-text-primary text-sm font-bold hover:bg-surface-alt transition-all disabled:opacity-50 shrink-0 ml-4"
                         >
@@ -327,7 +453,7 @@ export function ApresentarPanel({
                                   </button>
                                 )}
                                 <button
-                                  onClick={() => void onRemoveSection(section.id)}
+                                  onClick={() => setPendingRemoveId(section.id)}
                                   className="p-2 text-text-secondary hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -335,93 +461,137 @@ export function ApresentarPanel({
                               </div>
                             </div>
 
-                            <div className="p-8 grid grid-cols-1 lg:grid-cols-2 gap-10">
-                              <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                  <label className="text-xs font-bold text-text-secondary uppercase tracking-widest">
-                                    Explicação para o Paciente
-                                  </label>
-                                  <div className="flex items-center gap-1">
+                            {section.tipo === 'texto' && (
+                              <div className="p-8 grid grid-cols-1 lg:grid-cols-2 gap-10">
+                                <div className="space-y-4">
+                                  <div className="flex items-center justify-between">
+                                    <label className="text-xs font-bold text-text-secondary uppercase tracking-widest">
+                                      Explicação para o Paciente
+                                    </label>
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        onClick={() => void onGenerateSectionWithAI(section.id)}
+                                        disabled={isGeneratingAI === section.id || !section.title}
+                                        className="text-teal text-xs font-bold flex items-center gap-1 hover:text-teal-dark transition-colors disabled:opacity-50"
+                                      >
+                                        {isGeneratingAI === section.id
+                                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                                          : <Sparkles className="w-3 h-3" />
+                                        }
+                                        Gerar com a IA
+                                      </button>
+                                      <HelpTooltip content="Descreva os procedimentos e a IA gera um texto profissional." className="ml-0.5" />
+                                    </div>
+                                  </div>
+                                  <textarea
+                                    value={section.content}
+                                    onChange={(e) => onUpdateSection(section.id, 'content', e.target.value)}
+                                    placeholder="Descreva aqui o que o paciente precisa entender de forma simples..."
+                                    className="w-full h-40 bg-surface-alt/50 border border-border/60 rounded-2xl p-4 text-sm text-text-primary leading-relaxed outline-none focus:border-teal transition-colors resize-none"
+                                  />
+                                </div>
+
+                                <div className="space-y-4">
+                                  <div className="flex items-center justify-between">
+                                    <label className="text-xs font-bold text-text-secondary uppercase tracking-widest">
+                                      Imagens Ilustrativas
+                                    </label>
                                     <button
-                                      onClick={() => void onGenerateSectionWithAI(section.id)}
-                                      disabled={isGeneratingAI === section.id || !section.title}
-                                      className="text-teal text-xs font-bold flex items-center gap-1 hover:text-teal-dark transition-colors disabled:opacity-50"
+                                      onClick={() => setIsImagePickerOpen(section.id)}
+                                      className="text-teal text-xs font-bold flex items-center gap-1 hover:text-teal-dark transition-colors"
                                     >
-                                      {isGeneratingAI === section.id
-                                        ? <Loader2 className="w-3 h-3 animate-spin" />
-                                        : <Sparkles className="w-3 h-3" />
-                                      }
-                                      Gerar com a IA
+                                      <Plus className="w-3 h-3" /> Buscar da aba Documentos
+                                      {documents.length > 0 && (
+                                        <span className="ml-0.5 text-text-secondary font-normal">({documents.length})</span>
+                                      )}
                                     </button>
-                                    <HelpTooltip content="Descreva os procedimentos e a IA gera um texto profissional." className="ml-0.5" />
+                                  </div>
+
+                                  <div className="grid grid-cols-3 gap-3">
+                                    {section.imageIds.length > 0 ? (
+                                      section.imageIds.map(imgId => {
+                                        const doc = documents.find(d => d.id === imgId);
+                                        if (!doc) return null;
+                                        return (
+                                          <div key={imgId} className="aspect-square relative rounded-xl overflow-hidden border border-border/60 group/img">
+                                            <Image src={doc.thumbnail} alt={doc.name} fill className="object-cover" referrerPolicy="no-referrer" />
+                                            <button
+                                              onClick={() => onToggleImageSelection(section.id, imgId)}
+                                              className="absolute top-1 right-1 p-1 bg-black/60 text-white rounded-md opacity-0 group-hover/img:opacity-100 transition-opacity"
+                                            >
+                                              <X className="w-3 h-3" />
+                                            </button>
+                                          </div>
+                                        );
+                                      })
+                                    ) : (
+                                      <div
+                                        onClick={() => setIsImagePickerOpen(section.id)}
+                                        className="col-span-3 h-32 border-2 border-dashed border-border rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-surface-alt/50 transition-colors"
+                                      >
+                                        <ImageIcon className="w-6 h-6 text-text-secondary" />
+                                        <span className="text-xs font-medium text-text-secondary">Nenhuma imagem selecionada</span>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
-                                <textarea
-                                  value={section.content}
-                                  onChange={(e) => onUpdateSection(section.id, 'content', e.target.value)}
-                                  placeholder="Descreva aqui o que o paciente precisa entender de forma simples..."
-                                  className="w-full h-40 bg-surface-alt/50 border border-border/60 rounded-2xl p-4 text-sm text-text-primary leading-relaxed outline-none focus:border-teal transition-colors resize-none"
-                                />
                               </div>
+                            )}
 
-                              <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                  <label className="text-xs font-bold text-text-secondary uppercase tracking-widest">
-                                    Imagens Ilustrativas
-                                  </label>
-                                  <button
-                                    onClick={() => setIsImagePickerOpen(section.id)}
-                                    className="text-teal text-xs font-bold flex items-center gap-1 hover:text-teal-dark transition-colors"
-                                  >
-                                    <Plus className="w-3 h-3" /> Buscar da aba Documentos
-                                    {documents.length > 0 && (
-                                      <span className="ml-0.5 text-text-secondary font-normal">({documents.length})</span>
-                                    )}
-                                  </button>
-                                </div>
+                            {section.tipo === 'imagem' && (
+                              <ImagemSectionBody
+                                section={section}
+                                documents={documents}
+                                onUpdateSection={onUpdateSection}
+                                onOpenPicker={() => setIsImagePickerOpen(section.id)}
+                              />
+                            )}
 
-                                <div className="grid grid-cols-3 gap-3">
-                                  {section.imageIds.length > 0 ? (
-                                    section.imageIds.map(imgId => {
-                                      const doc = documents.find(d => d.id === imgId);
-                                      if (!doc) return null;
-                                      return (
-                                        <div key={imgId} className="aspect-square relative rounded-xl overflow-hidden border border-border/60 group/img">
-                                          <Image src={doc.thumbnail} alt={doc.name} fill className="object-cover" referrerPolicy="no-referrer" />
-                                          <button
-                                            onClick={() => onToggleImageSelection(section.id, imgId)}
-                                            className="absolute top-1 right-1 p-1 bg-black/60 text-white rounded-md opacity-0 group-hover/img:opacity-100 transition-opacity"
-                                          >
-                                            <X className="w-3 h-3" />
-                                          </button>
-                                        </div>
-                                      );
-                                    })
-                                  ) : (
-                                    <div
-                                      onClick={() => setIsImagePickerOpen(section.id)}
-                                      className="col-span-3 h-32 border-2 border-dashed border-border rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-surface-alt/50 transition-colors"
-                                    >
-                                      <ImageIcon className="w-6 h-6 text-text-secondary" />
-                                      <span className="text-xs font-medium text-text-secondary">Nenhuma imagem selecionada</span>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
+                            {section.tipo === 'odontograma' && (
+                              <OdontogramaSectionBody
+                                section={section}
+                                eventos={odontogramaEventos}
+                                onUpdateSection={onUpdateSection}
+                              />
+                            )}
                           </motion.div>
                         );
                       })}
                     </AnimatePresence>
 
-                    {/* Add section button */}
-                    <button
-                      onClick={() => void onAddSection()}
-                      className="w-full py-6 border-2 border-dashed border-border rounded-3xl flex items-center justify-center gap-2 text-text-secondary hover:text-text-primary hover:border-text-primary transition-all group"
-                    >
-                      <Plus className="w-5 h-5 group-hover:scale-110 transition-transform" />
-                      <span className="font-bold text-sm">Adicionar Nova Seção ao Plano</span>
-                    </button>
+                    {/* Add block — escolher tipo (R-98a) */}
+                    {addingTipo ? (
+                      <div className="w-full p-4 border-2 border-dashed border-teal/40 rounded-3xl flex flex-col sm:flex-row items-center gap-3">
+                        <span className="text-xs font-bold text-text-secondary uppercase tracking-widest shrink-0 px-2">
+                          Tipo do bloco
+                        </span>
+                        <div className="flex flex-1 flex-wrap gap-2 w-full">
+                          {TIPO_BLOCO.map(({ tipo, label, icon: Icon }) => (
+                            <button
+                              key={tipo}
+                              onClick={() => { setAddingTipo(false); void onAddSection(tipo); }}
+                              className="flex-1 min-w-[120px] flex items-center justify-center gap-2 py-3 rounded-2xl bg-surface-alt border border-border text-text-primary text-sm font-bold hover:border-teal hover:text-teal transition-colors"
+                            >
+                              <Icon className="w-4 h-4" /> {label}
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => setAddingTipo(false)}
+                          className="p-2 text-text-secondary hover:text-text-primary transition-colors shrink-0"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setAddingTipo(true)}
+                        className="w-full py-6 border-2 border-dashed border-border rounded-3xl flex items-center justify-center gap-2 text-text-secondary hover:text-text-primary hover:border-text-primary transition-all group"
+                      >
+                        <Plus className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                        <span className="font-bold text-sm">Adicionar Bloco</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </motion.div>
@@ -513,7 +683,7 @@ export function ApresentarPanel({
                         className="absolute inset-0 overflow-y-auto"
                         style={{ overscrollBehavior: 'contain' }}
                       >
-                      <div className="min-h-full flex flex-col items-center justify-center px-8 sm:px-16 py-10">
+                      <div className={isImagemSlide ? 'relative w-full h-full' : 'min-h-full flex flex-col items-center justify-center px-8 sm:px-16 py-10'}>
                         {currentSlide === 0 ? (
                           /* Slide 0: Progresso */
                           <div className="w-full max-w-lg flex flex-col items-center text-center">
@@ -567,8 +737,71 @@ export function ApresentarPanel({
                               })}
                             </div>
                           </div>
+                        ) : currentSlide <= sections.length && currentSection?.tipo === 'imagem' ? (
+                          /* Content slide — imagem em tela cheia (§6 da spec: geometria do artefato) */
+                          (() => {
+                            const doc = documents.find(d => d.id === currentSection.imageIds[0]);
+                            return (
+                              <>
+                                <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+                                  {doc ? (
+                                    <Image src={doc.thumbnail} alt={doc.name} fill className="object-contain" referrerPolicy="no-referrer" />
+                                  ) : (
+                                    <p className="text-white/40 italic">Nenhuma imagem selecionada.</p>
+                                  )}
+                                </div>
+                                {currentSection.content && (
+                                  <div
+                                    className="absolute left-0 right-0 bottom-0 px-10 sm:px-16 pt-24 pb-10 text-center"
+                                    style={{ background: 'linear-gradient(to top, rgba(8,12,11,0.94) 0%, rgba(8,12,11,0.6) 55%, transparent 100%)' }}
+                                  >
+                                    <p className="text-base sm:text-lg text-white/85 leading-relaxed max-w-2xl mx-auto">
+                                      {currentSection.content}
+                                    </p>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()
+                        ) : currentSlide <= sections.length && currentSection?.tipo === 'odontograma' ? (
+                          /* Content slide — odontograma (§6 da spec: 77%x55%, título 26px, folga >=56px) */
+                          <div className="w-full max-w-4xl flex flex-col items-center text-center">
+                            <p className="text-xs font-bold uppercase tracking-[0.25em] mb-2" style={{ color: '#2f9c85' }}>
+                              {String(currentSlide).padStart(2, '0')} / {String(sections.length).padStart(2, '0')}
+                            </p>
+                            <h2 className="font-heading text-white leading-tight" style={{ fontSize: 26 }}>
+                              {currentSection.title || 'Sem título'}
+                            </h2>
+                            {odontogramaEventos.length > 0 ? (
+                              <>
+                                <div className="w-full flex justify-center" style={{ transform: 'scale(1.28)', margin: '56px 0' }}>
+                                  <Odontograma
+                                    selectedTeeth={[]}
+                                    onToothToggle={() => {}}
+                                    showCheckbox={false}
+                                    hideFilters
+                                    presentationMode
+                                    eventosPersistidos={odontogramaEventos}
+                                  />
+                                </div>
+                                <div className="flex items-center gap-6 flex-wrap justify-center">
+                                  <span className="flex items-center gap-2 text-sm text-white/60">
+                                    <span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#ef9a9a' }} /> A fazer
+                                  </span>
+                                  <span className="flex items-center gap-2 text-sm text-white/60">
+                                    <span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#2f9c85' }} /> Já feito
+                                  </span>
+                                </div>
+                              </>
+                            ) : (
+                              <p className="text-white/40 italic" style={{ margin: '56px 0' }}>Nenhum procedimento indicado ainda.</p>
+                            )}
+                            {currentSection.content && (
+                              <p className="text-sm text-white/50 mt-4 max-w-xl">{currentSection.content}</p>
+                            )}
+                          </div>
                         ) : currentSlide <= sections.length ? (
-                          /* Content slides */
+                          /* Content slide — texto (inalterado) */
                           <div className="w-full max-w-3xl flex flex-col items-center text-center">
                             <p className="text-xs font-bold uppercase tracking-[0.25em] mb-5" style={{ color: '#2f9c85' }}>
                               {String(currentSlide).padStart(2, '0')} / {String(sections.length).padStart(2, '0')}
@@ -708,11 +941,22 @@ export function ApresentarPanel({
                 )}
                 <div className="grid grid-cols-3 gap-4">
                   {documents.map(doc => {
-                    const isSelected = sections.find(s => s.id === isImagePickerOpen)?.imageIds.includes(doc.id);
+                    const targetSection = sections.find(s => s.id === isImagePickerOpen);
+                    const isSelected = targetSection?.imageIds.includes(doc.id);
+                    // Bloco imagem guarda 0..1 (invariante §4.1) — escolher já fecha, sem
+                    // "Confirmar Seleção". Bloco texto continua multi-seleção, como sempre foi.
+                    const isSingleSelect = targetSection?.tipo === 'imagem';
                     return (
                       <div
                         key={doc.id}
-                        onClick={() => onToggleImageSelection(isImagePickerOpen, doc.id)}
+                        onClick={() => {
+                          if (isSingleSelect) {
+                            onUpdateSection(isImagePickerOpen, 'imageIds', [doc.id]);
+                            setIsImagePickerOpen(null);
+                          } else {
+                            onToggleImageSelection(isImagePickerOpen, doc.id);
+                          }
+                        }}
                         className={`relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-4 transition-all ${isSelected ? 'border-teal' : 'border-transparent hover:border-border'}`}
                       >
                         <Image src={doc.thumbnail} alt={doc.name} fill className="object-cover" referrerPolicy="no-referrer" />
@@ -744,6 +988,52 @@ export function ApresentarPanel({
           </div>
         )}
       </AnimatePresence>
+
+      {/* ── AlertDialog: remover bloco (R-98a — nunca window.confirm, o paciente vê a tela) ── */}
+      <AlertDialog open={!!pendingRemoveId} onOpenChange={(o) => { if (!o) setPendingRemoveId(null); }}>
+        <AlertDialogContent className="rounded-3xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-heading font-semibold text-xl">Remover este bloco?</AlertDialogTitle>
+            <AlertDialogDescription className="text-sm">
+              Não dá pra desfazer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingRemoveId) void onRemoveSection(pendingRemoveId);
+                setPendingRemoveId(null);
+              }}
+            >
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── AlertDialog: regenerar com IA por cima de blocos existentes ── */}
+      <AlertDialog open={pendingRegenerate} onOpenChange={setPendingRegenerate}>
+        <AlertDialogContent className="rounded-3xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-heading font-semibold text-xl">Refazer a apresentação?</AlertDialogTitle>
+            <AlertDialogDescription className="text-sm">
+              Os {sections.length} bloco{sections.length !== 1 ? 's' : ''} atual{sections.length !== 1 ? 'is' : ''} ser{sections.length !== 1 ? 'ão' : 'á'} apagado{sections.length !== 1 ? 's' : ''} e substituído{sections.length !== 1 ? 's' : ''} pelo que a IA gerar. Não dá pra desfazer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setPendingRegenerate(false);
+                void onGenerateFullPlanWithAI();
+              }}
+            >
+              Refazer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>,
     document.body
   );

@@ -121,6 +121,7 @@ export function ApresentarPaciente({
         documents={plan.documents}
         budgetProcedures={plan.budgetProcedures}
         budgetExists={plan.budgetExists}
+        odontogramaEventos={plan.odontogramaEventos}
         concluidosCount={plan.concluidosCount}
         progressPercent={plan.progressPercent}
         totalBudget={plan.totalBudget}

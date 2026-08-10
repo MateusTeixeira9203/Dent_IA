@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
+import type { OdontogramaEventoDraft, AncoraClinica } from '@/types/odontograma';
 
 // ─── Tipos (espelhados do ApresentarPanel) ──────────────────────────────────
 
@@ -14,11 +15,15 @@ export interface PlanDocument {
   url: string;
 }
 
+// R-98a — layout do bloco na apresentação. 'texto' é o único que já existia.
+export type SectionTipo = 'texto' | 'imagem' | 'odontograma';
+
 export interface PlanSection {
   id: string;
+  tipo: SectionTipo;
   title: string;
-  content: string;
-  imageIds: string[];
+  content: string;      // texto: corpo · imagem: legenda opcional · odontograma: nota opcional
+  imageIds: string[];   // texto: 0..N (como sempre) · imagem: 0..1 · odontograma: sempre []
   status: 'pendente' | 'em_andamento' | 'concluido';
   dataEstimada: string | null;
 }
@@ -58,6 +63,7 @@ function dedupProcs(procs: PlanProc[]): PlanProc[] {
 const DEMO_MOCK_SECTIONS: PlanSection[] = [
   {
     id: 'demo-sec-1',
+    tipo: 'texto',
     title: 'O que encontramos',
     content:
       'A restauração antiga do dente 46 apresenta infiltração, o que explica a dor ao mastigar e a sensibilidade ao frio. ' +
@@ -66,6 +72,7 @@ const DEMO_MOCK_SECTIONS: PlanSection[] = [
   },
   {
     id: 'demo-sec-2',
+    tipo: 'texto',
     title: 'Como vamos resolver',
     content:
       'Substituímos a restauração do dente 46 por uma resina nova, devolvendo o vedamento e eliminando a sensibilidade. ' +
@@ -74,6 +81,7 @@ const DEMO_MOCK_SECTIONS: PlanSection[] = [
   },
   {
     id: 'demo-sec-3',
+    tipo: 'texto',
     title: 'Investimento',
     content:
       'Restauração de compósito (dente 46) e profilaxia. Valor total apresentado de forma clara, com opções de pagamento. ' +
@@ -108,6 +116,8 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
   const [budgetProcedures, setBudgetProcedures] = useState<PlanBudgetProcedure[]>([]);
   const [budgetExists, setBudgetExists] = useState(false);
   const [planProcs, setPlanProcs] = useState<PlanProc[]>([]);
+  // R-98a — bloco odontograma: deriva sozinho, sem escolha manual de dente (invariante §7).
+  const [odontogramaEventos, setOdontogramaEventos] = useState<OdontogramaEventoDraft[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [isGeneratingAI, setIsGeneratingAI] = useState<string | null>(null);
@@ -126,10 +136,19 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
       // herdaria o orçamento mais recente de OUTRO tratamento do paciente.
       let budgetQuery = supabase.from('orcamentos').select('*, orcamento_itens(*)').eq('paciente_id', patientId);
       if (fichaId) budgetQuery = budgetQuery.eq('ficha_id', fichaId);
-      const [docsResult, budgetResult, secoesResult] = await Promise.all([
+      // R-98a — bloco odontograma: mesmo filtro condicional do orçamento, escopado à ficha
+      // apresentada quando houver (senão herdaria evento de OUTRO atendimento do paciente).
+      let eventosQuery = supabase
+        .from('odontograma_eventos')
+        .select('id,tipo,status,origem,nivel,arcada,quadrante,dente,faces,grupo_id,papel_no_grupo,observacao,realizado_em')
+        .eq('paciente_id', patientId)
+        .eq('clinica_id', clinicaId);
+      if (fichaId) eventosQuery = eventosQuery.eq('ficha_id', fichaId);
+      const [docsResult, budgetResult, secoesResult, eventosResult] = await Promise.all([
         supabase.from('paciente_documentos').select('*').eq('paciente_id', patientId).in('categoria', ['Radiografias', 'Fotografias']),
         budgetQuery.order('created_at', { ascending: false }).limit(1).maybeSingle(),
         supabase.from('planejamento_secoes').select('*').eq('paciente_id', patientId).order('ordem', { ascending: true }),
+        eventosQuery,
       ]);
       if (docsResult.error) throw docsResult.error;
       setDocuments((docsResult.data ?? []).map((doc: Record<string, unknown>) => ({
@@ -149,17 +168,35 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
       if (secoesResult.error) throw secoesResult.error;
       if (secoesResult.data && secoesResult.data.length > 0) {
         setSections((secoesResult.data as Array<Record<string, unknown>>).map((row) => ({
-          id: row.id as string, title: row.titulo as string, content: (row.conteudo as string) ?? '',
+          id: row.id as string, tipo: ((row.tipo as string) ?? 'texto') as SectionTipo,
+          title: row.titulo as string, content: (row.conteudo as string) ?? '',
           imageIds: (row.imagem_ids as string[]) ?? [], status: ((row.status as string) ?? 'pendente') as PlanSection['status'],
           dataEstimada: (row.data_estimada as string | null) ?? null,
         })));
       }
+      if (eventosResult.error) throw eventosResult.error;
+      // Reconstrói a âncora a partir das colunas achatadas — mesmo padrão de
+      // get-meu-dia.ts:eventoParaBoca / FichasTab.tsx:842 / historico-bloco.tsx:46.
+      setOdontogramaEventos((eventosResult.data as Array<Record<string, unknown>>).map((e) => {
+        const ancora: AncoraClinica = { nivel: e.nivel as AncoraClinica['nivel'] };
+        if (e.dente != null) ancora.dente = e.dente as number;
+        if (e.arcada != null) ancora.arcada = e.arcada as AncoraClinica['arcada'];
+        if (e.quadrante != null) ancora.quadrante = e.quadrante as AncoraClinica['quadrante'];
+        if ((e.faces as string[] | null)?.length) ancora.faces = e.faces as AncoraClinica['faces'];
+        return {
+          id: e.id as string, tipo: e.tipo as OdontogramaEventoDraft['tipo'],
+          status: e.status as OdontogramaEventoDraft['status'], origem: e.origem as OdontogramaEventoDraft['origem'],
+          ancora, grupo_id: (e.grupo_id as string | null) ?? null,
+          papel_no_grupo: (e.papel_no_grupo as OdontogramaEventoDraft['papel_no_grupo']) ?? null,
+          observacao: (e.observacao as string | null) ?? '', realizado_em: (e.realizado_em as string | null) ?? null,
+        };
+      }));
     } catch (error) {
       console.error('[usePlanejamentoPaciente] fetchGlobalData:', error);
     } finally {
       setLoadingData(false);
     }
-  }, [patientId, fichaId]);
+  }, [patientId, clinicaId, fichaId]);
 
   // ── Fetch: procedimentos derivados de TODAS as fichas do paciente ──
   // #16 D4: fonte única — deriva direto de fichas.dentes_observacoes + procedimentos_status,
@@ -236,7 +273,7 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
         // (seção de outro dentista) volta 0 linhas SEM erro — invariante #9.
         const { data: updated } = await supabase.from('planejamento_secoes').upsert({
           id: section.id, clinica_id: clinicaId, paciente_id: patientId, dentista_id: dentistaId,
-          titulo: section.title, conteudo: section.content, imagem_ids: section.imageIds,
+          tipo: section.tipo, titulo: section.title, conteudo: section.content, imagem_ids: section.imageIds,
           ordem: idx, status: section.status, data_estimada: section.dataEstimada || null,
           updated_at: new Date().toISOString(),
         }).select('id');
@@ -247,7 +284,7 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
       } else {
         const { data } = await supabase.from('planejamento_secoes').insert({
           clinica_id: clinicaId, paciente_id: patientId, dentista_id: dentistaId,
-          titulo: section.title, conteudo: section.content,
+          tipo: section.tipo, titulo: section.title, conteudo: section.content,
           imagem_ids: section.imageIds, ordem: idx, status: section.status, data_estimada: section.dataEstimada || null,
         }).select('id').single();
         if (data) {
@@ -277,22 +314,22 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
     updateSection(sectionId, 'imageIds', newImageIds);
   }, [updateSection]);
 
-  const addSection = useCallback(async (): Promise<void> => {
+  const addSection = useCallback(async (tipo: SectionTipo = 'texto'): Promise<void> => {
     const supabase = createClient();
     const newOrder = sectionsRef.current.length;
     const { data, error } = await supabase.from('planejamento_secoes').insert({
-      clinica_id: clinicaId, paciente_id: patientId, dentista_id: dentistaId, titulo: '', conteudo: '',
+      clinica_id: clinicaId, paciente_id: patientId, dentista_id: dentistaId, tipo, titulo: '', conteudo: '',
       imagem_ids: [], ordem: newOrder, status: 'pendente', data_estimada: null,
     }).select('id').single();
     if (error ?? !data) { console.error('[usePlanejamentoPaciente] addSection:', error); return; }
     setSections((prev) => [...prev, {
-      id: (data as Record<string, unknown>).id as string,
+      id: (data as Record<string, unknown>).id as string, tipo,
       title: '', content: '', imageIds: [], status: 'pendente', dataEstimada: null,
     }]);
   }, [clinicaId, patientId, dentistaId]);
 
+  // Confirmação de exclusão é responsabilidade do CALLER (AlertDialog, R-98a) — o hook só executa.
   const removeSection = useCallback(async (id: string): Promise<void> => {
-    if (!window.confirm('Remover esta seção do planejamento?')) return;
     setSections((prev) => prev.filter((s) => s.id !== id));
     clearTimeout(debounceTimers.current[id]);
     delete debounceTimers.current[id];
@@ -340,10 +377,22 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
       }
       const data = await response.json() as { secoes?: Array<{ title: string; content: string }> };
       if (data.secoes && data.secoes.length > 0) {
-        setSections(data.secoes.map((s, i) => ({
-          id: `ai-gen-${Date.now()}-${i}`, title: s.title, content: s.content,
-          imageIds: [], status: 'pendente' as const, dataEstimada: null,
-        })));
+        const supabase = createClient();
+        // R-98a — fix do bug de persistência: antes disto, a função criava ids fantasma
+        // (ai-gen-<ts>) e nunca gravava. Regenerar substitui só o que EU escrevi — RLS já
+        // trava o resto de qualquer outro autor (confirmação de sobrescrever já rodou no
+        // caller antes de chegar aqui, ver ApresentarPanel).
+        await supabase.from('planejamento_secoes')
+          .delete().eq('paciente_id', patientId).eq('dentista_id', dentistaId);
+        const { error } = await supabase.from('planejamento_secoes').insert(
+          data.secoes.map((s, i) => ({
+            clinica_id: clinicaId, paciente_id: patientId, dentista_id: dentistaId,
+            tipo: 'texto' as const, titulo: s.title, conteudo: s.content,
+            imagem_ids: [], ordem: i, status: 'pendente' as const, data_estimada: null,
+          })),
+        );
+        if (error) throw error;
+        await fetchGlobalData(); // ids e ordem reais do banco — nunca mais estado local fantasma
         toast.success('Apresentação gerada com sucesso!');
       }
     } catch (error) {
@@ -352,7 +401,7 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
     } finally {
       setIsGeneratingAI(null);
     }
-  }, [budgetProcedures, planProcs, patientName]);
+  }, [budgetProcedures, planProcs, patientName, patientId, dentistaId, clinicaId, fetchGlobalData]);
 
   // ── Computados ──
   const concluidosCount = planProcs.filter((p) => p.status === 'concluido').length;
@@ -361,6 +410,7 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
 
   return {
     sections, setSections, documents, budgetProcedures, budgetExists, planProcs,
+    odontogramaEventos,
     loadingData, savingIds, isGeneratingAI, isImagePickerOpen, setIsImagePickerOpen,
     concluidosCount, progressPercent, totalBudget,
     updateSection, removeSection, addSection, generateSectionWithAI, generateFullPlanWithAI,

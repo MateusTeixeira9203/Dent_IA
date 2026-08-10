@@ -766,6 +766,13 @@ export interface OdontogramaProps {
    * da spec R-61).
    */
   eventosPersistidos?: OdontogramaEventoDraft[];
+  /**
+   * R-98a — modo apresentação (paciente vendo a tela). Esconde chrome de EDIÇÃO que não
+   * pode aparecer pro paciente: abas Permanentes/Decíduos, botão Legenda, a linha "Toque
+   * um dente para ver e editar o detalhe". NUNCA esconde numeração FDI nem rótulos
+   * SUP./INF. — orientação anatômica não é chrome de edição. Default false.
+   */
+  presentationMode?: boolean;
 }
 
 export function Odontograma({
@@ -780,6 +787,7 @@ export function Odontograma({
   hideFilters = false,
   eventos,
   eventosPersistidos,
+  presentationMode = false,
 }: OdontogramaProps) {
   const [hoveredTooth, setHoveredTooth]   = useState<number | null>(null);
   const [tab, setTab]                     = useState<'permanent' | 'deciduous'>('permanent');
@@ -1002,7 +1010,8 @@ export function Odontograma({
       style={compact ? { zoom: zoom ?? 0.85 } : undefined}
     >
 
-      {/* ── Tab bar + Legenda ── */}
+      {/* ── Tab bar + Legenda — chrome de edição, some em presentationMode ── */}
+      {!presentationMode && (
       <div
         className="relative flex items-center gap-0 border-b"
         style={{ borderColor: 'var(--color-border)' }}
@@ -1085,6 +1094,7 @@ export function Odontograma({
           </div>
         )}
       </div>
+      )}
 
       {/* ── Chart ── */}
       <div className="overflow-x-auto">
@@ -1184,11 +1194,11 @@ export function Odontograma({
               </span>
             )}
           </div>
-        ) : (
+        ) : !presentationMode ? (
           <span className="text-[10px] italic leading-none" style={{ color: 'var(--color-text-muted)' }}>
             {clinico ? 'Toque um dente para ver e editar o detalhe' : 'Clique para selecionar um dente'}
           </span>
-        )}
+        ) : null}
       </div>
 
       {/* ── Filter buttons ── */}
