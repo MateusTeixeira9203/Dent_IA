@@ -17,6 +17,7 @@ const ROLE_LABELS: Record<DentistaRole, string> = {
   admin: 'Criador',
   dentista: 'Dentista',
   secretaria: 'Secretária',
+  protetico: 'Protético',
 };
 
 interface Props {

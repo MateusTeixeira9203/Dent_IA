@@ -2,7 +2,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
-export type ClinicRole = "dentista" | "secretaria" | "admin";
+export type ClinicRole = "dentista" | "secretaria" | "admin" | "protetico";
 
 type AuthenticatedUser = {
   id: string;

@@ -16,7 +16,7 @@ export interface User {
   updated_at: string;
 }
 
-export type ClinicaUsuarioRole   = 'admin' | 'dentista' | 'secretaria';
+export type ClinicaUsuarioRole   = 'admin' | 'dentista' | 'secretaria' | 'protetico';
 export type ClinicaUsuarioStatus = 'ativo' | 'removido' | 'pendente';
 
 /** Fonte da verdade de membership multi-tenant */
@@ -47,7 +47,7 @@ export interface Secretaria {
 
 import type { Especialidade } from '@/lib/especialidades';
 
-export type DentistaRole = 'admin' | 'dentista' | 'secretaria';
+export type DentistaRole = 'admin' | 'dentista' | 'secretaria' | 'protetico';
 
 export interface Dentista {
   id: string;

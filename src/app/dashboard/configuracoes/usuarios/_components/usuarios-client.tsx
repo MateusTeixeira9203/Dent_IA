@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Users, UserPlus, Mail, Clock, CheckCircle2, XCircle,
   Shield, ChevronLeft, Stethoscope, ClipboardList, Trash2,
-  Send, Eye, EyeOff, Copy, Check, KeyRound,
+  Send, Eye, EyeOff, Copy, Check, KeyRound, Package,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -33,18 +33,23 @@ const ROLE_LABELS: Record<DentistaRole, string> = {
   admin:     'Criador',
   dentista:  'Dentista Agregado',
   secretaria:'Secretária',
+  protetico: 'Protético',
 };
 
 const ROLE_ICONS: Record<DentistaRole, React.FC<{ className?: string }>> = {
   admin:     ({ className }) => <Shield className={className} />,
   dentista:  ({ className }) => <Stethoscope className={className} />,
   secretaria:({ className }) => <ClipboardList className={className} />,
+  protetico: ({ className }) => <Package className={className} />,
 };
 
 const ROLE_COLORS: Record<DentistaRole, string> = {
   admin:     'bg-teal/10 text-teal',
   dentista:  'bg-teal-pale text-teal dark:bg-teal/20 dark:text-teal-lt',
   secretaria:'bg-surface-alt text-text-secondary',
+  // Mesmo par de secretária — slate-ink/slate-pale (semanticamente mais preciso,
+  // "outro profissional") reprova AA em dark hoje. Ver plans/specs/R-94, §6.
+  protetico: 'bg-surface-alt text-text-secondary',
 };
 
 // ── Props ─────────────────────────────────────────────────────────────────────
