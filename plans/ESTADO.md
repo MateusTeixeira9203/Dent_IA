@@ -27,6 +27,15 @@ Isso reescreveu a [R-36](specs/R-36-um-login-uma-clinica.md) (migração automá
 solo **cortada** — entregava a 5 estranhos prontuário que o paciente confiou a um; e o caso
 aconteceu 0×) e abriu **R-96** e **R-97**.
 
+**[R-98 — Apresentar visual](specs/R-98-apresentar-visual-blocos-modelo.md): spec e artefato
+APROVADOS 10/08.** Pronta pra execução, código não começou. A seção do Apresentar ganha **tipo**
+(`texto` · `imagem` cheia · `odontograma`), e o dentista salva a sequência dele como **modelo**
+reusado no próximo paciente. Quebrada em **98a** (tipo + fix do bug, entrega sozinha) e **98b**
+(modelo). Achado que originou: **nada gerado por IA nunca foi salvo** — 23 chamadas à rota, 6 de
+dentistas reais, 0 linhas correspondentes; o toast dizia "gerado com sucesso" e o dentista perdia
+tudo ao fechar. Spike mediu que o bloco de odontograma custa 1 prop (`presentationMode`), não um
+módulo. **R-99** (anotar a radiografia) aberto e decidido: overlay, sem exportar.
+
 ## Travado
 
 **O preço** (herdado do R-92). Ele mandou ignorar o R$249/R$179, número novo não fechado.
@@ -46,6 +55,12 @@ aconteceu 0×) e abriu **R-96** e **R-97**.
 
 ## Próximo da fila
 
-R-96 (transferir admin, pequeno e destrava a hierarquia), R-97 (painel operacional), o Apresentar
-e a volta do R-92. **`ROADMAP.md` está com 229 linhas (teto ~200)** — precisa de poda, não de mais
-escrita.
+**R-98a é o candidato natural a próximo 🔵** — spec aprovada, artefato aprovado, e entrega sozinha
+(o fix do bug de persistência vai junto). Depois: 98b, R-99, R-96 (transferir admin, pequeno e
+destrava a hierarquia), R-97 (painel operacional) e a volta do R-92.
+
+**Antes de codar o 98a:** o light do editor não foi desenhado — o artefato só cobre dark (a
+apresentação é sempre escura, o editor não). Precisa do gate de contraste.
+
+**`ROADMAP.md` está com 230 linhas (teto ~200)** — precisa de poda, não de mais escrita. Candidatos:
+o cabeçalho virou narrativa de sessão (isso é handoff) e o Bloco 1 tem linhas de 4 frases.

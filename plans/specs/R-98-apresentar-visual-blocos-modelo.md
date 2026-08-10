@@ -1,9 +1,10 @@
 # R-98 — Apresentar visual: blocos e modelo
 
 **Modelo:** Opus
-**Status:** plano — aguardando aprovação
+**Status:** **aprovada 10/08** — spec e artefato aprovados por ele; pronta pra execução
 **Origem:** pedido do Mateus em 09/08 ("escopar o Apresentar"), registrado como pendente no
 `ESTADO.md` das sessões #34/#35 — nunca discutido antes desta spec.
+**Abre:** **R-99** (anotar a radiografia) — depende do bloco `imagem` do 98a existir.
 
 ---
 
@@ -212,35 +213,45 @@ Dentista clica "Salvar como meu modelo" -> confirma substituição
   -> DELETE + INSERT em apresentacao_modelos (tipo, titulo, conteudo, ordem)
 ```
 
-### Exemplos concretos
-
-| Situação | Sistema faz | Resultado esperado |
-|---|---|---|
-| Sem modelo, 1º paciente, clica "Gerar com IA" | Gera 4 seções `texto`, insere no banco | Fechar e reabrir o painel mantém as 4 seções |
-| Com modelo (Radiografia-imagem, Diagnóstico-texto, Plano-odontograma), abre 2º paciente | Painel abre vazio, com o botão "Usar meu modelo" | Só depois do clique os 3 blocos aparecem, na mesma ordem, prontos pra preencher — nada escrito antes disso |
-| Bloco odontograma, paciente com indicação nos dentes 16 e 24 | Deriva 2 eventos de `odontograma_eventos` | Boca inteira renderiza; só 16/24 coloridos (coral), resto neutro |
-| Bloco odontograma, paciente sem nenhum evento | `eventosPersistidos=[]` | Estado vazio explícito, não boca confusa |
-| Bloco imagem aponta pra doc já apagado | `documents.find` retorna `undefined` | Editor avisa; apresentação pula o slide sem quebrar |
-| "Gerar apresentação" com seções já preenchidas | `AlertDialog` | Cancelar preserva; confirmar apaga as antigas e insere as novas |
+> Havia aqui uma tabela "Exemplos concretos" — **cortada 10/08 por redundância**: as 6 linhas
+> repetiam a tabela de Estados acima (o que acontece) e os gates do §8 (como se prova). Três
+> lugares dizendo a mesma coisa é onde documento começa a divergir de si mesmo.
 
 ## 6. Referência visual
 
-**Artefato: não existe ainda.** Dois layouts são genuinamente novos (imagem em tela cheia,
-slide de odontograma) — pelo pipeline do CLAUDE.md (regra 4), passam por `design-brief` /
-`artefato-visual` **antes** do código da UI, depois da aprovação desta spec. O shell do painel
-e o `SectionEditor` de texto não mudam visualmente.
-
+- **Artefato:** `plans/artefatos/R-98-apresentar-visual.html` — **aprovado 10/08**
 - **Rota alvo:** `/dashboard/pacientes/[id]` (painel Apresentar, sem rota própria)
 - **Componente alvo:** `src/components/pacientes/ApresentarPanel.tsx`,
   `src/components/pacientes/ApresentarPaciente.tsx`, `src/components/odontograma/Odontograma.tsx`
-- **Tokens confirmados em código** (reaproveitar, não é decisão nova desta spec):
 
-| Token | Valor |
+> A arcada do artefato **não é mockup**: é o markup do `Odontograma.tsx` de produção, extraído do
+> SSR e injetado. Se o desenho do dente mudar no código, o artefato fica visivelmente defasado em
+> vez de mentir. O chrome de edição foi removido na extração — é a prévia do `presentationMode`.
+
+**Tokens — a implementação segue esta tabela, não o HTML** (todos já existem, nada é decisão nova):
+
+| Uso | Valor |
 |---|---|
-| Fundo da apresentação (fullscreen) | `#080c0b` |
-| Destaque/teal da apresentação | `#2f9c85` |
-| Cor "indicado" (odontograma) | coral — `corDoRegistro('indicado', _)` |
-| Cor "realizado" clínica / preexistente | teal / slate — `corDoRegistro('realizado', origem)` |
+| Fundo da apresentação (fullscreen) | `#080c0b` (`ApresentarPanel.tsx:438`) |
+| Glow do palco | `radial-gradient(ellipse 60% 50% at 50% 40%, rgba(47,156,133,.08) 0%, transparent 70%)` |
+| Destaque/teal | `#2f9c85` |
+| Contador do slide | 12px · 700 · uppercase · `letter-spacing:.25em` · teal |
+| Título do slide | `--font-heading` (DM Serif Display) · 44px · `#fff` |
+| Corpo do slide | 19px · `rgba(255,255,255,.65)` · `line-height:1.65` · `max-width:640px` |
+| Cor "indicado" / "realizado" | coral / teal — sai de `corDoRegistro(status, origem)`, não hardcodar |
+
+**Geometria medida no artefato** (não é gosto, é conta — reproduzir na implementação):
+
+| Regra | Valor | Por quê |
+|---|---|---|
+| Arcada ocupa | **77% × 55%** do palco | O desenho é o herói; a 38% (1ª tentativa) o título dominava e invertia a hierarquia |
+| Título do slide de odontograma | 26px, **não** 44px | É legenda do desenho, não manchete |
+| Folga acima da arcada | ≥ 56px | `transform:scale` não ocupa espaço no layout: a 1.28 a arcada (natural ~274px de altura) transborda ~38px pra cima e **colide** com os rótulos SUP. DIREITO/ESQUERDO |
+| Legenda da imagem cheia | gradiente `to top` de `rgba(8,12,11,.94)` até transparente | Texto sobre radiografia some em área clara sem o gradiente |
+
+**Lacuna conhecida:** o artefato só cobre **dark**. A apresentação é sempre escura (`#080c0b`
+hardcoded), mas o **editor** segue o tema — o light do editor não foi desenhado e precisa passar
+pelo gate de contraste antes de subir.
 
 ## 7. Invariantes
 
