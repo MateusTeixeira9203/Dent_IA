@@ -124,9 +124,12 @@ export function ProteticoClient({ pedidos }: { pedidos: PedidoProteticoRow[]; no
               const isSelected = isSameDay(day, diaSelecionado);
               const isCurrentMonth = day.getMonth() === mesAtual.getMonth();
               const doDia = pedidosPorDia.get(format(day, 'yyyy-MM-dd')) ?? [];
-              const piorStatus = doDia.some((p) => statusDoPedido(p, hoje) === 'atrasado')
+              const statusDoDia = doDia.map((p) => statusDoPedido(p, hoje));
+              const piorStatus = statusDoDia.includes('atrasado')
                 ? 'atrasado'
-                : doDia.length > 0 ? 'pendente' : null;
+                : statusDoDia.includes('pendente')
+                  ? 'pendente'
+                  : statusDoDia.length > 0 ? 'entregue' : null;
 
               return (
                 <div
