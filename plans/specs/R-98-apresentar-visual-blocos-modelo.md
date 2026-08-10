@@ -35,7 +35,9 @@ valor sozinho) e **R-98b** (modelo reutilizável — depende do `tipo` do 98a ex
 | Modelo por dentista, RLS igual `planejamento_secoes` (leitura clínica, escrita do autor) | Modelo por clínica, compartilhado | Espelha o padrão já aprovado (migration 099); cada profissional tem estilo/especialidade próprios |
 | Reordenar blocos fica fora desta spec | Construir drag-and-drop agora | Zero UI de reordenar hoje (confirmado); ordem por criação resolve o caso relatado |
 | Fix de persistência entra dentro do R-98a, não em item isolado | Abrir bug separado | Decisão do Mateus — modelo exige banco real |
-| Regenerar com IA tendo seções existentes pede confirmação | Sobrescrever direto (comportamento atual) | Hoje perde silenciosamente o que já tinha; confirmação já é o padrão de `removeSection` |
+| Aplicar o modelo é **clique explícito** ("Usar meu modelo"), nunca automático ao abrir | Clonar sozinho quando o paciente tem 0 seções | Decisão do Mateus 10/08: abrir painel não pode escrever no banco. Painel aberto no paciente errado criaria linhas sem ninguém pedir |
+| Confirmação destrutiva usa `AlertDialog` (`src/components/ui/alert-dialog.tsx`) | `window.confirm` nativo (padrão atual de `removeSection`) | Decisão do Mateus 10/08: diálogo cru do browser destoa numa tela que o **paciente** está vendo. O componente já existe e já é usado em `usuarios-client.tsx` |
+| Regenerar com IA tendo seções existentes pede confirmação | Sobrescrever direto (comportamento atual) | Hoje perde silenciosamente o que já tinha |
 
 ## 3. Objetivo e como funciona
 
@@ -46,8 +48,9 @@ No editor do Apresentar, cada bloco escolhe um tipo ao ser criado. **Texto** con
 exatamente como hoje. **Imagem** mostra 1 documento em tela cheia na apresentação, com legenda
 opcional. **Odontograma** mostra a boca inteira com os dentes do plano coloridos (coral =
 indicado, teal = realizado) — sem escolha manual, sem antes-e-depois. O botão "Salvar como meu
-modelo" grava a estrutura atual (tipos + títulos, sem dado do paciente); todo paciente novo sem
-seções abre o painel e já herda essa estrutura.
+modelo" grava a estrutura atual (tipos + títulos, sem dado do paciente). No próximo paciente, o
+botão **"Usar meu modelo"** aparece no estado vazio do painel — **um clique**, nunca automático:
+abrir o painel jamais escreve no banco.
 
 ## 4. Contrato técnico
 
@@ -109,8 +112,14 @@ presentationMode?: boolean;
 **Fix de persistência (`generateFullPlanWithAI`):** ao receber `data.secoes` da API, faz INSERT
 real em `planejamento_secoes` (mesmo padrão de `addSection`, com `.select('id')`), grava
 `tipo:'texto'` em cada linha, e só então chama `setSections` com os ids reais — nunca mais
-id fantasma. Se já existem seções no momento do clique, pede `window.confirm` (mesmo padrão de
-`removeSection`) antes de apagar as antigas do banco e inserir as novas.
+id fantasma. Se já existem seções no momento do clique, abre `AlertDialog` antes de apagar as
+antigas do banco e inserir as novas.
+
+**Confirmação destrutiva — `AlertDialog`, não `window.confirm`.** Vale para as 3 ações que
+apagam: regenerar com IA por cima de seções existentes, remover bloco (`removeSection`, hoje
+`window.confirm`) e sobrescrever o modelo. O componente já existe em
+`src/components/ui/alert-dialog.tsx` e já tem precedente de uso em
+`src/app/dashboard/configuracoes/usuarios/_components/usuarios-client.tsx` — reusar, não criar.
 
 ### 4.2 — R-98b: modelo reutilizável (depende de 4.1)
 
@@ -175,7 +184,7 @@ ApresentarPaciente (client)                — ganha a precedência modelo > aut
 | Estado | Quando acontece | O que a tela mostra | O que a função faz |
 |---|---|---|---|
 | Vazio, sem modelo | dentista sem modelo salvo, paciente com 0 seções | "Gerar com IA" / "Adicionar bloco" | nada automático |
-| Vazio, com modelo | dentista já tem modelo, paciente novo com 0 seções | blocos do modelo já aparecem (tipo+título, sem conteúdo/imagem específicos) | `aplicarModeloAoPaciente` — INSERT real, roda 1x (mesmo guard por `ref` do `autoGenerate` de hoje) |
+| Vazio, com modelo | dentista já tem modelo, paciente novo com 0 seções | botão **"Usar meu modelo"** ao lado de "Gerar com IA" — nada é escrito ainda | só no clique: `aplicarModeloAoPaciente` faz o INSERT. Abrir o painel **nunca** escreve |
 | Carregando | `loadingData` em voo | gap já existente hoje (painel não tem skeleton) — não piora, não é escopo consertar aqui | `Promise.all` de seções+docs+orçamento+eventos |
 | Sucesso — bloco imagem | doc existe em `paciente_documentos` | imagem cheia + legenda opcional | grava `imageIds: [docId]` |
 | Sucesso — bloco odontograma | paciente tem ≥ 1 `odontograma_evento` | boca inteira, dentes do plano coloridos, resto neutro | fetch + `corDoRegistro`, sem escrita |
@@ -183,17 +192,17 @@ ApresentarPaciente (client)                — ganha a precedência modelo > aut
 | Erro — imagem apagada depois | `paciente_documentos` não tem mais o id referenciado | editor: aviso "imagem removida, reanexe" · apresentação: pula o slide, nunca quebra | leitura degrada sem crash (mesmo padrão do picker atual) |
 | Sem permissão | outro dentista tenta editar meu modelo/minha seção | UPDATE volta 0 linhas sem erro (RLS) | refetch reverte pro estado real (invariante já documentada no hook) |
 | Conflito | 2 dispositivos salvando o mesmo modelo | último `salvarComoModelo` vence | overwrite simples — mesma semântica de hoje, não é regressão |
-| Regenerar com seções existentes | clique em "Gerar apresentação com IA" | `confirm()` antes de apagar | cancelar mantém tudo; confirmar apaga as antigas do banco e insere as novas |
+| Regenerar com seções existentes | clique em "Gerar apresentação com IA" | `AlertDialog` antes de apagar | cancelar mantém tudo; confirmar apaga as antigas do banco e insere as novas |
 
 ### Caminho principal
 
 ```
-Painel abre, 0 seções
+Painel abre, 0 seções -> ZERO escrita no banco
   -> loadingData resolve
-  -> existe modelo do dentista?
-       sim -> clona blocos (INSERT) -> seções do modelo aparecem
-       não -> autoGenerate=true? -> gera com IA (agora persistindo de verdade)
-                                  -> não -> fica vazio, dentista adiciona manualmente
+  -> estado vazio oferece: "Usar meu modelo" (se existe) · "Gerar com IA" · "+ Bloco"
+       clique em "Usar meu modelo" -> clona blocos (INSERT) -> seções aparecem
+       clique em "Gerar com IA"    -> gera e PERSISTE (fix do 98a)
+       nenhum dos dois             -> continua vazio, nada gravado
 
 Dentista clica "+ Bloco" -> escolhe tipo
   -> texto: UI atual, sem mudança · imagem: picker de 1 doc -> imageIds=[docId]
@@ -208,11 +217,11 @@ Dentista clica "Salvar como meu modelo" -> confirma substituição
 | Situação | Sistema faz | Resultado esperado |
 |---|---|---|
 | Sem modelo, 1º paciente, clica "Gerar com IA" | Gera 4 seções `texto`, insere no banco | Fechar e reabrir o painel mantém as 4 seções |
-| Com modelo (Radiografia-imagem, Diagnóstico-texto, Plano-odontograma), abre 2º paciente | Clona os 3 blocos vazios | Painel abre com os 3 blocos, na mesma ordem, prontos pra preencher |
+| Com modelo (Radiografia-imagem, Diagnóstico-texto, Plano-odontograma), abre 2º paciente | Painel abre vazio, com o botão "Usar meu modelo" | Só depois do clique os 3 blocos aparecem, na mesma ordem, prontos pra preencher — nada escrito antes disso |
 | Bloco odontograma, paciente com indicação nos dentes 16 e 24 | Deriva 2 eventos de `odontograma_eventos` | Boca inteira renderiza; só 16/24 coloridos (coral), resto neutro |
 | Bloco odontograma, paciente sem nenhum evento | `eventosPersistidos=[]` | Estado vazio explícito, não boca confusa |
 | Bloco imagem aponta pra doc já apagado | `documents.find` retorna `undefined` | Editor avisa; apresentação pula o slide sem quebrar |
-| "Gerar apresentação" com seções já preenchidas | `window.confirm` | Cancelar preserva; confirmar apaga as antigas e insere as novas |
+| "Gerar apresentação" com seções já preenchidas | `AlertDialog` | Cancelar preserva; confirmar apaga as antigas e insere as novas |
 
 ## 6. Referência visual
 
@@ -238,6 +247,8 @@ e o `SectionEditor` de texto não mudam visualmente.
 - [ ] Bloco odontograma nunca deixa escolher dente a dente — deriva sempre de `odontograma_eventos`
 - [ ] Modelo nunca guarda dado de paciente (sem `imagem_ids`, sem `paciente_id`)
 - [ ] Salvar modelo é ação explícita — editar a apresentação de um paciente nunca reescreve o modelo sozinho
+- [ ] **Abrir o painel nunca escreve no banco** — aplicar modelo e gerar com IA são sempre clique do dentista
+- [ ] Nenhuma ação destrutiva usa `window.confirm` — sempre `AlertDialog`
 - [ ] Só quem passa em `can_act_as_dentista(dentista_id)` escreve no próprio modelo ou nas próprias seções; toda a equipe clínica (`is_clinic_staff()`) lê ambos
 - [ ] "Gerar com IA" só mostra sucesso depois de persistir no banco — nunca mais estado local fantasma
 - [ ] Apagar/regenerar seções existentes sempre pede confirmação antes de escrever
@@ -255,12 +266,13 @@ e o `SectionEditor` de texto não mudam visualmente.
 - [ ] Paciente sem nenhum `odontograma_evento` mostra estado vazio, não boca em branco sem explicação
 - [ ] `presentationMode=true` esconde abas de arcada, botão Legenda e a linha "toque para editar"; FDI e SUP./INF. continuam visíveis
 - [ ] Doc apagado depois de anexado não quebra o editor nem a apresentação ao vivo
-- [ ] Regenerar com IA tendo seções existentes exige confirmação antes de apagar
+- [ ] Regenerar com IA tendo seções existentes abre `AlertDialog` antes de apagar (não `window.confirm`)
+- [ ] Abrir o painel num paciente com 0 seções não cria nenhuma linha — conferido via SQL antes/depois
 
 **R-98b:**
 - [ ] "Salvar como meu modelo" grava em `apresentacao_modelos`, sobrescrevendo o anterior
-- [ ] Paciente novo (0 seções) com modelo existente nasce com os blocos do modelo automaticamente
-- [ ] Paciente novo sem modelo do dentista segue o comportamento atual (IA ou vazio)
+- [ ] Paciente novo (0 seções) com modelo existente mostra "Usar meu modelo"; **só o clique** cria os blocos
+- [ ] Paciente novo sem modelo do dentista não mostra o botão — estado vazio segue como hoje
 - [ ] Dentista B não escreve no modelo do dentista A (RLS) — **testado com 2 contas logadas**
 - [ ] Dentista B lê/aplica o modelo do dentista A por ser `is_clinic_staff()` — **testado com 2 contas logadas**
 - [ ] Modelo aplicado a um paciente nunca chega com `imagem_ids` preenchido
