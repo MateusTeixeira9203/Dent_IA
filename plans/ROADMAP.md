@@ -1,11 +1,12 @@
 # Roadmap — Odonto.IA
 
 > **ROADMAP** · atualizado **2026-08-10** · ordenado por **importância pro dentista**
-> **Último push:** 10/08 — **22 commits** (`86fc722`..`3f295d8`): o lote represado do R-92
-> (R-90/R-93/R-65/R-66/preço) **e** o R-94 inteiro, migrations 128-133 incluídas.
+> **Último push:** 10/08 — R-98a no ar (`4fe53e2`..`0b86843`): tipo de bloco, fix do bug de
+> persistência, entrada do Apresentar sem ficha, respiro do protético. **Testado e aprovado por
+> ele** — vai pra produção hoje, veredito à noite.
 > **Fila:** 25⏳ · **🟡 codado/no ar sem verificação pessoal dele:** 39 · **💡 ideia sem spec:** 3 ·
 > **Concluídos:** 32 · **Congelado:** 3 · **Cortado:** 10
-> **🔵 ATIVO: nenhum.** R-94 subiu 10/08; R-92 segue pausado a pedido dele.
+> **🔵 ATIVO: nenhum.** R-92 segue pausado a pedido dele.
 > **Decisão de produto 10/08 — hierarquia e identidade:** toda conta é clínica; Solo e Clínica são
 > planos **por tamanho**, não dois tipos de entidade; "consultório" sai do vocabulário; admin = quem
 > paga. Reescreveu a [R-36](specs/R-36-um-login-uma-clinica.md) e abriu **R-96** e **R-97**.
@@ -107,7 +108,8 @@ prioridade, por melhor que seja.
 | **R-91** | 🔧 Busca de paciente sem acento continua quebrada — "Antonio"/"Antônio" são buscas disjuntas (18% da base) | ⏳ achado 30/07, replanejado 09/08. Spec do R-31a (§3.3) já escolheu a abordagem (coluna normalizada, não `unaccent` cru) mas nunca foi codada — R-31a fechou 🟡 sem essa parte | P |
 | [R-38](specs/R-38-orcamento-apresentacao-ao-paciente.md) | Orçamento: como o paciente vê — PDF sem preço por item, só total e condição | 🟡 codado, testado, commitado e no ar (31/07) — toggle no rodapé, PDF respeita o flag, snapshot do aceite grava o flag (G1-G6 verificados) | P |
 | [R-10](ROADMAP.md) | P2: tirar a observação clínica do documento que o paciente lê | ⏳ P1 ✅ em prod. P2 precisa de decisão — `dentes_observacoes` alimenta orçamento **e** prontuário | P |
-| [**R-98**](specs/R-98-apresentar-visual-blocos-modelo.md) | **Apresentar visual: blocos e modelo** — seção ganha tipo (`texto`/`imagem`/`odontograma`), e o dentista salva a sequência dele como modelo reusado no próximo paciente | ⏳ spec escrita 10/08, **aguardando aprovação**. Quebrada em **98a** (tipo de bloco + fix do bug) e **98b** (modelo). 🐛 embutido: geração por IA **nunca salvou** — 23 chamadas, 6 de dentistas reais, 0 linhas correspondentes. Spike 10/08: componente do odontograma é puro, custo é 1 prop (`presentationMode`). [Artefato](artefatos/R-98-apresentar-visual.html) com o render REAL da arcada injetado do SSR | G |
+| [**R-98a**](specs/R-98-apresentar-visual-blocos-modelo.md) | Tipo de bloco (`texto`/`imagem`/`odontograma`) + fix do bug de persistência | 🟡 **codado, testado ao vivo e aprovado por ele 10/08** (`4fe53e2`..`0b86843`, migration 134). 🐛 corrigido: geração por IA nunca salvava — 23 chamadas, 6 de dentistas reais, 0 linhas correspondentes. 2 achados extras corrigidos no teste: botão Apresentar preso a ter ficha, protético sem `PageContainer`. **Falta produção — veredito dele hoje à noite** | G |
+| **R-98b** | Modelo reutilizável — dentista salva a sequência de blocos e reusa a partir do 2º paciente | ⏳ depende do 98a em produção. [Spec](specs/R-98-apresentar-visual-blocos-modelo.md) já escrita (§4.2) | M |
 | **R-99** | **Anotar a radiografia** — paleta de procedimentos (canal, coroa, prótese, implante, pino) e o dentista marca **em cima** do raio-x onde cada um entra | ⏳ pedido dele 10/08, **sem spec**. Depende do bloco `imagem` do R-98a. Conceito no [artefato do R-98](artefatos/R-98-apresentar-visual.html) (Bloco A+), 2 modos: paleta é chrome de edição, some ao apresentar. **Decidido 10/08:** é **overlay** (coordenada + tipo na seção, radiografia original **nunca** alterada — exame diagnóstico não se mistura com proposta) e **sem exportar por enquanto** — a versão anotada não sai da clínica, o que mantém o item fora das regras de custódia de prontuário. Falta: símbolos (devem sair de `TipoRegistroOdontograma`, não desenhados) | M |
 
 ## Bloco 3 — Assinatura e prova

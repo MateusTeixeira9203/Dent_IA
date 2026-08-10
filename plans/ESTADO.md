@@ -2,65 +2,48 @@
 
 ## Agora
 
-**Nenhum item 🔵 ativo.** O R-94 subiu e o R-92 segue pausado — a sessão terminou em
-**planejamento**, não em execução.
+**R-98a — Apresentar visual (tipo de bloco + fix do bug): codado, testado ao vivo por ele e
+aprovado 100%** (`4fe53e2`..`0b86843`, migration 134, pushado). Ele vai testar em produção hoje
+e retorna o veredito à noite — só então isso vira ✅ de verdade.
 
-**R-94 — Agenda do protético: no ar** (`58f6c14`..`3f295d8`, migrations 128-133). Ele confirmou
-funcionando. 4 bugs achados testando ao vivo, todos corrigidos: loop infinito de redirect
-(`response.headers` não chega no `headers()` de Server Component — derrubava o servidor por
-memória), alerta de CRO vazando pro protético, login passando por `/dashboard` à toa (~2.4s
-jogados fora) e ponto do calendário mentindo "pendente" em dia já entregue.
+O que foi: seção do Apresentar ganha **tipo** (`texto` · `imagem` cheia · `odontograma`, esse
+último derivado sozinho de `odontograma_eventos`, sem escolha manual de dente). Bug corrigido
+junto: `generateFullPlanWithAI` nunca salvava — 23 chamadas à rota, 6 de dentistas reais, 0
+linhas correspondentes; o toast dizia sucesso e o dentista perdia tudo ao fechar o painel.
 
-**Push feito:** 22 commits de uma vez (`86fc722`..`3f295d8`) — o lote represado do R-92 mais o
-R-94 inteiro. O represamento acabou.
+**2 achados extras, testando ao vivo, já corrigidos:**
+- Botão Apresentar só aparecia com `fichasRecentes.length > 0` — suposição velha (Apresentar
+  sempre parte de uma ficha). Com bloco imagem/odontograma isso não é mais verdade; tirei a trava
+- `dashboard/protetico/page.tsx` (R-94) era a única página do dashboard sem `PageContainer` —
+  conteúdo colado na borda
 
-**Decisão de produto 10/08 — identidade e hierarquia.** Discussão longa, fechada:
+**Não confirmado explicitamente:** se ele testou o editor em **light mode** — o artefato só
+cobria dark, e eu não vi confirmação específica disso no teste dele.
 
-- **Toda conta é clínica.** Solo e Clínica são planos **por tamanho** (1 dentista · vários), não
-  dois tipos de entidade. A palavra "consultório" sai do produto
-- Quem atende em dois lugares tem **dois logins**, porque são dois clientes pagando
-- **Admin = quem paga**, não quem criou. E admin não é perfil separado: é atributo do dentista
-  (os 5 admins do banco assinaram 37 fichas)
-- **Ver é de todos, mudar quem entra e quanto se paga é do dono**
-
-Isso reescreveu a [R-36](specs/R-36-um-login-uma-clinica.md) (migração automática do consultório
-solo **cortada** — entregava a 5 estranhos prontuário que o paciente confiou a um; e o caso
-aconteceu 0×) e abriu **R-96** e **R-97**.
-
-**[R-98 — Apresentar visual](specs/R-98-apresentar-visual-blocos-modelo.md): spec e artefato
-APROVADOS 10/08.** Pronta pra execução, código não começou. A seção do Apresentar ganha **tipo**
-(`texto` · `imagem` cheia · `odontograma`), e o dentista salva a sequência dele como **modelo**
-reusado no próximo paciente. Quebrada em **98a** (tipo + fix do bug, entrega sozinha) e **98b**
-(modelo). Achado que originou: **nada gerado por IA nunca foi salvo** — 23 chamadas à rota, 6 de
-dentistas reais, 0 linhas correspondentes; o toast dizia "gerado com sucesso" e o dentista perdia
-tudo ao fechar. Spike mediu que o bloco de odontograma custa 1 prop (`presentationMode`), não um
-módulo. **R-99** (anotar a radiografia) aberto e decidido: overlay, sem exportar.
+**R-98b (modelo reutilizável)** e **R-99 (anotar radiografia)** têm spec escrita, aguardando o
+98a passar pela produção antes de começar.
 
 ## Travado
 
 **O preço** (herdado do R-92). Ele mandou ignorar o R$249/R$179, número novo não fechado.
 `lib/planos.ts` é fonte única desde `86fc722`, então mudar é barato.
 
-**A R-36 reescrita aguarda aprovação dele** — não comecei nada dela.
+**A [R-36](specs/R-36-um-login-uma-clinica.md) reescrita aguarda aprovação dele** — não comecei
+nada dela. §7 tem 3 decisões abertas.
 
 ## Esperando você
 
-- [ ] **Aprovar a [R-36](specs/R-36-um-login-uma-clinica.md) reescrita.** O §7 tem 3 decisões abertas
+- [ ] **Veredito de produção do R-98a** — hoje à noite, por ele
+- [ ] **Aprovar a R-36 reescrita**
 - [ ] **Definir o preço** — trava o R-92 quando voltar
 - [ ] **G6 do R-94** — teste deliberado de 2 contas (dentista cria pedido → protético marca
-      entregue). O que rolou foi acidente de sessão instável, não teste controlado
+      entregue); o que rolou até aqui foi acidente de sessão, não teste controlado
 - [ ] Gate de 2 contas (R-29/R-30/R-31a/R-32/R-34/R-39/R-03c) — 11 dias parado
 - [ ] Testar pessoalmente R-85/R-86/R-65/R-66 (herdados do #33, ainda 🟡)
-- [ ] **Escopar o Apresentar** — pedido dele em 09/08, nunca discutido de verdade
 
 ## Próximo da fila
 
-**R-98a é o candidato natural a próximo 🔵** — spec aprovada, artefato aprovado, e entrega sozinha
-(o fix do bug de persistência vai junto). Depois: 98b, R-99, R-96 (transferir admin, pequeno e
-destrava a hierarquia), R-97 (painel operacional) e a volta do R-92.
+Depois do veredito de produção: **R-98b** (modelo) e **R-99** (anotar radiografia), ambos com
+spec pronta. Depois: R-96 (transferir admin), R-97 (painel operacional), volta do R-92.
 
-**Antes de codar o 98a:** o light do editor não foi desenhado — o artefato só cobre dark (a
-apresentação é sempre escura, o editor não). Precisa do gate de contraste.
-
-**`ROADMAP.md` está com 230 linhas (teto ~200)** — precisa de poda, não de mais escrita. Candidatos:
-o cabeçalho virou narrativa de sessão (isso é handoff) e o Bloco 1 tem linhas de 4 frases.
+**`ROADMAP.md` está com 231 linhas (teto ~200)** — 3ª sessão seguida anotando isso sem podar.
