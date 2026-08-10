@@ -38,6 +38,11 @@ export async function proxy(request: NextRequest) {
   const { response, session } = await updateSession(request);
   const { pathname } = request.nextUrl;
 
+  // R-94 — dashboard/layout.tsx não tem acesso nativo ao pathname (é Server Component,
+  // não Page); expõe via header pra decidir o gate de ponto único do role protetico
+  // sem precisar de outra query de banco (o layout já busca o role via getDentistaCached).
+  response.headers.set("x-pathname", pathname);
+
   if (isPublicRoute(pathname) || isAlwaysAllowedAuthRoute(pathname)) {
     return response;
   }
