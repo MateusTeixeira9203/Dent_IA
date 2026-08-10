@@ -107,6 +107,7 @@ prioridade, por melhor que seja.
 | **R-91** | 🔧 Busca de paciente sem acento continua quebrada — "Antonio"/"Antônio" são buscas disjuntas (18% da base) | ⏳ achado 30/07, replanejado 09/08. Spec do R-31a (§3.3) já escolheu a abordagem (coluna normalizada, não `unaccent` cru) mas nunca foi codada — R-31a fechou 🟡 sem essa parte | P |
 | [R-38](specs/R-38-orcamento-apresentacao-ao-paciente.md) | Orçamento: como o paciente vê — PDF sem preço por item, só total e condição | 🟡 codado, testado, commitado e no ar (31/07) — toggle no rodapé, PDF respeita o flag, snapshot do aceite grava o flag (G1-G6 verificados) | P |
 | [R-10](ROADMAP.md) | P2: tirar a observação clínica do documento que o paciente lê | ⏳ P1 ✅ em prod. P2 precisa de decisão — `dentes_observacoes` alimenta orçamento **e** prontuário | P |
+| [**R-98**](specs/R-98-apresentar-visual-blocos-modelo.md) | **Apresentar visual: blocos e modelo** — seção ganha tipo (`texto`/`imagem`/`odontograma`), e o dentista salva a sequência dele como modelo reusado no próximo paciente | ⏳ spec escrita 10/08, **aguardando aprovação**. Quebrada em **98a** (tipo de bloco + fix do bug) e **98b** (modelo). 🐛 embutido: geração por IA **nunca salvou** — 23 chamadas, 6 de dentistas reais, 0 linhas correspondentes. Spike 10/08 mediu o bloco de odontograma: componente é puro, custo é 1 prop (`presentationMode`). Falta artefato dos 2 layouts novos | G |
 
 ## Bloco 3 — Assinatura e prova
 
