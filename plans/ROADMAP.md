@@ -1,13 +1,16 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · atualizado **2026-08-09** · ordenado por **importância pro dentista**
-> **Último push:** 08/08 (`dentia.app.br`, `dpl_oeSRUa3a`, READY) — R-75/R-82/R-84 e o fix do
-> `data-active` em produção. **4 commits de 09/08 (R-85/R-86/R-65/R-66) ainda NÃO subiram.**
-> **Fila:** 23⏳ · **🟡 codado/no ar sem verificação pessoal dele:** 38 · **💡 ideia sem spec:** 3 ·
+> **ROADMAP** · atualizado **2026-08-10** · ordenado por **importância pro dentista**
+> **Último push:** 10/08 — **22 commits** (`86fc722`..`3f295d8`): o lote represado do R-92
+> (R-90/R-93/R-65/R-66/preço) **e** o R-94 inteiro, migrations 128-133 incluídas.
+> **Fila:** 25⏳ · **🟡 codado/no ar sem verificação pessoal dele:** 39 · **💡 ideia sem spec:** 3 ·
 > **Concluídos:** 32 · **Congelado:** 3 · **Cortado:** 10
-> **🔵 ATIVO: [R-94 — Agenda do protético](specs/R-94-agenda-do-protetico.md)** (spec 09/08).
-> **[R-92 — Fechar para cobrar](specs/R-92-fechar-para-cobrar.md) pausado 09/08 a pedido dele**,
-> com 9 commits testados sem push. **0 pagantes segue de pé** — 5 clínicas em trial perpétuo
+> **🔵 ATIVO: nenhum.** R-94 subiu 10/08; R-92 segue pausado a pedido dele.
+> **Decisão de produto 10/08 — hierarquia e identidade:** toda conta é clínica; Solo e Clínica são
+> planos **por tamanho**, não dois tipos de entidade; "consultório" sai do vocabulário; admin = quem
+> paga. Reescreveu a [R-36](specs/R-36-um-login-uma-clinica.md) e abriu **R-96** e **R-97**.
+> **[R-92 — Fechar para cobrar](specs/R-92-fechar-para-cobrar.md) pausado 09/08 a pedido dele.**
+> **0 pagantes segue de pé** — 5 clínicas em trial perpétuo
 > (`trial_ends_at` NULL), checkout nunca processou pagamento. Meta dele: 100 pagantes em 2026.
 > **Discussão aberta:** [como diminuir o atrito](discussoes/como-diminuir-o-atrito.md) (estado × evento)
 > **Achado sem item, revisado 09/08 (3ª rodada + teste ao vivo):** `excluirPagamento` **tem**
@@ -86,7 +89,7 @@ prioridade, por melhor que seja.
 | **R-86** | 🐛 "Salvar e passar" podia falhar sem avisar — POST 503, nada persistido, botão travava | 🟡 corrigido e commitado 09/08 (`e43e2af`) — `handleSalvar` sem `try/catch`; mesmo fix no quiet-save do R-85. Testado forçando a falha por interceptação de `fetch`. **Causa do 503 não isolada** (provável infra). **Ele ainda não testou. Sem push** | M |
 | **R-87** | 🔧 Erro de hidratação React (#418) em toda navegação — dashboard, orçamentos, pacientes, ficha do paciente | ⏳ achado 08/08 (auditoria completa). Reproduzido 5× em 4 rotas diferentes, mesmo chunk (`4bd1b696…js`). Não travou nenhuma tela nem perdeu dado observado, mas é sistêmico — cheira a componente compartilhado do layout (nav/sino de notificação?) com mismatch servidor/cliente. Sem investigação de causa raiz ainda | P |
 | **R-81** | 👥 Secretária registra PELO dentista — fluxo real relatado por ele 08/08, hoje **bloqueado** (`meu-dia/page.tsx:24` redireciona secretaria) | ⏳ achado 08/08. **Possivelmente mais valioso que o R-78 inteiro** — dentista fica presente e dita em tempo real, ela só executa. Precisa de seletor "dia de quem" + `dentistaId` explícito + gate de 2 contas. Sem spec | G |
-| [**R-94**](specs/R-94-agenda-do-protetico.md) | 🔵 **Agenda do protético** — role novo (login como o da secretária), pedido criado no agendamento (paciente + obs + data), calendário só dele, marca "entregue" | 🔵 **ativo 09/08**, spec escrita. **Zero código hoje.** Achado que dimensiona o item: permissão do projeto é deny-list sem exhaustive check — role novo nasce **fail-open** em 63 arquivos. Mitigação: gate de ponto único no layout. **G2/G6 (2 contas) definem o item** | G |
+| [**R-94**](specs/R-94-agenda-do-protetico.md) | **Agenda do protético** — role novo (login como o da secretária), pedido criado no agendamento (paciente + obs + data), calendário só dele, marca "entregue" | 🟡 **codado, testado ao vivo e no ar 10/08** (`58f6c14`..`3f295d8`, migrations 128-133). Ele confirmou funcionando. Mitigação do fail-open: gate de ponto único no layout. 4 bugs achados testando: loop infinito de redirect (derrubava o servidor), alerta de CRO vazando pro protético, login passando por `/dashboard` à toa (~2.4s), ponto do calendário mentindo status. **Falta o G6 (2 contas deliberado)** | G |
 
 ## Bloco 2 — Orçamento e financeiro
 
@@ -117,7 +120,9 @@ prioridade, por melhor que seja.
 | ID | Item | Estado | Peso |
 |---|---|---|---|
 | [R-37](ROADMAP.md) | `fichas.dentista_id` é `ON DELETE CASCADE` — apagar 1 dentista levaria dezenas de fichas junto | ⏳ **mina enterrada** (zero `DELETE` em `dentistas` hoje). Vira alcançável com R-31b/R-36 — entra **antes** deles | M |
-| [R-36](specs/R-36-um-login-uma-clinica.md) | Um login, uma clínica — fim do multi-clínica e do seletor | ⏳ planejada. Admin fica como está, vira conta burocrática depois | G |
+| [R-36](specs/R-36-um-login-uma-clinica.md) | Um login, uma clínica — fim do multi-clínica e do seletor | ⏳ **spec reescrita 10/08**: migração automática do consultório solo **cortada** (entregava prontuário de paciente que nunca consentiu a 5 estranhos; caso aconteceu 0×). Vira índice único + **bloquear** o aceite. Some a necessidade de afrouxar o trigger de imutabilidade | M |
+| **R-96** | 🐛 **Não existe transferir administração** — zero updates de `role` no projeto, e `team.ts:181` manda o usuário fazer isso mesmo assim (*"Transfira o papel de admin antes de sair"*). Admin é porta de mão única: quem cadastrou é dono pra sempre e nem sair consegue | ⏳ achado 10/08 na discussão da hierarquia. É o que torna "só admin escreve" aceitável — sem saída, admin vira prisão | P |
+| **R-97** | Painel operacional da clínica — dados, equipe, horários, config do bot, documentos/contratos. Regra: **ver é de todos, mudar quem entra e quanto se paga é do dono** | ⏳ decidido 10/08. Metade é quase de graça (`permissions.ts` já diz `configuracoes: ['admin','dentista']`, só a sidebar esconde o link); a outra metade — **documentos/contratos da clínica não têm tabela** (só `ficha_arquivos` e `paciente_documentos`, presos ao paciente) — é módulo novo e provavelmente sub-item. Fora: convite (tem consequência de cobrança) e conversas do WhatsApp (território da secretária) | G |
 | [R-35](specs/R-35-riscos-nao-reportados.md) | 14 riscos da auditoria de 29/07 | 🟡 10 codados/aplicados, 4 verificados ao vivo. Faltam itens 4, 7, 10 | M |
 | **R-43** | Varredura de todas as `SECURITY DEFINER` de RLS com fallback sem casar clínica | ⏳ 3ª ocorrência achada (`get_my_role`, `get_my_dentista_id`, `has_active_membership`) — achar de uma vez em vez de uma por acidente | P |
 | **R-44** | Varredura de embeds Postgrest com FK ambígua (mesmo padrão do bug do PDF, R-34) | ⏳ achado 30/07, confirmado ao vivo (300 real nos logs). `get-patient-workspace-data.ts:110`, `get-visible-timeline-events.ts:66/75` — 2 achadas a mais na busca (`command-palette.tsx:105`, `atender-agora-modal.tsx:57`). 5 abertas no total | P |

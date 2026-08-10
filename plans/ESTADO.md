@@ -1,47 +1,51 @@
-# Estado — 2026-08-09 (sessão #35)
+# Estado — 2026-08-10 (sessão #35)
 
 ## Agora
 
-**🔵 R-94 — Agenda do protético** ([spec](specs/R-94-agenda-do-protetico.md)), spec escrita,
-**código ainda não começou**.
+**Nenhum item 🔵 ativo.** O R-94 subiu e o R-92 segue pausado — a sessão terminou em
+**planejamento**, não em execução.
 
-Ele pediu pra "matar hoje" a tela do protético e o Apresentar. Eu apontei que os dois estavam
-explicitamente cortados na spec do R-92 que ele aprovou horas antes — **ele decidiu pausar o
-R-92 mesmo assim**. Ordem definida: protético primeiro, Apresentar depois (ainda sem escopo —
-o que ele disse foi só "mais liberdade pro dentista editar a apresentação").
+**R-94 — Agenda do protético: no ar** (`58f6c14`..`3f295d8`, migrations 128-133). Ele confirmou
+funcionando. 4 bugs achados testando ao vivo, todos corrigidos: loop infinito de redirect
+(`response.headers` não chega no `headers()` de Server Component — derrubava o servidor por
+memória), alerta de CRO vazando pro protético, login passando por `/dashboard` à toa (~2.4s
+jogados fora) e ponto do calendário mentindo "pendente" em dia já entregue.
 
-**Escopo fechado com ele:** protético é membro da clínica (1 clínica, não laboratório N:N),
-login criado pelo admin com senha como o da secretária (não usa convite), pedido é solto
-(paciente + observação + data, sem vínculo com procedimento), dentista pede o prazo,
-protético marca "entregue", e ele **vê o nome do paciente** no card.
+**Push feito:** 22 commits de uma vez (`86fc722`..`3f295d8`) — o lote represado do R-92 mais o
+R-94 inteiro. O represamento acabou.
 
-**O achado que dimensiona o item:** a permissão do projeto é **deny-list sem exhaustive
-check** — 63 arquivos com gates negativos (`if role === 'secretaria') nega`), zero `switch`
-sobre role no projeto inteiro. Um role novo **não quebra o build** e nasce enxergando ficha,
-prontuário e financeiro. Mitigação aprovada por ele: **gate de ponto único** no
-`dashboard/layout.tsx` em vez de auditar os 63.
+**Decisão de produto 10/08 — identidade e hierarquia.** Discussão longa, fechada:
+
+- **Toda conta é clínica.** Solo e Clínica são planos **por tamanho** (1 dentista · vários), não
+  dois tipos de entidade. A palavra "consultório" sai do produto
+- Quem atende em dois lugares tem **dois logins**, porque são dois clientes pagando
+- **Admin = quem paga**, não quem criou. E admin não é perfil separado: é atributo do dentista
+  (os 5 admins do banco assinaram 37 fichas)
+- **Ver é de todos, mudar quem entra e quanto se paga é do dono**
+
+Isso reescreveu a [R-36](specs/R-36-um-login-uma-clinica.md) (migração automática do consultório
+solo **cortada** — entregava a 5 estranhos prontuário que o paciente confiou a um; e o caso
+aconteceu 0×) e abriu **R-96** e **R-97**.
 
 ## Travado
 
-**Nada trava o R-94** — dá pra começar a codar.
+**O preço** (herdado do R-92). Ele mandou ignorar o R$249/R$179, número novo não fechado.
+`lib/planos.ts` é fonte única desde `86fc722`, então mudar é barato.
 
-**O preço** (herdado do R-92, ainda de pé). Ele mandou ignorar o R$249/R$179 atual, número
-novo não fechado. Agora é barato mudar: `lib/planos.ts` virou fonte única (commit `86fc722`).
+**A R-36 reescrita aguarda aprovação dele** — não comecei nada dela.
 
 ## Esperando você
 
-- [ ] **9 commits testados, sem push** — o lote do R-92 (`86fc722`..`dc0277e`). Ele pediu pra
-      revisar antes de subir, revisou, e aí virou a sessão pro R-94. **Continua sem subir.**
-- [ ] **Definir o preço** — não trava mais o R-94, mas trava o R-92 quando voltar.
-- [ ] Testar pessoalmente R-85/R-86/R-65/R-66 (herdados do #33, ainda 🟡).
-- [ ] Gate de 2 contas (R-29/R-30/R-31a/R-32/R-34/R-39/R-03c) — 10 dias parado. **O R-94
-      soma mais um** (G6: protético + dentista logados).
-- [ ] **Escopar o Apresentar** — nunca foi discutido de verdade. Falta saber o que trava hoje
-      pro dentista na apresentação ao paciente.
+- [ ] **Aprovar a [R-36](specs/R-36-um-login-uma-clinica.md) reescrita.** O §7 tem 3 decisões abertas
+- [ ] **Definir o preço** — trava o R-92 quando voltar
+- [ ] **G6 do R-94** — teste deliberado de 2 contas (dentista cria pedido → protético marca
+      entregue). O que rolou foi acidente de sessão instável, não teste controlado
+- [ ] Gate de 2 contas (R-29/R-30/R-31a/R-32/R-34/R-39/R-03c) — 11 dias parado
+- [ ] Testar pessoalmente R-85/R-86/R-65/R-66 (herdados do #33, ainda 🟡)
+- [ ] **Escopar o Apresentar** — pedido dele em 09/08, nunca discutido de verdade
 
 ## Próximo da fila
 
-Depois do R-94: o Apresentar (sem escopo) e a volta do R-92. Mapa de atrito
-[rodada 2](auditorias/2026-08-09-mapa-de-atrito-2.md) e
-[rodada 3](auditorias/2026-08-09-mapa-de-atrito-3-recontagem.md) têm achados soltos sem item
-próprio. Ver `plans/ROADMAP.md`.
+R-96 (transferir admin, pequeno e destrava a hierarquia), R-97 (painel operacional), o Apresentar
+e a volta do R-92. **`ROADMAP.md` está com 229 linhas (teto ~200)** — precisa de poda, não de mais
+escrita.
