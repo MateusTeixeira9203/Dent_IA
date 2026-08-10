@@ -31,6 +31,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const dentista = await getDentistaCached();
     if (!dentista) return NextResponse.json({ alerts: [] });
 
+    // R-94 — protético não usa Dex: nenhum alerta aqui (perfil/CRO, agendamento,
+    // orçamento, follow-up) foi desenhado pensando nesse role. Gate único em vez de
+    // remendar tipo por tipo — mesmo raciocínio do gate em dashboard/layout.tsx.
+    if (dentista.role === 'protetico') return NextResponse.json({ alerts: [] });
+
     const supabase = await createClient();
     const agora = new Date();
     const hojeInicio = new Date(agora);

@@ -48,7 +48,11 @@ export function MobileDrawer({ open, onClose, nome, clinicaNome, role, avatarUrl
   const avatarInitials = nome.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
   const financeiroLocked = !temFeature(plano ?? 'SOLO', 'financeiro');
 
-  const visibleItems = NAV_ITEMS.filter(item => !('hideFromSecretaria' in item && item.hideFromSecretaria && role === 'secretaria'));
+  // R-94 — protético só acessa /dashboard/protetico (gate em dashboard/layout.tsx);
+  // nenhum destino da nav faz sentido pra ele.
+  const visibleItems = role === 'protetico'
+    ? []
+    : NAV_ITEMS.filter(item => !('hideFromSecretaria' in item && item.hideFromSecretaria && role === 'secretaria'));
 
   return (
     <AnimatePresence>
@@ -109,7 +113,8 @@ export function MobileDrawer({ open, onClose, nome, clinicaNome, role, avatarUrl
               </div>
             </div>
 
-            {/* Nav */}
+            {/* Nav — vazia pro protético (só ele acessa /dashboard/protetico), flex-1
+                continua empurrando o footer (tema/sair) pro final do drawer */}
             <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
               {visibleItems.map(item => {
                 const isActive = item.href === '/dashboard'

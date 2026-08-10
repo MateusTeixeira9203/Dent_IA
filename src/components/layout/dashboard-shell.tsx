@@ -139,7 +139,7 @@ export function DashboardShell({ children, nome, clinicaNome, activeClinicId, ro
       {/* FASE 1: guia desativado — ver roadmap-3-fases A2 */}
       {/* {role !== 'secretaria' && <DexGuide nome={nome} dentistaId={dentistaId} />} */}
 
-      {role !== 'secretaria' && (
+      {role !== 'secretaria' && role !== 'protetico' && (
         <DexWidget
           nome={nome}
           dentistaId={dentistaId}

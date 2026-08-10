@@ -69,7 +69,9 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
   const avatarInitials = nome.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
   const financeiroLocked = !temFeature(plano ?? 'SOLO', 'financeiro');
 
-  const visibleItems = NAV_ITEMS.filter(item => {
+  // R-94 — protético só acessa /dashboard/protetico (gate em dashboard/layout.tsx);
+  // nenhum destino da nav faz sentido pra ele.
+  const visibleItems = role === 'protetico' ? [] : NAV_ITEMS.filter(item => {
     if ('hideFromSecretaria' in item && item.hideFromSecretaria && role === 'secretaria') return false;
     return true;
   });
@@ -122,20 +124,22 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
       {/* ── Separador centro ── */}
       <div className="w-px h-6 bg-white/[0.07] mx-1 shrink-0" />
 
-      {/* ── Dex ball ── */}
-      <button
-        title="Abrir DEX"
-        onClick={() => window.dispatchEvent(new Event('dex-toggle'))}
-        className="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0 hover:scale-110 active:scale-95 transition-transform mx-1 outline-none"
-        style={{
-          background: 'linear-gradient(135deg, #2f9c85 0%, #1a7a65 100%)',
-          boxShadow: '0 4px 16px -4px rgba(47,156,133,0.6)',
-        }}
-      >
-        <Bot className="w-4 h-4 text-white" />
-        <span className="absolute inset-0 rounded-full animate-ping opacity-20"
-          style={{ background: 'rgba(47,156,133,0.4)' }} />
-      </button>
+      {/* ── Dex ball — protético não usa o assistente clínico ── */}
+      {role !== 'protetico' && (
+        <button
+          title="Abrir DEX"
+          onClick={() => window.dispatchEvent(new Event('dex-toggle'))}
+          className="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0 hover:scale-110 active:scale-95 transition-transform mx-1 outline-none"
+          style={{
+            background: 'linear-gradient(135deg, #2f9c85 0%, #1a7a65 100%)',
+            boxShadow: '0 4px 16px -4px rgba(47,156,133,0.6)',
+          }}
+        >
+          <Bot className="w-4 h-4 text-white" />
+          <span className="absolute inset-0 rounded-full animate-ping opacity-20"
+            style={{ background: 'rgba(47,156,133,0.4)' }} />
+        </button>
+      )}
 
       {/* ── Toggle tema ── */}
       <button
@@ -152,10 +156,13 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
       {/* ── Separador direita ── */}
       <div className="w-px h-6 bg-white/[0.07] mx-1 shrink-0" />
 
-      {/* ── Notification bell ── */}
-      <div className="flex items-center justify-center px-1">
-        <NotificationBell isExpanded={false} />
-      </div>
+      {/* ── Notification bell — protético não recebe alerta nenhum (route.ts do dex/alerts
+          devolve [] pra esse role), sino sempre vazio seria um afordance morto ── */}
+      {role !== 'protetico' && (
+        <div className="flex items-center justify-center px-1">
+          <NotificationBell isExpanded={false} />
+        </div>
+      )}
 
       {/* ── Avatar + dropdown ── */}
       {/* Radix DropdownMenu só monta no cliente para evitar hydration mismatch com useId */}
@@ -242,17 +249,20 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
               </div>
             ) : null}
 
-            {/* Perfil */}
-            <DropdownMenu.Item
-              onSelect={() => router.push('/dashboard/perfil')}
-              className="flex items-center gap-2.5 px-2 py-2 text-sm text-white/55 hover:text-white hover:bg-white/[0.06] rounded-xl outline-none cursor-pointer transition-all group"
-            >
-              <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-colors group-hover:bg-white/[0.08]"
-                style={{ background: 'rgba(255,255,255,0.05)' }}>
-                <User className="w-3.5 h-3.5" />
-              </div>
-              Meu Perfil
-            </DropdownMenu.Item>
+            {/* Perfil — protético não tem essa rota (gate em dashboard/layout.tsx bloqueia
+                qualquer coisa fora de /dashboard/protetico); item sumiria num redirect de volta */}
+            {role !== 'protetico' && (
+              <DropdownMenu.Item
+                onSelect={() => router.push('/dashboard/perfil')}
+                className="flex items-center gap-2.5 px-2 py-2 text-sm text-white/55 hover:text-white hover:bg-white/[0.06] rounded-xl outline-none cursor-pointer transition-all group"
+              >
+                <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-colors group-hover:bg-white/[0.08]"
+                  style={{ background: 'rgba(255,255,255,0.05)' }}>
+                  <User className="w-3.5 h-3.5" />
+                </div>
+                Meu Perfil
+              </DropdownMenu.Item>
+            )}
 
             <DropdownMenu.Separator className="h-px my-1.5 mx-1" style={{ background: 'rgba(255,255,255,0.07)' }} />
 
