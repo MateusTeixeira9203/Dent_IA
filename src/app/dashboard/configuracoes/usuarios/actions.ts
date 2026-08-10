@@ -9,6 +9,7 @@ import {
 } from '@/server/services/invites';
 import {
   criarSecretaria,
+  criarProtetico,
   removerMembro,
   resetarSenhaSecretaria,
 } from '@/server/services/team';
@@ -57,6 +58,20 @@ export async function criarSecretariaAction(
 ): Promise<{ ok: boolean; error?: string }> {
   const { clinicId, user, role } = await requireRole(['admin']);
   const result = await criarSecretaria(ctx(clinicId, user.id, role), { nome, email, senha, telefone });
+  if (result.ok) revalidatePath('/dashboard/configuracoes/usuarios');
+  return result;
+}
+
+// ─── Protéticos (R-94) ─────────────────────────────────────────────────────────
+
+export async function criarProteticoAction(
+  nome: string,
+  email: string,
+  senha: string,
+  telefone?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const { clinicId, user, role } = await requireRole(['admin']);
+  const result = await criarProtetico(ctx(clinicId, user.id, role), { nome, email, senha, telefone });
   if (result.ok) revalidatePath('/dashboard/configuracoes/usuarios');
   return result;
 }

@@ -25,7 +25,7 @@ import type { DentistaRole } from '@/types/database';
 import type { PlanoId } from '@/lib/planos';
 import { getLabelContexto } from '@/lib/planos';
 import type { UsuarioRow, ConvitePendente } from '../page';
-import { deletarUsuario, criarSecretariaAction } from '../actions';
+import { deletarUsuario, criarSecretariaAction, criarProteticoAction } from '../actions';
 
 // ── Constantes de role ────────────────────────────────────────────────────────
 
@@ -67,7 +67,7 @@ interface Props {
 
 // ── Tipos de tab ──────────────────────────────────────────────────────────────
 
-type DialogTab = 'dentista' | 'secretaria';
+type DialogTab = 'dentista' | 'secretaria' | 'protetico';
 type DialogStep = 'form' | 'sucesso' | 'convite-link';
 
 // ── Componente principal ──────────────────────────────────────────────────────
@@ -190,21 +190,21 @@ export function UsuariosClient({
     }
   }
 
-  async function handleCriarSecretaria(): Promise<void> {
-    if (!secNome.trim()) { toast.error('Digite o nome da secretária'); return; }
+  // Secretária e protético usam o mesmo formulário de criação direta (nome/email/senha)
+  // e o mesmo fluxo (auth user + RPC + rollback) — só o role e a action mudam.
+  async function handleCriarMembroDireto(role: 'secretaria' | 'protetico'): Promise<void> {
+    const rotulo = role === 'secretaria' ? 'secretária' : 'protético';
+    if (!secNome.trim()) { toast.error(`Digite o nome ${role === 'secretaria' ? 'da secretária' : 'do protético'}`); return; }
     if (!secEmail.trim() || !secEmail.includes('@')) { toast.error('Digite um email válido'); return; }
     if (secSenha.length < 8) { toast.error('A senha deve ter no mínimo 8 caracteres'); return; }
 
     setIsCriando(true);
     try {
-      const result = await criarSecretariaAction(
-        secNome.trim(),
-        secEmail.trim(),
-        secSenha,
-      );
+      const action = role === 'secretaria' ? criarSecretariaAction : criarProteticoAction;
+      const result = await action(secNome.trim(), secEmail.trim(), secSenha);
 
       if (!result.ok) {
-        toast.error(result.error ?? 'Erro ao criar secretária');
+        toast.error(result.error ?? `Erro ao criar ${rotulo}`);
         return;
       }
 
@@ -216,7 +216,7 @@ export function UsuariosClient({
         id:         crypto.randomUUID(),
         nome:       secNome.trim(),
         email:      secEmail.trim(),
-        role:       'secretaria' as DentistaRole,
+        role:       role as DentistaRole,
         ativo:      true,
         created_at: new Date().toISOString(),
       };
@@ -620,7 +620,7 @@ export function UsuariosClient({
 
                 {/* Tabs */}
                 <div className="flex gap-1 p-1 rounded-xl bg-surface-alt mb-5">
-                  {(['dentista', 'secretaria'] as const).map((t) => (
+                  {(['dentista', 'secretaria', 'protetico'] as const).map((t) => (
                     <button
                       key={t}
                       onClick={() => setTab(t)}
@@ -630,10 +630,9 @@ export function UsuariosClient({
                           : 'text-text-secondary hover:text-text-primary'
                       }`}
                     >
-                      {t === 'dentista'
-                        ? <><Stethoscope className="w-3.5 h-3.5" /> Dentista</>
-                        : <><ClipboardList className="w-3.5 h-3.5" /> Secretária</>
-                      }
+                      {t === 'dentista' && <><Stethoscope className="w-3.5 h-3.5" /> Dentista</>}
+                      {t === 'secretaria' && <><ClipboardList className="w-3.5 h-3.5" /> Secretária</>}
+                      {t === 'protetico' && <><Package className="w-3.5 h-3.5" /> Protético</>}
                     </button>
                   ))}
                 </div>
@@ -761,7 +760,88 @@ export function UsuariosClient({
                         </Button>
                         <Button
                           className="flex-1 bg-teal hover:bg-teal-dark text-white gap-2 rounded-xl"
-                          onClick={() => void handleCriarSecretaria()}
+                          onClick={() => void handleCriarMembroDireto('secretaria')}
+                          disabled={isCriando}
+                        >
+                          <KeyRound className="w-4 h-4" />
+                          {isCriando ? 'Criando...' : 'Criar conta'}
+                        </Button>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* ── Form Protético ── */}
+                  {tab === 'protetico' && (
+                    <motion.div
+                      key="form-protetico"
+                      initial={{ opacity: 0, x: 8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 8 }}
+                      transition={{ duration: 0.15 }}
+                      className="space-y-3"
+                    >
+                      <div className="rounded-xl border border-border bg-surface-alt px-4 py-3 text-sm text-text-secondary">
+                        A conta é criada <span className="font-medium text-text-primary">imediatamente</span>. Você repassa as credenciais para ele. O protético só acessa a própria agenda de entregas.
+                      </div>
+
+                      <div>
+                        <Label className="font-mono text-xs uppercase tracking-widest text-text-secondary">
+                          Nome completo
+                        </Label>
+                        <Input
+                          placeholder="Armando Nunes"
+                          value={secNome}
+                          onChange={(e) => setSecNome(e.target.value)}
+                          className="mt-1.5"
+                          autoFocus
+                        />
+                      </div>
+
+                      <div>
+                        <Label className="font-mono text-xs uppercase tracking-widest text-text-secondary">
+                          Email
+                        </Label>
+                        <Input
+                          type="email"
+                          placeholder="protetico@email.com"
+                          value={secEmail}
+                          onChange={(e) => setSecEmail(e.target.value)}
+                          className="mt-1.5"
+                        />
+                      </div>
+
+                      <div>
+                        <Label className="font-mono text-xs uppercase tracking-widest text-text-secondary">
+                          Senha inicial
+                        </Label>
+                        <div className="relative mt-1.5">
+                          <Input
+                            type={showSenha ? 'text' : 'password'}
+                            placeholder="Mínimo 8 caracteres"
+                            value={secSenha}
+                            onChange={(e) => setSecSenha(e.target.value)}
+                            className="pr-10"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowSenha(v => !v)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary transition-colors"
+                          >
+                            {showSenha ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        {secSenha.length > 0 && secSenha.length < 8 && (
+                          <p className="text-xs text-red-500 mt-1">Mínimo 8 caracteres</p>
+                        )}
+                      </div>
+
+                      <div className="flex gap-3 pt-1">
+                        <Button variant="outline" className="flex-1" onClick={handleCloseDialog}>
+                          Cancelar
+                        </Button>
+                        <Button
+                          className="flex-1 bg-teal hover:bg-teal-dark text-white gap-2 rounded-xl"
+                          onClick={() => void handleCriarMembroDireto('protetico')}
                           disabled={isCriando}
                         >
                           <KeyRound className="w-4 h-4" />
