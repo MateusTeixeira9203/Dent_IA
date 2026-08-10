@@ -12,6 +12,7 @@ import {
 import { inserirNotificacao } from "@/lib/notificacoes";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { z } from "zod";
 
 /**
  * Janela de busca dos agendamentos candidatos a conflito, em torno de uma data clínica.
@@ -662,6 +663,81 @@ export async function criarEncaixe(dados: {
 
   if (error) return { error: error.message };
   revalidatePath('/dashboard/agendamentos');
+  return { id: data.id };
+}
+
+// R-94 — pedido solto pro protético (sem vínculo com procedimento/orçamento, spec §2).
+const criarPedidoProteticoSchema = z.object({
+  pacienteId:    z.string().uuid(),
+  proteticoId:   z.string().uuid(),
+  observacao:    z.string().trim().min(1, "Descreva o que o protético precisa saber."),
+  dataEntrega:   z.string().refine((v) => {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    return new Date(`${v}T00:00:00`) >= hoje;
+  }, "A data de entrega não pode ser no passado."),
+  agendamentoId: z.string().uuid().optional(),
+});
+
+export async function criarPedidoProtetico(input: {
+  pacienteId: string;
+  proteticoId: string;
+  observacao: string;
+  dataEntrega: string;
+  agendamentoId?: string;
+}): Promise<{ error?: string; id?: string }> {
+  const parsed = criarPedidoProteticoSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+  }
+  const dados = parsed.data;
+
+  const { supabase, clinicId, dentistaId, role } = await requireClinicContext();
+
+  // Espelha a RLS (pedidos_protetico_access): protético não cria pedido, só recebe.
+  if (role === "protetico") {
+    return { error: "Você não tem permissão para criar um pedido." };
+  }
+
+  const { count: proteticoCount } = await supabase
+    .from("dentistas")
+    .select("id", { count: "exact", head: true })
+    .eq("id", dados.proteticoId)
+    .eq("clinica_id", clinicId)
+    .eq("role", "protetico");
+
+  if ((proteticoCount ?? 0) === 0) {
+    return { error: "Protético não encontrado nesta clínica." };
+  }
+
+  const { count: pacCount } = await supabase
+    .from("pacientes")
+    .select("id", { count: "exact", head: true })
+    .eq("id", dados.pacienteId)
+    .eq("clinica_id", clinicId);
+
+  if ((pacCount ?? 0) === 0) {
+    return { error: "Paciente não encontrado." };
+  }
+
+  const { data, error } = await supabase
+    .from("pedidos_protetico")
+    .insert({
+      clinica_id:     clinicId,
+      protetico_id:   dados.proteticoId,
+      dentista_id:    dentistaId,
+      paciente_id:    dados.pacienteId,
+      agendamento_id: dados.agendamentoId ?? null,
+      observacao:     dados.observacao,
+      data_entrega:   dados.dataEntrega,
+    })
+    .select("id")
+    .single();
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/agendamentos");
+  revalidatePath("/dashboard/protetico");
   return { id: data.id };
 }
 
