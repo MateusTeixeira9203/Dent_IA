@@ -17,6 +17,7 @@ import {
   Stethoscope,
   CalendarOff,
   SlidersHorizontal,
+  Lock,
 } from 'lucide-react';
 import {
   Select,
@@ -27,7 +28,7 @@ import {
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { STATUS_CONFIG } from './status-config';
-import type { AgendamentoRow } from '../page';
+import type { AgendamentoRow, BloqueioRow } from '../page';
 import type { AgendamentoStatus } from '@/types/database';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -53,12 +54,16 @@ interface MonthViewProps {
   selectedDayCount: number;
   // Appointment list
   appointments: AgendamentoRow[];
+  /** R-102 — compromissos pessoais do dia selecionado, intercalados na lista por horário. */
+  bloqueios: BloqueioRow[];
   isSecretaria: boolean;
   filtroDentistaId: string;
   dentistas: { id: string; nome: string }[];
   canEdit: boolean;
   isFiltered?: boolean;
   onAppointmentClick: (apt: AgendamentoRow) => void;
+  /** R-102 — clique no card do bloqueio abre o dialog em modo edição. */
+  onBloqueioClick: (bloqueio: BloqueioRow) => void;
   onStatusChange: (id: string, status: string) => void;
   onNoShow: (id: string) => void;
   onCancel: (apt: AgendamentoRow) => void;
@@ -84,12 +89,14 @@ export function MonthView({
   todayCount,
   selectedDayCount,
   appointments,
+  bloqueios,
   isSecretaria,
   filtroDentistaId,
   dentistas,
   canEdit,
   isFiltered = false,
   onAppointmentClick,
+  onBloqueioClick,
   onStatusChange,
   onNoShow,
   onCancel,
@@ -99,6 +106,11 @@ export function MonthView({
   onRequestAssinatura,
   assinadosIds,
 }: MonthViewProps) {
+  // R-102 — bloqueio intercala na lista vertical por horário (spec §4.6).
+  const itens = [
+    ...appointments.map((a) => ({ kind: 'apt' as const, id: a.id, data: a })),
+    ...bloqueios.map((b) => ({ kind: 'bloqueio' as const, id: `bl-${b.id}`, data: b })),
+  ].sort((x, y) => x.data.data_hora.localeCompare(y.data.data_hora));
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 lg:gap-8">
 
@@ -219,14 +231,54 @@ export function MonthView({
           {/* Appointment list */}
           <div className="flex-1 p-6">
             <AnimatePresence mode="wait">
-              {appointments.length > 0 ? (
+              {itens.length > 0 ? (
                 <motion.div
                   key="list"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   className="relative border-l-2 border-border ml-4 space-y-8 pb-4"
                 >
-                  {appointments.map((apt, i) => {
+                  {itens.map((item, i) => {
+                    // R-102 — bloqueio: card neutro, sem seletor de status/ações clínicas.
+                    if (item.kind === 'bloqueio') {
+                      const bl = item.data;
+                      return (
+                        <motion.div
+                          key={item.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.1 + i * 0.1 }}
+                          className="relative pl-8 group"
+                        >
+                          <div className="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-4 border-surface shadow-sm bg-text-secondary/40" />
+                          <div
+                            onClick={() => onBloqueioClick(bl)}
+                            className="bg-surface-alt border border-border rounded-2xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer"
+                          >
+                            <div className="flex items-center gap-3 mb-2">
+                              <span className="font-mono text-lg font-medium text-text-secondary">
+                                {format(parseISO(bl.data_hora), 'HH:mm')}
+                              </span>
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-surface text-text-secondary border border-border">
+                                <Lock className="w-3 h-3" />
+                                Compromisso pessoal
+                              </span>
+                            </div>
+                            <h3 className="font-semibold text-lg text-text-primary">
+                              {bl.titulo || 'Compromisso pessoal'}
+                            </h3>
+                            {isSecretaria && bl.dentista && (
+                              <p className="text-xs text-text-secondary mt-1 flex items-center gap-1">
+                                <UserCog className="w-3 h-3" />
+                                Dr(a). {bl.dentista.nome}
+                              </p>
+                            )}
+                          </div>
+                        </motion.div>
+                      );
+                    }
+
+                    const apt = item.data;
                     const statusCfg = STATUS_CONFIG[apt.status as AgendamentoStatus] ?? STATUS_CONFIG.scheduled;
                     return (
                       <motion.div

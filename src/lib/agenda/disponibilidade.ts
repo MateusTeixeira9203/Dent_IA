@@ -22,6 +22,8 @@ export interface OcupadoDia {
   inicioMin: number;
   duracaoMin: number;
   pacienteNome: string | null;
+  /** R-102 — true quando este intervalo é um compromisso pessoal, não uma consulta. */
+  bloqueio?: boolean;
 }
 
 export interface DisponibilidadeDia {
@@ -49,6 +51,11 @@ type AgendadoRow = {
   data_hora: string;
   duracao_minutos: number;
   paciente: { nome: string } | null;
+};
+
+type BloqueioRow = {
+  data_hora: string;
+  duracao_minutos: number;
 };
 
 function horaParaMin(hhmmss: string): number {
@@ -106,8 +113,11 @@ export async function getDisponibilidadeSemana(params: {
   const db = createServiceClient();
   const { de, ate } = janelaDaVisao('semana', semanaInicioISO);
 
-  const [{ data: gradeRaw, error: gradeError }, { data: agendadosRaw, error: agendadosError }] =
-    await Promise.all([
+  const [
+    { data: gradeRaw, error: gradeError },
+    { data: agendadosRaw, error: agendadosError },
+    { data: bloqueiosRaw, error: bloqueiosError },
+  ] = await Promise.all([
       db.from('horarios_disponiveis')
         .select('dia_semana, hora_inicio, hora_fim, almoco_inicio, almoco_fim, intervalo_minutos')
         .eq('dentista_id', dentistaId)
@@ -120,10 +130,18 @@ export async function getDisponibilidadeSemana(params: {
         .neq('status', 'cancelled')
         .gte('data_hora', de)
         .lt('data_hora', ate),
+      // R-102 — compromisso pessoal ocupa a agenda igual consulta, sem paciente.
+      db.from('agenda_bloqueios')
+        .select('data_hora, duracao_minutos')
+        .eq('dentista_id', dentistaId)
+        .eq('clinica_id', clinicaId)
+        .gte('data_hora', de)
+        .lt('data_hora', ate),
     ]);
 
   if (gradeError) throw new Error(`[getDisponibilidadeSemana] horarios_disponiveis: ${gradeError.message}`);
   if (agendadosError) throw new Error(`[getDisponibilidadeSemana] agendamentos: ${agendadosError.message}`);
+  if (bloqueiosError) throw new Error(`[getDisponibilidadeSemana] agenda_bloqueios: ${bloqueiosError.message}`);
 
   const gradePorDiaSemana = new Map<number, GradeRow>();
   for (const g of (gradeRaw ?? []) as GradeRow[]) gradePorDiaSemana.set(g.dia_semana, g);
@@ -155,6 +173,15 @@ export async function getDisponibilidadeSemana(params: {
       inicioMin: minutoDoDia,
       duracaoMin: a.duracao_minutos,
       pacienteNome: a.paciente?.nome ?? null,
+    });
+  }
+  for (const bl of (bloqueiosRaw ?? []) as BloqueioRow[]) {
+    const { data, minutoDoDia } = partesBRT(new Date(bl.data_hora));
+    diaPorData.get(data)?.ocupados.push({
+      inicioMin: minutoDoDia,
+      duracaoMin: bl.duracao_minutos,
+      pacienteNome: null,
+      bloqueio: true,
     });
   }
 

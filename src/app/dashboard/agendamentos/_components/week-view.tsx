@@ -13,11 +13,11 @@ import {
   parseISO,
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 import { STATUS_CONFIG } from './status-config';
 import { calcularFaixas } from './layout-sobreposicao';
 import { corDoDentista, type DentistaAgenda } from './cor-dentista';
-import type { AgendamentoRow } from '../page';
+import type { AgendamentoRow, BloqueioRow } from '../page';
 import type { AgendamentoStatus } from '@/types/database';
 
 const HOUR_START  = 7;
@@ -48,9 +48,13 @@ const ALTURA_LINHA_CARGA = 62;
 interface WeekViewProps {
   /** Janela inteira, NÃO pré-filtrada — o mapa de carga precisa ver todos os dentistas. */
   agendamentos: AgendamentoRow[];
+  /** R-102 — compromissos pessoais da semana, mesma janela de `agendamentos`. */
+  bloqueios: BloqueioRow[];
   selectedWeek: Date;
   onWeekChange: (d: Date) => void;
   onAppointmentClick: (apt: AgendamentoRow) => void;
+  /** R-102 — clique no card do bloqueio abre o dialog em modo edição. */
+  onBloqueioClick: (bloqueio: BloqueioRow) => void;
   onDayClick: (d: Date) => void;
   isSecretaria: boolean;
   /** Mapa dentistaId → slot de cor. Vazio = sem faixa (dentista vendo a própria agenda). */
@@ -68,9 +72,11 @@ interface WeekViewProps {
 
 export function WeekView({
   agendamentos,
+  bloqueios,
   selectedWeek,
   onWeekChange,
   onAppointmentClick,
+  onBloqueioClick,
   onDayClick,
   isSecretaria,
   slotPorDentista,
@@ -110,6 +116,28 @@ export function WeekView({
     return map;
   }, [aptsEfetivos, days]);
 
+  // R-102 — mesmo recorte de semana + filtro de dentista que `aptsEfetivos`/`aptsByDay`.
+  const weekBloqueios = useMemo(() => {
+    return bloqueios.filter(bl => {
+      const d = parseISO(bl.data_hora);
+      return d >= weekStart && d <= weekEnd;
+    });
+  }, [bloqueios, weekStart, weekEnd]);
+
+  const bloqueiosEfetivos = useMemo(() => {
+    if (!isSecretaria || filtroDentistaId === 'todos') return weekBloqueios;
+    return weekBloqueios.filter(b => b.dentista_id === filtroDentistaId);
+  }, [weekBloqueios, isSecretaria, filtroDentistaId]);
+
+  const bloqueiosByDay = useMemo(() => {
+    const map: Record<string, BloqueioRow[]> = {};
+    for (const day of days) {
+      const key = format(day, 'yyyy-MM-dd');
+      map[key]  = bloqueiosEfetivos.filter(b => isSameDay(parseISO(b.data_hora), day));
+    }
+    return map;
+  }, [bloqueiosEfetivos, days]);
+
   const hours       = Array.from({ length: HOUR_END - HOUR_START }, (_, i) => HOUR_START + i);
   const totalHeight = (HOUR_END - HOUR_START) * SLOT_HEIGHT;
 
@@ -122,28 +150,50 @@ export function WeekView({
     return { top, height, bg, border, text };
   }
 
+  function getBloqueioStyle(bl: BloqueioRow) {
+    const d           = parseISO(bl.data_hora);
+    const hourDecimal = d.getHours() + d.getMinutes() / 60;
+    const top         = (hourDecimal - HOUR_START) * SLOT_HEIGHT;
+    const height      = Math.max((bl.duracao_minutos / 60) * SLOT_HEIGHT - 4, 22);
+    return { top, height };
+  }
+
+  // Itens combinados por dia (agendamento + bloqueio) — é sobre esta lista que o JSX itera.
+  const itensByDay = useMemo(() => {
+    const map: Record<string, Array<{ kind: 'apt'; id: string; data: AgendamentoRow } | { kind: 'bloqueio'; id: string; data: BloqueioRow }>> = {};
+    for (const day of days) {
+      const key = format(day, 'yyyy-MM-dd');
+      map[key] = [
+        ...(aptsByDay[key] ?? []).map((a) => ({ kind: 'apt' as const, id: a.id, data: a })),
+        ...(bloqueiosByDay[key] ?? []).map((b) => ({ kind: 'bloqueio' as const, id: `bl-${b.id}`, data: b })),
+      ];
+    }
+    return map;
+  }, [aptsByDay, bloqueiosByDay, days]);
+
   /**
    * Layout de sobreposição — BUG CORRIGIDO 21/07: todo card usava a largura inteira da
    * coluna, então dois horários sobrepostos eram desenhados no MESMO retângulo (texto por
    * cima de texto, o de baixo inclicável). Com o "marcar mesmo assim" e com consultas
    * longas (240min), sobreposição deixou de ser exceção.
    *
-   * O algoritmo mora em `layout-sobreposicao.ts`, compartilhado com a visão de Dia.
+   * O algoritmo mora em `layout-sobreposicao.ts`, compartilhado com a visão de Dia. Bloqueio
+   * (R-102) mescla nas MESMAS caixas — overlap entre bloqueio e consulta fica lado a lado.
    */
   const faixasPorDia = useMemo(() => {
     const porDia = new Map<string, ReturnType<typeof calcularFaixas>>();
     for (const day of days) {
       const key = format(day, 'yyyy-MM-dd');
-      const caixas = (aptsByDay[key] ?? [])
-        .map((apt) => {
-          const { top, height } = getAptStyle(apt);
-          return { id: apt.id, top, height };
+      const caixas = (itensByDay[key] ?? [])
+        .map(({ id, data, kind }) => {
+          const { top, height } = kind === 'apt' ? getAptStyle(data as AgendamentoRow) : getBloqueioStyle(data as BloqueioRow);
+          return { id, top, height };
         })
         .sort((a, b) => a.top - b.top); // `calcularFaixas` espera ordenado por topo
       porDia.set(key, calcularFaixas(caixas));
     }
     return porDia;
-  }, [aptsByDay, days]);
+  }, [itensByDay, days]);
 
   // Mapa de carga: contagem por dentista × dia, na semana inteira (não no filtro atual —
   // é ELE quem decide o filtro, faria pouco sentido já chegar filtrado).
@@ -310,7 +360,6 @@ export function WeekView({
             {/* Day columns */}
             {days.map(day => {
               const key      = format(day, 'yyyy-MM-dd');
-              const dayApts  = aptsByDay[key] ?? [];
               const destacado = !!diaDestacado && isSameDay(day, diaDestacado);
               return (
                 <div
@@ -338,14 +387,42 @@ export function WeekView({
                     style={{ height: `${totalHeight}px` }}
                   />
 
-                  {dayApts.map(apt => {
-                    const { top, height, bg, border, text } = getAptStyle(apt);
-                    // Sobrepostos dividem a coluna lado a lado; sozinho ocupa tudo.
-                    const fx = faixasPorDia.get(key)?.get(apt.id);
+                  {(itensByDay[key] ?? []).map(item => {
+                    const fx = faixasPorDia.get(key)?.get(item.id);
                     const leftPct = fx?.leftPct ?? 0;
                     const larguraPct = fx?.widthPct ?? 100;
                     const faixa = fx?.faixa ?? 0;
                     const faixas = fx?.faixas ?? 1;
+
+                    // R-102 — bloqueio: card neutro, sem status, clique abre o dialog de edição.
+                    if (item.kind === 'bloqueio') {
+                      const bl = item.data;
+                      const { top, height } = getBloqueioStyle(bl);
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onBloqueioClick(bl); }}
+                          title={`${format(parseISO(bl.data_hora), 'HH:mm')} — ${bl.titulo || 'Compromisso pessoal'}`}
+                          className="absolute rounded-md px-1.5 py-1 text-left cursor-pointer hover:brightness-95 active:brightness-90 transition-all overflow-hidden select-none border border-border bg-surface-alt"
+                          style={{
+                            top: `${top}px`,
+                            height: `${height}px`,
+                            left: `calc(${leftPct}% + 2px)`,
+                            width: `calc(${larguraPct}% - 4px)`,
+                            zIndex: faixas > 1 ? faixa + 1 : undefined,
+                          }}
+                        >
+                          <p className="text-[10px] font-semibold leading-tight truncate flex items-center gap-1 text-text-secondary">
+                            <Lock className="w-2.5 h-2.5 shrink-0" />
+                            {format(parseISO(bl.data_hora), 'HH:mm')} · {bl.titulo || 'Compromisso'}
+                          </p>
+                        </button>
+                      );
+                    }
+
+                    const apt = item.data;
+                    const { top, height, bg, border, text } = getAptStyle(apt);
                     const corSlot = slotPorDentista[apt.dentista_id];
                     return (
                       <div

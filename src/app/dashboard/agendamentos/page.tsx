@@ -33,6 +33,18 @@ export type AgendamentoRow = {
   criador: { id: string; nome: string } | null;
 };
 
+/** R-102 — compromisso pessoal do dentista, sem paciente. Tabela isolada de `agendamentos`. */
+export type BloqueioRow = {
+  id: string;
+  clinica_id: string;
+  dentista_id: string;
+  data_hora: string;
+  duracao_minutos: number;
+  titulo: string | null;
+  criado_por: string | null;
+  dentista: { id: string; nome: string } | null;
+};
+
 /** Agendamentos ativos depois do MÊS da âncora — o banner não segue a visão (spec §3.1). */
 export type ForaDaJanela = {
   total: number;
@@ -102,9 +114,24 @@ export default async function AgendamentosPage({ searchParams }: PageProps) {
     proximosQuery.eq('dentista_id', dentista.id);
   }
 
+  // R-102 — compromissos pessoais na mesma janela visível, mesmo filtro de dentista que
+  // `agendamentos` já usa (silo por dentista, exceto secretária).
+  const bloqueiosQuery = supabase
+    .from('agenda_bloqueios')
+    .select('id, clinica_id, dentista_id, data_hora, duracao_minutos, titulo, criado_por, dentista:dentistas!agenda_bloqueios_dentista_id_fkey(id, nome)')
+    .eq('clinica_id', dentista.clinica_id)
+    .gte('data_hora', janela.de)
+    .lt('data_hora', janela.ate)
+    .order('data_hora', { ascending: true });
+
+  if (!isSecretaria) {
+    bloqueiosQuery.eq('dentista_id', dentista.id);
+  }
+
   // Dados em paralelo: agendamentos + contagem de secretárias + o que está fora da janela
   // + protéticos ativos (R-94 — popula o bloco "Enviar pro protético" do modal, qualquer role)
-  const [{ data: agendamentosRaw }, { count: secretariaCount }, { data: proximosRaw }, { data: proteticosRaw }] =
+  // + compromissos pessoais (R-102)
+  const [{ data: agendamentosRaw }, { count: secretariaCount }, { data: proximosRaw }, { data: proteticosRaw }, { data: bloqueiosRaw }] =
     await Promise.all([
       query,
       supabase
@@ -121,6 +148,7 @@ export default async function AgendamentosPage({ searchParams }: PageProps) {
         .eq('role', 'protetico')
         .eq('ativo', true)
         .order('nome', { ascending: true }),
+      bloqueiosQuery,
     ]);
 
   const temSecretaria = (secretariaCount ?? 0) > 0;
@@ -174,6 +202,7 @@ export default async function AgendamentosPage({ searchParams }: PageProps) {
           controlado pelos props `visao`/`ancora`, então não precisa de remonte pra ficar em dia. */}
       <AgendamentosClient
         agendamentos={(agendamentosRaw ?? []) as unknown as AgendamentoRow[]}
+        bloqueios={(bloqueiosRaw ?? []) as unknown as BloqueioRow[]}
         clinicaId={dentista.clinica_id}
         role={dentista.role}
         dentistaAtualId={dentista.id}

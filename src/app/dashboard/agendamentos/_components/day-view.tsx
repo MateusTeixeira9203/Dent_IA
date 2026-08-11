@@ -7,12 +7,12 @@ import {
 import { ptBR } from 'date-fns/locale';
 import {
   ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle,
-  X as XIcon, FileText, CalendarOff, SlidersHorizontal, ThumbsUp,
+  X as XIcon, FileText, CalendarOff, SlidersHorizontal, ThumbsUp, Lock,
 } from 'lucide-react';
 import { STATUS_CONFIG } from './status-config';
 import { calcularFaixas } from './layout-sobreposicao';
 import { corDoDentista, type DentistaAgenda } from './cor-dentista';
-import type { AgendamentoRow } from '../page';
+import type { AgendamentoRow, BloqueioRow } from '../page';
 import type { AgendamentoStatus } from '@/types/database';
 
 const HOUR_START  = 7;
@@ -39,9 +39,13 @@ function horaDoClique(offsetY: number): string {
 
 interface DayViewProps {
   agendamentos: AgendamentoRow[];
+  /** R-102 — compromissos pessoais do dia, mesclados nas caixas antes de calcularFaixas. */
+  bloqueios: BloqueioRow[];
   selectedDate: Date;
   onDateChange: (d: Date) => void;
   onAppointmentClick: (apt: AgendamentoRow) => void;
+  /** R-102 — clique no card do bloqueio abre o dialog em modo edição. */
+  onBloqueioClick: (bloqueio: BloqueioRow) => void;
   isSecretaria: boolean;
   onConfirm: (id: string) => void;
   onCheckIn: (id: string) => void;
@@ -59,9 +63,11 @@ interface DayViewProps {
 
 export function DayView({
   agendamentos,
+  bloqueios,
   selectedDate,
   onDateChange,
   onAppointmentClick,
+  onBloqueioClick,
   isSecretaria,
   onConfirm,
   onCheckIn,
@@ -83,6 +89,13 @@ export function DayView({
       .sort((a, b) => a.data_hora.localeCompare(b.data_hora));
   }, [agendamentos, selectedDate]);
 
+  // R-102 — compromissos pessoais do dia, mesmo filtro de `dayApts`.
+  const dayBloqueios = useMemo(() => {
+    return bloqueios
+      .filter(bl => isSameDay(parseISO(bl.data_hora), selectedDate))
+      .sort((a, b) => a.data_hora.localeCompare(b.data_hora));
+  }, [bloqueios, selectedDate]);
+
   // Multi-coluna só quando há MAIS DE UM dentista pra separar (spec §3.3). Com 0 ou 1,
   // a coluna é uma só — comportamento idêntico ao de antes desta fatia — e `dentistaId`
   // ainda viaja pro clique quando dá pra saber de quem é (filtro num dentista específico).
@@ -93,27 +106,44 @@ export function DayView({
         dentistaId: c.id as string | undefined,
         nome: c.nome as string | undefined,
         apts: dayApts.filter((a) => a.dentista_id === c.id),
+        blocos: dayBloqueios.filter((b) => b.dentista_id === c.id),
       }));
     }
     return [{
       dentistaId: colunas[0]?.id as string | undefined,
       nome: undefined as string | undefined,
       apts: dayApts,
+      blocos: dayBloqueios,
     }];
-  }, [multiColuna, colunas, dayApts]);
+  }, [multiColuna, colunas, dayApts, dayBloqueios]);
 
-  // Layout com colunas internas: agendamentos cujas CAIXAS se sobrepõem visualmente (não só
-  // no tempo — o piso de altura infla consultas curtas) vão lado a lado, em vez de
-  // empilhados um sobre o outro. Calculado POR COLUNA — dois dentistas nunca disputam faixa.
+  // Itens combinados por coluna (agendamento + bloqueio), ordenados por horário — é sobre
+  // esta lista que o JSX itera, escolhendo o card certo por `kind`.
+  const itensPorColuna = useMemo(() => {
+    return colunasRender.map(({ apts, blocos }) => {
+      const itens = [
+        ...apts.map((a) => ({ kind: 'apt' as const, id: a.id, data: a })),
+        ...blocos.map((b) => ({ kind: 'bloqueio' as const, id: `bl-${b.id}`, data: b })),
+      ];
+      itens.sort((x, y) => x.data.data_hora.localeCompare(y.data.data_hora));
+      return itens;
+    });
+  }, [colunasRender]);
+
+  // Layout com colunas internas: itens (agendamento OU bloqueio) cujas CAIXAS se sobrepõem
+  // visualmente (não só no tempo — o piso de altura infla itens curtos) vão lado a lado, em
+  // vez de empilhados um sobre o outro. Calculado POR COLUNA — dois dentistas nunca disputam
+  // faixa. Bloqueio mescla nas MESMAS caixas que agendamento (spec §4.6) — overlap entre os
+  // dois fica lado a lado, não escondido.
   const layoutsPorColuna = useMemo(() => {
-    return colunasRender.map(({ apts }) => {
-      const boxes = apts.map(apt => {
-        const d           = parseISO(apt.data_hora);
+    return itensPorColuna.map((itens) => {
+      const boxes = itens.map(({ id, data }) => {
+        const d           = parseISO(data.data_hora);
         const hourDecimal = d.getHours() + d.getMinutes() / 60;
         const top         = (hourDecimal - HOUR_START) * SLOT_HEIGHT;
-        const height      = Math.max((apt.duracao_minutos / 60) * SLOT_HEIGHT - 6, MIN_APT_HEIGHT);
-        return { id: apt.id, top, bottom: top + height, height };
-      });
+        const height      = Math.max((data.duracao_minutos / 60) * SLOT_HEIGHT - 6, MIN_APT_HEIGHT);
+        return { id, top, bottom: top + height, height };
+      }).sort((a, b) => a.top - b.top);
       const faixas = calcularFaixas(boxes);
       const layout = new Map<string, { top: number; height: number; leftPct: number; widthPct: number }>();
       for (const b of boxes) {
@@ -127,7 +157,7 @@ export function DayView({
       }
       return layout;
     });
-  }, [colunasRender]);
+  }, [itensPorColuna]);
 
   function getAptColors(apt: AgendamentoRow) {
     return (STATUS_CONFIG[apt.status as AgendamentoStatus] ?? STATUS_CONFIG.scheduled).timeline;
@@ -236,7 +266,7 @@ export function DayView({
                     style={{ height: `${totalHeight}px` }}
                   />
 
-                  {coluna.apts.length === 0 && !multiColuna && (
+                  {itensPorColuna[colIdx].length === 0 && !multiColuna && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 pointer-events-none">
                       <div className="w-14 h-14 rounded-2xl bg-surface-alt border border-border flex items-center justify-center">
                         {isFiltered
@@ -257,10 +287,42 @@ export function DayView({
                     </div>
                   )}
 
-                  {coluna.apts.map(apt => {
-                    const lay = layout.get(apt.id);
+                  {itensPorColuna[colIdx].map(item => {
+                    const lay = layout.get(item.id);
                     if (!lay) return null;
                     const { top, height, leftPct, widthPct } = lay;
+
+                    // R-102 — bloqueio: card neutro, sem status/ações clínicas, clique
+                    // abre o dialog em modo edição (spec §6).
+                    if (item.kind === 'bloqueio') {
+                      const bl = item.data;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onBloqueioClick(bl); }}
+                          className="absolute rounded-xl overflow-hidden border border-border bg-surface-alt text-left px-3 py-1 flex flex-col justify-center min-w-0 hover:bg-surface transition-all"
+                          style={{
+                            top: `${top}px`,
+                            height: `${height}px`,
+                            left: `calc(${leftPct}% + 6px)`,
+                            width: `calc(${widthPct}% - 10px)`,
+                          }}
+                        >
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <Lock className="w-3 h-3 text-text-secondary shrink-0" />
+                            <span className="font-mono text-[11px] font-bold text-text-secondary">
+                              {format(parseISO(bl.data_hora), 'HH:mm')}
+                            </span>
+                          </div>
+                          <p className="font-semibold text-sm truncate leading-tight text-text-secondary">
+                            {bl.titulo || 'Compromisso pessoal'}
+                          </p>
+                        </button>
+                      );
+                    }
+
+                    const apt = item.data;
                     const { bg, border, text } = getAptColors(apt);
                     const corSlot = slotPorDentista[apt.dentista_id];
                     // G4 exige a faixa MESMO em multi-coluna: "Todos" com >1 dentista é

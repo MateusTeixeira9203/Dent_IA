@@ -87,12 +87,13 @@ export async function criarAgendamento(dados: {
   const novoFimMs = novoInicioMs + dados.duracaoMinutos * 60_000;
   const janela = janelaDeConflito(dados.dataHora);
 
-  // Duas checagens independentes, em paralelo:
+  // Três checagens independentes, em paralelo:
   //  1. Agenda do DENTISTA-alvo — visível pra este client (é a dele, ou ele é secretária).
   //  2. Agenda do PACIENTE — invisível: o paciente virou da clínica (migration 099), então
   //     outro dentista pode tê-lo agendado, e a RLS da agenda continua silo estrito. Por isso
   //     RPC SECURITY DEFINER: devolve só boolean, nunca com quem nem o quê (invariante #3).
-  const [{ data: agendamentosNoDia }, { data: pacienteOcupado, error: conflitoErr }] = await Promise.all([
+  //  3. Compromissos pessoais do DENTISTA-alvo (R-102) — mesma janela e mesmo silo da #1.
+  const [{ data: agendamentosNoDia }, { data: pacienteOcupado, error: conflitoErr }, { data: bloqueiosNoDia }] = await Promise.all([
     supabase
       .from('agendamentos')
       .select('data_hora, duracao_minutos')
@@ -106,6 +107,13 @@ export async function criarAgendamento(dados: {
       p_inicio: dados.dataHora,
       p_duracao_min: dados.duracaoMinutos,
     }),
+    supabase
+      .from('agenda_bloqueios')
+      .select('data_hora, duracao_minutos, titulo')
+      .eq('dentista_id', dentistaAlvo)
+      .eq('clinica_id', clinicId)
+      .gte('data_hora', janela.de)
+      .lt('data_hora', janela.ate),
   ]);
 
   // FALHA FECHADO. Sem isto, um erro na RPC deixa pacienteOcupado = null, o `=== true` dá
@@ -117,10 +125,10 @@ export async function criarAgendamento(dados: {
     return { error: 'Não foi possível verificar a agenda do paciente. Tente novamente.' };
   }
 
-  // Conflito na agenda do DENTISTA: sinaliza e deixa a UI decidir. Não é erro terminal —
-  // a recepção sobrepõe horário de propósito (retorno rápido, urgência entre consultas).
-  // Devolve `conflitoDentista` pra a tela oferecer "marcar mesmo assim"; só volta a barrar
-  // se o chamador NÃO pediu o override.
+  // Conflito na agenda do DENTISTA (outro agendamento OU compromisso pessoal, R-102):
+  // sinaliza e deixa a UI decidir. Não é erro terminal — a recepção sobrepõe horário de
+  // propósito (retorno rápido, urgência entre consultas). Devolve `conflitoDentista` pra a
+  // tela oferecer "marcar mesmo assim"; só volta a barrar se o chamador NÃO pediu o override.
   if (!dados.forcarConflitoDentista) {
     for (const ag of agendamentosNoDia ?? []) {
       const agInicioMs = new Date(ag.data_hora).getTime();
@@ -128,6 +136,16 @@ export async function criarAgendamento(dados: {
       if (agInicioMs < novoFimMs && agFimMs > novoInicioMs) {
         return {
           error: 'Este horário conflita com outro agendamento deste dentista.',
+          conflitoDentista: true,
+        };
+      }
+    }
+    for (const bl of bloqueiosNoDia ?? []) {
+      const blInicioMs = new Date(bl.data_hora).getTime();
+      const blFimMs = blInicioMs + bl.duracao_minutos * 60_000;
+      if (blInicioMs < novoFimMs && blFimMs > novoInicioMs) {
+        return {
+          error: `Este horário conflita com um compromisso pessoal${bl.titulo ? ` (${bl.titulo})` : ''} deste dentista.`,
           conflitoDentista: true,
         };
       }
@@ -267,8 +285,10 @@ export async function atualizarAgendamento(
     duracaoMinutos?: number;
     observacoes?: string | null;
     status?: StatusAgendamento;
+    /** Mesmo espírito do `forcarConflitoDentista` de `criarAgendamento` (R-102). */
+    forcarConflitoDentista?: boolean;
   }
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; conflitoDentista?: boolean }> {
   const { supabase, clinicId } = await requireClinicContext();
 
   // Reagendar não pode ser a porta dos fundos da invariante do criar: com o paciente
@@ -278,17 +298,20 @@ export async function atualizarAgendamento(
   if (dados.dataHora || dados.pacienteId || dados.duracaoMinutos) {
     const { data: atual } = await supabase
       .from("agendamentos")
-      .select("paciente_id, data_hora, duracao_minutos")
+      .select("paciente_id, data_hora, duracao_minutos, dentista_id")
       .eq("id", id)
       .eq("clinica_id", clinicId)
-      .maybeSingle<{ paciente_id: string; data_hora: string; duracao_minutos: number }>();
+      .maybeSingle<{ paciente_id: string; data_hora: string; duracao_minutos: number; dentista_id: string }>();
 
     if (!atual) return { error: "Agendamento não encontrado." };
 
+    const novaDataHora = dados.dataHora ?? atual.data_hora;
+    const novaDuracao = dados.duracaoMinutos ?? atual.duracao_minutos;
+
     const { data: pacienteOcupado, error: conflitoErr } = await supabase.rpc('paciente_tem_conflito_agenda', {
       p_paciente_id: dados.pacienteId ?? atual.paciente_id,
-      p_inicio:      dados.dataHora ?? atual.data_hora,
-      p_duracao_min: dados.duracaoMinutos ?? atual.duracao_minutos,
+      p_inicio:      novaDataHora,
+      p_duracao_min: novaDuracao,
       p_ignorar_id:  id, // não conflita consigo mesmo
     });
 
@@ -301,6 +324,32 @@ export async function atualizarAgendamento(
 
     if (pacienteOcupado === true) {
       return { error: 'Este paciente já tem um horário nesse intervalo.' };
+    }
+
+    // Conflito com compromisso pessoal do MESMO dentista (R-102) — só quando o horário
+    // muda de fato; mesmo espírito do override de criarAgendamento.
+    if (!dados.forcarConflitoDentista) {
+      const janela = janelaDeConflito(novaDataHora);
+      const { data: bloqueiosNoDia } = await supabase
+        .from('agenda_bloqueios')
+        .select('data_hora, duracao_minutos, titulo')
+        .eq('dentista_id', atual.dentista_id)
+        .eq('clinica_id', clinicId)
+        .gte('data_hora', janela.de)
+        .lt('data_hora', janela.ate);
+
+      const novoInicioMs = new Date(novaDataHora).getTime();
+      const novoFimMs = novoInicioMs + novaDuracao * 60_000;
+      for (const bl of bloqueiosNoDia ?? []) {
+        const blInicioMs = new Date(bl.data_hora).getTime();
+        const blFimMs = blInicioMs + bl.duracao_minutos * 60_000;
+        if (blInicioMs < novoFimMs && blFimMs > novoInicioMs) {
+          return {
+            error: `Este horário conflita com um compromisso pessoal${bl.titulo ? ` (${bl.titulo})` : ''} deste dentista.`,
+            conflitoDentista: true,
+          };
+        }
+      }
     }
   }
 
@@ -601,7 +650,7 @@ export async function criarEncaixe(dados: {
   const novoEnd = novoStart + dados.duracaoMinutos * 60_000;
   const janelaEncaixe = janelaDeConflito(dados.dataHora);
 
-  const [{ data: existing }, { data: pacienteOcupado, error: conflitoErr }] = await Promise.all([
+  const [{ data: existing }, { data: pacienteOcupado, error: conflitoErr }, { data: bloqueiosNoDia }] = await Promise.all([
     supabase
       .from('agendamentos')
       .select('data_hora, duracao_minutos')
@@ -615,6 +664,14 @@ export async function criarEncaixe(dados: {
       p_inicio: dados.dataHora,
       p_duracao_min: dados.duracaoMinutos,
     }),
+    // Compromisso pessoal do dentista (R-102) conta como horário ocupado, igual outro agendamento.
+    supabase
+      .from('agenda_bloqueios')
+      .select('data_hora, duracao_minutos')
+      .eq('dentista_id', dentistaAlvo)
+      .eq('clinica_id', clinicId)
+      .gte('data_hora', janelaEncaixe.de)
+      .lt('data_hora', janelaEncaixe.ate),
   ]);
 
   // Falha fechado — ver criarAgendamento. Aqui é ainda mais importante: o encaixe TEM um
@@ -636,6 +693,10 @@ export async function criarEncaixe(dados: {
     const aStart = new Date(a.data_hora).getTime();
     const aEnd = aStart + (a.duracao_minutos ?? 30) * 60_000;
     return novoStart < aEnd && novoEnd > aStart;
+  }) || (bloqueiosNoDia ?? []).some(bl => {
+    const blStart = new Date(bl.data_hora).getTime();
+    const blEnd = blStart + bl.duracao_minutos * 60_000;
+    return novoStart < blEnd && novoEnd > blStart;
   });
 
   if (temConflito && !dados.forcarEncaixe) {
@@ -739,5 +800,167 @@ export async function criarPedidoProtetico(input: {
   revalidatePath("/dashboard/agendamentos");
   revalidatePath("/dashboard/protetico");
   return { id: data.id };
+}
+
+// ── Compromisso pessoal (R-102) — bloqueia a própria agenda, sem paciente ────
+// Tabela isolada `agenda_bloqueios` (spec §2) — nunca toca em `agendamentos`.
+
+const compromissoPessoalSchema = z.object({
+  dataHora:       z.string().min(1),
+  duracaoMinutos: z.coerce.number().int().min(5).max(600),
+  titulo:         z.string().trim().max(120).nullable().optional(),
+  dentistaId:     z.string().uuid().optional(),
+  forcarConflito: z.boolean().optional(),
+});
+
+export async function criarCompromissoPessoal(input: {
+  dataHora: string;
+  duracaoMinutos: number;
+  titulo: string | null;
+  dentistaId?: string;
+  forcarConflito?: boolean;
+}): Promise<{ error?: string; id?: string; conflito?: boolean }> {
+  const parsed = compromissoPessoalSchema.safeParse(input);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+  const dados = parsed.data;
+
+  const { supabase, clinicId, dentistaId } = await requireClinicContext();
+  const dentistaAlvo = dados.dentistaId ?? dentistaId;
+
+  // Mesmo padrão de criarPedidoProtetico (R-94): só a secretária informa dentistaId, e
+  // só é aceito se ele for admin/dentista da clínica ativa (RLS reforça isso de qualquer
+  // forma no insert — esta checagem só devolve um erro legível em vez de um 0-linhas mudo).
+  if (dados.dentistaId && dados.dentistaId !== dentistaId) {
+    const { count } = await supabase
+      .from("dentistas")
+      .select("id", { count: "exact", head: true })
+      .eq("id", dados.dentistaId)
+      .eq("clinica_id", clinicId)
+      .in("role", ["admin", "dentista"]);
+    if ((count ?? 0) === 0) return { error: "Dentista não encontrado." };
+  }
+
+  const novoInicioMs = new Date(dados.dataHora).getTime();
+  const novoFimMs = novoInicioMs + dados.duracaoMinutos * 60_000;
+  const janela = janelaDeConflito(dados.dataHora);
+
+  // Conflito com consulta já marcada (sentido inverso de criarAgendamento) — aviso, com
+  // override (spec §2: "aviso + marcar mesmo assim nos 2 sentidos"). Não checa contra outro
+  // bloqueio — dois bloqueios sobrepostos não causam dano.
+  if (!dados.forcarConflito) {
+    const { data: agendamentosNoDia } = await supabase
+      .from("agendamentos")
+      .select("data_hora, duracao_minutos")
+      .eq("dentista_id", dentistaAlvo)
+      .eq("clinica_id", clinicId)
+      .in("status", ["scheduled", "confirmed", "checked_in", "in_progress", "completed"])
+      .gte("data_hora", janela.de)
+      .lt("data_hora", janela.ate);
+
+    for (const ag of agendamentosNoDia ?? []) {
+      const agInicioMs = new Date(ag.data_hora).getTime();
+      const agFimMs = agInicioMs + (ag.duracao_minutos ?? 30) * 60_000;
+      if (agInicioMs < novoFimMs && agFimMs > novoInicioMs) {
+        return { conflito: true };
+      }
+    }
+  }
+
+  const { data, error } = await supabase
+    .from("agenda_bloqueios")
+    .insert({
+      clinica_id:      clinicId,
+      dentista_id:     dentistaAlvo,
+      data_hora:       dados.dataHora,
+      duracao_minutos: dados.duracaoMinutos,
+      titulo:          dados.titulo || null,
+      criado_por:      dentistaId,
+    })
+    .select("id")
+    .single();
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/agendamentos");
+  return { id: data.id };
+}
+
+export async function atualizarCompromissoPessoal(
+  id: string,
+  input: { dataHora?: string; duracaoMinutos?: number; titulo?: string | null; forcarConflito?: boolean },
+): Promise<{ error?: string; conflito?: boolean }> {
+  const { supabase, clinicId } = await requireClinicContext();
+
+  if (input.dataHora || input.duracaoMinutos) {
+    const { data: atual } = await supabase
+      .from("agenda_bloqueios")
+      .select("dentista_id, data_hora, duracao_minutos")
+      .eq("id", id)
+      .eq("clinica_id", clinicId)
+      .maybeSingle<{ dentista_id: string; data_hora: string; duracao_minutos: number }>();
+
+    if (!atual) return { error: "Compromisso não encontrado." };
+
+    const novaDataHora = input.dataHora ?? atual.data_hora;
+    const novaDuracao = input.duracaoMinutos ?? atual.duracao_minutos;
+
+    if (!input.forcarConflito) {
+      const janela = janelaDeConflito(novaDataHora);
+      const { data: agendamentosNoDia } = await supabase
+        .from("agendamentos")
+        .select("data_hora, duracao_minutos")
+        .eq("dentista_id", atual.dentista_id)
+        .eq("clinica_id", clinicId)
+        .in("status", ["scheduled", "confirmed", "checked_in", "in_progress", "completed"])
+        .gte("data_hora", janela.de)
+        .lt("data_hora", janela.ate);
+
+      const novoInicioMs = new Date(novaDataHora).getTime();
+      const novoFimMs = novoInicioMs + novaDuracao * 60_000;
+      for (const ag of agendamentosNoDia ?? []) {
+        const agInicioMs = new Date(ag.data_hora).getTime();
+        const agFimMs = agInicioMs + (ag.duracao_minutos ?? 30) * 60_000;
+        if (agInicioMs < novoFimMs && agFimMs > novoInicioMs) {
+          return { conflito: true };
+        }
+      }
+    }
+  }
+
+  // .select() confirma a linha afetada — RLS barrada (dentista alheio) devolve 0 linhas
+  // SEM erro (mesma classe do R-66); sem checar, a tela mentiria sucesso.
+  const { data: updated, error } = await supabase
+    .from("agenda_bloqueios")
+    .update({
+      ...(input.dataHora && { data_hora: input.dataHora }),
+      ...(input.duracaoMinutos && { duracao_minutos: input.duracaoMinutos }),
+      ...(input.titulo !== undefined && { titulo: input.titulo || null }),
+    })
+    .eq("id", id)
+    .eq("clinica_id", clinicId)
+    .select("id");
+
+  if (error) return { error: error.message };
+  if (!updated?.length) return { error: "Não foi possível editar este compromisso." };
+
+  revalidatePath("/dashboard/agendamentos");
+  return {};
+}
+
+export async function excluirCompromissoPessoal(id: string): Promise<{ error?: string }> {
+  const { supabase, clinicId } = await requireClinicContext();
+
+  const { data: deleted, error } = await supabase
+    .from("agenda_bloqueios")
+    .delete()
+    .eq("id", id)
+    .eq("clinica_id", clinicId)
+    .select("id");
+
+  if (error) return { error: error.message };
+  if (!deleted?.length) return { error: "Não foi possível excluir este compromisso." };
+
+  revalidatePath("/dashboard/agendamentos");
+  return {};
 }
 

@@ -24,6 +24,7 @@ import {
   UserPlus,
   CalendarClock,
   ChevronRight,
+  Lock,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 const AssinaturaRecepcaoModal = dynamic(
@@ -79,7 +80,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ToggleSwitch } from '@/components/ui/toggle-switch';
-import type { AgendamentoRow, ForaDaJanela } from '../page';
+import type { AgendamentoRow, BloqueioRow, ForaDaJanela } from '../page';
 import {
   atualizarStatusAgendamento,
   atualizarAgendamento,
@@ -103,6 +104,7 @@ import { WeekView } from './week-view';
 import { DayView } from './day-view';
 import { MonthView } from './month-view';
 import { AtenderAgoraModal } from './atender-agora-modal';
+import { CompromissoPessoalDialog } from './compromisso-pessoal-dialog';
 import { BotaoMensagemIA } from '@/components/orcamentos/botao-mensagem-ia';
 import { StatusBadge } from './status-badge';
 
@@ -120,6 +122,8 @@ const STATUS_PT: Record<string, string> = {
 
 interface Props {
   agendamentos: AgendamentoRow[];
+  /** R-102 — compromissos pessoais na mesma janela visível. */
+  bloqueios: BloqueioRow[];
   clinicaId: string;
   role: DentistaRole;
   dentistaAtualId: string;
@@ -149,6 +153,7 @@ interface Props {
 
 export function AgendamentosClient({
   agendamentos: inicial,
+  bloqueios: bloqueiosIniciais,
   clinicaId: _clinicaId,
   role,
   dentistaAtualId,
@@ -190,6 +195,7 @@ export function AgendamentosClient({
   );
 
   const [agendamentos, setAgendamentos] = useState(inicial);
+  const [bloqueios, setBloqueios] = useState(bloqueiosIniciais);
 
   /**
    * Dia em foco DENTRO da janela carregada — só a visão de Mês usa, pra listar o dia clicado
@@ -244,6 +250,9 @@ export function AgendamentosClient({
   useEffect(() => {
     setAgendamentos(inicial);
   }, [inicial]);
+  useEffect(() => {
+    setBloqueios(bloqueiosIniciais);
+  }, [bloqueiosIniciais]);
 
   // Multi-user: recarrega os agendamentos do mês.
   //
@@ -261,13 +270,23 @@ export function AgendamentosClient({
     // é como o defeito nasceu. Agora há um só, e ele mora em `janelaDaVisao`.
     const janela = janelaDaVisao(visao, ancora);
     const supabase = createClient();
-    const { data, error } = await supabase
-      .from('agendamentos')
-      .select('id, clinica_id, paciente_id, dentista_id, data_hora, duracao_minutos, status, origem, observacoes, created_at, paciente:pacientes(id, nome, observacoes), dentista:dentistas!agendamentos_dentista_id_fkey(id, nome), criador:dentistas!agendamentos_created_by_fkey(id, nome)')
-      .eq('clinica_id', _clinicaId)
-      .gte('data_hora', janela.de)
-      .lt('data_hora', janela.ate)
-      .order('data_hora');
+    const [{ data, error }, { data: bloqueiosData, error: bloqueiosErr }] = await Promise.all([
+      supabase
+        .from('agendamentos')
+        .select('id, clinica_id, paciente_id, dentista_id, data_hora, duracao_minutos, status, origem, observacoes, created_at, paciente:pacientes(id, nome, observacoes), dentista:dentistas!agendamentos_dentista_id_fkey(id, nome), criador:dentistas!agendamentos_created_by_fkey(id, nome)')
+        .eq('clinica_id', _clinicaId)
+        .gte('data_hora', janela.de)
+        .lt('data_hora', janela.ate)
+        .order('data_hora'),
+      // R-102 — mesma janela, RLS já restringe ao próprio dentista (ou aos dois, se secretária).
+      supabase
+        .from('agenda_bloqueios')
+        .select('id, clinica_id, dentista_id, data_hora, duracao_minutos, titulo, criado_por, dentista:dentistas!agenda_bloqueios_dentista_id_fkey(id, nome)')
+        .eq('clinica_id', _clinicaId)
+        .gte('data_hora', janela.de)
+        .lt('data_hora', janela.ate)
+        .order('data_hora'),
+    ]);
     // Antes o erro era engolido (`if (data)`) e a lista ficava velha em silêncio —
     // e é dela que sai o aviso de conflito. Falhar calado aqui é mentir na tela.
     if (error) {
@@ -275,7 +294,9 @@ export function AgendamentosClient({
       toast.error('Não foi possível atualizar a agenda. Recarregue a página.');
       return;
     }
+    if (bloqueiosErr) console.error('[agenda] recarregar bloqueios falhou:', bloqueiosErr.message);
     if (data) setAgendamentos(data as unknown as AgendamentoRow[]);
+    if (bloqueiosData) setBloqueios(bloqueiosData as unknown as BloqueioRow[]);
   }, [_clinicaId, visao, ancora]);
 
   useEffect(() => {
@@ -357,6 +378,10 @@ export function AgendamentosClient({
   // Walk-in "Atender agora" — busca/cria paciente e cai direto na consulta (#2)
   const [isAtenderAgoraOpen, setIsAtenderAgoraOpen] = useState(false);
 
+  // Compromisso pessoal (R-102) — bloqueio sem paciente
+  const [isCompromissoOpen, setIsCompromissoOpen] = useState(false);
+  const [compromissoEditando, setCompromissoEditando] = useState<BloqueioRow | null>(null);
+
   // Walk-in / encaixe
   const [isEncaixeOpen, setIsEncaixeOpen] = useState(false);
   const [encaixeForm, setEncaixeForm] = useState({
@@ -407,6 +432,17 @@ export function AgendamentosClient({
     return agendamentosFiltrados;
   }, [isSecretaria, filtroDentistaId, dentistasOrdenados, agendamentos, agendamentosFiltrados]);
 
+  // R-102 — mesmo filtro de dentista que `agendamentosFiltrados`/`agendamentosParaDayView`.
+  const bloqueiosFiltrados = useMemo(() => {
+    if (!isSecretaria || filtroDentistaId === 'todos') return bloqueios;
+    return bloqueios.filter((b) => b.dentista_id === filtroDentistaId);
+  }, [bloqueios, isSecretaria, filtroDentistaId]);
+
+  const bloqueiosParaDayView = useMemo(() => {
+    if (isSecretaria && filtroDentistaId === 'todos' && dentistasOrdenados.length > 1) return bloqueios;
+    return bloqueiosFiltrados;
+  }, [isSecretaria, filtroDentistaId, dentistasOrdenados, bloqueios, bloqueiosFiltrados]);
+
   // Dias do calendário para o mês atual
   const calendarDays = useMemo(() => {
     const start = startOfWeek(startOfMonth(currentMonth));
@@ -428,6 +464,15 @@ export function AgendamentosClient({
         .filter((apt) => isSameDay(parseISO(apt.data_hora), selectedDate))
         .sort((a, b) => a.data_hora.localeCompare(b.data_hora)),
     [agendamentosFiltrados, selectedDate]
+  );
+
+  // R-102 — compromissos pessoais do dia selecionado, mesmo filtro do Mês.
+  const bloqueiosDoDiaSelecionado = useMemo(
+    () =>
+      bloqueiosFiltrados
+        .filter((b) => isSameDay(parseISO(b.data_hora), selectedDate))
+        .sort((a, b) => a.data_hora.localeCompare(b.data_hora)),
+    [bloqueiosFiltrados, selectedDate]
   );
 
   // Detecta conflito de horário para o formulário de novo agendamento
@@ -1128,6 +1173,18 @@ export function AgendamentosClient({
             </button>
           )}
 
+          {/* Compromisso pessoal (R-102) — bloqueia a própria agenda, sem paciente.
+              Dentista solo também precisa (não é só ferramenta de secretária). */}
+          {canEdit && (
+            <button
+              onClick={() => { setCompromissoEditando(null); setIsCompromissoOpen(true); }}
+              className="border border-border text-text-secondary hover:bg-surface-alt hover:text-text-primary active:scale-[0.98] px-4 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all"
+            >
+              <Lock className="w-4 h-4" />
+              Compromisso pessoal
+            </button>
+          )}
+
           {/* Novo Agendamento — plano SOLO ou secretária */}
           {canEdit && (
             <button
@@ -1187,9 +1244,11 @@ export function AgendamentosClient({
         >
           <DayView
             agendamentos={agendamentosParaDayView}
+            bloqueios={bloqueiosParaDayView}
             selectedDate={selectedDate}
             onDateChange={(d) => irPara('dia', d)}
             onAppointmentClick={handleOpenDetail}
+            onBloqueioClick={(bl) => { setCompromissoEditando(bl); setIsCompromissoOpen(true); }}
             isSecretaria={isSecretaria}
             isFiltered={isFiltered}
             onConfirm={(id) => void handleStatusChange(id, 'confirmed')}
@@ -1215,9 +1274,11 @@ export function AgendamentosClient({
         >
           <WeekView
             agendamentos={agendamentos}
+            bloqueios={bloqueios}
             selectedWeek={ancoraDate}
             onWeekChange={(d) => irPara('semana', d)}
             onAppointmentClick={handleOpenDetail}
+            onBloqueioClick={(bl) => { setCompromissoEditando(bl); setIsCompromissoOpen(true); }}
             onDayClick={(d) => irPara('dia', d)}
             isSecretaria={isSecretaria}
             slotPorDentista={slotPorDentista}
@@ -1250,6 +1311,8 @@ export function AgendamentosClient({
           todayCount={agendamentosFiltrados.filter((a) => isDateToday(parseISO(a.data_hora))).length}
           selectedDayCount={filteredAppointments.length}
           appointments={filteredAppointments}
+          bloqueios={bloqueiosDoDiaSelecionado}
+          onBloqueioClick={(bl) => { setCompromissoEditando(bl); setIsCompromissoOpen(true); }}
           isSecretaria={isSecretaria}
           filtroDentistaId={filtroDentistaId}
           dentistas={dentistas}
@@ -1903,6 +1966,17 @@ export function AgendamentosClient({
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Compromisso pessoal (R-102) — criar/editar/excluir bloqueio sem paciente */}
+      <CompromissoPessoalDialog
+        open={isCompromissoOpen}
+        onOpenChange={(o) => { setIsCompromissoOpen(o); if (!o) setCompromissoEditando(null); }}
+        dentistas={dentistasOrdenados}
+        isSecretaria={isSecretaria}
+        dentistaAtualId={dentistaAtualId}
+        editando={compromissoEditando}
+        onSalvo={() => void recarregarAgendamentos(true)}
+      />
 
       {/* Modal: Assinatura do paciente */}
       {assinaturaModal && (
