@@ -1,11 +1,15 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · atualizado **2026-08-10** · ordenado por **importância pro dentista**
+> **ROADMAP** · atualizado **2026-08-11** · ordenado por **importância pro dentista**
 > **Último push:** 10/08 — R-99 no ar (`21f5138`..`3ff81e0`): anotar a radiografia (5 ícones +
 > desenho livre, editor e ao vivo na apresentação), fix do AlertDialog atrás de modal, implante
 > mais robusto no odontograma. **Testado e aprovado por ele**, 3 rodadas de ajuste ao vivo.
-> **Fila:** 27⏳ · **🟡 codado/no ar sem verificação pessoal dele:** 38 · **💡 ideia sem spec:** 3 ·
-> **Concluídos:** 33 · **Congelado:** 3 · **Cortado:** 10
+> **Fila:** 27⏳ · **🟡 codado/no ar sem verificação pessoal dele:** 40 · **💡 ideia sem spec:** 3 ·
+> **Concluídos:** 34 · **Congelado:** 3 · **Cortado:** 10
+> **🔵 ATIVO: [R-102](specs/R-102-compromisso-pessoal-agenda.md)** — codado 11/08 (migration 138
+> aplicada, RLS espelha `agendamentos_access`), typecheck/lint/build limpos, layout revisado e
+> aprovado por ele. **G1-G6 (criar/conflito nos 2 sentidos/gate de 2 contas) sem teste ao vivo**
+> — G6 e G3/G4 são o que definem o item (spec §9).
 > **Decisão de produto 10/08 — hierarquia e identidade:** toda conta é clínica; Solo e Clínica são
 > planos **por tamanho**, não dois tipos de entidade; "consultório" sai do vocabulário; admin = quem
 > paga. Reescreveu a [R-36](specs/R-36-um-login-uma-clinica.md) e abriu **R-96** e **R-97**.
@@ -90,8 +94,9 @@ prioridade, por melhor que seja.
 | **R-85** | 🐛 "Gerar orçamento" a partir do rascunho (antes de Salvar) cobrava sem nenhum vínculo clínico | 🟡 corrigido e commitado 09/08 (`a32cd88`) — `salvarFicha` separa "gravar" de "fechar o atendimento"; toda chamada grava os itens atuais (não só a 1ª). Testado ao vivo por mim (Teste01, cenário completo). **Ele ainda não testou pessoalmente. Sem push** | G |
 | **R-86** | 🐛 "Salvar e passar" podia falhar sem avisar — POST 503, nada persistido, botão travava | 🟡 corrigido e commitado 09/08 (`e43e2af`) — `handleSalvar` sem `try/catch`; mesmo fix no quiet-save do R-85. Testado forçando a falha por interceptação de `fetch`. **Causa do 503 não isolada** (provável infra). **Ele ainda não testou. Sem push** | M |
 | **R-87** | 🔧 Erro de hidratação React (#418) em toda navegação — dashboard, orçamentos, pacientes, ficha do paciente | ⏳ achado 08/08 (auditoria completa). Reproduzido 5× em 4 rotas diferentes, mesmo chunk (`4bd1b696…js`). Não travou nenhuma tela nem perdeu dado observado, mas é sistêmico — cheira a componente compartilhado do layout (nav/sino de notificação?) com mismatch servidor/cliente. Sem investigação de causa raiz ainda | P |
-| **R-81** | 👥 Secretária registra PELO dentista — fluxo real relatado por ele 08/08, hoje **bloqueado** (`meu-dia/page.tsx:24` redireciona secretaria) | ⏳ achado 08/08. **Possivelmente mais valioso que o R-78 inteiro** — dentista fica presente e dita em tempo real, ela só executa. Precisa de seletor "dia de quem" + `dentistaId` explícito + gate de 2 contas. Sem spec | G |
+| **R-81** | 👥 Secretária registra PELO dentista — fluxo real relatado por ele 08/08, hoje **bloqueado** (`meu-dia/page.tsx:24` redireciona secretaria) | ⏳ achado 08/08, escopo corrigido 10/08: é a secretária **dentro da sala**, no computador do dentista, usando a sessão dele já logada — **sem perfil próprio, sem seletor de "dia de quem", sem gate de 2 contas**. "Possivelmente mais valioso que o R-78 inteiro" — dentista fica presente e dita em tempo real, ela só executa. Sem spec | G |
 | [**R-94**](specs/R-94-agenda-do-protetico.md) | **Agenda do protético** — role novo (login como o da secretária), pedido criado no agendamento (paciente + obs + data), calendário só dele, marca "entregue" | 🟡 **codado, testado ao vivo e no ar 10/08** (`58f6c14`..`3f295d8`, migrations 128-133). Ele confirmou funcionando. Mitigação do fail-open: gate de ponto único no layout. 4 bugs achados testando: loop infinito de redirect (derrubava o servidor), alerta de CRO vazando pro protético, login passando por `/dashboard` à toa (~2.4s), ponto do calendário mentindo status. **Falta o G6 (2 contas deliberado)** | G |
+| [**R-102**](specs/R-102-compromisso-pessoal-agenda.md) | Compromisso pessoal do dentista — bloqueia a própria agenda (dia + hora início/fim), sem paciente | 🟡 **codado e commitado 11/08** (migration 138 aplicada) — tabela isolada de `agendamentos`, RLS espelha `agendamentos_access`, conflito nos 2 sentidos, bot/retorno respeitam via `getDisponibilidadeSemana`. Layout revisado (1ª versão copiou o Sheet antigo de Encaixe; corrigido pro padrão Dialog do Novo Agendamento). **G1-G6 sem teste ao vivo** — G6 (2 contas) e G3/G4 (conflito) definem o item | M |
 
 ## Bloco 2 — Orçamento e financeiro
 
@@ -110,7 +115,7 @@ prioridade, por melhor que seja.
 | [R-38](specs/R-38-orcamento-apresentacao-ao-paciente.md) | Orçamento: como o paciente vê — PDF sem preço por item, só total e condição | 🟡 codado, testado, commitado e no ar (31/07) — toggle no rodapé, PDF respeita o flag, snapshot do aceite grava o flag (G1-G6 verificados) | P |
 | [R-10](ROADMAP.md) | P2: tirar a observação clínica do documento que o paciente lê | ⏳ P1 ✅ em prod. P2 precisa de decisão — `dentes_observacoes` alimenta orçamento **e** prontuário | P |
 | [**R-98a**](specs/R-98-apresentar-visual-blocos-modelo.md) | Tipo de bloco (`texto`/`imagem`/`odontograma`) + fix do bug de persistência | 🟡 **codado, testado ao vivo e aprovado por ele 10/08** (`4fe53e2`..`0b86843`, migration 134). 🐛 corrigido: geração por IA nunca salvava — 23 chamadas, 6 de dentistas reais, 0 linhas correspondentes. 2 achados extras corrigidos no teste: botão Apresentar preso a ter ficha, protético sem `PageContainer`. **Falta produção — veredito dele hoje à noite** | G |
-| **R-98b** | Modelo reutilizável — dentista salva a sequência de blocos e reusa a partir do 2º paciente | ⏳ depende do 98a em produção. [Spec](specs/R-98-apresentar-visual-blocos-modelo.md) já escrita (§4.2) | M |
+| **R-98b** | Modelo reutilizável — dentista salva a sequência de blocos e reusa a partir do 2º paciente | 🟡 **codado 11/08** (migration 136 aplicada) — mas o botão "Salvar como meu modelo" está **desativado** a pedido dele, motivo não explicado. `Usar meu modelo` fica inerte sem ele. Sem commit | M |
 
 ## Bloco 3 — Assinatura e prova
 
@@ -182,6 +187,7 @@ aparente (ver a agenda do Dr. Y ≠ ver os agendamentos do paciente X).
 
 | ID | Item | Fechado |
 |---|---|---|
+| [R-101](_arquivo/specs/R-101-odontograma-proxima-secao.md) | Odontograma: 3º estado "próxima seção" (âmbar) — `momento_planejado` ortogonal ao `status` | 2026-08-11 — testado e aprovado por ele |
 | [R-99](_arquivo/specs/R-99-anotar-radiografia.md) | Anotar a radiografia — 5 ícones (mover/girar/redimensionar) + desenho livre, editor e ao vivo na apresentação | 2026-08-10 — testado e aprovado por ele, 3 rodadas de ajuste ao vivo (clique vazando pro palco, ferramenta sticky, toolbar cobrindo a alça de girar) |
 | R-82 | Campo mágico trava a aba com documento anexado — `anexarTexto` memoizado | 2026-08-08 — confirmado pessoalmente por ele (cenário de documento real) |
 | R-75 | Dex não marca "realizado" em upload de histórico só pelo verbo no passado | 2026-08-08 — confirmado pessoalmente por ele (upload real na UI) |
