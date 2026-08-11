@@ -18,14 +18,21 @@ import {
   LayoutGrid,
   Type,
   ScanFace,
+  Pencil,
+  Circle,
+  ArrowUpRight,
+  PenTool,
+  Minus,
 } from 'lucide-react';
 import Image from 'next/image';
 import { HelpTooltip } from '@/components/ui/help-tooltip';
 import { getSectionStatus } from '@/lib/constants/treatment-status';
 import type { Tratamento } from '@/app/dashboard/pacientes/[id]/tratamento-actions';
-import type { SectionTipo } from '@/hooks/usePlanejamentoPaciente';
+import type { SectionTipo, AnotacaoOverlay, FormaDesenho } from '@/hooks/usePlanejamentoPaciente';
 import { Odontograma } from '@/components/odontograma/Odontograma';
 import type { OdontogramaEventoDraft } from '@/types/odontograma';
+import { ANOTACAO_TIPOS, AnotacaoIcone } from './anotacao-simbolos';
+import { AnotacaoOverlayImagem, type FerramentaAnotacao } from './anotacao-overlay-imagem';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
@@ -48,6 +55,7 @@ interface Section {
   title: string;
   content: string;
   imageIds: string[];
+  anotacoes: AnotacaoOverlay[];
   status: 'pendente' | 'em_andamento' | 'concluido';
   dataEstimada: string | null;
 }
@@ -57,6 +65,24 @@ const TIPO_BLOCO: { tipo: SectionTipo; label: string; icon: typeof Type }[] = [
   { tipo: 'imagem', label: 'Imagem', icon: ImageIcon },
   { tipo: 'odontograma', label: 'Odontograma', icon: ScanFace },
 ];
+
+// ─── R-99 — ferramentas de desenho livre (D13, 10/08) — linha/círculo/seta/traço. ──
+// Os 5 tipos com ícone (canal/coroa/implante/pino/extração) vêm de anotacao-simbolos.tsx;
+// aqui só os 4 que não têm símbolo tipado, ícone genérico do lucide-react.
+
+const DESENHO_TIPOS: { modo: FormaDesenho | 'traco'; label: string; Icon: typeof Circle }[] = [
+  { modo: 'traco', label: 'Traço', Icon: PenTool },
+  { modo: 'linha', label: 'Linha', Icon: Minus },
+  { modo: 'circulo', label: 'Círculo', Icon: Circle },
+  { modo: 'seta', label: 'Seta', Icon: ArrowUpRight },
+];
+
+function ferramentaEhIgual(a: FerramentaAnotacao | null, b: FerramentaAnotacao): boolean {
+  if (!a || a.modo !== b.modo) return false;
+  if (a.modo === 'icone' && b.modo === 'icone') return a.tipo === b.tipo;
+  if (a.modo === 'forma' && b.modo === 'forma') return a.tipo === b.tipo;
+  return true; // 'traco' não tem subtipo
+}
 
 interface PlanProc {
   id: string;
@@ -104,7 +130,7 @@ export interface ApresentarPanelProps {
   isGeneratingAI: string | null;
   isImagePickerOpen: string | null;
   setIsImagePickerOpen: (id: string | null) => void;
-  onUpdateSection: (id: string, field: keyof Section, value: string | string[]) => void;
+  onUpdateSection: (id: string, field: keyof Section, value: string | string[] | AnotacaoOverlay[]) => void;
   onRemoveSection: (id: string) => Promise<void>;
   onAddSection: (tipo: SectionTipo) => Promise<void>;
   onGenerateSectionWithAI: (id: string) => Promise<void>;
@@ -122,22 +148,74 @@ function ImagemSectionBody({
 }: {
   section: Section;
   documents: Document[];
-  onUpdateSection: (id: string, field: keyof Section, value: string | string[]) => void;
+  onUpdateSection: (id: string, field: keyof Section, value: string | string[] | AnotacaoOverlay[]) => void;
   onOpenPicker: () => void;
 }) {
   const doc = documents.find(d => d.id === section.imageIds[0]);
+  // R-99 — ferramenta armada da paleta; null = nenhuma, clique na imagem não faz nada (§4).
+  const [ferramenta, setFerramenta] = useState<FerramentaAnotacao | null>(null);
+
   return (
     <div className="p-8 space-y-4">
       {doc ? (
-        <div className="relative aspect-[16/9] rounded-2xl overflow-hidden border border-border/60 group/img">
-          <Image src={doc.thumbnail} alt={doc.name} fill className="object-cover" referrerPolicy="no-referrer" />
-          <button
-            onClick={onOpenPicker}
-            className="absolute top-3 right-3 px-3 py-1.5 rounded-lg bg-black/60 text-white text-xs font-bold opacity-0 group-hover/img:opacity-100 transition-opacity"
-          >
-            Trocar imagem
-          </button>
-        </div>
+        <>
+          <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-border/60 bg-surface-alt/40 p-1.5 w-fit">
+            {ANOTACAO_TIPOS.map(({ tipo, label }) => {
+              const f: FerramentaAnotacao = { modo: 'icone', tipo };
+              const ativa = ferramentaEhIgual(ferramenta, f);
+              return (
+                <button
+                  key={tipo}
+                  type="button"
+                  onClick={() => setFerramenta(ativa ? null : f)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
+                    ativa ? 'border-teal/50 bg-teal/15 text-teal-ink' : 'border-transparent text-text-secondary hover:bg-surface-alt hover:text-text-primary'
+                  }`}
+                >
+                  <AnotacaoIcone tipo={tipo} className="h-4 w-4" />
+                  {label}
+                </button>
+              );
+            })}
+            <div className="mx-1 h-5 w-px bg-border" />
+            {DESENHO_TIPOS.map(({ modo, label, Icon }) => {
+              const f: FerramentaAnotacao = modo === 'traco' ? { modo: 'traco' } : { modo: 'forma', tipo: modo };
+              const ativa = ferramentaEhIgual(ferramenta, f);
+              return (
+                <button
+                  key={modo}
+                  type="button"
+                  onClick={() => setFerramenta(ativa ? null : f)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
+                    ativa ? 'border-teal/50 bg-teal/15 text-teal-ink' : 'border-transparent text-text-secondary hover:bg-surface-alt hover:text-text-primary'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="group/img relative w-full overflow-hidden rounded-2xl border border-border/60">
+            <AnotacaoOverlayImagem
+              src={doc.thumbnail}
+              alt={doc.name}
+              anotacoes={section.anotacoes}
+              onChange={(anotacoes) => onUpdateSection(section.id, 'anotacoes', anotacoes)}
+              ferramenta={ferramenta}
+              interativo
+              cor="#22d3ee"
+              onFerramentaUsada={() => setFerramenta(null)}
+              className="h-[420px] w-full"
+            />
+            <button
+              onClick={(e) => { e.stopPropagation(); onOpenPicker(); }}
+              className="absolute top-3 right-3 z-10 px-3 py-1.5 rounded-lg bg-black/60 text-white text-xs font-bold opacity-0 group-hover/img:opacity-100 transition-opacity"
+            >
+              Trocar imagem
+            </button>
+          </div>
+        </>
       ) : (
         <div
           onClick={onOpenPicker}
@@ -172,7 +250,7 @@ function OdontogramaSectionBody({
 }: {
   section: Section;
   eventos: OdontogramaEventoDraft[];
-  onUpdateSection: (id: string, field: keyof Section, value: string | string[]) => void;
+  onUpdateSection: (id: string, field: keyof Section, value: string | string[] | AnotacaoOverlay[]) => void;
 }) {
   return (
     <div className="p-8 space-y-4">
@@ -246,6 +324,10 @@ export function ApresentarPanel({
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
   const [pendingRegenerate, setPendingRegenerate] = useState(false);
   const [addingTipo, setAddingTipo] = useState(false);
+  // R-99 (10/08) — marcar ao vivo durante a apresentação, atrás de botão revelar
+  // (decisão dele: tela fica limpa pro paciente até o dentista precisar marcar).
+  const [marcarAberto, setMarcarAberto] = useState(false);
+  const [marcarFerramenta, setMarcarFerramenta] = useState<FerramentaAnotacao | null>(null);
 
   const totalSlides = sections.length + 2;
   // R-98a — slide de conteúdo (1..sections.length) muda de layout por tipo de bloco.
@@ -260,8 +342,20 @@ export function ApresentarPanel({
       setPanelTab('editar');
       setCurrentSlide(0);
       setOverviewMode(false);
+      setMarcarAberto(false);
+      setMarcarFerramenta(null);
     }
   }, [open]);
+
+  // R-99 — marcação ao vivo fecha ao trocar de slide (só faz sentido na imagem atual).
+  // Ajuste DURANTE o render, não useEffect: evita o round-trip de re-render que
+  // setState-em-efeito causa (mesma razão do R-25, só que aqui resolvido na origem).
+  const [slideDaMarcacao, setSlideDaMarcacao] = useState(currentSlide);
+  if (slideDaMarcacao !== currentSlide) {
+    setSlideDaMarcacao(currentSlide);
+    setMarcarAberto(false);
+    setMarcarFerramenta(null);
+  }
 
   // Fullscreen: enter when presenting, exit when closing or going back to editor
   useEffect(() => {
@@ -286,7 +380,11 @@ export function ApresentarPanel({
     if (!open || panelTab !== 'apresentar') return;
     const maxSlide = sections.length + 1;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setPanelTab('editar'); setOverviewMode(false); return; }
+      if (e.key === 'Escape') {
+        // R-99 — Esc fecha a marcação primeiro (overlay mais local), só a 2ª vez sai da apresentação.
+        if (marcarAberto) { setMarcarAberto(false); setMarcarFerramenta(null); return; }
+        setPanelTab('editar'); setOverviewMode(false); return;
+      }
       if (e.key === 'ArrowRight' || e.key === ' ') {
         e.preventDefault();
         setCurrentSlide(prev => {
@@ -304,7 +402,7 @@ export function ApresentarPanel({
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [open, panelTab, sections.length, onClose]);
+  }, [open, panelTab, sections.length, onClose, marcarAberto]);
 
   if (!isMounted) return null;
 
@@ -621,6 +719,15 @@ export function ApresentarPanel({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {isImagemSlide && (
+                    <button
+                      onClick={() => { setMarcarAberto(prev => !prev); setMarcarFerramenta(null); }}
+                      className={`p-2 rounded-lg transition-colors ${marcarAberto ? 'bg-teal/20 text-teal' : 'bg-white/8 text-white/50 hover:bg-white/12 hover:text-white/80'}`}
+                      title="Marcar no raio-x"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                  )}
                   <button
                     onClick={() => setOverviewMode(prev => !prev)}
                     className={`p-2 rounded-lg transition-colors ${overviewMode ? 'bg-teal/20 text-teal' : 'bg-white/8 text-white/50 hover:bg-white/12 hover:text-white/80'}`}
@@ -743,13 +850,66 @@ export function ApresentarPanel({
                             const doc = documents.find(d => d.id === currentSection.imageIds[0]);
                             return (
                               <>
-                                <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+                                <div className="absolute inset-0 flex items-center justify-center overflow-hidden p-6 sm:p-10">
                                   {doc ? (
-                                    <Image src={doc.thumbnail} alt={doc.name} fill className="object-contain" referrerPolicy="no-referrer" />
+                                    // R-99 (10/08) — mesmo componente do editor: o "palco" (retângulo exato
+                                    // sem letterbox) garante que a imagem ocupa o máximo do espaço disponível
+                                    // E que a coordenada da anotação bate igual nos dois lugares.
+                                    <AnotacaoOverlayImagem
+                                      src={doc.thumbnail}
+                                      alt={doc.name}
+                                      anotacoes={currentSection.anotacoes}
+                                      onChange={(anotacoes) => onUpdateSection(currentSection.id, 'anotacoes', anotacoes)}
+                                      ferramenta={marcarFerramenta}
+                                      interativo={marcarAberto}
+                                      cor="#22d3ee"
+                                      onFerramentaUsada={() => setMarcarFerramenta(null)}
+                                      className="h-full w-full"
+                                    />
                                   ) : (
                                     <p className="text-white/40 italic">Nenhuma imagem selecionada.</p>
                                   )}
                                 </div>
+                                {marcarAberto && (
+                                  <div
+                                    className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-2xl px-2 py-2"
+                                    style={{ background: 'rgba(20,24,23,0.85)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.08)' }}
+                                  >
+                                    {ANOTACAO_TIPOS.map(({ tipo, label }) => {
+                                      const f: FerramentaAnotacao = { modo: 'icone', tipo };
+                                      const ativa = ferramentaEhIgual(marcarFerramenta, f);
+                                      return (
+                                        <button
+                                          key={tipo}
+                                          type="button"
+                                          onClick={() => setMarcarFerramenta(ativa ? null : f)}
+                                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors"
+                                          style={ativa ? { background: 'rgba(47,156,133,0.22)', color: '#5dbeb0' } : { color: 'rgba(255,255,255,0.55)' }}
+                                        >
+                                          <AnotacaoIcone tipo={tipo} className="h-4 w-4" />
+                                          {label}
+                                        </button>
+                                      );
+                                    })}
+                                    <div className="mx-1 h-5 w-px" style={{ background: 'rgba(255,255,255,0.15)' }} />
+                                    {DESENHO_TIPOS.map(({ modo, label, Icon }) => {
+                                      const f: FerramentaAnotacao = modo === 'traco' ? { modo: 'traco' } : { modo: 'forma', tipo: modo };
+                                      const ativa = ferramentaEhIgual(marcarFerramenta, f);
+                                      return (
+                                        <button
+                                          key={modo}
+                                          type="button"
+                                          onClick={() => setMarcarFerramenta(ativa ? null : f)}
+                                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors"
+                                          style={ativa ? { background: 'rgba(47,156,133,0.22)', color: '#5dbeb0' } : { color: 'rgba(255,255,255,0.55)' }}
+                                        >
+                                          <Icon className="h-4 w-4" />
+                                          {label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                                 {currentSection.content && (
                                   <div
                                     className="absolute left-0 right-0 bottom-0 px-10 sm:px-16 pt-24 pb-10 text-center"
@@ -952,6 +1112,9 @@ export function ApresentarPanel({
                         onClick={() => {
                           if (isSingleSelect) {
                             onUpdateSection(isImagePickerOpen, 'imageIds', [doc.id]);
+                            // R-99 (I4) — troca de imagem zera as anotações: a coordenada é
+                            // relativa à imagem antiga, não faz sentido sobre a nova.
+                            onUpdateSection(isImagePickerOpen, 'anotacoes', []);
                             setIsImagePickerOpen(null);
                           } else {
                             onToggleImageSelection(isImagePickerOpen, doc.id);

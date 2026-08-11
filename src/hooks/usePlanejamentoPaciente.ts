@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
+import { z } from 'zod';
+import { toStoragePath } from '@/lib/storage/url';
 import type { OdontogramaEventoDraft, AncoraClinica } from '@/types/odontograma';
 
 // ─── Tipos (espelhados do ApresentarPanel) ──────────────────────────────────
@@ -18,12 +20,31 @@ export interface PlanDocument {
 // R-98a — layout do bloco na apresentação. 'texto' é o único que já existia.
 export type SectionTipo = 'texto' | 'imagem' | 'odontograma';
 
+// R-99 — os 5 tipos com marcador visual sobre a imagem. Mapeiam 1:1 pra
+// TipoRegistroOdontograma (endodontia/coroa/implante/pino_nucleo/exodontia) — símbolo
+// portado de Odontograma.tsx, ver AnotacaoIcone em ApresentarPanel.tsx.
+export type TipoAnotacaoRadiografia = 'endodontia' | 'coroa' | 'implante' | 'pino_nucleo' | 'exodontia';
+
+/** Formas de desenho livre (D13, 10/08) — além dos ícones tipados. */
+export type FormaDesenho = 'linha' | 'circulo' | 'seta';
+
+/** Overlay puro (R-99, invariante I1): nunca regrava a imagem, só geometria + tipo.
+ *  Union por `forma`: ícone tipado (tamanho ajustável D12, posição e rotação livres
+ *  D15) · forma geométrica (2 pontos) · traço livre (sequência de pontos). Todas as
+ *  coordenadas são 0–100, percentual da imagem renderizada — independente de
+ *  zoom/resolução. */
+export type AnotacaoOverlay =
+  | { id: string; forma: 'icone'; tipo: TipoAnotacaoRadiografia; x: number; y: number; tamanho: number; rotacao: number }
+  | { id: string; forma: FormaDesenho; x1: number; y1: number; x2: number; y2: number }
+  | { id: string; forma: 'traco'; pontos: { x: number; y: number }[] };
+
 export interface PlanSection {
   id: string;
   tipo: SectionTipo;
   title: string;
   content: string;      // texto: corpo · imagem: legenda opcional · odontograma: nota opcional
   imageIds: string[];   // texto: 0..N (como sempre) · imagem: 0..1 · odontograma: sempre []
+  anotacoes: AnotacaoOverlay[]; // R-99 — só usado em tipo='imagem'; demais tipos ficam []
   status: 'pendente' | 'em_andamento' | 'concluido';
   dataEstimada: string | null;
 }
@@ -48,6 +69,34 @@ export interface PlanBudgetProcedure {
 const isUUID = (str: string): boolean =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
+// R-99 (I3) — mesmo padrão de `detalhe` em odontograma_eventos (types/odontograma.ts):
+// dado corrompido ou fora do schema degrada pra lista vazia, nunca quebra o editor.
+const pct = z.number().min(0).max(100);
+const anotacaoOverlaySchema = z.discriminatedUnion('forma', [
+  z.object({
+    id: z.string(), forma: z.literal('icone'),
+    tipo: z.enum(['endodontia', 'coroa', 'implante', 'pino_nucleo', 'exodontia']),
+    x: pct, y: pct, tamanho: z.number().min(0.4).max(3),
+    // .default(0): ícones salvos antes do D15 (rotação) não têm este campo — compat
+    // retroativa sem migration, mesma disciplina da I3 (nunca perde dado por schema novo).
+    rotacao: z.number().default(0),
+  }),
+  z.object({
+    id: z.string(), forma: z.enum(['linha', 'circulo', 'seta']),
+    x1: pct, y1: pct, x2: pct, y2: pct,
+  }),
+  z.object({
+    id: z.string(), forma: z.literal('traco'),
+    pontos: z.array(z.object({ x: pct, y: pct })).min(2),
+  }),
+]);
+const anotacoesArraySchema = z.array(anotacaoOverlaySchema);
+
+function parseAnotacoes(raw: unknown): AnotacaoOverlay[] {
+  const parsed = anotacoesArraySchema.safeParse(raw);
+  return parsed.success ? parsed.data : [];
+}
+
 function dedupProcs(procs: PlanProc[]): PlanProc[] {
   const seen = new Set<string>();
   return procs.filter((p) => {
@@ -68,7 +117,7 @@ const DEMO_MOCK_SECTIONS: PlanSection[] = [
     content:
       'A restauração antiga do dente 46 apresenta infiltração, o que explica a dor ao mastigar e a sensibilidade ao frio. ' +
       'É uma situação comum e totalmente reversível quando tratada agora — antes que a infiltração avance para o nervo.',
-    imageIds: [], status: 'pendente', dataEstimada: null,
+    imageIds: [], anotacoes: [], status: 'pendente', dataEstimada: null,
   },
   {
     id: 'demo-sec-2',
@@ -77,7 +126,7 @@ const DEMO_MOCK_SECTIONS: PlanSection[] = [
     content:
       'Substituímos a restauração do dente 46 por uma resina nova, devolvendo o vedamento e eliminando a sensibilidade. ' +
       'Na mesma sessão, fazemos uma profilaxia completa para deixar a boca em dia. Tratamento rápido, em uma única visita.',
-    imageIds: [], status: 'pendente', dataEstimada: null,
+    imageIds: [], anotacoes: [], status: 'pendente', dataEstimada: null,
   },
   {
     id: 'demo-sec-3',
@@ -86,7 +135,7 @@ const DEMO_MOCK_SECTIONS: PlanSection[] = [
     content:
       'Restauração de compósito (dente 46) e profilaxia. Valor total apresentado de forma clara, com opções de pagamento. ' +
       'Sem surpresas: você aprova antes de começar.',
-    imageIds: [], status: 'pendente', dataEstimada: null,
+    imageIds: [], anotacoes: [], status: 'pendente', dataEstimada: null,
   },
 ];
 
@@ -151,10 +200,23 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
         eventosQuery,
       ]);
       if (docsResult.error) throw docsResult.error;
-      setDocuments((docsResult.data ?? []).map((doc: Record<string, unknown>) => ({
-        id: doc.id as string, name: doc.nome as string, category: doc.categoria as string,
-        url: doc.url as string, thumbnail: (doc.thumbnail as string | undefined) ?? (doc.url as string),
-      })));
+      // `paciente_documentos.url` guarda o PATH do storage (bucket privado), não uma URL
+      // navegável — mesmo padrão de DocumentosTab.tsx: resolve em lote pra URL assinada
+      // (1h). Sem isso, <Image src> quebra com "Failed to construct URL".
+      const docRows = (docsResult.data ?? []) as Array<Record<string, unknown>>;
+      const docPaths = docRows.map((doc) => toStoragePath(doc.url as string, 'fichas'));
+      const { data: signedList } = docPaths.length > 0
+        ? await supabase.storage.from('fichas').createSignedUrls(docPaths, 3600)
+        : { data: [] };
+      const signedMap = new Map<string, string>();
+      (signedList ?? []).forEach((entry) => { if (entry.path && entry.signedUrl) signedMap.set(entry.path, entry.signedUrl); });
+      setDocuments(docRows.map((doc) => {
+        const signedUrl = signedMap.get(toStoragePath(doc.url as string, 'fichas')) ?? (doc.url as string);
+        return {
+          id: doc.id as string, name: doc.nome as string, category: doc.categoria as string,
+          url: signedUrl, thumbnail: signedUrl,
+        };
+      }));
       if (budgetResult.error) throw budgetResult.error;
       if (budgetResult.data) {
         setBudgetExists(true);
@@ -170,7 +232,8 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
         setSections((secoesResult.data as Array<Record<string, unknown>>).map((row) => ({
           id: row.id as string, tipo: ((row.tipo as string) ?? 'texto') as SectionTipo,
           title: row.titulo as string, content: (row.conteudo as string) ?? '',
-          imageIds: (row.imagem_ids as string[]) ?? [], status: ((row.status as string) ?? 'pendente') as PlanSection['status'],
+          imageIds: (row.imagem_ids as string[]) ?? [], anotacoes: parseAnotacoes(row.anotacoes),
+          status: ((row.status as string) ?? 'pendente') as PlanSection['status'],
           dataEstimada: (row.data_estimada as string | null) ?? null,
         })));
       }
@@ -274,6 +337,7 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
         const { data: updated } = await supabase.from('planejamento_secoes').upsert({
           id: section.id, clinica_id: clinicaId, paciente_id: patientId, dentista_id: dentistaId,
           tipo: section.tipo, titulo: section.title, conteudo: section.content, imagem_ids: section.imageIds,
+          anotacoes: section.anotacoes,
           ordem: idx, status: section.status, data_estimada: section.dataEstimada || null,
           updated_at: new Date().toISOString(),
         }).select('id');
@@ -285,7 +349,8 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
         const { data } = await supabase.from('planejamento_secoes').insert({
           clinica_id: clinicaId, paciente_id: patientId, dentista_id: dentistaId,
           tipo: section.tipo, titulo: section.title, conteudo: section.content,
-          imagem_ids: section.imageIds, ordem: idx, status: section.status, data_estimada: section.dataEstimada || null,
+          imagem_ids: section.imageIds, anotacoes: section.anotacoes,
+          ordem: idx, status: section.status, data_estimada: section.dataEstimada || null,
         }).select('id').single();
         if (data) {
           const newId = (data as Record<string, unknown>).id as string;
@@ -299,7 +364,7 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
     }
   }, [clinicaId, patientId, dentistaId, fetchGlobalData]);
 
-  const updateSection = useCallback((id: string, field: keyof PlanSection, value: string | string[]) => {
+  const updateSection = useCallback((id: string, field: keyof PlanSection, value: string | string[] | AnotacaoOverlay[]) => {
     setSections((prev) => prev.map((s) => (s.id === id ? { ...s, [field]: value } : s)));
     clearTimeout(debounceTimers.current[id]);
     debounceTimers.current[id] = setTimeout(() => void saveSectionToDb(id), 1000);
@@ -319,12 +384,12 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
     const newOrder = sectionsRef.current.length;
     const { data, error } = await supabase.from('planejamento_secoes').insert({
       clinica_id: clinicaId, paciente_id: patientId, dentista_id: dentistaId, tipo, titulo: '', conteudo: '',
-      imagem_ids: [], ordem: newOrder, status: 'pendente', data_estimada: null,
+      imagem_ids: [], anotacoes: [], ordem: newOrder, status: 'pendente', data_estimada: null,
     }).select('id').single();
     if (error ?? !data) { console.error('[usePlanejamentoPaciente] addSection:', error); return; }
     setSections((prev) => [...prev, {
       id: (data as Record<string, unknown>).id as string, tipo,
-      title: '', content: '', imageIds: [], status: 'pendente', dataEstimada: null,
+      title: '', content: '', imageIds: [], anotacoes: [], status: 'pendente', dataEstimada: null,
     }]);
   }, [clinicaId, patientId, dentistaId]);
 
