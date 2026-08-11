@@ -16,24 +16,24 @@ vez do padrão real do "Novo agendamento" (Dialog centralizado, tokens semântic
 `warning`/`coral-ink`). Ele apontou ao vivo, corrigido e aprovado. Também somei os atalhos de
 período (Manhã/Tarde/Dia inteiro) que ele pediu — preenchem hora+duração, campo continua livre.
 
-**Falta:** ele pediu push, mas **G1-G6 nunca foram testados ao vivo** — nem por ele, nem por
-mim (sem credencial de clínica de teste). G6 (dono não vê bloqueio do outro dentista, nem por
-URL) e G3/G4 (conflito nos 2 sentidos) são os gates que a própria spec (§9) marca como o que
-define o item — e o CLAUDE.md trata teste de 2 contas pra RLS nova como inegociável. Avisei
-antes de dar push; esperando ele decidir como quer proceder (ver "Esperando você").
+**No ar desde 11/08** (`cbd39ee`). G1-G6 nunca tiveram teste formal — avisei sobre G6 (2 contas)
+antes do push; ele avaliou o risco como baixo (RLS é cópia 1:1 de `agendamentos_access`, já
+comprovada) e decidiu subir mesmo assim. No caminho, achei e corrigi 1 bug real: o dialog
+pré-selecionava a própria secretária como dentista padrão (ela pediu esse fluxo — "secretária
+também tem que conseguir marcar pro dentista" — e sem a correção o bloqueio nasceria com
+`dentista_id` errado, sem aviso).
 
 ## Travado
 
 | O quê | Trava o quê | Hipótese / próximo passo |
 |---|---|---|
-| G1-G6 do R-102 sem teste ao vivo | Push do R-102 | Ele decide: testa ele mesmo, me dá credencial de teste, ou aceita subir mesmo assim (a RLS é cópia 1:1 de `agendamentos_access`, já comprovada em produção) |
 | Preço novo não fechado (herdado do R-92) | Retomar o R-92 | `lib/planos.ts` é fonte única — trocar o número é barato quando ele decidir |
 | R-36 reescrita sem aprovação dele | Começar a codar a R-36 | §7 do doc tem 3 decisões abertas; a mais pesada é se cadastro solo continua criando clínica |
 
 ## Esperando você
 
-- **R-102 — decidir sobre o push** (ver "Agora"/"Travado"). R-101 já testado e aprovado, fechado
-  e commitado — não depende de nada, pode subir independente do R-102.
+- **R-102 — G1-G6 ainda sem teste formal**, mesmo no ar. Vale um teste real (criar, os 2
+  sentidos de conflito, secretária escolhendo dentista) na próxima vez que ele estiver na tela.
 - **R-98b — por que desativar o botão "Salvar como meu modelo"?** Codado, migration no ar,
   ele pediu pra desativar antes de eu conseguir perguntar o motivo. Preciso saber a razão
   antes de saber quando/se reativar. Não commitado.

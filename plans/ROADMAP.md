@@ -1,15 +1,14 @@
 # Roadmap — Odonto.IA
 
 > **ROADMAP** · atualizado **2026-08-11** · ordenado por **importância pro dentista**
-> **Último push:** 10/08 — R-99 no ar (`21f5138`..`3ff81e0`): anotar a radiografia (5 ícones +
-> desenho livre, editor e ao vivo na apresentação), fix do AlertDialog atrás de modal, implante
-> mais robusto no odontograma. **Testado e aprovado por ele**, 3 rodadas de ajuste ao vivo.
+> **Último push:** 11/08 (`7f9f512`..`cbd39ee`) — R-101 no ar (odontograma, 3º estado "próxima
+> seção") e R-102 no ar (compromisso pessoal na agenda). **R-101 testado e aprovado por ele.**
+> R-102: layout revisado ao vivo (Sheet antigo → Dialog do padrão Novo Agendamento) e 1 bug de
+> dado corrigido (secretária criava com o próprio id por padrão). **G1-G6 sem teste formal** —
+> ele avaliou o risco de G6 como baixo (RLS é cópia 1:1 de `agendamentos_access`, já em produção)
+> e decidiu subir mesmo assim.
 > **Fila:** 27⏳ · **🟡 codado/no ar sem verificação pessoal dele:** 40 · **💡 ideia sem spec:** 3 ·
 > **Concluídos:** 34 · **Congelado:** 3 · **Cortado:** 10
-> **🔵 ATIVO: [R-102](specs/R-102-compromisso-pessoal-agenda.md)** — codado 11/08 (migration 138
-> aplicada, RLS espelha `agendamentos_access`), typecheck/lint/build limpos, layout revisado e
-> aprovado por ele. **G1-G6 (criar/conflito nos 2 sentidos/gate de 2 contas) sem teste ao vivo**
-> — G6 e G3/G4 são o que definem o item (spec §9).
 > **Decisão de produto 10/08 — hierarquia e identidade:** toda conta é clínica; Solo e Clínica são
 > planos **por tamanho**, não dois tipos de entidade; "consultório" sai do vocabulário; admin = quem
 > paga. Reescreveu a [R-36](specs/R-36-um-login-uma-clinica.md) e abriu **R-96** e **R-97**.
@@ -96,7 +95,7 @@ prioridade, por melhor que seja.
 | **R-87** | 🔧 Erro de hidratação React (#418) em toda navegação — dashboard, orçamentos, pacientes, ficha do paciente | ⏳ achado 08/08 (auditoria completa). Reproduzido 5× em 4 rotas diferentes, mesmo chunk (`4bd1b696…js`). Não travou nenhuma tela nem perdeu dado observado, mas é sistêmico — cheira a componente compartilhado do layout (nav/sino de notificação?) com mismatch servidor/cliente. Sem investigação de causa raiz ainda | P |
 | **R-81** | 👥 Secretária registra PELO dentista — fluxo real relatado por ele 08/08, hoje **bloqueado** (`meu-dia/page.tsx:24` redireciona secretaria) | ⏳ achado 08/08, escopo corrigido 10/08: é a secretária **dentro da sala**, no computador do dentista, usando a sessão dele já logada — **sem perfil próprio, sem seletor de "dia de quem", sem gate de 2 contas**. "Possivelmente mais valioso que o R-78 inteiro" — dentista fica presente e dita em tempo real, ela só executa. Sem spec | G |
 | [**R-94**](specs/R-94-agenda-do-protetico.md) | **Agenda do protético** — role novo (login como o da secretária), pedido criado no agendamento (paciente + obs + data), calendário só dele, marca "entregue" | 🟡 **codado, testado ao vivo e no ar 10/08** (`58f6c14`..`3f295d8`, migrations 128-133). Ele confirmou funcionando. Mitigação do fail-open: gate de ponto único no layout. 4 bugs achados testando: loop infinito de redirect (derrubava o servidor), alerta de CRO vazando pro protético, login passando por `/dashboard` à toa (~2.4s), ponto do calendário mentindo status. **Falta o G6 (2 contas deliberado)** | G |
-| [**R-102**](specs/R-102-compromisso-pessoal-agenda.md) | Compromisso pessoal do dentista — bloqueia a própria agenda (dia + hora início/fim), sem paciente | 🟡 **codado e commitado 11/08** (migration 138 aplicada) — tabela isolada de `agendamentos`, RLS espelha `agendamentos_access`, conflito nos 2 sentidos, bot/retorno respeitam via `getDisponibilidadeSemana`. Layout revisado (1ª versão copiou o Sheet antigo de Encaixe; corrigido pro padrão Dialog do Novo Agendamento). **G1-G6 sem teste ao vivo** — G6 (2 contas) e G3/G4 (conflito) definem o item | M |
+| [**R-102**](specs/R-102-compromisso-pessoal-agenda.md) | Compromisso pessoal do dentista — bloqueia a própria agenda (dia + hora início/fim), sem paciente | 🟡 **no ar 11/08** (`cbd39ee`, migration 138) — tabela isolada de `agendamentos`, RLS espelha `agendamentos_access`, conflito nos 2 sentidos, bot/retorno respeitam via `getDisponibilidadeSemana`, atalhos de período (Manhã/Tarde/Dia inteiro). Layout corrigido ao vivo (Sheet antigo → Dialog do Novo Agendamento) + bug do dentista padrão da secretária. **G1-G6 sem teste formal** — risco aceito por ele (RLS = cópia de `agendamentos_access`) | M |
 
 ## Bloco 2 — Orçamento e financeiro
 
