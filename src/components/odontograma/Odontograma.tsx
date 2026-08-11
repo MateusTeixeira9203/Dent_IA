@@ -130,7 +130,11 @@ const STATUS_CLINICO_LABEL: Record<CorClinica, string> = {
  */
 const G = {
   // Implante — parafuso: M39,63 L57,63 L51.8,131 Q48,145 44.2,131 Z
-  impHwColo:    9 / 96,        // meia-largura no colo
+  // Revisão 10/08 (R-99) — era 9/96: no 1º molar (dente mais comum) o corpo ficava só
+  // 10% mais largo que o pino, quase indistinguível (medido, plans/specs/R-99 §7).
+  // Taper/roscas/plataforma não mudam — a plataforma já escala via Math.max(hwC*1.45,…)
+  // logo abaixo, então o corpo mais largo puxa ela junto sem tocar impPlacaHw.
+  impHwColo:    12.5 / 96,     // meia-largura no colo
   impHwRatio:   3.8 / 9,       // afunilamento: meia-largura no fim do corpo / no colo
   impCorpo:     (131 - 64) / 86, // corpo termina a esta fração da raiz
   impPonta:     (145 - 64) / 86, // vértice do Q (ponta apical)
@@ -501,8 +505,9 @@ export function ToothSVG({ num, isUpper, state, hovered, showCheckbox, resumo = 
         // no terço superior e plataforma no colo. Antes o corpo era ~1,7× mais largo
         // ("alargado p/ leitura", 24/07) e as roscas desciam até o ápice.
         // Piso de legibilidade: o catálogo desenha um dente de 96px, o odontograma
-        // desenha 24–51px — a fração pura vira fio de cabelo num incisivo.
-        const hwC = Math.max(4, w * G.impHwColo);
+        // desenha 24–51px — a fração pura vira fio de cabelo num incisivo. Piso subiu
+        // de 4 pra 5,6 junto com a fração (10/08, R-99) — mesma razão, mesmo lugar.
+        const hwC = Math.max(5.6, w * G.impHwColo);
         const hwA = hwC * G.impHwRatio;
         const yAt  = (f: number) => coloY + dir * f * rootH;      // f = fração da raiz
         const yCorpo = yAt(G.impCorpo);
