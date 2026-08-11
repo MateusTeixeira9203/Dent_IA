@@ -4,9 +4,11 @@
 > **Último push:** 10/08 — R-98a no ar (`4fe53e2`..`0b86843`): tipo de bloco, fix do bug de
 > persistência, entrada do Apresentar sem ficha, respiro do protético. **Testado e aprovado por
 > ele** — vai pra produção hoje, veredito à noite.
-> **Fila:** 25⏳ · **🟡 codado/no ar sem verificação pessoal dele:** 39 · **💡 ideia sem spec:** 3 ·
+> **Fila:** 27⏳ · **🟡 codado/no ar sem verificação pessoal dele:** 39 · **💡 ideia sem spec:** 3 ·
 > **Concluídos:** 32 · **Congelado:** 3 · **Cortado:** 10
-> **🔵 ATIVO: nenhum.** R-92 segue pausado a pedido dele.
+> **🔵 ATIVO: [R-99](specs/R-99-anotar-radiografia.md)** — bug conhecido na toolbar de
+> redimensionar (não corrigido, ver handoff #36), ícone da coroa pendente de decisão, gates
+> não percorridos. R-92 segue pausado a pedido dele.
 > **Decisão de produto 10/08 — hierarquia e identidade:** toda conta é clínica; Solo e Clínica são
 > planos **por tamanho**, não dois tipos de entidade; "consultório" sai do vocabulário; admin = quem
 > paga. Reescreveu a [R-36](specs/R-36-um-login-uma-clinica.md) e abriu **R-96** e **R-97**.
@@ -63,6 +65,8 @@ prioridade, por melhor que seja.
 | [R-46d](specs/R-46d-campo-magico.md) | **Campo mágico com IA** — substitui a barra de procedimento inteira | 🟡 D0 ✅ commitado (dedup em `dedup-eventos-draft.ts`). D1 🟡 codado e testado (absorve o R-46b). D1.2 fechado pelo R-62. **D9/D11 (motion no odontograma) seguem de fora** | G |
 | [R-46h](specs/R-46h-orcamento-no-meu-dia.md) | Botão de orçamento no Meu dia — picker lista fichas em aberto, gera só da escolhida | 🟡 codado e commitado 08/08 (`fb4d031`), verificado no Brave. **Ele ainda não testou pessoalmente** | M |
 | [R-49](specs/R-49-voz-e-campos-de-especialidade.md) | Voz e campos de especialidade — preencher sem digitar 17 vezes | ⏳ spec 02/08, emenda 04/08: IA pode preencher odontometria (I2 revogada), tabela abre sozinha como guarda-corpo. **66% dos endos têm odontometria vazia** | G |
+| [**R-49b**](specs/R-49b-painel-registro-ao-vivo.md) | **Painel de registro ao vivo** — campo livre à esquerda, odontograma à direita acendendo conforme digita/dita, tabela de especialidade na hora e na ordem do relato | ⏳ spec 10/08. Majoritariamente fiação: `detectar-consulta` já devolve `dentes[]` e a gente descarta (`useCapturaLivre.ts:120`). **Não reduz gesto** — é credibilidade da promessa + tabela como correção de ASR | M |
+| **R-100** | Log do trio (transcrição bruta · saída do modelo · correção do dentista) — o loop §8 do documento de arquitetura | ⏳ 10/08, sem spec. **Nada mais da pipeline de voz dá pra priorizar sem ele**; é o que produz as variantes que o dicionário precisaria, em vez de inventá-las | P |
 | [R-50](specs/R-50-orto-pelo-dex.md) | Orto ponta a ponta pelo Dex — ditar a manutenção e ela cair estruturada | 🟡 codado e testado ao vivo 05/08 — IA recusa arcada não dita em vez de chutar, Meu dia para de descartar orto em texto. Eval sem regressão + 2 casos novos | G |
 | [R-51](specs/R-51-53-modelo-multissessao.md) | Multi-sessão (canal, implante): "em andamento" derivado do `grupo_id`, sem 3º status | 🟡 codado e commitado 04/08, typecheck/lint/build limpos. **Não exercitado em cenário real ainda** | G |
 | [R-52](specs/R-51-53-modelo-multissessao.md) | Encaminhar pendência pro outro dentista — "A fazer" vira estritamente a minha lista | 🟡 codado, commitado e testado ao vivo 04/08 — escrita confirmada no banco, mata o silent-fail (fazer hoje em item de colega não gravava) | M |
@@ -110,7 +114,7 @@ prioridade, por melhor que seja.
 | [R-10](ROADMAP.md) | P2: tirar a observação clínica do documento que o paciente lê | ⏳ P1 ✅ em prod. P2 precisa de decisão — `dentes_observacoes` alimenta orçamento **e** prontuário | P |
 | [**R-98a**](specs/R-98-apresentar-visual-blocos-modelo.md) | Tipo de bloco (`texto`/`imagem`/`odontograma`) + fix do bug de persistência | 🟡 **codado, testado ao vivo e aprovado por ele 10/08** (`4fe53e2`..`0b86843`, migration 134). 🐛 corrigido: geração por IA nunca salvava — 23 chamadas, 6 de dentistas reais, 0 linhas correspondentes. 2 achados extras corrigidos no teste: botão Apresentar preso a ter ficha, protético sem `PageContainer`. **Falta produção — veredito dele hoje à noite** | G |
 | **R-98b** | Modelo reutilizável — dentista salva a sequência de blocos e reusa a partir do 2º paciente | ⏳ depende do 98a em produção. [Spec](specs/R-98-apresentar-visual-blocos-modelo.md) já escrita (§4.2) | M |
-| **R-99** | **Anotar a radiografia** — paleta de procedimentos (canal, coroa, prótese, implante, pino) e o dentista marca **em cima** do raio-x onde cada um entra | ⏳ pedido dele 10/08, **sem spec**. Depende do bloco `imagem` do R-98a. Conceito no [artefato do R-98](artefatos/R-98-apresentar-visual.html) (Bloco A+), 2 modos: paleta é chrome de edição, some ao apresentar. **Decidido 10/08:** é **overlay** (coordenada + tipo na seção, radiografia original **nunca** alterada — exame diagnóstico não se mistura com proposta) e **sem exportar por enquanto** — a versão anotada não sai da clínica, o que mantém o item fora das regras de custódia de prontuário. Falta: símbolos (devem sair de `TipoRegistroOdontograma`, não desenhados) | M |
+| [**R-99**](specs/R-99-anotar-radiografia.md) | **Anotar a radiografia** — 5 ícones tipados (mover/girar/redimensionar) + desenho livre (traço/linha/círculo/seta), no editor **e ao vivo durante a apresentação** (atrás de botão revelar), imagem sempre ocupando o máximo da tela | 🟡 **codado 10/08** — migration 135 aplicada e conferida, typecheck/lint/build limpos (4 rodadas). Componente próprio (`anotacao-overlay-imagem.tsx`) — mede o retângulo real da imagem sem letterbox, formas em SVG com pixel real, gesto de arrasto (pointer capture) pra mover e girar ícone, ângulo é dado clínico real (inclinação do implante). **Imagem em branco e `AlertDialog` atrás do modal — confirmados corrigidos por ele.** Dialog genérico tem o mesmo defeito do AlertDialog, sinalizado à parte. **Sem push. G1-G26 da spec (§8)** | M |
 
 ## Bloco 3 — Assinatura e prova
 

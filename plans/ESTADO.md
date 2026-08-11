@@ -1,12 +1,27 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-08-10 13:02 · sessão #35
-> **Item ativo:** nenhum · **Modo da última sessão:** execução (com discussão/planejamento no meio)
+> **ESTADO** · atualizado 2026-08-10 20:29 · sessão #36
+> **Item ativo:** R-99 · **Modo da última sessão:** execução (com discussão/planejamento no meio)
 
 ## Agora
 
-*(Sem item ativo. R-98a acabou de subir e está com ele pra teste em produção — ver "Esperando
-você". Depois do veredito, o candidato natural é R-98b ou R-99, os dois com spec pronta.)*
+**R-99 — Anotar a radiografia.** Codado e testado ao vivo por ele em várias rodadas nesta
+sessão; boa parte confirmada funcionando (imagem carrega, apagar bloco funciona, mover/girar
+o ícone funcionam). Não fecha ainda.
+
+**Falta:**
+- Corrigir a mini-toolbar de redimensionar (`+`/`−`/`✕`) — bug diagnosticado por hipótese
+  (falta `e.stopPropagation()`, o clique vaza pro clique do palco por trás), **não corrigido**
+  a pedido dele — ver handoff desta sessão pro raciocínio completo antes de mexer
+- Antes de só aplicar o fix acima: confirmar se o modelo de interação (arrastar o corpo
+  move, arrastar a alcinha gira) é o que ele imaginou, ou se ele quer os controles de
+  posição TAMBÉM dentro da caixinha que aparece ao selecionar
+- Decidir o ícone da coroa — ele sugeriu 2x trocar a hachura (convenção pro dentista) por
+  algo que pareça um dente de verdade (leitura pro paciente). Tensiona com D8 (símbolos
+  sempre portados do odontograma) — provavelmente precisa de artefato comparando as duas
+  versões antes de codar
+- Percorrer os G1-G26 da [spec](specs/R-99-anotar-radiografia.md) formalmente
+- Sem push
 
 ## Travado
 
@@ -17,10 +32,12 @@ você". Depois do veredito, o candidato natural é R-98b ou R-99, os dois com sp
 
 ## Esperando você
 
-- **Veredito de produção do R-98a** — testou local e aprovou 100%, mas disse que ia testar em
-  produção e retornar hoje à noite. Só vira ✅ depois disso
-- **Se o teste dele cobriu o editor do Apresentar em light mode** — não ficou confirmado; o
-  artefato só tinha dark desenhado
+- **Veredito de produção do R-98a** — segue sem confirmação desde a sessão #35. Só vira ✅
+  depois disso; destrava o R-98b também
+- **Se o teste do R-98a cobriu o editor do Apresentar em light mode** — não ficou confirmado
+- **R-99 — confirmar o modelo de interação de mover/girar/redimensionar** antes da próxima
+  sessão só consertar o bug da toolbar e dar como certo (ver "Agora")
+- **R-99 — decidir o ícone da coroa** (hachura atual vs. desenho mais literal)
 - **Aprovar a [R-36](specs/R-36-um-login-uma-clinica.md) reescrita** (§7: 3 decisões)
 - **Definir o preço** — trava o R-92 quando ele voltar
 - **G6 do R-94** — teste deliberado de 2 contas (dentista cria pedido → protético marca
@@ -30,6 +47,6 @@ você". Depois do veredito, o candidato natural é R-98b ou R-99, os dois com sp
 
 ## Próximo da fila
 
-Depois do veredito de produção do R-98a: **R-98b** (modelo reutilizável) ou **R-99** (anotar
-radiografia), os dois com spec escrita. Ver `plans/ROADMAP.md` — que está em 231 linhas contra
-teto de ~200 há 3 sessões seguidas, precisando de poda dedicada, não de mais uma anotação.
+Fechar o R-99 (bug da toolbar + coroa + gates). Depois: R-98b ou R-96 (ambos com spec
+pronta), R-49b quando voltar o assunto de voz. `ROADMAP.md` segue precisando de poda
+dedicada (estourou o teto de ~200 linhas há 4 sessões seguidas).
