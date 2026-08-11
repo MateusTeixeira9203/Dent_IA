@@ -1973,7 +1973,10 @@ export function AgendamentosClient({
         onOpenChange={(o) => { setIsCompromissoOpen(o); if (!o) setCompromissoEditando(null); }}
         dentistas={dentistasOrdenados}
         isSecretaria={isSecretaria}
-        dentistaAtualId={dentistaAtualId}
+        // dentistaPadraoForm() nunca resolve pra secretária (mesmo helper do Encaixe/Novo
+        // Agendamento) — sem isso, o Select nascia pré-selecionado NELA mesma, e se ela não
+        // trocasse manualmente o bloqueio nascia com dentista_id = secretária.
+        dentistaAtualId={dentistaPadraoForm()}
         editando={compromissoEditando}
         onSalvo={() => void recarregarAgendamentos(true)}
       />
