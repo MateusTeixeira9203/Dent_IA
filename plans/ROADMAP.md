@@ -1,14 +1,11 @@
 # Roadmap — Odonto.IA
 
 > **ROADMAP** · atualizado **2026-08-10** · ordenado por **importância pro dentista**
-> **Último push:** 10/08 — R-98a no ar (`4fe53e2`..`0b86843`): tipo de bloco, fix do bug de
-> persistência, entrada do Apresentar sem ficha, respiro do protético. **Testado e aprovado por
-> ele** — vai pra produção hoje, veredito à noite.
-> **Fila:** 27⏳ · **🟡 codado/no ar sem verificação pessoal dele:** 39 · **💡 ideia sem spec:** 3 ·
-> **Concluídos:** 32 · **Congelado:** 3 · **Cortado:** 10
-> **🔵 ATIVO: [R-99](specs/R-99-anotar-radiografia.md)** — bug conhecido na toolbar de
-> redimensionar (não corrigido, ver handoff #36), ícone da coroa pendente de decisão, gates
-> não percorridos. R-92 segue pausado a pedido dele.
+> **Último push:** 10/08 — R-99 no ar (`21f5138`..`3ff81e0`): anotar a radiografia (5 ícones +
+> desenho livre, editor e ao vivo na apresentação), fix do AlertDialog atrás de modal, implante
+> mais robusto no odontograma. **Testado e aprovado por ele**, 3 rodadas de ajuste ao vivo.
+> **Fila:** 27⏳ · **🟡 codado/no ar sem verificação pessoal dele:** 38 · **💡 ideia sem spec:** 3 ·
+> **Concluídos:** 33 · **Congelado:** 3 · **Cortado:** 10
 > **Decisão de produto 10/08 — hierarquia e identidade:** toda conta é clínica; Solo e Clínica são
 > planos **por tamanho**, não dois tipos de entidade; "consultório" sai do vocabulário; admin = quem
 > paga. Reescreveu a [R-36](specs/R-36-um-login-uma-clinica.md) e abriu **R-96** e **R-97**.
@@ -114,7 +111,6 @@ prioridade, por melhor que seja.
 | [R-10](ROADMAP.md) | P2: tirar a observação clínica do documento que o paciente lê | ⏳ P1 ✅ em prod. P2 precisa de decisão — `dentes_observacoes` alimenta orçamento **e** prontuário | P |
 | [**R-98a**](specs/R-98-apresentar-visual-blocos-modelo.md) | Tipo de bloco (`texto`/`imagem`/`odontograma`) + fix do bug de persistência | 🟡 **codado, testado ao vivo e aprovado por ele 10/08** (`4fe53e2`..`0b86843`, migration 134). 🐛 corrigido: geração por IA nunca salvava — 23 chamadas, 6 de dentistas reais, 0 linhas correspondentes. 2 achados extras corrigidos no teste: botão Apresentar preso a ter ficha, protético sem `PageContainer`. **Falta produção — veredito dele hoje à noite** | G |
 | **R-98b** | Modelo reutilizável — dentista salva a sequência de blocos e reusa a partir do 2º paciente | ⏳ depende do 98a em produção. [Spec](specs/R-98-apresentar-visual-blocos-modelo.md) já escrita (§4.2) | M |
-| [**R-99**](specs/R-99-anotar-radiografia.md) | **Anotar a radiografia** — 5 ícones tipados (mover/girar/redimensionar) + desenho livre (traço/linha/círculo/seta), no editor **e ao vivo durante a apresentação** (atrás de botão revelar), imagem sempre ocupando o máximo da tela | 🟡 **codado 10/08** — migration 135 aplicada e conferida, typecheck/lint/build limpos (4 rodadas). Componente próprio (`anotacao-overlay-imagem.tsx`) — mede o retângulo real da imagem sem letterbox, formas em SVG com pixel real, gesto de arrasto (pointer capture) pra mover e girar ícone, ângulo é dado clínico real (inclinação do implante). **Imagem em branco e `AlertDialog` atrás do modal — confirmados corrigidos por ele.** Dialog genérico tem o mesmo defeito do AlertDialog, sinalizado à parte. **Sem push. G1-G26 da spec (§8)** | M |
 
 ## Bloco 3 — Assinatura e prova
 
@@ -186,6 +182,7 @@ aparente (ver a agenda do Dr. Y ≠ ver os agendamentos do paciente X).
 
 | ID | Item | Fechado |
 |---|---|---|
+| [R-99](_arquivo/specs/R-99-anotar-radiografia.md) | Anotar a radiografia — 5 ícones (mover/girar/redimensionar) + desenho livre, editor e ao vivo na apresentação | 2026-08-10 — testado e aprovado por ele, 3 rodadas de ajuste ao vivo (clique vazando pro palco, ferramenta sticky, toolbar cobrindo a alça de girar) |
 | R-82 | Campo mágico trava a aba com documento anexado — `anexarTexto` memoizado | 2026-08-08 — confirmado pessoalmente por ele (cenário de documento real) |
 | R-75 | Dex não marca "realizado" em upload de histórico só pelo verbo no passado | 2026-08-08 — confirmado pessoalmente por ele (upload real na UI) |
 | [R-62](_arquivo/specs/R-62-campo-magico-entrada-unica.md) | Campo mágico vira entrada única (G10/I4, comando de voz real) | 2026-08-08 — confirmado pessoalmente por ele |
