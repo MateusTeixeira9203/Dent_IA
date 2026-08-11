@@ -8,7 +8,7 @@ import type { AgendamentoStatus } from '@/types/database';
 import type {
   Arcada, QuadranteFDI, NivelAncora, FaceDental, OrigemRegistro, PapelNoGrupo,
   TipoRegistroOdontograma, OrtoManutencaoInfo, StatusRegistro, OdontogramaEventoDraft,
-  AncoraClinica,
+  AncoraClinica, MomentoPlanejado,
 } from '@/types/odontograma';
 
 /** Mesma janela do `ultimaOrto` client-side (FichasTab.tsx) — replicada aqui em lote,
@@ -96,6 +96,8 @@ export interface MeuDiaEventoVisita {
    *  renderizar vazia). */
   status: StatusRegistro;
   origem: OrigemRegistro;
+  /** R-101 — ver corDoRegistro. Default 'sessao_atual'. */
+  momento_planejado: MomentoPlanejado;
   /** R-58 — mesmo grupo multi-dente da ficha salva (ponte, exodontia múltipla). Sem isso
    *  `eventosParaCards`/`agruparRegistros` não têm como colapsar num card só aqui. */
   grupoId: string | null;
@@ -236,7 +238,7 @@ function eventoParaVisita(e: EventoRow, fichaDataPorId: Map<string, string>): Me
   return {
     id: e.id, tipo: e.tipo, dente: e.dente, arcada: e.arcada, quadrante: e.quadrante,
     faces: e.faces ?? [], observacao: e.observacao, nivel: e.nivel, status: e.status,
-    origem: e.origem, grupoId: e.grupo_id, realizadoEm: e.realizado_em,
+    origem: e.origem, momento_planejado: e.momento_planejado, grupoId: e.grupo_id, realizadoEm: e.realizado_em,
     indicadoEm: (e.ficha_id ? fichaDataPorId.get(e.ficha_id) : undefined) ?? e.registrado_em,
     registradoEm: e.registrado_em, detalhe: e.detalhe,
   };
@@ -256,7 +258,8 @@ function eventoParaBoca(e: EventoRow): OdontogramaEventoDraft {
   if (e.quadrante != null) ancora.quadrante = e.quadrante;
   if ((e.faces ?? []).length > 0) ancora.faces = e.faces ?? [];
   return {
-    id: e.id, tipo: e.tipo, status: e.status, origem: e.origem, ancora,
+    id: e.id, tipo: e.tipo, status: e.status, origem: e.origem,
+    momento_planejado: e.momento_planejado, ancora,
     grupo_id: e.grupo_id, papel_no_grupo: e.papel_no_grupo, observacao: e.observacao ?? '',
     realizado_em: e.realizado_em, detalhe: e.detalhe,
   };
@@ -286,6 +289,8 @@ type EventoRow = {
   tipo: TipoRegistroOdontograma;
   status: 'indicado' | 'realizado';
   origem: OrigemRegistro;
+  /** R-101 — ver corDoRegistro. Default 'sessao_atual'. */
+  momento_planejado: MomentoPlanejado;
   nivel: NivelAncora;
   arcada: Arcada | null;
   quadrante: QuadranteFDI | null;
@@ -416,7 +421,7 @@ export async function getMeuDiaData({
         // apontam pra `dentistas`, então os dois embeds PRECISAM do `!fkey` desambiguando —
         // sem isso o Postgrest devolve 300 (é a família de bug do R-44). Mesmo par já usado
         // em FichasTab.tsx:943.
-        'id, paciente_id, ficha_id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, observacao, detalhe, registrado_em, realizado_em, created_at, dentista_id, encaminhado_para, dentista:dentistas!odontograma_eventos_dentista_id_fkey(nome), encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(nome)',
+        'id, paciente_id, ficha_id, tipo, status, origem, momento_planejado, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, observacao, detalhe, registrado_em, realizado_em, created_at, dentista_id, encaminhado_para, dentista:dentistas!odontograma_eventos_dentista_id_fkey(nome), encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(nome)',
       )
       .eq('clinica_id', clinicId)
       .in('paciente_id', pacienteIds)

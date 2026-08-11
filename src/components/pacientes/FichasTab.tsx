@@ -52,9 +52,9 @@ import { TIPO_LABEL, corDoRegistro } from '@/types/odontograma';
 import type {
   OrtoManutencaoInfo, OdontogramaEventoDraft,
   TipoRegistroOdontograma, StatusRegistro, OrigemRegistro, AncoraClinica,
-  NivelAncora, Arcada, FaceDental, QuadranteFDI, PapelNoGrupo,
+  NivelAncora, Arcada, FaceDental, QuadranteFDI, PapelNoGrupo, MomentoPlanejado,
 } from '@/types/odontograma';
-import { alternarStatusRegistro, encaminharProcedimento, atualizarStatusEncaminhado, preencherDetalheEncaminhado, assinarProcedimentos, assinarTodosRealizadosDaFicha } from '@/server/patients/registro-actions';
+import { alternarStatusRegistro, alternarMomentoRegistro, encaminharProcedimento, atualizarStatusEncaminhado, preencherDetalheEncaminhado, assinarProcedimentos, assinarTodosRealizadosDaFicha } from '@/server/patients/registro-actions';
 import { salvarFicha, deletarFicha, contarVinculosFicha, type VinculosFicha } from '@/server/patients/salvar-ficha';
 import { derivarResponsaveis, eventosVisiveis, fichaVisivel, filtroAindaValido } from '@/lib/fichas/filtro-responsavel';
 import { ChipsResponsavel } from '@/components/fichas/chips-responsavel';
@@ -115,6 +115,8 @@ interface EventoView {
   tipo: TipoRegistroOdontograma;
   status: StatusRegistro;
   origem: OrigemRegistro;
+  /** R-101 — ver corDoRegistro. Default 'sessao_atual'. */
+  momentoPlanejado: MomentoPlanejado;
   ancora: AncoraClinica;
   observacao: string | null;
   realizadoEm: string | null;
@@ -144,6 +146,8 @@ type EventoRow = {
   tipo: TipoRegistroOdontograma;
   status: StatusRegistro;
   origem: OrigemRegistro;
+  /** R-101 — ver corDoRegistro. Default 'sessao_atual'. */
+  momento_planejado: MomentoPlanejado;
   nivel: NivelAncora;
   arcada: Arcada | null;
   quadrante: number | null;
@@ -292,6 +296,7 @@ function draftsParaCards(
         tipo: primeiro.tipo,
         status: primeiro.status,
         origem: primeiro.origem,
+        momentoPlanejado: primeiro.momento_planejado,
         ancoras: itens.map((it) => it.ancora),
         observacao: primeiro.observacao,
         detalhe: primeiro.detalhe,
@@ -425,7 +430,7 @@ function renderSecoesPorDente<T extends { key: string; data: RegistroCardData }>
 function eventoViewParaDraft(e: EventoView): OdontogramaEventoDraft {
   return {
     id: e.id, // já existe no banco — o draft de EDIÇÃO reusa o id, nunca gera outro (R-01)
-    tipo: e.tipo, status: e.status, origem: e.origem, ancora: e.ancora,
+    tipo: e.tipo, status: e.status, origem: e.origem, momento_planejado: e.momentoPlanejado, ancora: e.ancora,
     grupo_id: e.grupoId, papel_no_grupo: e.papelNoGrupo, observacao: e.observacao ?? '',
     detalhe: e.detalhe, realizado_em: e.realizadoEm,
     assinaturaId: e.assinaturaId, // R-30 Parte 2 — dedup nunca colapsa evento assinado
@@ -734,6 +739,8 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
           tipo,
           status: 'indicado' as const,
           origem: 'clinica' as const,
+          // R-101 §1 — boca/quadrante ficam fora do v1 (sem UI de 3 vias); sempre sessao_atual.
+          momento_planejado: 'sessao_atual' as const,
           ancora: quadrante != null ? { nivel: 'quadrante' as const, quadrante } : { nivel: 'boca' as const },
           grupo_id: null,
           papel_no_grupo: null,
@@ -744,7 +751,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       const e = prev[i];
       if (e.status === 'indicado') {
         return prev.map((ev, j) =>
-          j === i ? { ...ev, status: 'realizado' as const, origem: 'clinica' as const, realizado_em: ev.realizado_em ?? hojeBRT() } : ev,
+          j === i ? { ...ev, status: 'realizado' as const, origem: 'clinica' as const, momento_planejado: 'sessao_atual' as const, realizado_em: ev.realizado_em ?? hojeBRT() } : ev,
         );
       }
       return prev.filter((_, j) => j !== i);
@@ -759,6 +766,13 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   const toggleStatusDraft = (idxs: number[]) => {
     setEventosDraft((prev) => prev.map((ev, i) => (idxs.includes(i)
       ? { ...ev, status: ev.status === 'realizado' ? 'indicado' : 'realizado' }
+      : ev)));
+  };
+
+  /** R-101 — irmã de toggleStatusDraft. Rascunho ainda não foi salvo — sem chamada ao servidor. */
+  const toggleMomentoDraft = (idxs: number[]) => {
+    setEventosDraft((prev) => prev.map((ev, i) => (idxs.includes(i)
+      ? { ...ev, momento_planejado: ev.momento_planejado === 'proxima_sessao' ? 'sessao_atual' : 'proxima_sessao' }
       : ev)));
   };
 
@@ -787,6 +801,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
           onObservacaoChange={(v) => atualizarObsGrupo(idxs, v)}
           onRemover={() => removerGrupoDraft(idxs)}
           onToggleStatus={() => toggleStatusDraft(idxs)}
+          onToggleMomento={() => toggleMomentoDraft(idxs)}
         >
           {temDetalhe
             ? corpoEspecialidadeEditavel(data.tipo, data.detalhe, (v) => atualizarDetalheDraft(idxs[0], v))
@@ -822,7 +837,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       // antigas não têm eventos → recebem [] e seguem no display legado (fonte híbrida).
       const { data: evData, error: evError } = await supabase
         .from("odontograma_eventos")
-        .select("id, ficha_id, grupo_id, papel_no_grupo, tipo, status, origem, nivel, arcada, quadrante, dente, faces, observacao, detalhe, realizado_em, registrado_em, encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(id, nome), assinatura_id")
+        .select("id, ficha_id, grupo_id, papel_no_grupo, tipo, status, origem, momento_planejado, nivel, arcada, quadrante, dente, faces, observacao, detalhe, realizado_em, registrado_em, encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(id, nome), assinatura_id")
         .eq("paciente_id", patientId)
         .eq("clinica_id", clinicaId);
 
@@ -849,7 +864,8 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
         };
         const view: EventoView = {
           id: e.id, grupoId: e.grupo_id, papelNoGrupo: e.papel_no_grupo ?? null, tipo: e.tipo, status: e.status,
-          origem: e.origem, ancora, observacao: e.observacao ?? null, realizadoEm: e.realizado_em, registradoEm: e.registrado_em,
+          origem: e.origem, momentoPlanejado: e.momento_planejado, ancora, observacao: e.observacao ?? null,
+          realizadoEm: e.realizado_em, registradoEm: e.registrado_em,
           detalhe: e.detalhe ?? null,
           encaminhadoPara: e.encaminhado_para ? (e.encaminhado_dentista ?? null) : null,
           assinaturaId: e.assinatura_id ?? null,
@@ -1105,6 +1121,24 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     }));
 
     const res = await alternarStatusRegistro({ eventoIds: ids, novoStatus, dataClinica: evo.dataAtendimento });
+    if (!res.ok) {
+      setEvolutions(antes);
+      toast.error(res.error ?? 'Não foi possível atualizar o registro.');
+    }
+  };
+
+  /** R-101 — irmã de toggleStatusRegistro, mesmo padrão otimista+rollback. */
+  const toggleMomentoRegistro = async (
+    evo: Evolution, ids: string[], momentoAtual: MomentoPlanejado,
+  ) => {
+    const novoMomento: MomentoPlanejado = momentoAtual === 'proxima_sessao' ? 'sessao_atual' : 'proxima_sessao';
+    const antes = evolutions;
+    setEvolutions((prev) => prev.map((e) => e.id !== evo.id ? e : {
+      ...e,
+      eventos: e.eventos.map((ev) => ids.includes(ev.id) ? { ...ev, momentoPlanejado: novoMomento } : ev),
+    }));
+
+    const res = await alternarMomentoRegistro({ eventoIds: ids, novoMomento });
     if (!res.ok) {
       setEvolutions(antes);
       toast.error(res.error ?? 'Não foi possível atualizar o registro.');
@@ -2255,6 +2289,11 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                                           : data.encaminhadoPara?.id === dentistaId && !data.assinada
                                             ? () => void concluirEncaminhado(evo, ids, data.status)
                                             : undefined
+                                    }
+                                    onToggleMomento={
+                                      !emModo && podeEditarFicha(evo) && !data.assinada
+                                        ? () => void toggleMomentoRegistro(evo, ids, data.momentoPlanejado)
+                                        : undefined
                                     }
                                     onRemoverEncaminhamento={
                                       !emModo && jaEncaminhado ? () => void encaminharRegistro(evo, ids, null) : undefined

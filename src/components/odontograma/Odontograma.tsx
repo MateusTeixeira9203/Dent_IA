@@ -69,27 +69,30 @@ export function computeToothState(
 export type ToothStatus = 'nao_iniciado' | 'em_andamento' | 'concluido';
 
 // ─── v3: resumo clínico por dente (reduce dos eventos propostos/salvos) ──────
-type CorClinica = 'coral' | 'teal' | 'slate';
+type CorClinica = 'coral' | 'teal' | 'slate' | 'warning';
 
 const COR_TOKEN: Record<CorClinica, string> = {
-  coral: 'var(--color-coral)',
-  teal:  'var(--color-teal)',
-  slate: 'var(--color-slate)',
+  coral:   'var(--color-coral)',
+  teal:    'var(--color-teal)',
+  slate:   'var(--color-slate)',
+  warning: 'var(--color-warning)',
 };
 
 // Cor-de-texto calibrada AA (a cor cheia acima reprova mesmo sobre fundo neutro
 // em light mode — teal 3.38:1, coral 2.99:1; achado auditoria UX 19/07).
 const COR_TOKEN_INK: Record<CorClinica, string> = {
-  coral: 'var(--color-coral-ink)',
-  teal:  'var(--color-teal-ink)',
-  slate: 'var(--color-slate-ink)',
+  coral:   'var(--color-coral-ink)',
+  teal:    'var(--color-teal-ink)',
+  slate:   'var(--color-slate-ink)',
+  warning: 'var(--color-warning-ink)',
 };
 
 /** Versão clara — tinge a RAIZ (canal/implante). Artefato usa o token -pale direto. */
 const COR_PALE: Record<CorClinica, string> = {
-  coral: 'var(--color-coral-pale)',
-  teal:  'var(--color-teal-pale)',
-  slate: 'var(--color-slate-pale)',
+  coral:   'var(--color-coral-pale)',
+  teal:    'var(--color-teal-pale)',
+  slate:   'var(--color-slate-pale)',
+  warning: 'var(--color-warning-pale)',
 };
 
 /**
@@ -105,17 +108,19 @@ const COR_PALE: Record<CorClinica, string> = {
  * pontilhada + o contorno slate, que são fiéis ao artefato.
  */
 const CROWN_FILL: Record<CorClinica, string> = {
-  coral: 'var(--color-coral-pale)',
-  teal:  'color-mix(in srgb, var(--color-teal) 24%, var(--color-surface-alt))',
-  slate: 'var(--color-slate-pale)',
+  coral:   'var(--color-coral-pale)',
+  teal:    'color-mix(in srgb, var(--color-teal) 24%, var(--color-surface-alt))',
+  slate:   'var(--color-slate-pale)',
+  warning: 'var(--color-warning-pale)',
 };
 
 /** Status falado — cor sozinha não comunica estado clínico (achado auditoria
  * UX 19/07, HIGH #5: aria-label/aria-pressed nunca refletiam a cor da boca). */
 const STATUS_CLINICO_LABEL: Record<CorClinica, string> = {
-  coral: 'a fazer',
-  teal:  'feito aqui',
-  slate: 'pré-existente',
+  coral:   'a fazer',
+  teal:    'feito aqui',
+  slate:   'pré-existente',
+  warning: 'próxima seção',
 };
 
 /**
@@ -202,9 +207,11 @@ const RESUMO_VAZIO: ResumoDente = {
   selante: null, fratura: false, ponte: null, pontePapel: null, ponteGrupo: null, mexido: false,
 };
 
-/** coral vence teal, que vence slate (a pendência é o que não pode sumir da vista). */
+/** coral vence warning, que vence teal, que vence slate (a pendência é o que não pode
+ * sumir da vista — R-101: "próxima seção" ainda é pendência, só menos urgente que "agora"). */
 function corDominante(a: CorClinica | null, b: CorClinica): CorClinica {
   if (a === 'coral' || b === 'coral') return 'coral';
+  if (a === 'warning' || b === 'warning') return 'warning';
   if (a === 'teal' || b === 'teal') return 'teal';
   return 'slate';
 }
@@ -235,7 +242,7 @@ export function buildResumos(
     const dente = ev.ancora.dente;
     if (dente == null) continue; // âncoras de arcada/quadrante não pintam dente individual
     const r = map.get(dente) ?? { ...RESUMO_VAZIO };
-    const cor = corDoRegistro(ev.status, ev.origem);
+    const cor = corDoRegistro(ev.status, ev.origem, ev.momento_planejado);
     r.cor = corDominante(r.cor, cor);
     switch (ev.tipo) {
       case 'exodontia':
@@ -1176,6 +1183,11 @@ export function Odontograma({
             {hoveredResumo?.cor === 'coral' && (
               <span className="text-[10px] font-semibold ml-0.5" style={{ color: COR_TOKEN_INK.coral }}>
                 · a fazer
+              </span>
+            )}
+            {hoveredResumo?.cor === 'warning' && (
+              <span className="text-[10px] font-semibold ml-0.5" style={{ color: COR_TOKEN_INK.warning }}>
+                · próxima seção
               </span>
             )}
             {hoveredResumo?.cor === 'teal' && (

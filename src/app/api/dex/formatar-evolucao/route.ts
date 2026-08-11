@@ -224,13 +224,16 @@ function parseEventos(wire: unknown, modo: 'consulta' | 'exame_inicial'): Odonto
         : null;
 
     out.push({
-      tipo:           w.tipo as TipoRegistroOdontograma,
-      status:         w.status as StatusRegistro,
+      tipo:             w.tipo as TipoRegistroOdontograma,
+      status:           w.status as StatusRegistro,
       origem,
+      // R-101 — a IA nunca decide isso (mesma classe de invariante de realizado_em, §1.10).
+      // Todo evento extraído de fala/texto nasce 'sessao_atual', mesmo com intenção futura falada.
+      momento_planejado: 'sessao_atual',
       ancora,
       grupo_id,
-      papel_no_grupo: papel,
-      observacao:     typeof w.observacao === 'string' ? w.observacao.trim() : '',
+      papel_no_grupo:   papel,
+      observacao:       typeof w.observacao === 'string' ? w.observacao.trim() : '',
     });
   }
   return out;

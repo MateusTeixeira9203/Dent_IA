@@ -6,11 +6,13 @@
  */
 import { agruparRegistros, type RegistroAgrupavel } from './agrupar-registros.ts';
 import type { RegistroCardData } from '@/components/fichas/registro-card';
-import type { OrigemRegistro } from '@/types/odontograma';
+import type { OrigemRegistro, MomentoPlanejado } from '@/types/odontograma';
 
 /** Shape mínimo pra virar card — cada chamador adapta seu tipo real pra este. */
 export interface EventoParaCard extends RegistroAgrupavel {
   origem: OrigemRegistro;
+  /** R-101 — ver corDoRegistro. Default 'sessao_atual'. */
+  momentoPlanejado: MomentoPlanejado;
   observacao: string | null;
   detalhe: unknown | null;
   realizadoEm: string | null;
@@ -36,6 +38,7 @@ export function eventosParaCards<T extends EventoParaCard>(
         tipo: primeiro.tipo,
         status: primeiro.status,
         origem: primeiro.origem,
+        momentoPlanejado: primeiro.momentoPlanejado,
         ancoras: itens.map((e) => e.ancora),
         observacao: primeiro.observacao,
         detalhe: primeiro.detalhe,

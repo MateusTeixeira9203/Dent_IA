@@ -50,6 +50,7 @@ function paraCard(e: OdontogramaEventoDraft): EventoParaCard {
     status: e.status,
     ancora: e.ancora,
     origem: e.origem,
+    momentoPlanejado: e.momento_planejado,
     observacao: e.observacao,
     detalhe: e.detalhe,
     realizadoEm: e.realizado_em,
@@ -64,7 +65,19 @@ const TEM_DETALHE = new Set(['endodontia', 'implante', 'exame_periodontal']);
 export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, onAbrirDenteGrande, idsDeAntes }: NestaSessaoBlocoProps) {
   function toggleStatus(ids: string[]) {
     onEventosDraftChange(eventosDraft.map((e) => (ids.includes(e.id)
-      ? { ...e, status: e.status === 'realizado' ? 'indicado' : 'realizado' }
+      ? {
+          ...e,
+          status: e.status === 'realizado' ? 'indicado' : 'realizado',
+          // R-101 — vira realizado aqui: reseta, senão viola a constraint no save (RPC).
+          momento_planejado: e.status === 'realizado' ? e.momento_planejado : 'sessao_atual',
+        }
+      : e)));
+  }
+  /** R-101 — irmã de toggleStatus. Só é chamada com status='indicado' (RegistroCard já
+   *  esconde o controle fora disso), então nunca precisa checar/resetar nada aqui. */
+  function toggleMomento(ids: string[]) {
+    onEventosDraftChange(eventosDraft.map((e) => (ids.includes(e.id)
+      ? { ...e, momento_planejado: e.momento_planejado === 'proxima_sessao' ? 'sessao_atual' : 'proxima_sessao' }
       : e)));
   }
   function updateObservacao(ids: string[], observacao: string) {
@@ -76,7 +89,9 @@ export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, on
   /** "no alto fluxo o normal é ter feito tudo que ditou" (artefato) — 1 toque em vez de N. */
   function marcarTudoFeito() {
     onEventosDraftChange(eventosDraft.map((e) => (e.status === 'realizado' ? e : {
-      ...e, status: 'realizado', origem: 'clinica', realizado_em: e.realizado_em ?? hojeBRT(),
+      // R-101 — reseta momento_planejado junto (mesma razão do toggleStatus acima).
+      ...e, status: 'realizado', origem: 'clinica', momento_planejado: 'sessao_atual',
+      realizado_em: e.realizado_em ?? hojeBRT(),
     })));
   }
 
@@ -116,6 +131,7 @@ export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, on
                 data={data}
                 editavel
                 onToggleStatus={() => toggleStatus(ids)}
+                onToggleMomento={() => toggleMomento(ids)}
                 onObservacaoChange={(v) => updateObservacao(ids, v)}
                 onRemover={() => remover(ids)}
                 onAbrirGrande={temDetalhe ? () => onAbrirDenteGrande(dente, ids[0]) : undefined}

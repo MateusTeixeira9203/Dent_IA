@@ -15,13 +15,18 @@ import type { GrupoAberto } from '@/lib/odontograma/grupos-abertos';
 import type { MeuDiaVisita, MeuDiaEventoVisita } from '@/server/dashboard/get-meu-dia';
 import { fmtData } from './meu-dia-format';
 
-const COR_TOKEN = { coral: 'var(--color-coral)', teal: 'var(--color-teal)', slate: 'var(--color-slate)' } as const;
+type CorClinica = 'coral' | 'teal' | 'slate' | 'warning';
+
+const COR_TOKEN = {
+  coral: 'var(--color-coral)', teal: 'var(--color-teal)',
+  slate: 'var(--color-slate)', warning: 'var(--color-warning)',
+} satisfies Record<CorClinica, string>;
 
 interface Linha {
   data: string;
   tipo: string;
   antes: boolean;
-  cor: 'coral' | 'teal' | 'slate';
+  cor: CorClinica;
 }
 
 /** "Restauração (O)" — mesmo formato de `ondeLabel`, só a parte da face. */
@@ -37,7 +42,7 @@ function linhasHoje(dente: number, eventosDraft: OdontogramaEventoDraft[]): Linh
       data: 'hoje',
       tipo: comFace(TIPO_LABEL[e.tipo], e.ancora.faces),
       antes: false,
-      cor: corDoRegistro(e.status, e.origem),
+      cor: corDoRegistro(e.status, e.origem, e.momento_planejado),
     }));
 }
 
@@ -57,7 +62,7 @@ function linhasAntes(dente: number, visitas: MeuDiaVisita[]): Linha[] {
         data: fmtData(data),
         tipo: comFace(TIPO_LABEL[e.tipo], e.faces),
         antes: true,
-        cor: corDoRegistro(e.status, e.origem),
+        cor: corDoRegistro(e.status, e.origem, e.momento_planejado),
       });
     }
   }

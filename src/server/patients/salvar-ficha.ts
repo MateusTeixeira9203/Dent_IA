@@ -115,6 +115,9 @@ function montarRowsEventos(
     tipo:           ev.tipo,
     status:         ev.status,
     origem:         ev.origem,
+    // R-101 — sem isso, todo save reseta silenciosamente pro default da RPC (sessao_atual),
+    // mesmo que o dentista tenha marcado "próxima seção" na tela. É o R1 da spec.
+    momento_planejado: ev.momento_planejado,
     nivel:          ev.ancora.nivel,
     arcada:         ev.ancora.arcada ?? null,
     quadrante:      ev.ancora.quadrante ?? null,

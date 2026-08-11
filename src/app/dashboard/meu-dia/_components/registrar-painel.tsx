@@ -150,6 +150,9 @@ export function pendenciaParaDraft(p: MeuDiaPendencia, dataPadrao: string): Odon
     tipo: p.tipo,
     status: 'realizado',
     origem: p.origem,
+    // R-101 — vira 'realizado' aqui mesmo; a constraint do banco exige sessao_atual
+    // sempre que status !== 'indicado' (mesmo reset da Fase 3 no toggle manual).
+    momento_planejado: 'sessao_atual',
     ancora,
     grupo_id: p.grupoId,
     papel_no_grupo: p.papelNoGrupo,
@@ -324,6 +327,9 @@ export function useRegistrarPainel({
       tipo,
       status,
       origem: 'clinica',
+      // R-101 — este painel não tem o controle de 3 vias (só os 4 pontos listados na spec
+      // têm); todo evento criado aqui nasce 'sessao_atual', igual sempre foi antes do R-101.
+      momento_planejado: 'sessao_atual',
       ancora,
       grupo_id: null,
       papel_no_grupo: null,

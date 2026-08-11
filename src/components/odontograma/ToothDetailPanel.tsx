@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronRight, ChevronLeft, X, Forward } from 'lucide-react';
+import { ChevronRight, ChevronLeft, X, Forward, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { GrupoAberto } from '@/lib/odontograma/grupos-abertos';
 import {
@@ -20,6 +20,7 @@ import {
   type OdontogramaEventoDraft,
   type TipoRegistroOdontograma,
   type StatusRegistro,
+  type MomentoPlanejado,
   type AncoraClinica,
   type PapelNoGrupo,
 } from '@/types/odontograma';
@@ -35,25 +36,31 @@ import { ImplanteForm } from '@/components/fichas/implante-form';
 
 const FACES: FaceDental[] = ['V', 'M', 'O', 'D', 'L'];
 
+type CorClinica = 'coral' | 'teal' | 'slate' | 'warning';
+
 const COR_TOKEN = {
-  coral: 'var(--color-coral)',
-  teal:  'var(--color-teal)',
-  slate: 'var(--color-slate)',
-} as const;
+  coral:   'var(--color-coral)',
+  teal:    'var(--color-teal)',
+  slate:   'var(--color-slate)',
+  warning: 'var(--color-warning)',
+} satisfies Record<CorClinica, string>;
 
 // Versão calibrada pra TEXTO (a cor cheia acima reprova AA em light mode sobre o
 // próprio fundo tingido — achado auditoria UX 19/07). Fill/borda/ponto continuam
 // usando COR_TOKEN normalmente; só cor-de-texto usa este mapa.
 const COR_TOKEN_INK = {
-  coral: 'var(--color-coral-ink)',
-  teal:  'var(--color-teal-ink)',
-  slate: 'var(--color-slate-ink)',
-} as const;
+  coral:   'var(--color-coral-ink)',
+  teal:    'var(--color-teal-ink)',
+  slate:   'var(--color-slate-ink)',
+  warning: 'var(--color-warning-ink)',
+} satisfies Record<CorClinica, string>;
 
 /** Rótulo falado do estado de uma face, pro aria-label — cor sozinha não é
  * acessível (achado auditoria UX 19/07, CRITICAL #3: faces eram inoperáveis
  * por teclado/leitor de tela). */
-const ROTULO_ESTADO_FACE = { coral: 'a fazer', teal: 'feito', slate: 'pré-existente' } as const;
+const ROTULO_ESTADO_FACE = {
+  coral: 'a fazer', teal: 'feito', slate: 'pré-existente', warning: 'próxima seção',
+} satisfies Record<CorClinica, string>;
 
 /** Chips de ação a nível de dente inteiro — cada um cicla os `modos` e depois remove. */
 const CHIPS: { tipo: TipoRegistroOdontograma; modos: StatusRegistro[] }[] = [
@@ -251,7 +258,7 @@ export function ToothDetailPanel({
       e.tipo === 'ponte' && (meu.grupo_id != null ? e.grupo_id === meu.grupo_id : e === meu);
     if (meu.status === 'indicado') {
       onChange(eventos.map((e) =>
-        doGrupo(e) ? { ...e, status: 'realizado' as const, origem: 'clinica' as const, realizado_em: e.realizado_em ?? dataPadrao } : e,
+        doGrupo(e) ? { ...e, status: 'realizado' as const, origem: 'clinica' as const, momento_planejado: 'sessao_atual' as const, realizado_em: e.realizado_em ?? dataPadrao } : e,
       ));
     } else {
       onChange(eventos.filter((e) => !doGrupo(e)));
@@ -287,11 +294,15 @@ export function ToothDetailPanel({
     tipo: TipoRegistroOdontograma,
     status: StatusRegistro,
     ancora: AncoraClinica,
+    // R-101 Fase 3 (TODO) — parâmetro dedicado quando o controle de 3 vias chegar aqui;
+    // por ora todo evento novo nasce 'sessao_atual', igual sempre foi antes do R-101.
+    momentoPlanejado: MomentoPlanejado = 'sessao_atual',
   ): OdontogramaEventoDraft => ({
     id: crypto.randomUUID(),
     tipo,
     status,
     origem: 'clinica',
+    momento_planejado: momentoPlanejado,
     ancora,
     grupo_id: null,
     papel_no_grupo: null,
@@ -323,7 +334,7 @@ export function ToothDetailPanel({
     } else {
       const e = all[i];
       if (e.status === 'indicado') {
-        all[i] = { ...e, status: 'realizado', origem: 'clinica', realizado_em: dataPadrao };
+        all[i] = { ...e, status: 'realizado', origem: 'clinica', momento_planejado: 'sessao_atual', realizado_em: dataPadrao };
       } else if (e.origem === 'preexistente') {
         // badge "reclassificar": vira "feito nesta clínica" mantendo realizado
         all[i] = { ...e, origem: 'clinica', realizado_em: e.realizado_em ?? dataPadrao };
@@ -367,7 +378,12 @@ export function ToothDetailPanel({
       const pos = modos.indexOf(e.status);
       const next = pos === -1 ? null : modos[pos + 1] ?? null;
       if (next == null) all.splice(i, 1);
-      else all[i] = { ...e, status: next, origem: 'clinica', realizado_em: next === 'realizado' ? (e.realizado_em ?? dataPadrao) : null };
+      else all[i] = {
+        ...e, status: next, origem: 'clinica',
+        // R-101 — reseta ao virar realizado (constraint do banco não aceita as duas juntas).
+        momento_planejado: next === 'realizado' ? 'sessao_atual' : e.momento_planejado,
+        realizado_em: next === 'realizado' ? (e.realizado_em ?? dataPadrao) : null,
+      };
       onChange(all);
     }
   }
@@ -382,24 +398,32 @@ export function ToothDetailPanel({
     onChange(eventos.map((e) => (e === evento ? { ...e, observacao } : e)));
   }
 
+  /** R-101 — liga/desliga "próxima seção". Só chamado com status='indicado' (o botão
+   *  só aparece nesse caso) — a constraint do banco não aceita a outra combinação. */
+  function toggleMomentoEvento(evento: OdontogramaEventoDraft) {
+    onChange(eventos.map((e) => (e === evento
+      ? { ...e, momento_planejado: e.momento_planejado === 'proxima_sessao' ? 'sessao_atual' : 'proxima_sessao' }
+      : e)));
+  }
+
   function remover(evento: OdontogramaEventoDraft) {
     if (readOnly) return;
     onChange(eventos.filter((e) => e !== evento));
   }
 
-  function corFace(face: FaceDental): 'coral' | 'teal' | 'slate' | null {
+  function corFace(face: FaceDental): 'coral' | 'teal' | 'slate' | 'warning' | null {
     // Selante pinta a O; cárie/restauração pinta a face declarada.
     const ev = doDente.find(
       (e) =>
         (e.tipo === 'carie_restauracao' || e.tipo === 'selante') &&
         (e.ancora.faces ?? []).includes(face),
     );
-    return ev ? corDoRegistro(ev.status, ev.origem) : null;
+    return ev ? corDoRegistro(ev.status, ev.origem, ev.momento_planejado) : null;
   }
 
   function chipEstado(tipo: TipoRegistroOdontograma) {
     const ev = doDente.find((e) => e.tipo === tipo);
-    return ev ? corDoRegistro(ev.status, ev.origem) : null;
+    return ev ? corDoRegistro(ev.status, ev.origem, ev.momento_planejado) : null;
   }
 
   const rootFrac = rootH / totalH;
@@ -735,7 +759,7 @@ export function ToothDetailPanel({
             </button>
           )}
           {doDente.map((ev, i) => {
-            const cor = corDoRegistro(ev.status, ev.origem);
+            const cor = corDoRegistro(ev.status, ev.origem, ev.momento_planejado);
             // Só endo/implante têm tabela de especialidade hoje (migration 106).
             const temDetalhe = ev.tipo === 'endodontia' || ev.tipo === 'implante';
             const aberto = detalheAbertoIdx === i;
@@ -775,8 +799,25 @@ export function ToothDetailPanel({
                       color: COR_TOKEN_INK[cor],
                     }}
                   >
-                    {ev.status === 'indicado' ? 'A fazer' : ev.origem === 'preexistente' ? 'Pré-exist.' : 'Feito'}
+                    {ev.status === 'indicado'
+                      ? (cor === 'warning' ? 'Próx. seção' : 'A fazer')
+                      : ev.origem === 'preexistente' ? 'Pré-exist.' : 'Feito'}
                   </span>
+                  {ev.status === 'indicado' && !readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => toggleMomentoEvento(ev)}
+                      title={cor === 'warning' ? 'Marcar pra sessão atual' : 'Marcar pra próxima seção'}
+                      aria-pressed={cor === 'warning'}
+                      className="p-1 rounded-md shrink-0 outline-none focus-visible:ring-1 focus-visible:ring-teal transition-colors"
+                      style={{
+                        color: cor === 'warning' ? 'var(--color-warning-ink)' : 'var(--color-text-secondary)',
+                        background: cor === 'warning' ? 'var(--color-warning-pale)' : 'transparent',
+                      }}
+                    >
+                      <Clock className="w-3 h-3" />
+                    </button>
+                  )}
                   {ev.status === 'realizado' && ev.origem === 'clinica' && !readOnly && (
                     <input
                       type="date"

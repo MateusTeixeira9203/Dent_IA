@@ -11,7 +11,7 @@
 
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronRight, Maximize2, Forward, Check, X } from 'lucide-react';
+import { ChevronRight, Maximize2, Forward, Check, X, Clock } from 'lucide-react';
 import { TextoExpansivel } from './texto-expansivel';
 import {
   TIPO_LABEL,
@@ -19,6 +19,7 @@ import {
   type TipoRegistroOdontograma,
   type StatusRegistro,
   type OrigemRegistro,
+  type MomentoPlanejado,
   type AncoraClinica,
 } from '@/types/odontograma';
 
@@ -27,6 +28,8 @@ export interface RegistroCardData {
   tipo: TipoRegistroOdontograma;
   status: StatusRegistro;
   origem: OrigemRegistro;
+  /** R-101 — ver corDoRegistro. Default 'sessao_atual'. */
+  momentoPlanejado: MomentoPlanejado;
   /** 1 âncora (registro único) ou N (grupo multi-dente do mesmo procedimento). */
   ancoras: AncoraClinica[];
   /** Data clínica (YYYY-MM-DD) — null em indicado/pré-existente sem data. */
@@ -57,6 +60,13 @@ export interface RegistroCardProps {
    * não havia caminho pra marcar o que foi feito, tudo ficava "Planejado".
    */
   onToggleStatus?: () => void;
+  /**
+   * R-101 — liga/desliga "próxima seção" (só faz sentido com status='indicado'; a
+   * constraint do banco não aceita em realizado). Só passe quando o usuário PODE
+   * escrever — mesmo gate de onToggleStatus. Ausente = sem controle, só o pill de
+   * status mostra a cor/rótulo (leitura sempre funciona via corDoRegistro).
+   */
+  onToggleMomento?: () => void;
   /**
    * Variante B — modo seleção (R-04 Fase 3): quando true, o card mostra um checkbox
    * à esquerda e o clique SELECIONA em vez de expandir. Só é passado pros encamináveis
@@ -94,10 +104,11 @@ export interface RegistroCardProps {
   onAbrirGrande?: () => void;
 }
 
-const PILL: Record<'coral' | 'teal' | 'slate', { label: string; wrap: string; dot: string }> = {
-  teal:  { label: 'Realizado',     wrap: 'bg-teal-pale text-teal-ink',   dot: 'bg-teal' },
-  coral: { label: 'Planejado',     wrap: 'bg-coral-pale text-coral-ink', dot: 'bg-coral' },
-  slate: { label: 'Pré-existente', wrap: 'bg-slate-pale text-slate-ink', dot: 'bg-slate' },
+const PILL: Record<'coral' | 'teal' | 'slate' | 'warning', { label: string; wrap: string; dot: string }> = {
+  teal:    { label: 'Realizado',      wrap: 'bg-teal-pale text-teal-ink',       dot: 'bg-teal' },
+  coral:   { label: 'Planejado',      wrap: 'bg-coral-pale text-coral-ink',     dot: 'bg-coral' },
+  slate:   { label: 'Pré-existente',  wrap: 'bg-slate-pale text-slate-ink',     dot: 'bg-slate' },
+  warning: { label: 'Próxima seção',  wrap: 'bg-warning-pale text-warning-ink', dot: 'bg-warning' },
 };
 
 /** DD/MM/AAAA de um 'YYYY-MM-DD' SEM new Date() — evita o shift de fuso (UTC) que a casa já corrigiu. */
@@ -133,12 +144,12 @@ function resumoAncora(ancoras: AncoraClinica[]): string {
 }
 
 export function RegistroCard({
-  data, children, defaultOpen = false, onToggleStatus,
+  data, children, defaultOpen = false, onToggleStatus, onToggleMomento,
   selecionavel = false, selecionado = false, onToggleSelecao, onRemoverEncaminhamento,
   editavel = false, onObservacaoChange, onRemover, onAbrirGrande,
 }: RegistroCardProps) {
   const [aberto, setAberto] = useState(defaultOpen);
-  const cor = corDoRegistro(data.status, data.origem);
+  const cor = corDoRegistro(data.status, data.origem, data.momentoPlanejado);
   const pill = PILL[cor];
 
   const faces = facesTitulo(data.ancoras);
@@ -275,6 +286,28 @@ export function RegistroCard({
           <span className={`inline-flex items-center gap-1.5 shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full ${pill.wrap}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${pill.dot}`} />
             {pill.label}
+          </span>
+        )}
+
+        {/* R-101 — só faz sentido enquanto indicado; a constraint do banco não aceita
+            momento_planejado='proxima_sessao' com status='realizado'. */}
+        {data.status === 'indicado' && onToggleMomento && (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => { e.stopPropagation(); onToggleMomento(); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onToggleMomento(); }
+            }}
+            title={data.momentoPlanejado === 'proxima_sessao' ? 'Marcar pra sessão atual' : 'Marcar pra próxima seção'}
+            className={`inline-flex items-center gap-1 shrink-0 text-[11px] font-bold px-2 py-1 rounded-full cursor-pointer transition-colors outline-none focus-visible:ring-2 focus-visible:ring-teal ${
+              data.momentoPlanejado === 'proxima_sessao'
+                ? 'bg-warning-pale text-warning-ink'
+                : 'border border-border text-text-secondary hover:bg-surface-alt'
+            }`}
+          >
+            <Clock className="w-3 h-3" />
+            Próxima seção
           </span>
         )}
 

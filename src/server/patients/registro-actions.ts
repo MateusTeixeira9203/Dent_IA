@@ -30,6 +30,8 @@ function montarRowsEventos(
     tipo:           ev.tipo,
     status:         ev.status,
     origem:         ev.origem,
+    // R-101 — sem isso, todo save reseta silenciosamente pro default da RPC (sessao_atual).
+    momento_planejado: ev.momento_planejado,
     nivel:          ev.ancora.nivel,
     arcada:         ev.ancora.arcada ?? null,
     quadrante:      ev.ancora.quadrante ?? null,
@@ -255,6 +257,11 @@ export async function alternarStatusRegistro(params: {
       realizado_em: realizado
         ? (eventos[0].origem === 'clinica' ? params.dataClinica : null)
         : null,
+      // R-101 — sem isso, marcar como realizado um evento em "próxima seção" violaria a
+      // constraint odontograma_eventos_momento_coerente (momento só é != sessao_atual
+      // quando status='indicado'). Voltar pra indicado não precisa resetar de volta —
+      // a constraint já garante que só chega aqui com sessao_atual.
+      ...(realizado ? { momento_planejado: 'sessao_atual' } : {}),
     })
     .in('id', params.eventoIds)
     .eq('clinica_id', clinicId)
@@ -267,6 +274,73 @@ export async function alternarStatusRegistro(params: {
       return { ok: false, error: 'Este registro já foi assinado e não pode mais ser alterado.' };
     }
     console.error('[alternarStatusRegistro]', error.message);
+    return { ok: false, error: 'Não foi possível atualizar o registro.' };
+  }
+  return { ok: true };
+}
+
+/**
+ * R-101 — liga/desliga "próxima seção" de UM registro (grupo de eventos) na ficha salva.
+ * Mesmo padrão de guarda que alternarStatusRegistro (autor, ficha não assinada). Só faz
+ * sentido em status='indicado' — a constraint do banco recusa em realizado; o caller
+ * (RegistroCard) já esconde o controle nesse caso, mas a action não confia só na UI.
+ */
+export async function alternarMomentoRegistro(params: {
+  eventoIds: string[];
+  novoMomento: 'sessao_atual' | 'proxima_sessao';
+}): Promise<{ ok: boolean; error?: string }> {
+  const { supabase, user, clinicId, role } = await requireClinicContext();
+  if (role === 'secretaria') return { ok: false, error: 'Sem permissão.' };
+  if (params.eventoIds.length === 0) return { ok: true };
+
+  const { data: dentistaPerfil } = await supabase
+    .from('dentistas')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('clinica_id', clinicId)
+    .maybeSingle();
+
+  if (!dentistaPerfil) return { ok: false, error: 'Perfil de dentista não encontrado.' };
+
+  const { data: eventos } = await supabase
+    .from('odontograma_eventos')
+    .select('id, ficha_id')
+    .in('id', params.eventoIds)
+    .eq('clinica_id', clinicId)
+    .eq('dentista_id', dentistaPerfil.id);
+
+  if (!eventos || eventos.length !== params.eventoIds.length) {
+    return { ok: false, error: 'Registro não encontrado ou de outro dentista.' };
+  }
+
+  const fichaIds = [...new Set(eventos.map((e) => e.ficha_id).filter((f): f is string => f != null))];
+  const { data: fichas } = await supabase
+    .from('fichas')
+    .select('id, assinado_em')
+    .in('id', fichaIds)
+    .eq('clinica_id', clinicId);
+
+  if (fichas?.some((f) => f.assinado_em != null)) {
+    return { ok: false, error: 'Esta ficha já foi assinada e não pode mais ser alterada.' };
+  }
+
+  const { error } = await supabase
+    .from('odontograma_eventos')
+    .update({ momento_planejado: params.novoMomento })
+    .in('id', params.eventoIds)
+    .eq('clinica_id', clinicId)
+    .eq('dentista_id', dentistaPerfil.id);
+
+  if (error) {
+    if (error.message.includes('evento_assinado_imutavel')) {
+      return { ok: false, error: 'Este registro já foi assinado e não pode mais ser alterado.' };
+    }
+    // odontograma_eventos_momento_coerente — tentativa em status='realizado' (não deveria
+    // chegar aqui, o controle na UI já esconde; defesa em profundidade mesmo assim).
+    if (error.message.includes('momento_coerente')) {
+      return { ok: false, error: 'Só é possível marcar "próxima seção" em registros ainda não realizados.' };
+    }
+    console.error('[alternarMomentoRegistro]', error.message);
     return { ok: false, error: 'Não foi possível atualizar o registro.' };
   }
   return { ok: true };

@@ -13,21 +13,27 @@ import {
 } from '@/types/odontograma';
 import { TOOTH_NAMES } from '@/components/odontograma/Odontograma';
 
+type CorClinica = 'coral' | 'teal' | 'slate' | 'warning';
+
 const COR_TOKEN = {
-  coral: 'var(--color-coral)',
-  teal:  'var(--color-teal)',
-  slate: 'var(--color-slate)',
-} as const;
+  coral:   'var(--color-coral)',
+  teal:    'var(--color-teal)',
+  slate:   'var(--color-slate)',
+  warning: 'var(--color-warning)',
+} satisfies Record<CorClinica, string>;
 
 // Cor-de-texto calibrada AA (a cor cheia acima reprova em light mode sobre o
 // próprio fundo tingido — achado auditoria UX 19/07). Fill/ponto seguem COR_TOKEN.
 const COR_TOKEN_INK = {
-  coral: 'var(--color-coral-ink)',
-  teal:  'var(--color-teal-ink)',
-  slate: 'var(--color-slate-ink)',
-} as const;
+  coral:   'var(--color-coral-ink)',
+  teal:    'var(--color-teal-ink)',
+  slate:   'var(--color-slate-ink)',
+  warning: 'var(--color-warning-ink)',
+} satisfies Record<CorClinica, string>;
 
-const ROTULO_ESTADO = { coral: 'A fazer', teal: 'Feito', slate: 'Pré-exist.' } as const;
+const ROTULO_ESTADO = {
+  coral: 'A fazer', teal: 'Feito', slate: 'Pré-exist.', warning: 'Próxima seção',
+} satisfies Record<CorClinica, string>;
 
 export interface ToothGroupListProps {
   eventos: OdontogramaEventoDraft[];
@@ -80,7 +86,7 @@ export function ToothGroupList({ eventos, onDenteClick, className }: ToothGroupL
                 <span
                   key={i}
                   className="w-2 h-2 rounded-full"
-                  style={{ background: COR_TOKEN[corDoRegistro(ev.status, ev.origem)] }}
+                  style={{ background: COR_TOKEN[corDoRegistro(ev.status, ev.origem, ev.momento_planejado)] }}
                   aria-hidden="true"
                 />
               ))}
@@ -88,7 +94,7 @@ export function ToothGroupList({ eventos, onDenteClick, className }: ToothGroupL
           </div>
           <div className="flex flex-col">
             {evs.map((ev, i) => {
-              const cor = corDoRegistro(ev.status, ev.origem);
+              const cor = corDoRegistro(ev.status, ev.origem, ev.momento_planejado);
               return (
                 <div
                   key={i}
@@ -135,7 +141,7 @@ export function ToothGroupList({ eventos, onDenteClick, className }: ToothGroupL
             Arcada / região
           </div>
           {grupos.semDente.map((ev, i) => {
-            const cor = corDoRegistro(ev.status, ev.origem);
+            const cor = corDoRegistro(ev.status, ev.origem, ev.momento_planejado);
             return (
               <div key={i} className="flex items-center gap-2 py-1 text-[12px]">
                 <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>

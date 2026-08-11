@@ -54,6 +54,7 @@ function paraCard(e: MeuDiaEventoVisita): EventoParaCard {
       faces: e.faces,
     },
     origem: e.origem,
+    momentoPlanejado: e.momento_planejado,
     observacao: e.observacao,
     detalhe: e.detalhe,
     realizadoEm: e.realizadoEm,

@@ -56,13 +56,24 @@ export type StatusRegistro = 'indicado' | 'realizado';
 /** Quem/quando: feito aqui vs. já estava assim quando o paciente chegou. */
 export type OrigemRegistro = 'clinica' | 'preexistente';
 
+/** R-101 — dentro do que ainda está 'indicado': planejado pra AGORA (sessao_atual, default)
+ *  ou deliberadamente empurrado pro dentista tratar numa sessão futura. Eixo ORTOGONAL a
+ *  status/origem (mesmo padrão de corDoRegistro) — nunca redefine o que é pendência, só a
+ *  cor/rótulo. Só o dentista seta; a IA nunca decide (mesma classe de invariante de
+ *  realizado_em, §1.10). Só é significativo quando status='indicado' (constraint no banco). */
+export type MomentoPlanejado = 'sessao_atual' | 'proxima_sessao';
+
 /**
- * Cor semântica — função pura de status+origem. 'indicado' é SEMPRE coral, não importa
- * quem achou o problema (não existe 4ª cor "pendência pré-existente"). 'realizado' vira
- * teal (fizemos aqui) ou slate (já estava pronto quando o paciente chegou).
+ * Cor semântica — função pura de status+origem+momentoPlanejado. 'indicado' é coral, exceto
+ * quando planejado pra próxima sessão (âmbar) — não existe 4ª cor "pendência pré-existente".
+ * 'realizado' vira teal (fizemos aqui) ou slate (já estava pronto quando o paciente chegou).
  */
-export function corDoRegistro(status: StatusRegistro, origem: OrigemRegistro): 'coral' | 'teal' | 'slate' {
-  if (status === 'indicado') return 'coral';
+export function corDoRegistro(
+  status: StatusRegistro,
+  origem: OrigemRegistro,
+  momentoPlanejado: MomentoPlanejado = 'sessao_atual',
+): 'coral' | 'teal' | 'slate' | 'warning' {
+  if (status === 'indicado') return momentoPlanejado === 'proxima_sessao' ? 'warning' : 'coral';
   return origem === 'preexistente' ? 'slate' : 'teal';
 }
 
@@ -130,6 +141,8 @@ export interface OdontogramaEvento {
   tipo: TipoRegistroOdontograma;
   status: StatusRegistro;
   origem: OrigemRegistro;
+  /** R-101 — ver corDoRegistro. Default 'sessao_atual'. */
+  momento_planejado: MomentoPlanejado;
   ancora: AncoraClinica;
   papel_no_grupo: PapelNoGrupo | null;
   observacao: string | null;
@@ -186,6 +199,8 @@ export interface OdontogramaEstadoAtual {
   face: FaceDental | null;
   status: StatusRegistro;
   origem: OrigemRegistro;
+  /** R-101 — ver corDoRegistro. Default 'sessao_atual'. */
+  momento_planejado: MomentoPlanejado;
   grupo_id: string | null;
   papel_no_grupo: PapelNoGrupo | null;
   realizado_em: string | null;
@@ -221,6 +236,8 @@ export interface OdontogramaEventoInput {
   tipo: TipoRegistroOdontograma;
   status: StatusRegistro;
   origem: OrigemRegistro;
+  /** R-101 — ver corDoRegistro. Default 'sessao_atual'. Só o dentista seta; a IA nunca preenche. */
+  momento_planejado: MomentoPlanejado;
   ancora: AncoraClinica;
   grupo_id: string | null;
   papel_no_grupo: PapelNoGrupo | null;
