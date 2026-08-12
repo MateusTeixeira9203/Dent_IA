@@ -70,3 +70,16 @@ test('extrairDentesDoTexto: ignora número de 2 dígitos que não é FDI válido
 test('extrairDentesDoTexto: não duplica dente repetido no texto', () => {
   assert.deepEqual(extrairDentesDoTexto('dente 26, canal do 26'), [26]);
 });
+
+test('achado 12/08: 3 procedimentos distintos no mesmo relato — cada um só com o seu dente', () => {
+  const r = casarProcedimentoLocal('restauração no dente 35 36, fratura no dente 55 e extração no dente 12', []);
+  assert.deepEqual(r.find((x) => x.tipo === 'carie_restauracao')?.dentes, [35, 36]);
+  assert.deepEqual(r.find((x) => x.tipo === 'fratura')?.dentes, [55]);
+  assert.deepEqual(r.find((x) => x.tipo === 'exodontia')?.dentes, [12]);
+});
+
+test('agrupamento não quebra "restauração 35 e 36" quando é o único tipo do relato', () => {
+  const r = casarProcedimentoLocal('fratura no dente 55, restauração 35 e 36', []);
+  assert.deepEqual(r.find((x) => x.tipo === 'carie_restauracao')?.dentes, [35, 36]);
+  assert.deepEqual(r.find((x) => x.tipo === 'fratura')?.dentes, [55]);
+});

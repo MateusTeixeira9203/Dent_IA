@@ -64,6 +64,21 @@ export function extrairDentesDoTexto(texto: string): number[] {
   return dentes;
 }
 
+/** Agrupa o relato em segmentos por procedimento (achado 12/08: "fratura no 55 e extração
+ *  no 12" dava os 2 dentes pros 2 tipos). Um segmento sem tipo/catálogo próprio (ex.: "36"
+ *  em "restauração 35 e 36") é CONTINUAÇÃO do grupo anterior, não abre grupo novo — é o que
+ *  impede quebrar o caso já coberto de 2 dentes no mesmo procedimento. */
+function agruparPorProcedimento(texto: string, labelsReconhecidos: string[]): string[] {
+  const grupos: string[] = [];
+  for (const seg of texto.split(/,| e /i).map((s) => s.trim()).filter(Boolean)) {
+    const segNorm = normalizar(seg);
+    const abreGrupo = grupos.length === 0 || labelsReconhecidos.some((l) => segNorm.includes(normalizar(l)));
+    if (abreGrupo) grupos.push(seg);
+    else grupos[grupos.length - 1] += ` e ${seg}`;
+  }
+  return grupos;
+}
+
 export function casarProcedimentoLocal(
   texto: string,
   catalogo: MeuDiaCatalogoProcedimento[],
@@ -71,23 +86,43 @@ export function casarProcedimentoLocal(
   const norm = normalizar(texto);
   if (!norm.trim()) return [];
 
-  const dentes = extrairDentesDoTexto(texto);
+  const dentesGlobais = extrairDentesDoTexto(texto);
+
+  const labelsCasados = [
+    ...(Object.values(TIPO_LABEL) as string[]).filter((label) => norm.includes(normalizar(label))),
+    ...catalogo.filter((item) => norm.includes(normalizar(item.nome))).map((item) => item.nome),
+  ];
+  // Só agrupa quando há >1 procedimento no relato — com 0 ou 1, o grupo é o texto inteiro
+  // e o resultado é idêntico ao comportamento anterior (mantém os testes de dente único).
+  const grupos = labelsCasados.length > 1 ? agruparPorProcedimento(texto, labelsCasados) : [texto];
+
+  /** Dentes do(s) segmento(s) onde ESTE label apareceu — não do relato inteiro. Grupo sem
+   *  dente próprio (ex.: "coroa total" sem número) cai pro global em vez de ficar vazio. */
+  function dentesDoLabel(label: string): number[] {
+    const gruposDoLabel = grupos.filter((g) => normalizar(g).includes(normalizar(label)));
+    if (gruposDoLabel.length === 0) return dentesGlobais;
+    const dentesDoGrupo = [...new Set(gruposDoLabel.flatMap(extrairDentesDoTexto))];
+    return dentesDoGrupo.length > 0 ? dentesDoGrupo : dentesGlobais;
+  }
+
   const sugestoes: SugestaoLocal[] = [];
 
   // Tipo estrutural antes de catálogo (regra 4 da spec) — a ordem de inserção já garante isso.
   for (const [tipo, label] of Object.entries(TIPO_LABEL) as [TipoRegistroOdontograma, string][]) {
     if (!norm.includes(normalizar(label))) continue;
     const nivelBoca = TIPOS_NIVEL_BOCA.has(tipo);
+    const dentes = nivelBoca ? [] : dentesDoLabel(label);
     sugestoes.push({
       tipo,
       catalogo: null,
-      dentes: nivelBoca ? [] : dentes,
+      dentes,
       trecho: !nivelBoca && dentes.length > 0 ? `${label} – dente ${dentes.join(', ')}` : label,
     });
   }
 
   for (const item of catalogo) {
     if (!norm.includes(normalizar(item.nome))) continue;
+    const dentes = dentesDoLabel(item.nome);
     sugestoes.push({
       tipo: null,
       catalogo: item,
