@@ -1,7 +1,10 @@
 # Roadmap — Odonto.IA
 
 > **ROADMAP** · atualizado **2026-08-11** · ordenado por **importância pro dentista**
-> **Último push:** 11/08 (`7f9f512`..`cbd39ee`) — R-101 no ar (odontograma, 3º estado "próxima
+> **Último push:** 12/08 (`b427391`) — R-103a no ar: Dex destravado (C1-C4 mortas), mock fora,
+> casca de 3 colunas nos tokens do artefato aprovado, sino apagado, novidades reais. **Verificado
+> por ele** (G1/G3/G10/G11 conferidos ao vivo por mim antes; ele fechou o resto).
+> **Push anterior:** 11/08 (`7f9f512`..`cbd39ee`) — R-101 no ar (odontograma, 3º estado "próxima
 > seção") e R-102 no ar (compromisso pessoal na agenda). **R-101 testado e aprovado por ele.**
 > R-102: layout revisado ao vivo (Sheet antigo → Dialog do padrão Novo Agendamento) e 1 bug de
 > dado corrigido (secretária criava com o próprio id por padrão). **G1-G6 sem teste formal** —
@@ -95,7 +98,7 @@ prioridade, por melhor que seja.
 | **R-87** | 🔧 Erro de hidratação React (#418) em toda navegação — dashboard, orçamentos, pacientes, ficha do paciente | ⏳ achado 08/08 (auditoria completa). Reproduzido 5× em 4 rotas diferentes, mesmo chunk (`4bd1b696…js`). Não travou nenhuma tela nem perdeu dado observado, mas é sistêmico — cheira a componente compartilhado do layout (nav/sino de notificação?) com mismatch servidor/cliente. Sem investigação de causa raiz ainda | P |
 | **R-81** | 👥 Secretária registra PELO dentista — fluxo real relatado por ele 08/08, hoje **bloqueado** (`meu-dia/page.tsx:24` redireciona secretaria) | ⏳ achado 08/08, escopo corrigido 10/08: é a secretária **dentro da sala**, no computador do dentista, usando a sessão dele já logada — **sem perfil próprio, sem seletor de "dia de quem", sem gate de 2 contas**. "Possivelmente mais valioso que o R-78 inteiro" — dentista fica presente e dita em tempo real, ela só executa. Sem spec | G |
 | [**R-94**](specs/R-94-agenda-do-protetico.md) | **Agenda do protético** — role novo (login como o da secretária), pedido criado no agendamento (paciente + obs + data), calendário só dele, marca "entregue" | 🟡 **codado, testado ao vivo e no ar 10/08** (`58f6c14`..`3f295d8`, migrations 128-133). Ele confirmou funcionando. Mitigação do fail-open: gate de ponto único no layout. 4 bugs achados testando: loop infinito de redirect (derrubava o servidor), alerta de CRO vazando pro protético, login passando por `/dashboard` à toa (~2.4s), ponto do calendário mentindo status. **Falta o G6 (2 contas deliberado)** | G |
-| [**R-103**](specs/R-103-painel-do-dex.md) | **Painel do Dex** — modal central de 3 colunas: pendências · números do negócio · central de atualização | 🔵 **spec rascunho 11/08**, artefato aprovado, 6 abertas no §4 (2 resolvidas por ele). Fatias: [a](specs/R-103a-destravar-o-dex.md) destravar (4 causas achadas no código) · b pendências · c números do mês · R-104 curso. **Absorve o R-26** | G |
+| [**R-103**](specs/R-103-painel-do-dex.md) | **Painel do Dex** — modal central de 3 colunas: pendências · números do negócio · central de atualização | 🔵 **a ✅ no ar e verificado por ele 12/08** (`b427391`) — destravado, mock fora, casca de 3 colunas, sino apagado. Spec arquivada em [`_arquivo/specs/R-103a-destravar-o-dex.md`](_arquivo/specs/R-103a-destravar-o-dex.md). Falta: b pendências (6 abertas no §4) · c números do mês · R-104 curso. **Absorve o R-26** | G |
 | [**R-102**](specs/R-102-compromisso-pessoal-agenda.md) | Compromisso pessoal do dentista — bloqueia a própria agenda (dia + hora início/fim), sem paciente | 🟡 **no ar 11/08** (`cbd39ee`, migration 138) — tabela isolada de `agendamentos`, RLS espelha `agendamentos_access`, conflito nos 2 sentidos, bot/retorno respeitam via `getDisponibilidadeSemana`, atalhos de período (Manhã/Tarde/Dia inteiro). Layout corrigido ao vivo (Sheet antigo → Dialog do Novo Agendamento) + bug do dentista padrão da secretária. **G1-G6 sem teste formal** — risco aceito por ele (RLS = cópia de `agendamentos_access`) | M |
 
 ## Bloco 2 — Orçamento e financeiro

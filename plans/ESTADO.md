@@ -1,27 +1,19 @@
 # Estado — Odonto.IA
 
 > **ESTADO** · atualizado 2026-08-12 · sessão #38
-> **Item ativo:** R-103 · **Modo da última sessão:** execução → planejamento
-> **Próxima sessão: execução do R-103a** (pedido dele ao fechar).
+> **Item ativo:** R-103 · **Modo da sessão:** execução (R-101/R-102) → planejamento (R-103) →
+> execução (R-103a)
 
 ## Agora
 
-**R-103 — Painel do Dex.** Spec em rascunho, **zero código**. Objetivo: o Dex vira o hub único do
-dia — pendências que pedem ação, números do negócio, e a central de atualização/curso. Modal
-central de 3 colunas.
+**R-103 — Painel do Dex.** R-103a **no ar e verificado por ele** (`b427391`, 12/08): as 4 causas
+do painel travado mortas (gate de onboarding, widget não montava pra secretária, `MOCK_OPS`/demo
+na tela, listener duplicado), casca de 3 colunas nos tokens do artefato aprovado, sino apagado
+(zona Aconteceu assume as notificações), novidades reais. Spec fechada e arquivada.
 
-**Feito:** artefato aprovado por ele (`plans/artefatos/R-103-painel-do-dex.html`, 3 colunas, modal
-central, avatar de robô) · diagnóstico com 4 causas confirmadas no código · medição em produção
-que definiu o recorte · 2 specs escritas ([master](specs/R-103-painel-do-dex.md) 126 linhas +
-[R-103a](specs/R-103a-destravar-o-dex.md) 294 linhas) · R-26 absorvido.
-
-**Falta:** ele aprovar as specs (o recorte e as 6 abertas do §4 do master — **nenhuma bloqueia o
-R-103a**) e então codar o R-103a nas 7 fases do §7.
-
-⚠️ **A ordem das fases do R-103a não é a intuitiva:** limpar o mock vem **antes** de destravar o
-Dex. O mock nunca chegou a produção porque o painel estava fechado — destravar primeiro publicaria
-a ficção no mesmo commit que conserta o bug. Está marcado na spec, mas é o tipo de coisa que
-alguém reordena de boa-fé.
+**Falta pro R-103 fechar:** R-103b (as 3 pendências novas) e R-103c ("O mês", números
+comparativos) — ambos esperam as 6 abertas do §4 do [master](specs/R-103-painel-do-dex.md),
+nenhuma respondida ainda. R-104 (curso) sem data.
 
 ## Travado
 
@@ -32,8 +24,6 @@ alguém reordena de boa-fé.
 
 ## Esperando você
 
-- **R-103 — aprovar as specs e o recorte** (a/b/c + R-104). O R-103a pode começar sem responder
-  mais nada.
 - **R-103b — as 6 abertas do §4 do master:** definição das 3 pendências · dedup entre elas ·
   "nunca veio" (226 na Clindent) vira lista própria? · 30 ou 60 dias · escopo meu-vs-clínica
   (**a única que pode exigir RPC nova**) · CTA de WhatsApp em lote.
@@ -49,6 +39,5 @@ alguém reordena de boa-fé.
 
 ## Próximo da fila
 
-Codar o **R-103a** (fases 1-3 primeiro: limpar → alerta pro dentista → destravar). Depois, à
-escolha: R-103b (precisa das 6 respostas) ou R-103c. `ROADMAP.md` segue precisando de poda
-dedicada — 240 linhas, teto ~200, estourado há várias sessões.
+À escolha: R-103b (precisa das 6 respostas acima) ou R-103c ("O mês"). `ROADMAP.md` segue
+precisando de poda dedicada — 240 linhas, teto ~200, estourado há várias sessões.

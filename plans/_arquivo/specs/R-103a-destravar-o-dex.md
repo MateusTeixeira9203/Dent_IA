@@ -1,7 +1,7 @@
 # R-103a — Destravar o Dex e trocar pela casca de 3 colunas
 
-> **SPEC** · **R-103a** · status: **rascunho — aguardando aprovação dele**
-> **Aberto:** 2026-08-11 · **Fechado:** — · **Fase:** contrato técnico
+> **SPEC** · **R-103a** · status: **✅ no ar e verificado por ele**
+> **Aberto:** 2026-08-11 · **Fechado:** 2026-08-12 · **Fase:** concluída — `b427391`
 > **Modelo:** Sonnet 5 — é deleção + fiação + casca contra artefato já aprovado. Zero schema,
 > zero RLS, zero prompt de IA. (O R-103b escala pra Opus: lá a definição de pendência cruza a
 > assimetria de RLS entre `fichas` e `agendamentos`.)
