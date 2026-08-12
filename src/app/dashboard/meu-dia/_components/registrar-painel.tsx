@@ -501,8 +501,13 @@ export function useRegistrarPainel({
   const campoMagico = (
     <>
       {/* D1 — campo mágico: entrada única. R-62: os chips locais (zero IA) vivem dentro
-          dele agora — é o que mata a disclosure "Registrar sem IA" que existia aqui. */}
+          dele agora — é o que mata a disclosure "Registrar sem IA" que existia aqui.
+          key={agendamentoId} — o texto/áudio/anexo do CapturaLivreCard é estado interno
+          (useCapturaLivre), fora do alcance do reset por comparação de id acima (esse só
+          cobre o state desta hook). Sem a key, o campo mágico continuava preenchido com o
+          relato do paciente anterior ao trocar pelo rail (achado 12/08). */}
       <CampoMagicoMeuDia
+        key={agendamentoId}
         pacienteNome={pacienteNome}
         eventosDraft={eventosDraft}
         onEventosDraftChange={setEventosDraft}
