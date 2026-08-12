@@ -83,6 +83,26 @@ Mockups HTML em `plans/artefatos/R-NN-{slug}.html`. **Como ler e usar: skill `ar
 (servir por HTTP local, extrair tokens por JS, escrever em texto na spec — nunca `Read` no
 HTML nem `file://`).
 
+### Artefato aprovado é a base — inegociável
+
+Quando existe artefato **aprovado por mim**, ele deixa de ser referência e passa a ser **o
+contrato visual da implementação**. Ele já foi debatido, ajustado e moldado pro que eu quero: a
+decisão visual **já aconteceu**, e reabrir ela no código é desfazer trabalho pago.
+
+- **A implementação COPIA o artefato, não "se inspira" nele.** Estrutura, hierarquia, ordem dos
+  blocos, espaçamento, geometria — tudo. Se algo do artefato não couber, isso é um **achado pra
+  me trazer**, não licença pra improvisar uma variação.
+- **Divergiu do artefato = está errado**, mesmo que o resultado pareça bom isolado. A pergunta na
+  hora de dar a tela por pronta não é "ficou bonito?", é *"está igual ao artefato aprovado?"*.
+- **Nunca deduza do artefato pelo olho.** Tokens, medidas e algoritmo se extraem por JS
+  (`artefato-visual`) e viram texto na spec. Aproximar layout no olho já produziu tela **pior que
+  a produção** (22/07: o artefato aproximou em vez de portar `calcularFaixas`).
+- **O artefato é fonte de verdade só do visual.** Regra de negócio, nome de campo, chamada de API
+  e schema continuam vindo da spec — artefato bonito não autoriza mudar comportamento.
+- Vale pra toda tela nova **e** pra redesign. Se o artefato ficou desatualizado depois de uma
+  decisão minha, **o artefato se atualiza primeiro** — nunca se implementa contra um artefato
+  que a gente sabe que está velho.
+
 <!-- SAAS-BASE-RULES:START — bloco gerenciado pelo setup. Editável, mas o install.ps1 atualiza entre os marcadores. -->
 ## Regras do setup (SaaS Base)
 

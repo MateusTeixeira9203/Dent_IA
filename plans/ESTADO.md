@@ -1,27 +1,27 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-08-11 · sessão #37 (continuação)
-> **Item ativo:** R-102 · **Modo da última sessão:** execução
+> **ESTADO** · atualizado 2026-08-12 · sessão #38
+> **Item ativo:** R-103 · **Modo da última sessão:** execução → planejamento
+> **Próxima sessão: execução do R-103a** (pedido dele ao fechar).
 
 ## Agora
 
-**R-102 — Compromisso pessoal na agenda.** Codado inteiro e commitado: migration 138 aplicada
-(tabela `agenda_bloqueios`, RLS espelha `agendamentos_access`), actions novas, conflito nos 2
-sentidos (consulta↔bloqueio), bot de WhatsApp e grade de retorno respeitam via
-`getDisponibilidadeSemana`, render nas 3 visões. Typecheck/lint/build limpos.
+**R-103 — Painel do Dex.** Spec em rascunho, **zero código**. Objetivo: o Dex vira o hub único do
+dia — pendências que pedem ação, números do negócio, e a central de atualização/curso. Modal
+central de 3 colunas.
 
-Bug de processo achado e corrigido nesta sessão: a 1ª versão do dialog copiou o padrão visual
-**errado** (Sheet lateral com gradiente do "Encaixe", cores hardcoded `amber-500`/`red-500`) em
-vez do padrão real do "Novo agendamento" (Dialog centralizado, tokens semânticos
-`warning`/`coral-ink`). Ele apontou ao vivo, corrigido e aprovado. Também somei os atalhos de
-período (Manhã/Tarde/Dia inteiro) que ele pediu — preenchem hora+duração, campo continua livre.
+**Feito:** artefato aprovado por ele (`plans/artefatos/R-103-painel-do-dex.html`, 3 colunas, modal
+central, avatar de robô) · diagnóstico com 4 causas confirmadas no código · medição em produção
+que definiu o recorte · 2 specs escritas ([master](specs/R-103-painel-do-dex.md) 126 linhas +
+[R-103a](specs/R-103a-destravar-o-dex.md) 294 linhas) · R-26 absorvido.
 
-**No ar desde 11/08** (`cbd39ee`). G1-G6 nunca tiveram teste formal — avisei sobre G6 (2 contas)
-antes do push; ele avaliou o risco como baixo (RLS é cópia 1:1 de `agendamentos_access`, já
-comprovada) e decidiu subir mesmo assim. No caminho, achei e corrigi 1 bug real: o dialog
-pré-selecionava a própria secretária como dentista padrão (ela pediu esse fluxo — "secretária
-também tem que conseguir marcar pro dentista" — e sem a correção o bloqueio nasceria com
-`dentista_id` errado, sem aviso).
+**Falta:** ele aprovar as specs (o recorte e as 6 abertas do §4 do master — **nenhuma bloqueia o
+R-103a**) e então codar o R-103a nas 7 fases do §7.
+
+⚠️ **A ordem das fases do R-103a não é a intuitiva:** limpar o mock vem **antes** de destravar o
+Dex. O mock nunca chegou a produção porque o painel estava fechado — destravar primeiro publicaria
+a ficção no mesmo commit que conserta o bug. Está marcado na spec, mas é o tipo de coisa que
+alguém reordena de boa-fé.
 
 ## Travado
 
@@ -32,27 +32,23 @@ também tem que conseguir marcar pro dentista" — e sem a correção o bloqueio
 
 ## Esperando você
 
-- **R-102 — G1-G6 ainda sem teste formal**, mesmo no ar. Vale um teste real (criar, os 2
-  sentidos de conflito, secretária escolhendo dentista) na próxima vez que ele estiver na tela.
-- **R-98b — por que desativar o botão "Salvar como meu modelo"?** Codado, migration no ar,
-  ele pediu pra desativar antes de eu conseguir perguntar o motivo. Preciso saber a razão
-  antes de saber quando/se reativar. Não commitado.
-- **Layout antigo em "vários lugares da secretária"** — ele mencionou de passagem ao revisar o
-  R-102 (11/08), sem apontar exatamente quais telas. Não é escopo do R-102 (aditivo, não
-  redesign) — vira item próprio quando ele apontar os lugares específicos.
-- **Painel do Dex — o que entra no conteúdo?** Escopo decidido (painel novo do zero,
-  substitui sino de notificação + FAB "Dex copiloto"; **não** reaproveita o
-  `DexPresencePanel` que já existe órfão no código, sem motivo dado pra essa escolha).
-  Pergunta sobre as seções de dentro ficou sem resposta
-- Veredito de produção do R-98a — segue sem confirmação desde a sessão #35
+- **R-103 — aprovar as specs e o recorte** (a/b/c + R-104). O R-103a pode começar sem responder
+  mais nada.
+- **R-103b — as 6 abertas do §4 do master:** definição das 3 pendências · dedup entre elas ·
+  "nunca veio" (226 na Clindent) vira lista própria? · 30 ou 60 dias · escopo meu-vs-clínica
+  (**a única que pode exigir RPC nova**) · CTA de WhatsApp em lote.
+- **R-98b — por que desativar o botão "Salvar como meu modelo"?** Codado, migration 136 no ar,
+  **não commitado**. Sem o motivo eu não sei quando/se reativar.
+- **R-102 — G1-G6 sem teste formal**, mesmo no ar. Vale exercitar criar/conflito nos 2 sentidos/
+  secretária escolhendo dentista na próxima vez que estiver na agenda.
+- Veredito de produção do R-98a — sem confirmação desde a sessão #35
 - Aprovar a [R-36](specs/R-36-um-login-uma-clinica.md) reescrita (§7: 3 decisões)
-- Definir o preço — trava o R-92 quando ele voltar
 - G6 do R-94 — teste deliberado de 2 contas (dentista cria pedido → protético marca entregue)
 - Gate de 2 contas represado (R-29/R-30/R-31a/R-32/R-34/R-39/R-03c) — parado há semanas
-- Testar pessoalmente R-85/R-86/R-65/R-66 (herdados de sessões antigas, ainda 🟡)
+- Testar pessoalmente R-85/R-86/R-65/R-66 (herdados, ainda 🟡)
 
 ## Próximo da fila
 
-Resolver o push do R-102 antes de somar mais em cima. Depois, à escolha: R-98b (motivo da
-desativação) ou retomar o conteúdo do painel do Dex. `ROADMAP.md` segue precisando de poda
-dedicada (estourou o teto de ~200 linhas há várias sessões seguidas).
+Codar o **R-103a** (fases 1-3 primeiro: limpar → alerta pro dentista → destravar). Depois, à
+escolha: R-103b (precisa das 6 respostas) ou R-103c. `ROADMAP.md` segue precisando de poda
+dedicada — 240 linhas, teto ~200, estourado há várias sessões.
