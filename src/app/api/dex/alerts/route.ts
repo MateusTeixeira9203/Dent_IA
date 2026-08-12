@@ -40,10 +40,44 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const agora = new Date();
     const hojeInicio = new Date(agora);
     hojeInicio.setHours(0, 0, 0, 0);
-    const hojeFim = new Date(agora);
-    hojeFim.setHours(23, 59, 59, 999);
+    // Janela do "sem confirmação" cobre hoje + amanhã (o artefato pede amanhã).
+    const amanhaFim = new Date(agora);
+    amanhaFim.setDate(amanhaFim.getDate() + 1);
+    amanhaFim.setHours(23, 59, 59, 999);
     const tresDiasAtras = new Date(agora);
     tresDiasAtras.setDate(tresDiasAtras.getDate() - 3);
+
+    // D11 — dentista/admin veem só a própria agenda/orçamentos; secretaria vê a
+    // clínica inteira (mesmo precedente de financeiro/actions.ts:252).
+    const scopado = dentista.role !== 'secretaria';
+
+    let agendamentosNaoConfirmadosQuery = supabase
+      .from('agendamentos')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinica_id', dentista.clinica_id)
+      .eq('status', 'scheduled')
+      .gte('data_hora', hojeInicio.toISOString())
+      .lte('data_hora', amanhaFim.toISOString());
+
+    let orcamentosRascunhoQuery = supabase
+      .from('orcamentos')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinica_id', dentista.clinica_id)
+      .eq('status', 'rascunho');
+
+    // Inteligência comercial: orçamentos enviados >3 dias com nome do paciente
+    let orcamentosAtrasadosQuery = supabase
+      .from('orcamentos')
+      .select('id, total, paciente:pacientes(nome)')
+      .eq('clinica_id', dentista.clinica_id)
+      .eq('status', 'enviado')
+      .lte('updated_at', tresDiasAtras.toISOString());
+
+    if (scopado) {
+      agendamentosNaoConfirmadosQuery = agendamentosNaoConfirmadosQuery.eq('dentista_id', dentista.id);
+      orcamentosRascunhoQuery         = orcamentosRascunhoQuery.eq('dentista_id', dentista.id);
+      orcamentosAtrasadosQuery        = orcamentosAtrasadosQuery.eq('dentista_id', dentista.id);
+    }
 
     const [
       agendamentosNaoConfirmados,
@@ -51,29 +85,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       orcamentosAtrasados,
       notificacoesDB,
     ] = await Promise.all([
-      supabase
-        .from('agendamentos')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinica_id', dentista.clinica_id)
-        .eq('status', 'scheduled')
-        .gte('data_hora', hojeInicio.toISOString())
-        .lte('data_hora', hojeFim.toISOString()),
-
-      supabase
-        .from('orcamentos')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinica_id', dentista.clinica_id)
-        .eq('status', 'rascunho'),
-
-      // Inteligência comercial: orçamentos enviados >3 dias com nome do paciente
-      supabase
-        .from('orcamentos')
-        .select('id, total, paciente:pacientes(nome)')
-        .eq('clinica_id', dentista.clinica_id)
-        .eq('status', 'enviado')
-        .lte('updated_at', tresDiasAtras.toISOString())
-        .order('updated_at', { ascending: true })
-        .limit(5),
+      agendamentosNaoConfirmadosQuery,
+      orcamentosRascunhoQuery,
+      orcamentosAtrasadosQuery.order('updated_at', { ascending: true }).limit(5),
 
       // Notificações não lidas: role correto E (sem dentista alvo OU para este dentista)
       supabase
@@ -133,47 +147,45 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       });
     }
 
-    // ── Alertas exclusivos da secretaria ───────────────────────────────────
-    if (isSecretaria) {
-      const naoConfirmados = agendamentosNaoConfirmados.count ?? 0;
-      if (naoConfirmados > 0) {
-        alerts.push({
-          id:          'computed_agendamentos',
-          type:        'warning',
-          title:       `${naoConfirmados} consulta${naoConfirmados > 1 ? 's' : ''} sem confirmação`,
-          description: naoConfirmados === 1
-            ? 'Um paciente agendado hoje ainda não confirmou presença.'
-            : `${naoConfirmados} pacientes agendados hoje ainda não confirmaram.`,
-          href:        '/dashboard/agendamentos',
-        });
-      }
+    // ── Alertas operacionais — antes só a secretaria via, agora todo mundo (C2) ──
+    const naoConfirmados = agendamentosNaoConfirmados.count ?? 0;
+    if (naoConfirmados > 0) {
+      alerts.push({
+        id:          'computed_agendamentos',
+        type:        'warning',
+        title:       `${naoConfirmados} consulta${naoConfirmados > 1 ? 's' : ''} sem confirmação`,
+        description: naoConfirmados === 1
+          ? 'Um paciente agendado hoje ou amanhã ainda não confirmou presença.'
+          : `${naoConfirmados} pacientes agendados hoje ou amanhã ainda não confirmaram.`,
+        href:        '/dashboard/agendamentos',
+      });
+    }
 
-      const rascunhos = orcamentosRascunho.count ?? 0;
-      if (rascunhos > 0) {
-        alerts.push({
-          id:          'computed_rascunhos',
-          type:        'info',
-          title:       `${rascunhos} orçamento${rascunhos > 1 ? 's' : ''} em rascunho`,
-          description: `${rascunhos > 1 ? 'Orçamentos criados' : 'Orçamento criado'} mas ainda não enviado${rascunhos > 1 ? 's' : ''} ao paciente.`,
-          href:        '/dashboard/orcamentos',
-        });
-      }
+    const rascunhos = orcamentosRascunho.count ?? 0;
+    if (rascunhos > 0) {
+      alerts.push({
+        id:          'computed_rascunhos',
+        type:        'info',
+        title:       `${rascunhos} orçamento${rascunhos > 1 ? 's' : ''} em rascunho`,
+        description: `${rascunhos > 1 ? 'Orçamentos criados' : 'Orçamento criado'} mas ainda não enviado${rascunhos > 1 ? 's' : ''} ao paciente.`,
+        href:        '/dashboard/orcamentos',
+      });
+    }
 
-      const atrasados = orcamentosAtrasados.data ?? [];
-      if (atrasados.length > 0) {
-        const nomes = atrasados
-          .map(o => (o.paciente as unknown as { nome: string } | null)?.nome)
-          .filter(Boolean)
-          .join(', ');
-        const total = atrasados.reduce((s, o) => s + ((o.total as number) ?? 0), 0);
-        alerts.push({
-          id:          'computed_followup',
-          type:        'danger',
-          title:       `Follow-up: ${atrasados.length} orçamento${atrasados.length > 1 ? 's' : ''} sem retorno`,
-          description: `${nomes} — ${atrasados.length > 1 ? 'Orçamentos enviados' : 'Orçamento enviado'} há +3 dias. Total em aberto: R$ ${total.toFixed(2).replace('.', ',')}.`,
-          href:        '/dashboard/orcamentos',
-        });
-      }
+    const atrasados = orcamentosAtrasados.data ?? [];
+    if (atrasados.length > 0) {
+      const nomes = atrasados
+        .map(o => (o.paciente as unknown as { nome: string } | null)?.nome)
+        .filter(Boolean)
+        .join(', ');
+      const total = atrasados.reduce((s, o) => s + ((o.total as number) ?? 0), 0);
+      alerts.push({
+        id:          'computed_followup',
+        type:        'danger',
+        title:       `Follow-up: ${atrasados.length} orçamento${atrasados.length > 1 ? 's' : ''} sem retorno`,
+        description: `${nomes} — ${atrasados.length > 1 ? 'Orçamentos enviados' : 'Orçamento enviado'} há +3 dias. Total em aberto: R$ ${total.toFixed(2).replace('.', ',')}.`,
+        href:        '/dashboard/orcamentos',
+      });
     }
 
     return NextResponse.json({ alerts });
@@ -196,13 +208,19 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     const notifId = body.id.replace('notif_', '');
     const supabase = await createClient();
 
-    const { error } = await supabase
+    // Conferir linhas afetadas — UPDATE barrado por RLS devolve 0 linhas sem
+    // erro nenhum; sem o .select(), a rota responderia {ok:true} mentindo (I6).
+    const { data, error } = await supabase
       .from('notificacoes')
       .update({ lida: true })
       .eq('id', notifId)
-      .eq('clinica_id', dentista.clinica_id);
+      .eq('clinica_id', dentista.clinica_id)
+      .select('id');
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!data || data.length === 0) {
+      return NextResponse.json({ error: 'Notificação não encontrada' }, { status: 404 });
+    }
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[dex/alerts PATCH] Erro:', err);

@@ -11,22 +11,16 @@ export interface DexContextData {
   proximoPaciente: string | null;
   proximoAgendamentoId: string | null;
   proximoHorario: string | null;
-  receitaProjetadaHoje: number;
+  entrouHoje: number;
   followUpPendentes: number;
   aniversariantesHoje: { nome: string; id: string }[];
   consultasSemana: number;
   orcamentosAprovadosSemana: number;
   /** Agendamentos marcados para amanhã */
   agendamentosAmanha: number;
-  /** Pacientes sem nenhuma ficha clínica nos últimos 60 dias */
-  pacientesInativos60d: number;
-  /** Orçamentos aprovados sem agendamento futuro associado */
-  orcamentosAprovadosSemAgendamento: number;
   /** Listas de drill-down para cada insight (até 5 itens cada) */
   orcamentosAtrasados30dList: { id: string; paciente: string; pacienteId: string; total: number }[];
   followUpPendentesList: { id: string; paciente: string; pacienteId: string; total: number }[];
-  orcamentosAprovadosSemAgendamentoList: { id: string; paciente: string; pacienteId: string; total: number }[];
-  pacientesInativos60dList: { id: string; nome: string }[];
 }
 
 /**
@@ -45,6 +39,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const supabase = await createClient();
     const agora = new Date();
+    // D11 — dentista/admin veem só a própria agenda/orçamentos/pagamentos; secretaria
+    // vê a clínica inteira (mesmo precedente de financeiro/actions.ts:252).
+    const scopado = dentista.role !== 'secretaria';
 
     const hojeInicio = new Date(agora);
     hojeInicio.setHours(0, 0, 0, 0);
@@ -65,8 +62,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     tresDiasAtras.setDate(tresDiasAtras.getDate() - 3);
     const trintaDiasAtras = new Date(agora);
     trintaDiasAtras.setDate(agora.getDate() - 30);
-    const sessentaDiasAtras = new Date(agora);
-    sessentaDiasAtras.setDate(agora.getDate() - 60);
 
     // Janela de amanhã
     const amanhaInicio = new Date(agora);
@@ -80,6 +75,122 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const diaStr = String(agora.getDate()).padStart(2, '0');
     const mesdia = `-${mesStr}-${diaStr}`;
 
+    let agendamentosQuery = supabase
+      .from('agendamentos')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinica_id', dentista.clinica_id)
+      .gte('data_hora', hojeInicio.toISOString())
+      .lte('data_hora', hojeFim.toISOString())
+      .not('status', 'eq', 'cancelled');
+
+    let agendamentosListQuery = supabase
+      .from('agendamentos')
+      .select('data_hora, status, paciente:pacientes(nome)')
+      .eq('clinica_id', dentista.clinica_id)
+      .gte('data_hora', hojeInicio.toISOString())
+      .lte('data_hora', hojeFim.toISOString())
+      .not('status', 'eq', 'cancelled');
+
+    let orcamentosQuery = supabase
+      .from('orcamentos')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinica_id', dentista.clinica_id)
+      .in('status', ['rascunho', 'enviado']);
+
+    let orcamentosAtrasados30dQuery = supabase
+      .from('orcamentos')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinica_id', dentista.clinica_id)
+      .eq('status', 'enviado')
+      .lte('updated_at', trintaDiasAtras.toISOString());
+
+    let proximoQuery = supabase
+      .from('agendamentos')
+      .select('id, data_hora, paciente:pacientes(nome)')
+      .eq('clinica_id', dentista.clinica_id)
+      .gte('data_hora', agora.toISOString())
+      .lte('data_hora', hojeFim.toISOString())
+      .not('status', 'eq', 'cancelled');
+
+    // R-65 — !inner + filtro no embed: pagamento cujo orçamento pai é rascunho/recusado
+    // nunca deveria contar como "entrou hoje" (mesma classe corrigida em financeiro).
+    let pagamentosHojeQuery = supabase
+      .from('pagamentos')
+      .select('valor, orcamentos!inner(status)')
+      .eq('clinica_id', dentista.clinica_id)
+      .eq('status', 'pago')
+      .gte('data_pagamento', hojeInicio.toISOString().split('T')[0])
+      .lte('data_pagamento', hojeFim.toISOString().split('T')[0])
+      .not('orcamentos.status', 'in', '(rascunho,recusado)');
+
+    let followUpQuery = supabase
+      .from('orcamentos')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinica_id', dentista.clinica_id)
+      .eq('status', 'enviado')
+      .lte('updated_at', tresDiasAtras.toISOString());
+
+    let consultasSemanaQuery = supabase
+      .from('agendamentos')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinica_id', dentista.clinica_id)
+      .gte('data_hora', semanaInicio.toISOString())
+      .lte('data_hora', semanaFim.toISOString())
+      .not('status', 'eq', 'cancelled');
+
+    let orcamentosAprovadosSemanaQuery = supabase
+      .from('orcamentos')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinica_id', dentista.clinica_id)
+      .eq('status', 'aprovado')
+      .gte('updated_at', semanaInicio.toISOString())
+      .lte('updated_at', semanaFim.toISOString());
+
+    let agendamentosAmanhaQuery = supabase
+      .from('agendamentos')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinica_id', dentista.clinica_id)
+      .gte('data_hora', amanhaInicio.toISOString())
+      .lte('data_hora', amanhaFim.toISOString())
+      .not('status', 'eq', 'cancelled');
+
+    let atrasados30dListQuery = supabase
+      .from('orcamentos')
+      .select('id, total, paciente:pacientes(id, nome)')
+      .eq('clinica_id', dentista.clinica_id)
+      .eq('status', 'enviado')
+      .lte('updated_at', trintaDiasAtras.toISOString());
+
+    let followUpListQuery = supabase
+      .from('orcamentos')
+      .select('id, total, paciente:pacientes(id, nome)')
+      .eq('clinica_id', dentista.clinica_id)
+      .eq('status', 'enviado')
+      .lte('updated_at', tresDiasAtras.toISOString());
+
+    // Aniversariantes — fato da clínica inteira, não escopado por dentista
+    const aniversariantesQuery = supabase
+      .from('pacientes')
+      .select('id, nome')
+      .eq('clinica_id', dentista.clinica_id)
+      .like('data_nascimento', `%${mesdia}`)
+      .limit(10);
+
+    if (scopado) {
+      agendamentosQuery              = agendamentosQuery.eq('dentista_id', dentista.id);
+      agendamentosListQuery          = agendamentosListQuery.eq('dentista_id', dentista.id);
+      orcamentosQuery                = orcamentosQuery.eq('dentista_id', dentista.id);
+      orcamentosAtrasados30dQuery    = orcamentosAtrasados30dQuery.eq('dentista_id', dentista.id);
+      proximoQuery                   = proximoQuery.eq('dentista_id', dentista.id);
+      pagamentosHojeQuery            = pagamentosHojeQuery.eq('dentista_id', dentista.id);
+      followUpQuery                  = followUpQuery.eq('dentista_id', dentista.id);
+      consultasSemanaQuery           = consultasSemanaQuery.eq('dentista_id', dentista.id);
+      orcamentosAprovadosSemanaQuery = orcamentosAprovadosSemanaQuery.eq('dentista_id', dentista.id);
+      agendamentosAmanhaQuery        = agendamentosAmanhaQuery.eq('dentista_id', dentista.id);
+      atrasados30dListQuery          = atrasados30dListQuery.eq('dentista_id', dentista.id);
+      followUpListQuery              = followUpListQuery.eq('dentista_id', dentista.id);
+    }
+
     const [
       agendamentosRes,
       agendamentosListRes,
@@ -92,165 +203,26 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       consultasSemanaRes,
       orcamentosAprovadosSemanaRes,
       agendamentosAmanhaRes,
-      pacientesInativos60dRes,
-      orcamentosAprovadosSemAgendamentoRes,
       atrasados30dListRes,
       followUpListRes,
-      aprovadosSemAgendamentoListRes,
-      inativos60dListRes,
     ] = await Promise.all([
-      supabase
-        .from('agendamentos')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinica_id', dentista.clinica_id)
-        .gte('data_hora', hojeInicio.toISOString())
-        .lte('data_hora', hojeFim.toISOString())
-        .not('status', 'eq', 'cancelled'),
-
-      // Lista completa dos agendamentos de hoje (para o painel)
-      supabase
-        .from('agendamentos')
-        .select('data_hora, status, paciente:pacientes(nome)')
-        .eq('clinica_id', dentista.clinica_id)
-        .gte('data_hora', hojeInicio.toISOString())
-        .lte('data_hora', hojeFim.toISOString())
-        .not('status', 'eq', 'cancelled')
-        .order('data_hora', { ascending: true })
-        .limit(10),
-
-      supabase
-        .from('orcamentos')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinica_id', dentista.clinica_id)
-        .in('status', ['rascunho', 'enviado']),
-
-      // Orçamentos enviados há +30 dias sem resposta
-      supabase
-        .from('orcamentos')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinica_id', dentista.clinica_id)
-        .eq('status', 'enviado')
-        .lte('updated_at', trintaDiasAtras.toISOString()),
-
-      supabase
-        .from('agendamentos')
-        .select('id, data_hora, paciente:pacientes(nome)')
-        .eq('clinica_id', dentista.clinica_id)
-        .gte('data_hora', agora.toISOString())
-        .lte('data_hora', hojeFim.toISOString())
-        .not('status', 'eq', 'cancelled')
-        .order('data_hora', { ascending: true })
-        .limit(1)
-        .maybeSingle(),
-
-      supabase
-        .from('pagamentos')
-        .select('valor')
-        .eq('clinica_id', dentista.clinica_id)
-        .eq('status', 'pago')
-        .gte('data_pagamento', hojeInicio.toISOString().split('T')[0])
-        .lte('data_pagamento', hojeFim.toISOString().split('T')[0]),
-
-      supabase
-        .from('orcamentos')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinica_id', dentista.clinica_id)
-        .eq('status', 'enviado')
-        .lte('updated_at', tresDiasAtras.toISOString()),
-
-      // Aniversariantes do dia
-      supabase
-        .from('pacientes')
-        .select('id, nome')
-        .eq('clinica_id', dentista.clinica_id)
-        .like('data_nascimento', `%${mesdia}`)
-        .limit(10),
-
-      // Consultas da semana
-      supabase
-        .from('agendamentos')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinica_id', dentista.clinica_id)
-        .gte('data_hora', semanaInicio.toISOString())
-        .lte('data_hora', semanaFim.toISOString())
-        .not('status', 'eq', 'cancelled'),
-
-      // Orçamentos aprovados esta semana
-      supabase
-        .from('orcamentos')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinica_id', dentista.clinica_id)
-        .eq('status', 'aprovado')
-        .gte('updated_at', semanaInicio.toISOString())
-        .lte('updated_at', semanaFim.toISOString()),
-
-      // Agendamentos de amanhã
-      supabase
-        .from('agendamentos')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinica_id', dentista.clinica_id)
-        .gte('data_hora', amanhaInicio.toISOString())
-        .lte('data_hora', amanhaFim.toISOString())
-        .not('status', 'eq', 'cancelled'),
-
-      // Pacientes inativos — sem ficha clínica nos últimos 60 dias
-      // Aproximação: pacientes da clínica sem nenhuma ficha recente
-      supabase
-        .from('pacientes')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinica_id', dentista.clinica_id)
-        .lt('updated_at', sessentaDiasAtras.toISOString()),
-
-      // Orçamentos aprovados sem agendamento futuro
-      supabase
-        .from('orcamentos')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinica_id', dentista.clinica_id)
-        .eq('status', 'aprovado')
-        .lt('updated_at', tresDiasAtras.toISOString()),
-
-      // Lista drill-down: atrasados +30 dias
-      supabase
-        .from('orcamentos')
-        .select('id, total, paciente:pacientes(id, nome)')
-        .eq('clinica_id', dentista.clinica_id)
-        .eq('status', 'enviado')
-        .lte('updated_at', trintaDiasAtras.toISOString())
-        .order('updated_at', { ascending: true })
-        .limit(5),
-
-      // Lista drill-down: follow-ups pendentes (+3 dias)
-      supabase
-        .from('orcamentos')
-        .select('id, total, paciente:pacientes(id, nome)')
-        .eq('clinica_id', dentista.clinica_id)
-        .eq('status', 'enviado')
-        .lte('updated_at', tresDiasAtras.toISOString())
-        .order('updated_at', { ascending: true })
-        .limit(5),
-
-      // Lista drill-down: aprovados sem agendamento
-      supabase
-        .from('orcamentos')
-        .select('id, total, paciente:pacientes(id, nome)')
-        .eq('clinica_id', dentista.clinica_id)
-        .eq('status', 'aprovado')
-        .lt('updated_at', tresDiasAtras.toISOString())
-        .order('updated_at', { ascending: true })
-        .limit(5),
-
-      // Lista drill-down: pacientes inativos +60 dias
-      supabase
-        .from('pacientes')
-        .select('id, nome')
-        .eq('clinica_id', dentista.clinica_id)
-        .lt('updated_at', sessentaDiasAtras.toISOString())
-        .order('updated_at', { ascending: true })
-        .limit(5),
+      agendamentosQuery,
+      agendamentosListQuery.order('data_hora', { ascending: true }).limit(10),
+      orcamentosQuery,
+      orcamentosAtrasados30dQuery,
+      proximoQuery.order('data_hora', { ascending: true }).limit(1).maybeSingle(),
+      pagamentosHojeQuery,
+      followUpQuery,
+      aniversariantesQuery,
+      consultasSemanaQuery,
+      orcamentosAprovadosSemanaQuery,
+      agendamentosAmanhaQuery,
+      atrasados30dListQuery.order('updated_at', { ascending: true }).limit(5),
+      followUpListQuery.order('updated_at', { ascending: true }).limit(5),
     ]);
 
     const pacienteData = proximoRes.data?.paciente as { nome: string } | null | undefined;
-    const receitaHoje = (pagamentosHojeRes.data ?? []).reduce((s, p) => s + ((p.valor as number) ?? 0), 0);
+    const entrouHoje = (pagamentosHojeRes.data ?? []).reduce((s, p) => s + ((p.valor as number) ?? 0), 0);
     const proximoHorario = proximoRes.data?.data_hora
       ? new Date(proximoRes.data.data_hora as string).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
       : null;
@@ -287,13 +259,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const followUpPendentesList = mapOrcList(
       followUpListRes.data as { id: unknown; total: unknown; paciente: unknown }[] | null,
     );
-    const orcamentosAprovadosSemAgendamentoList = mapOrcList(
-      aprovadosSemAgendamentoListRes.data as { id: unknown; total: unknown; paciente: unknown }[] | null,
-    );
-    const pacientesInativos60dList = (inativos60dListRes.data ?? []).map((p) => ({
-      id: p.id as string,
-      nome: p.nome as string,
-    }));
 
     return NextResponse.json({
       agendamentosHoje:                         agendamentosRes.count ?? 0,
@@ -303,18 +268,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       proximoPaciente:                          pacienteData?.nome ?? null,
       proximoAgendamentoId:                     (proximoRes.data?.id as string | null) ?? null,
       proximoHorario,
-      receitaProjetadaHoje:                     receitaHoje,
+      entrouHoje,
       followUpPendentes:                        followUpRes.count ?? 0,
       aniversariantesHoje:                      aniversariantes,
       consultasSemana:                          consultasSemanaRes.count ?? 0,
       orcamentosAprovadosSemana:                orcamentosAprovadosSemanaRes.count ?? 0,
       agendamentosAmanha:                       agendamentosAmanhaRes.count ?? 0,
-      pacientesInativos60d:                     pacientesInativos60dRes.count ?? 0,
-      orcamentosAprovadosSemAgendamento:        orcamentosAprovadosSemAgendamentoRes.count ?? 0,
       orcamentosAtrasados30dList,
       followUpPendentesList,
-      orcamentosAprovadosSemAgendamentoList,
-      pacientesInativos60dList,
     } satisfies DexContextData);
   } catch (err) {
     console.error('[dex/context] Erro:', err);
@@ -326,18 +287,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       proximoPaciente: null,
       proximoAgendamentoId: null,
       proximoHorario: null,
-      receitaProjetadaHoje: 0,
+      entrouHoje: 0,
       followUpPendentes: 0,
       aniversariantesHoje: [],
       consultasSemana: 0,
       orcamentosAprovadosSemana: 0,
       agendamentosAmanha: 0,
-      pacientesInativos60d: 0,
-      orcamentosAprovadosSemAgendamento: 0,
       orcamentosAtrasados30dList: [],
       followUpPendentesList: [],
-      orcamentosAprovadosSemAgendamentoList: [],
-      pacientesInativos60dList: [],
     } satisfies DexContextData);
   }
 }

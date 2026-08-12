@@ -29,7 +29,6 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type { DentistaRole } from '@/types/database';
 import { OdontoIALogo } from '@/components/ui/dent-ia-logo';
-import { NotificationBell } from '@/components/layout/notification-bell';
 import { ClinicSwitcher } from '@/components/layout/clinic-switcher';
 import Image from 'next/image';
 
@@ -317,8 +316,6 @@ export function SidebarContent({
 
       {/* ── Utilitários ── */}
       <div className="py-1 px-2 space-y-0.5 shrink-0">
-        <NotificationBell isExpanded={isExpanded} />
-
         {/* Modo Escuro / Claro */}
         <button
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}

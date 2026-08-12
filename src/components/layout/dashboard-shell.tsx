@@ -25,7 +25,7 @@ interface DashboardShellProps {
   dentistaId: string;
 }
 
-export function DashboardShell({ children, nome, clinicaNome, activeClinicId, role, avatarUrl, plano, dentistaId }: DashboardShellProps) {
+export function DashboardShell({ children, nome, clinicaNome, activeClinicId, role, avatarUrl, plano }: DashboardShellProps) {
   const router = useRouter();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -139,15 +139,9 @@ export function DashboardShell({ children, nome, clinicaNome, activeClinicId, ro
       {/* FASE 1: guia desativado — ver roadmap-3-fases A2 */}
       {/* {role !== 'secretaria' && <DexGuide nome={nome} dentistaId={dentistaId} />} */}
 
-      {role !== 'secretaria' && role !== 'protetico' && (
-        <DexWidget
-          nome={nome}
-          dentistaId={dentistaId}
-          role={role}
-          plano={plano}
-          hideTrigger
-        />
-      )}
+      {/* D4 — hub monta também pra secretária: ela tem os 3 alertas computados e é
+          quem liga pro paciente; antes o botão dela existia mas nunca abria nada (C2) */}
+      {role !== 'protetico' && <DexWidget nome={nome} />}
 
       {hasMountedPalette && (
         <CommandPalette

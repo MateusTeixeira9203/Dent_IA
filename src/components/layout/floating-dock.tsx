@@ -15,7 +15,6 @@ import { temFeature } from '@/lib/planos';
 import type { DentistaRole } from '@/types/database';
 import type { PlanoId } from '@/lib/planos';
 import { DockNavItem } from './dock-nav-item';
-import { NotificationBell } from './notification-bell';
 import { useClinicSwitcher } from '@/hooks/use-clinic-switcher';
 import { useLogout } from '@/hooks/use-logout';
 
@@ -50,9 +49,19 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const [dexBadge, setDexBadge] = useState(0);
   const { clinicas, loading: clinicasLoading, switching, switchClinic } = useClinicSwitcher();
 
   useEffect(() => { setMounted(true); }, []);
+
+  // Badge da bola do Dex — o hub despacha a contagem (useDexHub.ts), sem provider novo
+  useEffect(() => {
+    const handler = (e: Event) => {
+      setDexBadge((e as CustomEvent<{ count: number }>).detail?.count ?? 0);
+    };
+    window.addEventListener('dex-badge', handler);
+    return () => window.removeEventListener('dex-badge', handler);
+  }, []);
 
   // R-19 — convenção de zona segura: o dock publica sua presença (body.has-dock) pra que barras
   // contextuais fixas no bottom-center (EncaminharBar, voice-ux, futuras) ancorem ACIMA dele via
@@ -138,6 +147,11 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
           <Bot className="w-4 h-4 text-white" />
           <span className="absolute inset-0 rounded-full animate-ping opacity-20"
             style={{ background: 'rgba(47,156,133,0.4)' }} />
+          {dexBadge > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-coral px-1 text-[10px] font-bold text-white">
+              {dexBadge > 9 ? '9+' : dexBadge}
+            </span>
+          )}
         </button>
       )}
 
@@ -155,14 +169,6 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
 
       {/* ── Separador direita ── */}
       <div className="w-px h-6 bg-white/[0.07] mx-1 shrink-0" />
-
-      {/* ── Notification bell — protético não recebe alerta nenhum (route.ts do dex/alerts
-          devolve [] pra esse role), sino sempre vazio seria um afordance morto ── */}
-      {role !== 'protetico' && (
-        <div className="flex items-center justify-center px-1">
-          <NotificationBell isExpanded={false} />
-        </div>
-      )}
 
       {/* ── Avatar + dropdown ── */}
       {/* Radix DropdownMenu só monta no cliente para evitar hydration mismatch com useId */}
