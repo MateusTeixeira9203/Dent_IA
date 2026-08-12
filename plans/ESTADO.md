@@ -2,18 +2,21 @@
 
 > **ESTADO** · atualizado 2026-08-12 · sessão #38
 > **Item ativo:** R-103 · **Modo da sessão:** execução (R-101/R-102) → planejamento (R-103) →
-> execução (R-103a)
+> execução (R-103a) → pontual (campo mágico)
 
 ## Agora
 
-**R-103 — Painel do Dex.** R-103a **no ar e verificado por ele** (`b427391`, 12/08): as 4 causas
-do painel travado mortas (gate de onboarding, widget não montava pra secretária, `MOCK_OPS`/demo
-na tela, listener duplicado), casca de 3 colunas nos tokens do artefato aprovado, sino apagado
-(zona Aconteceu assume as notificações), novidades reais. Spec fechada e arquivada.
+**Nada em modo planejamento/execução ativo agora — sessão fechando.** R-103 (master) segue
+🔵 como próximo item quando alguém retomar: R-103a fechado (`b427391`), falta R-103b/c/R-104,
+todos travados nas 6 abertas do §4 do [master](specs/R-103-painel-do-dex.md).
 
-**Falta pro R-103 fechar:** R-103b (as 3 pendências novas) e R-103c ("O mês", números
-comparativos) — ambos esperam as 6 abertas do §4 do [master](specs/R-103-painel-do-dex.md),
-nenhuma respondida ainda. R-104 (curso) sem data.
+**Nesta sessão, além do R-103a:** 2 pontuais no campo mágico do Meu dia, achados testando o
+R-103a ao vivo — campo mágico não limpava ao trocar de paciente no rail (`e5e91f6`) e o
+matcher local misturava dentes de procedimentos diferentes no mesmo relato (`199c232`). Os
+dois confirmados ao vivo por ele. Testando o 2º, apareceram **2 achados novos, não
+corrigidos** (detalhe no [ROADMAP.md](ROADMAP.md), header): matcher local não casa rótulo
+singular com relato no plural; status realizado/indicado às vezes sai errado na extração por
+IA. Nenhum dos dois virou item formal ainda — ver Esperando você.
 
 ## Travado
 
@@ -24,6 +27,14 @@ nenhuma respondida ainda. R-104 (curso) sem data.
 
 ## Esperando você
 
+- **Matcher local do campo mágico não casa plural** ("restaurações" não acha "Restauração") —
+  qual abordagem: stemming pontual só pra -ção/-ções (mais comum), algo mais completo, ou vira
+  item próprio com spec? Afeta pelo menos 5 rótulos (Restauração, Extração, Canal, Lesão
+  periapical, Coroa total, Exame periodontal).
+- **Status realizado/indicado errado na extração por IA** — "encontrei uma lesão periapical"
+  saiu Realizado, "fratura" (mesma categoria clínica no código) saiu Planejado, no mesmo
+  relato. Não investigado a fundo. Precisa virar item com eval antes/depois (regra do
+  CLAUDE.md pra prompt de extração clínica).
 - **R-103b — as 6 abertas do §4 do master:** definição das 3 pendências · dedup entre elas ·
   "nunca veio" (226 na Clindent) vira lista própria? · 30 ou 60 dias · escopo meu-vs-clínica
   (**a única que pode exigir RPC nova**) · CTA de WhatsApp em lote.
@@ -39,5 +50,6 @@ nenhuma respondida ainda. R-104 (curso) sem data.
 
 ## Próximo da fila
 
-À escolha: R-103b (precisa das 6 respostas acima) ou R-103c ("O mês"). `ROADMAP.md` segue
-precisando de poda dedicada — 240 linhas, teto ~200, estourado há várias sessões.
+Decidir os 2 achados do campo mágico (viram item? qual abordagem?) antes de mais alguém usar
+o Meu dia com relato no plural. Depois, à escolha: R-103b/c. `ROADMAP.md` segue precisando de
+poda dedicada — 218 linhas, teto ~200, estourado há várias sessões.

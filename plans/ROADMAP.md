@@ -1,7 +1,18 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · atualizado **2026-08-11** · ordenado por **importância pro dentista**
-> **Último push:** 12/08 (`b427391`) — R-103a no ar: Dex destravado (C1-C4 mortas), mock fora,
+> **ROADMAP** · atualizado **2026-08-12** · ordenado por **importância pro dentista**
+> **Último push:** 12/08 (`199c232`) — 2 pontuais no campo mágico do Meu dia: campo não
+> limpava ao trocar de paciente no rail (`e5e91f6`), matcher local misturava dentes de
+> procedimentos diferentes no mesmo relato (`199c232`). Os dois confirmados ao vivo por ele.
+> **Achados sem item, 12/08 (testando os pontuais acima):** matcher local não casa rótulo
+> singular com relato no plural ("restaurações" não acha "Restauração" — ção→ções troca ã→õ,
+> não é só "+s"; confirmado que também quebra Canal/Lesão periapical/Coroa total/Exame
+> periodontal) · status realizado/indicado às vezes sai errado na extração por IA
+> (`/api/dex/formatar-evolucao`) — "encontrei uma lesão periapical" (achado) saiu Realizado,
+> "fratura" (mesma categoria clínica no código) saiu Planejado, no mesmo relato. Nenhum dos
+> dois corrigido — plural exige decisão de stemming, status é prompt de IA (exige eval,
+> regra do CLAUDE.md). Detalhe no [handoff](handoffs/handoff-2026-08-12-1323.md).
+> **Push anterior:** 12/08 (`b427391`) — R-103a no ar: Dex destravado (C1-C4 mortas), mock fora,
 > casca de 3 colunas nos tokens do artefato aprovado, sino apagado, novidades reais. **Verificado
 > por ele** (G1/G3/G10/G11 conferidos ao vivo por mim antes; ele fechou o resto).
 > **Push anterior:** 11/08 (`7f9f512`..`cbd39ee`) — R-101 no ar (odontograma, 3º estado "próxima
