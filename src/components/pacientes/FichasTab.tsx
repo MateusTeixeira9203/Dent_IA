@@ -56,6 +56,8 @@ import type {
   TipoRegistroOdontograma, StatusRegistro, OrigemRegistro, AncoraClinica,
   NivelAncora, Arcada, FaceDental, PapelNoGrupo, MomentoPlanejado,
 } from '@/types/odontograma';
+import type { FichaEvolucao } from '@/types/ficha';
+import { nomeTratamentoDerivado } from '@/lib/ficha/nome-tratamento';
 import { alternarStatusRegistro, alternarMomentoRegistro, encaminharProcedimento, atualizarStatusEncaminhado, preencherDetalheEncaminhado, assinarProcedimentos, assinarTodosRealizadosDaFicha } from '@/server/patients/registro-actions';
 import { salvarFicha, deletarFicha, contarVinculosFicha, type VinculosFicha } from '@/server/patients/salvar-ficha';
 import { derivarResponsaveis, eventosVisiveis, fichaVisivel, filtroAindaValido } from '@/lib/fichas/filtro-responsavel';
@@ -192,6 +194,11 @@ interface Evolution {
   autorCro: string | null;
   /** Eventos do odontograma desta ficha (camada 2). Vazio nas fichas v2 antigas (sem backfill). */
   eventos: EventoView[];
+  /** R-108 — nome do tratamento gravado no banco. `null` = usa o derivado (nomeTratamentoDerivado),
+   *  nunca mostrado vazio (§4.3). */
+  nome: string | null;
+  /** R-108 — evolução por visita (migration 141). Todas as fichas têm ≥1 pelo backfill. */
+  evolucoes: FichaEvolucao[];
 }
 
 type FichaDB = {
@@ -213,6 +220,8 @@ type FichaDB = {
   assinado_em: string | null;
   tratamento_id: string | null;
   orto_manutencao: OrtoManutencaoInfo | null;
+  /** R-108 — nullable: fichas existentes nasceram sem nome, leitura cai no derivado. */
+  nome: string | null;
 };
 
 /**
@@ -273,6 +282,8 @@ const mapFichaToEvolution = (f: FichaDB): Evolution => ({
   ortoManutencao: f.orto_manutencao ?? null,
   autorCro: f.dentista?.cro ?? null,
   eventos: [], // anexados em fetchFichas após buscar a tabela odontograma_eventos
+  nome: f.nome,
+  evolucoes: [], // anexadas em fetchFichas após buscar ficha_evolucoes
 });
 
 /**
@@ -476,6 +487,8 @@ const DEMO_EVOLUTION: Omit<Evolution, 'dentistaId'> = {
   ortoManutencao: null,
   autorCro: null,
   eventos: [],
+  nome: null,
+  evolucoes: [],
 };
 
 interface FichasTabProps {
@@ -796,7 +809,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       const supabase = createClient();
       const { data, error } = await supabase
         .from("fichas")
-        .select("id, created_at, data_atendimento, queixa_principal, anotacoes, dentes_afetados, dentes_observacoes, status, procedimentos_concluidos, procedimentos_status, procedimentos, conduta, assinatura_url, assinado_em, tratamento_id, orto_manutencao, dentista_id, dentista:dentistas(nome, cro)")
+        .select("id, created_at, data_atendimento, queixa_principal, anotacoes, dentes_afetados, dentes_observacoes, status, procedimentos_concluidos, procedimentos_status, procedimentos, conduta, assinatura_url, assinado_em, tratamento_id, orto_manutencao, nome, dentista_id, dentista:dentistas(nome, cro)")
         .eq("paciente_id", patientId)
         .eq("clinica_id", clinicaId)
         .order("data_atendimento", { ascending: false })
@@ -846,7 +859,38 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
         if (arr) arr.push(view); else eventosPorFicha.set(e.ficha_id, [view]);
       }
 
-      setEvolutions(fichas.map((f) => ({ ...f, eventos: eventosPorFicha.get(f.id) ?? [] })));
+      // R-108 — evolução por visita (migration 141). Toda ficha tem ≥1 pelo backfill; falha
+      // aqui não é fail-closed como odontograma_eventos (não é dado de escrita/orçamento) —
+      // degrada pra timeline vazia, mesmo padrão de "erro engolido só quando é seguro".
+      const { data: evoData, error: evoError } = await supabase
+        .from("ficha_evolucoes")
+        .select("id, ficha_id, dentista_id, data, texto, automatica, dentista:dentistas(nome)")
+        .eq("clinica_id", clinicaId)
+        .in("ficha_id", (data as unknown as FichaDB[]).map((f) => f.id));
+
+      if (evoError) console.error("Erro ao buscar ficha_evolucoes:", evoError);
+
+      const evolucoesPorFicha = new Map<string, FichaEvolucao[]>();
+      for (const e of (evoData ?? []) as unknown as {
+        id: string; ficha_id: string; dentista_id: string; data: string; texto: string | null;
+        automatica: boolean; dentista: { nome: string } | null;
+      }[]) {
+        const view: FichaEvolucao = {
+          id: e.id, fichaId: e.ficha_id, dentistaId: e.dentista_id,
+          dentistaNome: e.dentista?.nome ?? "Profissional",
+          data: e.data, texto: e.texto, automatica: e.automatica,
+        };
+        const arr = evolucoesPorFicha.get(e.ficha_id);
+        if (arr) arr.push(view); else evolucoesPorFicha.set(e.ficha_id, [view]);
+      }
+      // Mais recente primeiro — mesma ordem da timeline do artefato (blocos 1-6).
+      for (const arr of evolucoesPorFicha.values()) arr.sort((a, b) => (a.data < b.data ? 1 : -1));
+
+      setEvolutions(fichas.map((f) => ({
+        ...f,
+        eventos: eventosPorFicha.get(f.id) ?? [],
+        evolucoes: evolucoesPorFicha.get(f.id) ?? [],
+      })));
     } catch (err) {
       console.error("Erro ao buscar fichas:", err);
     } finally {
@@ -2017,6 +2061,15 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
               const doneProcs = validKeys.filter((k) => evo.procedimentosStatus[k] === 'concluido').length;
               const allDone = totalProcs > 0 && doneProcs === totalProcs;
 
+              // R-108 §4.3 — nome gravado vence; sem nome, deriva dos eventos (nunca vazio).
+              // Só existe pra ficha do modelo novo (com evento) — legado não tem tratamento.
+              const nomeTratamento = eventosVis.length > 0
+                ? (evo.nome ?? nomeTratamentoDerivado(eventosVis.map(eventoViewParaDraft)))
+                : null;
+              const feitosTratamento = eventosVis.filter((e) => e.status === 'realizado').length;
+              const totalTratamento = eventosVis.length;
+              const progressoPct = totalTratamento > 0 ? Math.round((feitosTratamento / totalTratamento) * 100) : 0;
+
               return (
               <motion.div
                 key={evo.id}
@@ -2036,6 +2089,16 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                     className="w-full flex items-center gap-3 px-5 py-4 cursor-pointer flex-wrap"
                   >
                     <div className="min-w-0 flex-1">
+                      {/* R-108 §6 bloco 1 — cabeçalho do tratamento: nome + progresso. Só nasce
+                          com evento (ficha do modelo novo); legado fica exatamente como era. */}
+                      {nomeTratamento && (
+                        <p className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-teal-ink mb-0.5">
+                          <span className="truncate">{nomeTratamento}</span>
+                          <span className="shrink-0 font-mono normal-case tracking-normal text-text-secondary">
+                            {feitosTratamento} de {totalTratamento}
+                          </span>
+                        </p>
+                      )}
                       <p className="font-heading text-lg text-text-primary truncate">
                         {evo.type} · <span className="font-mono text-base">{evo.date}</span>
                       </p>
@@ -2048,6 +2111,11 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                           : `${totalProcs} procedimento${totalProcs !== 1 ? 's' : ''}`}
                         {evo.assinadoEm && <span className="text-teal-ink font-semibold"> · ✓ assinada</span>}
                       </p>
+                      {nomeTratamento && (
+                        <div className="mt-1.5 h-1 max-w-[220px] overflow-hidden rounded-full bg-surface-alt">
+                          <div className="h-full rounded-full bg-teal" style={{ width: `${progressoPct}%` }} />
+                        </div>
+                      )}
                     </div>
 
                     {eventosVis.length > 0 ? (
@@ -2425,6 +2493,40 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                                   <p className="text-xs text-text-secondary leading-relaxed whitespace-pre-line">{evo.conduta}</p>
                                 </div>
                               )}
+                            </div>
+                          )}
+
+                          {/* R-108 §6 bloco 5 — evoluções, uma por visita. Só ficha do modelo
+                              novo (com tratamento) tem mais de 1; legado nunca chega aqui
+                              porque nomeTratamento é null sem evento (§4.3). */}
+                          {nomeTratamento && evo.evolucoes.length > 0 && (
+                            <div className="bg-surface-alt/40 border border-border/60 rounded-2xl px-4 py-3">
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary mb-3">
+                                Evoluções — uma por visita
+                              </p>
+                              <div className="relative pl-[22px] before:absolute before:left-[5px] before:top-1.5 before:bottom-1.5 before:w-0.5 before:bg-border before:content-['']">
+                                {evo.evolucoes.map((e) => (
+                                  <div
+                                    key={e.id}
+                                    className="relative pb-4 last:pb-0 before:absolute before:-left-[21px] before:top-1 before:h-3 before:w-3 before:rounded-full before:bg-teal before:shadow-[0_0_0_3px_var(--color-surface-alt)] before:content-['']"
+                                  >
+                                    <div className="flex flex-wrap items-baseline gap-2">
+                                      <span className="font-mono text-xs font-medium text-text-primary">{dataBR(e.data)}</span>
+                                      <span className="text-[11px] text-text-secondary">{e.dentistaNome}</span>
+                                      {e.automatica && (
+                                        <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary/70">
+                                          · automática
+                                        </span>
+                                      )}
+                                    </div>
+                                    {e.texto && (
+                                      <p className="mt-1 max-w-[72ch] whitespace-pre-line text-xs leading-relaxed text-text-secondary">
+                                        {e.texto}
+                                      </p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           )}
                         </div>
