@@ -216,4 +216,40 @@ não virar surpresa.
   item novo, precisa de investigação própria de como esse mecanismo se relaciona com
   `eventosDraft`
 - Mudar o clique do odontograma pra não abrir mais o histórico do dente sozinho — decisão
-  dele, separada, não entra aqui
+  dele, separada, não entra aqui (ver §9, é exatamente o que o "Modo multidente" virou)
+
+## 9. Adendo (13/08, pedido dele ao vivo, depois da execução original) — "Modo multidente"
+
+**Problema achado testando o §5:** montar a seleção de 2+ dentes exigia "voltar à boca" entre
+cada clique — o 1º clique já trocava o espelho pelo histórico daquele dente (arquitetura R-78,
+"1 ocupante por vez" na direita). Era o "clica, fecha, clica, fecha" que ele sentiu ao vivo.
+
+**Mecanismo:** novo estado `modoMultidente` (`registrar-painel.tsx`). Com o modo ligado,
+`onToothToggle` continua acumulando em `onde.dentes` normalmente, mas **pula** o
+`setDenteAberto(dente)` — o espelho nunca sai de vista, clique em sequência funciona direto.
+Desliga sozinho em toda ação de lote (`aplicarLote`, `aplicarLoteRestauracao`,
+`aplicarLoteAusente`, `lancarLoteAvulso`) e no "✕ limpar" — nunca fica aceso sem o dentista
+perceber (ele apontou o chip de orto, que fica preso ligado até trocar de paciente, como o
+padrão errado de copiar).
+
+**Testado ao vivo:** 2 dentes clicados em sequência direta (sem "voltar à boca" no meio) →
+faixa mostrou os 2 corretos, espelho nunca sumiu. Aplicar um chip desligou o modo sozinho
+(`aria-pressed` voltou a `false`).
+
+**Posição — discutida, não fechada.** Está codado **acima do odontograma**, em linha própria
+(onde entrou primeiro). Debate ao vivo sobre mover:
+- Testei dentro da barra do Legenda (mesmo estilo, ícone+texto sem pílula) — ele achou
+  "complicado" (mexe em `Odontograma.tsx`, componente compartilhado com a ficha do paciente)
+- Cheguei a defender manter fora, colado no odontograma (proximidade do clique) — mas
+  reconsiderei ao vivo: o argumento mais forte é ele ser **da mesma família** de Profilaxia/
+  Clareamento/Manutenção (controle de como registrar, não resultado), não proximidade física
+- **Recomendação registrada:** mover pra dentro da faixa do campo mágico, como último chip
+  (depois de Manutenção ortodôntica, com respiro visual maior — os 3 primeiros lançam
+  procedimento, ele muda comportamento)
+- **Decisão dele:** não aplicar agora — "amanhã eu pego a opinião dos dentistas". Código fica
+  como está (acima do odontograma) até ele decidir
+
+**Também descartado no debate:** mover a faixa de lote inteira (contador + chips + busca) pra
+dentro do card "Nesta ficha" — rejeitado porque separaria de novo o que a faixa e o toggle
+formam juntos hoje (toggle + contador + chips no mesmo bloco, campo mágico), recriando em
+forma nova o problema que motivou tirar o chip de orto do jeito que ele é.
