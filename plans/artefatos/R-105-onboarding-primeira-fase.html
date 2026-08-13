@@ -1,0 +1,677 @@
+<!--
+  ═══════════════════════════════════════════════════════════════════════
+  ARTEFATO · R-105 — Onboarding "primeira fase guiada" · v2
+  ───────────────────────────────────────────────────────────────────────
+  Rota alvo:        /dashboard/meu-dia  (não /dashboard — corrigido nesta v2)
+  Componente alvo:  src/app/dashboard/meu-dia/_components/meu-dia-client.tsx
+                    + rail.tsx + campo-magico-meu-dia.tsx + nesta-sessao-bloco.tsx
+                    + faixa-gavetas.tsx + registrar-painel.tsx (rodapé)
+  Data:             2026-08-12
+  Status:           PROPOSTA v2 — aguardando aprovação dele
+  ───────────────────────────────────────────────────────────────────────
+  POR QUE V2 EXISTE: a v1 (mesmo arquivo, sobrescrita) inventou uma sidebar
+  de 212px e um item "Orçamentos" no menu — nenhum dos dois existe no
+  produto. Ele apontou o erro ("não tem nada a ver com o que tem hoje") e
+  disse pra decidir o Meu dia como porta de entrada real. Esta v2 foi
+  reconstruída lendo o código de cada peça do cockpit, não inventando.
+
+  O QUE É REAL vs SIMPLIFICADO (honestidade, não estética):
+  ┌─────────────────────────────┬───────────────────────────────────────┐
+  │ REAL — classes/copy do código │ SIMPLIFICADO — aproximação rotulada  │
+  ├─────────────────────────────┼───────────────────────────────────────┤
+  │ Dock flutuante (cores,       │ Espelho do odontograma — schematic    │
+  │  ícones, pill ativo)         │  de bolinhas, NÃO o SVG clínico real  │
+  │ Rail (estados, cores, copy)  │  (esse já tem artefato canônico       │
+  │ Campo mágico fechado/aberto  │  próprio: _arquivo/artefatos/         │
+  │ RegistroCard (pills, cores,  │  R-01-ficha-registro.html)            │
+  │  título, meta, remove)       │ Painel do "Encaixe" — miniatura,      │
+  │ Faixa de gavetas (3 abas +   │  não o AtenderAgoraModal real         │
+  │  copy exata de cada vazio)   │ Corpo do campo mágico aberto —        │
+  │ Rodapé (Marcar retorno /     │  aproximação do CapturaLivreCard      │
+  │  Gerar orçamento / Salvar,   │  (não lido linha a linha)             │
+  │  disabled real)              │                                       │
+  │ Empty state "dia terminou"   │                                       │
+  └─────────────────────────────┴───────────────────────────────────────┘
+
+  A MECÂNICA "primeira fase guiada" não foi inventada em cima do cockpit —
+  ela já É como o cockpit se comporta (campo mágico nasce fechado, botão
+  Salvar nasce disabled até existir rascunho). Este artefato só sequencia
+  os estados REAIS e adiciona UM elemento novo: a pílula "comece aqui"
+  que aponta pra ação viva — pequena, nunca esconde nada.
+
+  Tokens extraídos de src/app/globals.css (light :root + .dark).
+  Fontes reais: Outfit (sans) · DM Serif Display (heading) · DM Mono (mono).
+  ═══════════════════════════════════════════════════════════════════════
+-->
+<!doctype html>
+<html lang="pt-BR" data-tema="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R-105 v2 · Onboarding no Meu dia real — Odonto.IA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=DM+Serif+Display&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --teal:#2f9c85; --teal-lt:#5dbeb0; --teal-dark:#1e7060; --teal-pale:#e4f4f1;
+  --coral:#e57373; --coral-pale:#fce8e8; --coral-ink:#b3261e;
+  --slate:#64748b; --slate-pale:#e2e8f0; --slate-ink:#334155;
+  --warning:#f59e0b; --warning-pale:#fef3c7; --warning-ink:#92400e;
+  --bg:#f4f4f6; --surface:#ffffff; --surface-alt:#dadade; --border:#c2c2c6;
+  --text-primary:#09090b; --text-secondary:#4b5563; --text-muted:#6b7280;
+  --teal-ink:var(--teal-dark);
+}
+html[data-tema="dark"]{
+  --bg:#0d0d0d; --surface:#111112; --surface-alt:#1c1c1e; --border:#27272a;
+  --text-primary:#fafafa; --text-secondary:#a1a1aa; --text-muted:#8d948d;
+  --teal-pale:#1e3a35; --teal-ink:var(--teal-lt);
+  --coral:#ef9a9a; --coral-pale:#3d1f1f;
+  --warning:#fbbf24; --warning-pale:#451a03; --warning-ink:var(--warning);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Outfit',system-ui,sans-serif;
+  background:var(--bg); color:var(--text-primary);
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:'DM Mono',ui-monospace,monospace}
+svg{display:block}
+
+/* ── Mockbar (dev-only) ─────────────────────────────────────────── */
+.mockbar{
+  position:sticky; top:0; z-index:80;
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  padding:9px 18px; background:#0d0d0d; color:#fafafa;
+  border-bottom:1px solid rgba(255,255,255,.08); font-size:11.5px;
+}
+.mockbar .tag{
+  font-size:9.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--teal-lt); border:1px solid rgba(93,190,176,.35);
+  padding:3px 7px; border-radius:999px;
+}
+.mockbar .lbl{opacity:.5}
+.mockbar .sep{flex:1}
+.mockbar button{
+  font-family:inherit; font-size:10.5px; font-weight:600; cursor:pointer;
+  background:rgba(255,255,255,.07); color:#e4e4e7;
+  border:1px solid rgba(255,255,255,.12); border-radius:7px; padding:5px 10px;
+}
+.mockbar button:hover{background:rgba(255,255,255,.14)}
+.passos{display:flex;gap:4px}
+.passo-dot{
+  min-width:22px;height:22px;padding:0 5px;border-radius:6px;display:grid;place-items:center;
+  font-size:9.5px;font-weight:700;cursor:pointer;font-family:inherit;
+  background:rgba(255,255,255,.06);color:#a1a1aa;border:1px solid rgba(255,255,255,.1);
+}
+.passo-dot[data-on="1"]{background:var(--teal);color:#fff;border-color:var(--teal)}
+.passo-dot:focus-visible{outline:2px solid var(--teal-lt);outline-offset:1px}
+.legenda{
+  padding:7px 18px; background:var(--surface-alt); border-bottom:1px solid var(--border);
+  font-size:11.5px; color:var(--text-secondary); min-height:16px;
+}
+.legenda b{color:var(--text-primary)}
+
+/* ── Fundo + wrapper de página ──────────────────────────────────── */
+.pagina{min-height:calc(100vh - 78px);padding:26px 26px 120px;position:relative}
+.pagina-in{max-width:900px;margin:0 auto}
+.eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-secondary);margin-bottom:3px}
+.data-titulo{font-family:'DM Serif Display',serif;font-size:24px;margin-bottom:18px}
+
+.col{display:flex;flex-direction:column;gap:12px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px}
+.card.p5{padding:20px}
+.card.p4{padding:16px}
+
+/* ── Rail ────────────────────────────────────────────────────────── */
+.rail-vazio{
+  display:flex;align-items:center;gap:12px;border-radius:16px;
+  border:1px solid var(--border);background:var(--surface);padding:24px 20px;
+}
+.rail-vazio p{flex:1;font-size:14px;font-weight:500;color:var(--text-secondary)}
+.btn-encaixe{
+  display:flex;min-width:112px;flex-shrink:0;flex-direction:column;align-items:center;
+  justify-content:center;gap:4px;border-radius:12px;border:1px dashed var(--border);
+  padding:10px 12px;color:var(--text-secondary);background:none;cursor:pointer;
+  font-family:inherit;transition:.15s;
+}
+.btn-encaixe:hover{border-color:rgba(47,156,133,.4);color:var(--teal-ink)}
+.btn-encaixe span{font-size:10.5px;font-weight:700}
+
+.rail{display:flex;align-items:flex-start;gap:8px;border-radius:16px;border:1px solid var(--border);background:var(--surface);padding:12px;overflow-x:auto}
+.slot{min-width:112px;flex-shrink:0;overflow:hidden;border-radius:10px;border:1px solid var(--border);transition:.15s}
+.slot[data-sel="1"]{border-color:var(--teal);background:rgba(47,156,133,.06)}
+.slot-btn{width:100%;padding:10px 12px;text-align:left;background:none;border:none;font-family:inherit;cursor:pointer}
+.slot-hora{font-size:10px;color:var(--text-secondary)}
+.slot-nome{margin-top:2px;font-size:12.5px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slot-badge{display:inline-block;margin-top:6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 6px;border-radius:4px}
+.slot-registrado{margin-top:4px;font-size:10px;font-weight:700;color:var(--teal-ink)}
+.slot-select{display:block;width:100%;border-top:1px solid var(--border);background:transparent;padding:6px 10px;text-align:center;font-size:10px;font-weight:600;color:var(--text-secondary);font-family:inherit}
+
+/* ── Header do paciente ─────────────────────────────────────────── */
+.ph-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.ph-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ph-nome{font-size:14px;font-weight:700;color:var(--text-primary)}
+.pill-alerta{display:inline-flex;align-items:center;gap:5px;border-radius:999px;border:1px solid rgba(245,158,11,.4);background:var(--warning-pale);padding:5px 11px;font-size:11px;font-weight:600;color:var(--warning-ink)}
+.pill-pendente{display:inline-flex;align-items:center;gap:5px;border-radius:999px;border:1px solid var(--border);background:var(--surface-alt);padding:5px 11px;font-size:11px;font-weight:600;color:var(--text-secondary)}
+.link-perfil{font-size:11.5px;font-weight:600;color:var(--text-secondary);text-decoration:none;white-space:nowrap}
+.link-perfil:hover{color:var(--text-primary)}
+
+/* ── Campo mágico ────────────────────────────────────────────────── */
+.cm-fechado{
+  display:flex;width:100%;align-items:center;gap:8px;border-radius:16px;
+  border:1px solid rgba(47,156,133,.3);background:rgba(218,218,222,.24);
+  padding:14px 16px;text-align:left;cursor:pointer;font-family:inherit;transition:.15s;
+}
+html[data-tema="dark"] .cm-fechado{background:rgba(28,28,30,.5)}
+.cm-fechado:hover{border-color:rgba(47,156,133,.5)}
+.cm-fechado .rot{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--teal-ink)}
+.cm-fechado .sub{font-size:12px;color:var(--text-secondary)}
+.cm-aberto{display:flex;flex-direction:column;gap:10px}
+.cm-recolher{display:flex;align-items:center;gap:4px;width:fit-content;background:none;border:none;font-family:inherit;font-size:11px;font-weight:600;color:var(--text-secondary);cursor:pointer}
+.cm-recolher:hover{color:var(--teal-ink)}
+.cm-caixa{border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--surface-alt);display:flex;flex-direction:column;gap:10px}
+.cm-caixa textarea{width:100%;min-height:70px;resize:vertical;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text-primary);font-family:inherit;font-size:13px;padding:10px 12px}
+.cm-acoes{display:flex;gap:8px}
+.cm-mic{display:flex;align-items:center;gap:6px;border-radius:10px;background:var(--teal);color:#fff;border:none;font-family:inherit;font-size:12px;font-weight:700;padding:9px 14px;cursor:pointer}
+.cm-anexo{display:flex;align-items:center;gap:6px;border-radius:10px;border:1px solid var(--border);background:none;color:var(--text-secondary);font-family:inherit;font-size:12px;font-weight:600;padding:9px 14px;cursor:pointer}
+
+/* ── Grade: nesta ficha | espelho ────────────────────────────────── */
+.grade{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;align-items:stretch}
+@media(max-width:760px){.grade{grid-template-columns:1fr}}
+.bloco-tit{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.bloco-tit p{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-secondary)}
+.contador{border-radius:999px;background:var(--surface-alt);padding:1px 7px;font-size:10px;color:var(--text-secondary)}
+.vazio-txt{font-size:13px;color:var(--text-secondary)}
+
+.reg-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:6px}
+.reg-row{display:flex;align-items:center;gap:10px;padding:11px 14px}
+.reg-corpo{min-width:0;flex:1}
+.reg-titulo{font-size:13px;font-weight:600;color:var(--text-primary)}
+.reg-obs{margin-top:2px;width:100%;background:transparent;border:none;border-bottom:1px dashed var(--border);font-size:11.5px;font-style:italic;color:var(--text-primary);font-family:inherit;padding:1px 0}
+.reg-obs::placeholder{color:var(--text-muted)}
+.reg-meta{margin-top:2px;font-size:11px;color:var(--text-secondary)}
+.reg-pill{display:inline-flex;align-items:center;gap:5px;flex-shrink:0;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:700;white-space:nowrap}
+.reg-dot{width:6px;height:6px;border-radius:50%}
+.reg-x{flex-shrink:0;border:none;background:none;color:var(--text-secondary);cursor:pointer;padding:5px;border-radius:6px}
+.reg-x:hover{color:var(--coral-ink);background:var(--coral-pale)}
+
+.espelho-cap{font-size:9.5px;color:var(--text-muted);text-align:center;margin-top:8px;font-style:italic}
+.arcada{display:flex;justify-content:center;gap:3px;flex-wrap:wrap;margin-bottom:6px}
+.dente{
+  width:20px;height:20px;border-radius:50%;border:1.5px solid var(--border);
+  display:grid;place-items:center;font-size:8px;font-family:'DM Mono',monospace;color:var(--text-muted);
+}
+.dente[data-marcado="1"]{border-color:var(--coral);color:var(--coral-ink);background:var(--coral-pale);font-weight:700}
+.arcada-div{width:1px;align-self:stretch;background:var(--border);margin:2px 4px}
+.arcada-row{display:flex;align-items:center;justify-content:center}
+
+/* ── Faixa de gavetas ────────────────────────────────────────────── */
+.gavetas{background:var(--surface);border:1px solid var(--border);border-radius:16px}
+.gav-tabs{display:flex;align-items:center;gap:4px;padding:6px 8px}
+.gav-tab{display:flex;align-items:center;gap:6px;border-radius:8px;background:none;border:none;font-family:inherit;padding:6px 10px;font-size:12px;font-weight:700;color:var(--text-secondary);cursor:pointer}
+.gav-tab[data-aberta="1"]{background:rgba(47,156,133,.1);color:var(--teal-ink)}
+.gav-tab .contador{margin-left:1px}
+.gav-flex{flex:1}
+.gav-link{display:flex;align-items:center;gap:4px;padding:0 8px;font-size:11px;font-weight:600;color:var(--text-secondary);text-decoration:none}
+.gav-corpo{border-top:1px solid var(--border);padding:12px}
+.gav-vazio{font-size:13px;color:var(--text-secondary)}
+.gav-btn-sec{display:flex;width:fit-content;align-items:center;gap:6px;margin-top:8px;border-radius:8px;border:1px solid var(--border);background:none;font-family:inherit;font-size:11px;font-weight:600;color:var(--text-secondary);padding:6px 10px;cursor:pointer}
+
+/* ── Rodapé ──────────────────────────────────────────────────────── */
+.rodape{display:flex;align-items:center;gap:8px}
+.rd-secundario{display:flex;align-items:center;justify-content:center;gap:6px;border-radius:12px;border:1px solid var(--border);background:none;font-family:inherit;font-size:13px;font-weight:700;color:var(--text-secondary);padding:12px 16px;cursor:pointer;white-space:nowrap}
+.rd-secundario:hover{border-color:rgba(47,156,133,.4);color:var(--teal-ink)}
+.rd-salvar{display:flex;flex:1;align-items:center;justify-content:center;gap:8px;border-radius:12px;border:none;background:var(--teal-dark);font-family:inherit;font-size:13px;font-weight:700;color:#fff;padding:12px 20px;cursor:pointer;transition:opacity .15s}
+.rd-salvar[disabled]{opacity:.4;cursor:not-allowed}
+
+/* ── Guia "comece aqui" — o único elemento NOVO desta v2 ───────────── */
+.aponta{
+  position:absolute;display:inline-flex;align-items:center;gap:5px;
+  background:var(--teal);color:#fff;font-size:10.5px;font-weight:700;
+  padding:4px 10px 4px 8px;border-radius:999px;white-space:nowrap;
+  box-shadow:0 4px 14px rgba(47,156,133,.35);pointer-events:none;
+  animation:surge .35s cubic-bezier(.22,1,.36,1);
+}
+.aponta::before{content:'';width:6px;height:6px;border-radius:50%;background:#fff;animation:pulso 1.6s ease-out infinite}
+@keyframes pulso{0%{box-shadow:0 0 0 0 rgba(255,255,255,.7)}70%{box-shadow:0 0 0 6px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}
+@keyframes surge{from{opacity:0;transform:translateY(4px) scale(.9)}to{opacity:1;transform:none}}
+
+.toast{
+  position:fixed;bottom:96px;left:50%;transform:translateX(-50%);z-index:60;
+  background:var(--text-primary);color:var(--bg);font-size:12.5px;font-weight:600;
+  padding:10px 18px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.25);
+  display:flex;align-items:center;gap:8px;animation:surge .25s ease-out;
+}
+
+.empty-fim{border-radius:16px;border:1px solid var(--border);background:var(--surface);padding:40px 20px;text-align:center}
+.empty-fim p:first-child{font-size:14px;font-weight:600;color:var(--text-primary)}
+.empty-fim p:last-child{margin-top:4px;font-size:12px;color:var(--text-secondary)}
+
+/* ── Dock flutuante REAL ─────────────────────────────────────────── */
+.dock{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:70;
+  display:flex;align-items:center;gap:4px;padding:8px;border-radius:16px;
+  background:rgba(12,17,14,.88);backdrop-filter:blur(20px);
+  border:1px solid rgba(255,255,255,.07);
+  box-shadow:0 8px 40px -8px rgba(47,156,133,.22),0 2px 12px -4px rgba(0,0,0,.5);
+}
+.dock-logo{display:flex;align-items:center;gap:8px;padding:8px 12px}
+.dock-logo b{font-size:14px;font-weight:800;color:#fff;letter-spacing:.03em;white-space:nowrap}
+.dock-logo b span{color:var(--teal)}
+.dock-sep{width:1px;height:24px;background:rgba(255,255,255,.07);margin:0 4px}
+.dock-item{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 16px;border-radius:12px;min-width:64px;cursor:pointer;transition:.15s;text-decoration:none}
+.dock-item:hover{background:rgba(255,255,255,.05)}
+.dock-item[data-ativo="1"]{background:rgba(47,156,133,.12)}
+.dock-item[data-ativo="1"]:hover{background:rgba(47,156,133,.12)}
+.dock-item svg{color:rgba(255,255,255,.5)}
+.dock-item[data-ativo="1"] svg{color:var(--teal)}
+.dock-item span{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35)}
+.dock-item[data-ativo="1"] span{color:rgba(93,190,176,.8)}
+.dock-item[data-ativo="1"]::after{content:'';position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--teal)}
+.dock-dex{position:relative;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;margin:0 4px;background:linear-gradient(135deg,#2f9c85,#1a7a65);box-shadow:0 4px 16px -4px rgba(47,156,133,.6);cursor:pointer;flex-shrink:0}
+.dock-dex svg{color:#fff}
+.dock-dex::after{content:'';position:absolute;inset:0;border-radius:50%;background:rgba(47,156,133,.4);animation:ping 2.2s ease-out infinite}
+@keyframes ping{0%{opacity:.5;transform:scale(1)}100%{opacity:0;transform:scale(1.7)}}
+.dock-round{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;color:rgba(255,255,255,.45);cursor:pointer;flex-shrink:0}
+.dock-round:hover{color:rgba(255,255,255,.8);background:rgba(255,255,255,.07)}
+.dock-avatar{width:32px;height:32px;border-radius:50%;background:var(--teal);display:grid;place-items:center;color:#fff;font-weight:700;font-size:11px;margin:0 4px;flex-shrink:0}
+
+@media(max-width:900px){
+  .dock-logo b{display:none}
+  .dock{max-width:94vw;overflow-x:auto}
+}
+</style>
+</head>
+<body>
+
+<div class="mockbar">
+  <span class="tag">R-105 v2 · mockup</span>
+  <span class="lbl">Cockpit real do Meu dia — leia a legenda abaixo em cada passo</span>
+  <div class="passos" id="passos"></div>
+  <span class="sep"></span>
+  <button id="btTema">☀ Light</button>
+  <button id="btReset">↺ Reiniciar</button>
+</div>
+<div class="legenda" id="legenda"></div>
+
+<div class="pagina">
+  <div class="pagina-in">
+    <p class="eyebrow">Meu dia</p>
+    <p class="data-titulo">Quarta-feira, 12 de Agosto</p>
+    <div class="col" id="corpo" style="position:relative"></div>
+  </div>
+</div>
+
+<div class="dock">
+  <div class="dock-logo">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2f9c85" stroke-width="2" stroke-linecap="round"><path d="M12 2a5 5 0 0 0-5 5c0 3 1 4 1 7 0 3-1 4-1 6a2 2 0 0 0 4 0c0-2 .5-3 1-3s1 1 1 3a2 2 0 0 0 4 0c0-2-1-3-1-6 0-3 1-4 1-7a5 5 0 0 0-5-5Z"/></svg>
+    <b>Odonto<span>.IA</span></b>
+  </div>
+  <div class="dock-sep"></div>
+  <div class="dock-item" id="nav-inicio">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+    <span>Início</span>
+  </div>
+  <div class="dock-item" id="nav-meudia" data-ativo="1">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M12 14v3l2 1.5"/></svg>
+    <span>Meu dia</span>
+  </div>
+  <div class="dock-item" id="nav-pacientes">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
+    <span>Pacientes</span>
+  </div>
+  <div class="dock-item" id="nav-agenda">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+    <span>Agenda</span>
+  </div>
+  <div class="dock-item" id="nav-financeiro">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+    <span>Financeiro</span>
+  </div>
+  <div class="dock-sep"></div>
+  <div class="dock-dex" title="Abrir DEX">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4M8 16v-2M16 16v-2"/></svg>
+  </div>
+  <div class="dock-round" id="btDockTema" title="Tema">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+  </div>
+  <div class="dock-sep"></div>
+  <div class="dock-round" title="Notificações">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+  </div>
+  <div class="dock-avatar">T</div>
+</div>
+
+<script>
+const ICO = {
+  alerta:'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/>',
+  hora:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  bot:'<rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4M8 16v-2M16 16v-2"/>',
+  mic:'<path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4M8 22h8"/>',
+  clip:'<path d="m21.44 11.05-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 5 5L9.5 17.5a1.5 1.5 0 0 1-2-2l8.07-8.07"/>',
+  x:'<path d="M18 6 6 18M6 6l12 12"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  arrowr:'<path d="M5 12h14M12 5l7 7-7 7"/>',
+};
+const svg = (n,w=14) => `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICO[n]}</svg>`;
+
+// FDI simplificado — só pra mostrar geometria de arcada, não é o odontograma clínico real.
+const SUP = [18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28];
+const INF = [48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38];
+
+function espelho(marcados){
+  const linha = (arr) => arr.map(d =>
+    `<div class="dente" data-marcado="${marcados.includes(d)?1:0}">${d}</div>`).join('');
+  return `
+    <div class="arcada">${linha(SUP)}</div>
+    <div class="arcada">${linha(INF)}</div>
+    <p class="espelho-cap">espelho simplificado — o odontograma clínico real tem artefato próprio</p>`;
+}
+
+function regCard(titulo, obs, removivel){
+  return `
+    <div class="reg-card">
+      <div class="reg-row">
+        <div class="reg-corpo">
+          <p class="reg-titulo">${titulo}</p>
+          <input class="reg-obs" placeholder="material, técnica, intercorrência…" value="${obs||''}">
+          <p class="reg-meta">Você</p>
+        </div>
+        <span class="reg-pill" style="background:var(--coral-pale);color:var(--coral-ink)">
+          <span class="reg-dot" style="background:var(--coral)"></span>Planejado
+        </span>
+        <button class="reg-x">${svg('x')}</button>
+      </div>
+    </div>`;
+}
+
+function gavetas(counts){
+  return `
+    <div class="gavetas">
+      <div class="gav-tabs">
+        <button class="gav-tab" data-aberta="0">${svg('hora')} Histórico <span class="contador">${counts.h}</span></button>
+        <button class="gav-tab" data-aberta="0">${svg('hora')} A fazer <span class="contador">${counts.a}</span></button>
+        <button class="gav-tab" data-aberta="0">${svg('clip')} Anexos</button>
+        <div class="gav-flex"></div>
+        <a class="gav-link" href="#">Ficha completa ${svg('arrowr',11)}</a>
+      </div>
+    </div>`;
+}
+
+function rodape(salvarDisabled){
+  return `
+    <div class="card p5">
+      <div class="rodape">
+        <button class="rd-secundario">Marcar retorno</button>
+        <button class="rd-secundario">Gerar orçamento</button>
+        <button class="rd-salvar" ${salvarDisabled?'disabled':''}>${svg('check')} Salvar e passar</button>
+      </div>
+    </div>`;
+}
+
+const ESTADOS = [
+  // 0 — vazio real
+  {
+    legenda: '<b>100% real:</b> Rail vazio de Teste01, hoje — copiado de produção (rail.tsx). O botão pontilhado "+ Encaixe" já É o convite pra primeira ação, sem eu inventar nada em cima.',
+    render(){
+      return `
+        <div class="rail-vazio" style="position:relative">
+          <p>Nenhum atendimento hoje.</p>
+          <button class="btn-encaixe" id="alvo-encaixe">${svg('hora',16)}<span>Encaixe</span></button>
+        </div>`;
+    },
+    aponta: {alvo:'#alvo-encaixe', texto:'comece aqui →', pos:'left'}
+  },
+  // 1 — encaixe (simplificado)
+  {
+    legenda: '<b>Simplificado:</b> miniatura do fluxo — o modal real é o AtenderAgoraModal (não lido linha a linha). O que importa aqui: 1 nome, 1 clique, sem cadastro longo.',
+    render(){
+      return `
+        <div class="card p5">
+          <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-secondary);margin-bottom:10px">Atender agora</p>
+          <input style="width:100%;border:1px solid var(--border);border-radius:10px;background:var(--surface-alt);padding:10px 12px;font-size:13px;color:var(--text-primary);font-family:inherit" value="Maria Souza" readonly>
+          <button class="rd-salvar" style="margin-top:10px" id="alvo-confirmar">${svg('check')} Confirmar</button>
+        </div>`;
+    },
+    aponta: {alvo:'#alvo-confirmar', texto:'confirmar →', pos:'right'}
+  },
+  // 2 — atendendo, campo mágico fechado (real)
+  {
+    legenda: '<b>100% real:</b> rail com 1 slot selecionado (border-teal), campo mágico NASCE fechado ("Fale, cole, anexe ou digite — o Dex monta a ficha" — copy exata de campo-magico-meu-dia.tsx), rodapé com "Salvar e passar" já <code>disabled</code> por padrão (semRascunho=true).',
+    render(){
+      return `
+        <div class="rail">
+          <div class="slot" data-sel="1">
+            <button class="slot-btn">
+              <span class="slot-hora mono">14:00</span>
+              <p class="slot-nome">Maria Souza</p>
+              <span class="slot-badge" style="background:var(--teal);color:#fff">Atendendo</span>
+            </button>
+            <span class="slot-select">Mudar status ▾</span>
+          </div>
+        </div>
+        <div class="ph-row">
+          <div class="ph-left"><span class="ph-nome">Maria Souza</span></div>
+          <a class="link-perfil" href="#">Ver perfil completo →</a>
+        </div>
+        <div class="card p5" style="position:relative">
+          <button class="cm-fechado" id="alvo-campo">
+            ${svg('bot',15)}
+            <span class="rot">Campo mágico</span>
+            <span class="sub">Fale, cole, anexe ou digite — o Dex monta a ficha</span>
+          </button>
+        </div>
+        <div class="grade">
+          <div class="card p4">
+            <div class="bloco-tit"><p>Nesta ficha</p><span class="contador">0</span></div>
+            <p class="vazio-txt">Nada registrado ainda nesta consulta.</p>
+          </div>
+          <div class="card p4">${espelho([])}</div>
+        </div>
+        ${gavetas({h:0,a:0})}
+        ${rodape(true)}`;
+    },
+    aponta: {alvo:'#alvo-campo', texto:'comece aqui →', pos:'left'}
+  },
+  // 3 — campo aberto (simplificado o corpo)
+  {
+    legenda: '<b>Real:</b> botão "↑ Recolher" e o gatilho de abertura (campo-magico-meu-dia.tsx). <b>Simplificado:</b> o corpo é o CapturaLivreCard — não lido em detalhe; aqui é uma aproximação de mic+texto+anexo com a mesma copy de produto.',
+    render(){
+      return `
+        <div class="rail">
+          <div class="slot" data-sel="1">
+            <button class="slot-btn">
+              <span class="slot-hora mono">14:00</span>
+              <p class="slot-nome">Maria Souza</p>
+              <span class="slot-badge" style="background:var(--teal);color:#fff">Atendendo</span>
+            </button>
+            <span class="slot-select">Mudar status ▾</span>
+          </div>
+        </div>
+        <div class="ph-row">
+          <div class="ph-left"><span class="ph-nome">Maria Souza</span></div>
+          <a class="link-perfil" href="#">Ver perfil completo →</a>
+        </div>
+        <div class="card p5">
+          <div class="cm-aberto">
+            <button class="cm-recolher">↑ Recolher</button>
+            <div class="cm-caixa">
+              <textarea placeholder="Fale ou digite o que aconteceu na consulta…">Restauração no 26, resina composta. Profilaxia feita.</textarea>
+              <div class="cm-acoes">
+                <button class="cm-mic" id="alvo-organizar">${svg('mic',14)} Organizar com o Dex</button>
+                <button class="cm-anexo">${svg('clip',14)} Anexar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="grade">
+          <div class="card p4">
+            <div class="bloco-tit"><p>Nesta ficha</p><span class="contador">0</span></div>
+            <p class="vazio-txt">Nada registrado ainda nesta consulta.</p>
+          </div>
+          <div class="card p4">${espelho([])}</div>
+        </div>
+        ${gavetas({h:0,a:0})}
+        ${rodape(true)}`;
+    },
+    aponta: {alvo:'#alvo-organizar', texto:'organizar →', pos:'right'}
+  },
+  // 4 — ditado, nesta ficha preenchida, rodapé acende (real)
+  {
+    legenda: '<b>100% real:</b> RegistroCard com a anatomia exata do código (pill "Planejado" coral, observação editável inline, meta "Você", × remover). O botão "Salvar e passar" perde o <code>disabled</code> — MESMA lógica do produto, eu só mudei o dado de entrada.',
+    render(){
+      return `
+        <div class="rail">
+          <div class="slot" data-sel="1">
+            <button class="slot-btn">
+              <span class="slot-hora mono">14:00</span>
+              <p class="slot-nome">Maria Souza</p>
+              <span class="slot-badge" style="background:var(--teal);color:#fff">Atendendo</span>
+            </button>
+            <span class="slot-select">Mudar status ▾</span>
+          </div>
+        </div>
+        <div class="ph-row">
+          <div class="ph-left"><span class="ph-nome">Maria Souza</span></div>
+          <a class="link-perfil" href="#">Ver perfil completo →</a>
+        </div>
+        <div class="card p5">
+          <button class="cm-fechado">
+            ${svg('bot',15)}
+            <span class="rot">Campo mágico</span>
+            <span class="sub">Fale, cole, anexe ou digite — o Dex monta a ficha</span>
+          </button>
+        </div>
+        <div class="grade">
+          <div class="card p4">
+            <div class="bloco-tit"><p>Nesta ficha</p><span class="contador">2</span></div>
+            ${regCard('Restauração (O) · dente 26','resina composta')}
+            ${regCard('Profilaxia · boca toda','')}
+          </div>
+          <div class="card p4">${espelho([26])}</div>
+        </div>
+        ${gavetas({h:0,a:0})}
+        <div class="card p5" style="position:relative">
+          <div class="rodape">
+            <button class="rd-secundario">Marcar retorno</button>
+            <button class="rd-secundario">Gerar orçamento</button>
+            <button class="rd-salvar" id="alvo-salvar">${svg('check')} Salvar e passar</button>
+          </div>
+        </div>`;
+    },
+    aponta: {alvo:'#alvo-salvar', texto:'agora salva →', pos:'right'}
+  },
+  // 5 — salvo (toast + slot marcado)
+  {
+    legenda: '<b>100% real:</b> copy exata do rail ("✓ registrado", text-teal) e o reset de "Nesta ficha" pro estado vazio (handleSalvo em meu-dia-client.tsx). O toast reproduz o padrão sonner já usado no projeto inteiro.',
+    toast: 'Ficha salva.',
+    render(){
+      return `
+        <div class="rail">
+          <div class="slot" data-sel="1">
+            <button class="slot-btn">
+              <span class="slot-hora mono">14:00</span>
+              <p class="slot-nome">Maria Souza</p>
+              <span class="slot-badge" style="background:var(--surface-alt);color:var(--text-secondary)">Concluído</span>
+              <p class="slot-registrado">✓ registrado</p>
+            </button>
+          </div>
+        </div>
+        <div class="empty-fim">
+          <p>Todos os atendimentos de hoje foram registrados.</p>
+          <p>Bom trabalho — o dia terminou por aqui.</p>
+        </div>`;
+    }
+  },
+  // 6 — fim, guia sumiu
+  {
+    legenda: '<b>O guia não tem mais nada pra apontar</b> — e isso é o ponto. Onboarding que nunca termina vira mobília; este some sozinho porque o estado real do produto já diz "acabou".',
+    render(){
+      return `
+        <div class="empty-fim">
+          <p>Todos os atendimentos de hoje foram registrados.</p>
+          <p>Bom trabalho — o dia terminou por aqui.</p>
+        </div>`;
+    }
+  },
+];
+
+let i = 0;
+let toastTimer = null;
+
+function posicionaAponta(el, cfg){
+  const alvo = document.querySelector(cfg.alvo);
+  if (!alvo) return;
+  const r = alvo.getBoundingClientRect();
+  const host = document.getElementById('corpo').getBoundingClientRect();
+  el.textContent = '';
+  const dot = document.createElement('span');
+  el.appendChild(document.createTextNode(cfg.texto));
+  el.style.top = (r.top - host.top - 30) + 'px';
+  if (cfg.pos === 'right') el.style.left = (r.right - host.left - 90) + 'px';
+  else el.style.left = (r.left - host.left) + 'px';
+}
+
+function render(){
+  const e = ESTADOS[i];
+  const corpo = document.getElementById('corpo');
+  corpo.innerHTML = e.render();
+
+  const antigo = document.getElementById('aponta-el');
+  if (antigo) antigo.remove();
+  if (e.aponta) {
+    const pill = document.createElement('div');
+    pill.className = 'aponta';
+    pill.id = 'aponta-el';
+    corpo.appendChild(pill);
+    requestAnimationFrame(() => posicionaAponta(pill, e.aponta));
+  }
+
+  document.getElementById('legenda').innerHTML = e.legenda;
+
+  clearTimeout(toastTimer);
+  const antigoToast = document.getElementById('toast-el');
+  if (antigoToast) antigoToast.remove();
+  if (e.toast) {
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.id = 'toast-el';
+    t.innerHTML = `${svg('check',14)} ${e.toast}`;
+    document.body.appendChild(t);
+    toastTimer = setTimeout(() => t.remove(), 2200);
+  }
+
+  document.getElementById('passos').innerHTML = ESTADOS.map((s,n) =>
+    `<button class="passo-dot" data-on="${n===i?1:0}" data-ir="${n}" aria-label="Passo ${n+1}">${n+1}</button>`).join('');
+  document.querySelectorAll('.passo-dot').forEach(d =>
+    d.onclick = () => { i = +d.dataset.ir; render(); });
+
+  // Botões de avanço interno de cada estado (encaixe→confirmar, campo→organizar, salvar)
+  const proximo = () => { i = Math.min(i + 1, ESTADOS.length - 1); render(); };
+  document.getElementById('alvo-encaixe')?.addEventListener('click', proximo);
+  document.getElementById('alvo-confirmar')?.addEventListener('click', proximo);
+  document.getElementById('alvo-campo')?.addEventListener('click', proximo);
+  document.getElementById('alvo-organizar')?.addEventListener('click', proximo);
+  document.getElementById('alvo-salvar')?.addEventListener('click', proximo);
+}
+
+document.getElementById('btReset').onclick = () => { i = 0; render(); };
+function toggleTema(){
+  const h = document.documentElement;
+  const dark = h.dataset.tema === 'dark';
+  h.dataset.tema = dark ? 'light' : 'dark';
+  document.getElementById('btTema').textContent = dark ? '☾ Dark' : '☀ Light';
+}
+document.getElementById('btTema').onclick = toggleTema;
+document.getElementById('btDockTema').onclick = toggleTema;
+
+window.addEventListener('resize', () => {
+  const el = document.getElementById('aponta-el');
+  if (el && ESTADOS[i].aponta) posicionaAponta(el, ESTADOS[i].aponta);
+});
+
+render();
+</script>
+</body>
+</html>
