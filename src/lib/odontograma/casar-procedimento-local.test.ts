@@ -83,3 +83,34 @@ test('agrupamento não quebra "restauração 35 e 36" quando é o único tipo do
   assert.deepEqual(r.find((x) => x.tipo === 'carie_restauracao')?.dentes, [35, 36]);
   assert.deepEqual(r.find((x) => x.tipo === 'fratura')?.dentes, [55]);
 });
+
+test('plural -ção→-ções: "restaurações" acha "Restauração" (ção→ções troca ã→õ, não é só +s)', () => {
+  const r = casarProcedimentoLocal('fiz duas restaurações no 15', []);
+  assert.ok(r.some((s) => s.tipo === 'carie_restauracao'), JSON.stringify(r));
+});
+
+test('plural -al→-ais: "canais" acha "Canal"', () => {
+  const r = casarProcedimentoLocal('canais no 36', []);
+  assert.ok(r.some((s) => s.tipo === 'endodontia'), JSON.stringify(r));
+});
+
+test('plural de rótulo composto: "lesões periapicais" acha "Lesão periapical"', () => {
+  const r = casarProcedimentoLocal('duas lesões periapicais no 21 e 22', []);
+  assert.ok(r.some((s) => s.tipo === 'lesao_periapical'), JSON.stringify(r));
+});
+
+test('plural de rótulo composto: "coroas totais" acha "Coroa total"', () => {
+  const r = casarProcedimentoLocal('coroas totais no 11 e 21', []);
+  assert.ok(r.some((s) => s.tipo === 'coroa'), JSON.stringify(r));
+});
+
+test('plural de rótulo composto: "exames periodontais" acha "Exame periodontal"', () => {
+  const r = casarProcedimentoLocal('fiz exames periodontais completos', []);
+  assert.ok(r.some((s) => s.tipo === 'exame_periodontal'), JSON.stringify(r));
+});
+
+test('plural não quebra agrupamento: "extrações no 12 e restaurações no 15" — cada tipo só com seu dente', () => {
+  const r = casarProcedimentoLocal('extrações no 12 e restaurações no 15', []);
+  assert.deepEqual(r.find((x) => x.tipo === 'exodontia')?.dentes, [12]);
+  assert.deepEqual(r.find((x) => x.tipo === 'carie_restauracao')?.dentes, [15]);
+});

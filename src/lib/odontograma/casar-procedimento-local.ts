@@ -43,6 +43,29 @@ function normalizar(s: string): string {
   return s.normalize('NFD').replace(MARCAS_DIACRITICAS, '').toLowerCase();
 }
 
+/** Português tem 3 padrões de plural pra -ão (-ões/-ães/-ãos), mas nos rótulos clínicos só
+ *  aparecem 2 casos reais: -ão→-ões (Restauração, Extração, Lesão) e -al→-ais (Canal,
+ *  periodontal, total). Fora desses, plural regular (+s) — cobre Exame/Coroa mas não é
+ *  stemmer completo (não cobre -agem→-agens nem -ão→-ães, que não aparecem nos rótulos
+ *  atuais). Opera sobre string já normalizada (achado 12/08: singular não bastava —
+ *  "restaurações" não casava "Restauração" porque ção→ções troca ã→õ, não é só sufixo). */
+function pluralizarPalavraNormalizada(palavra: string): string {
+  if (palavra.endsWith('ao')) return palavra.slice(0, -2) + 'oes';
+  if (palavra.endsWith('al')) return palavra.slice(0, -2) + 'ais';
+  return palavra + 's';
+}
+
+function pluralNormalizado(labelNorm: string): string {
+  return labelNorm.split(' ').map(pluralizarPalavraNormalizada).join(' ');
+}
+
+/** Rótulo casa no texto no singular OU no plural — sempre comparar por aqui, nunca com
+ *  `norm.includes(normalizar(label))` cru (perde o plural). */
+function casaLabel(norm: string, label: string): boolean {
+  const labelNorm = normalizar(label);
+  return norm.includes(labelNorm) || norm.includes(pluralNormalizado(labelNorm));
+}
+
 /** Generaliza o antigo `extrairDenteDoTexto` (singular) pra multi-dente — "restauração 35 e
  *  36" precisa dos dois. Único parser de número de dente do projeto; não duplicar.
  *
@@ -72,7 +95,7 @@ function agruparPorProcedimento(texto: string, labelsReconhecidos: string[]): st
   const grupos: string[] = [];
   for (const seg of texto.split(/,| e /i).map((s) => s.trim()).filter(Boolean)) {
     const segNorm = normalizar(seg);
-    const abreGrupo = grupos.length === 0 || labelsReconhecidos.some((l) => segNorm.includes(normalizar(l)));
+    const abreGrupo = grupos.length === 0 || labelsReconhecidos.some((l) => casaLabel(segNorm, l));
     if (abreGrupo) grupos.push(seg);
     else grupos[grupos.length - 1] += ` e ${seg}`;
   }
@@ -89,8 +112,8 @@ export function casarProcedimentoLocal(
   const dentesGlobais = extrairDentesDoTexto(texto);
 
   const labelsCasados = [
-    ...(Object.values(TIPO_LABEL) as string[]).filter((label) => norm.includes(normalizar(label))),
-    ...catalogo.filter((item) => norm.includes(normalizar(item.nome))).map((item) => item.nome),
+    ...(Object.values(TIPO_LABEL) as string[]).filter((label) => casaLabel(norm, label)),
+    ...catalogo.filter((item) => casaLabel(norm, item.nome)).map((item) => item.nome),
   ];
   // Só agrupa quando há >1 procedimento no relato — com 0 ou 1, o grupo é o texto inteiro
   // e o resultado é idêntico ao comportamento anterior (mantém os testes de dente único).
@@ -99,7 +122,7 @@ export function casarProcedimentoLocal(
   /** Dentes do(s) segmento(s) onde ESTE label apareceu — não do relato inteiro. Grupo sem
    *  dente próprio (ex.: "coroa total" sem número) cai pro global em vez de ficar vazio. */
   function dentesDoLabel(label: string): number[] {
-    const gruposDoLabel = grupos.filter((g) => normalizar(g).includes(normalizar(label)));
+    const gruposDoLabel = grupos.filter((g) => casaLabel(normalizar(g), label));
     if (gruposDoLabel.length === 0) return dentesGlobais;
     const dentesDoGrupo = [...new Set(gruposDoLabel.flatMap(extrairDentesDoTexto))];
     return dentesDoGrupo.length > 0 ? dentesDoGrupo : dentesGlobais;
@@ -109,7 +132,7 @@ export function casarProcedimentoLocal(
 
   // Tipo estrutural antes de catálogo (regra 4 da spec) — a ordem de inserção já garante isso.
   for (const [tipo, label] of Object.entries(TIPO_LABEL) as [TipoRegistroOdontograma, string][]) {
-    if (!norm.includes(normalizar(label))) continue;
+    if (!casaLabel(norm, label)) continue;
     const nivelBoca = TIPOS_NIVEL_BOCA.has(tipo);
     const dentes = nivelBoca ? [] : dentesDoLabel(label);
     sugestoes.push({
@@ -121,7 +144,7 @@ export function casarProcedimentoLocal(
   }
 
   for (const item of catalogo) {
-    if (!norm.includes(normalizar(item.nome))) continue;
+    if (!casaLabel(norm, item.nome)) continue;
     const dentes = dentesDoLabel(item.nome);
     sugestoes.push({
       tipo: null,
