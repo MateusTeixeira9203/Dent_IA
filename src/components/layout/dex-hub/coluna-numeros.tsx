@@ -6,13 +6,13 @@ interface ColunaNumerosProps {
   numeros: DexNumero[];
 }
 
-/** Coluna 2: "Hoje e a semana" (D10) — provisória, só com números que já existem.
- *  Vira "O mês", com comparativo ao mês anterior, no R-103c. */
+/** Coluna 2: "O mês" (R-103c) — atendimentos, visitas por paciente e crescimento vs mês
+ *  anterior, com fonte em `fichas` (D10 do R-103a resolvido). */
 export function ColunaNumeros({ numeros }: ColunaNumerosProps) {
   return (
     <div>
       <div className="mb-3.5 flex items-center gap-2">
-        <span className="text-[9.5px] font-bold uppercase tracking-[0.14em] text-teal-ink">Hoje e a semana</span>
+        <span className="text-[9.5px] font-bold uppercase tracking-[0.14em] text-teal-ink">O mês</span>
       </div>
 
       <div className="space-y-2">

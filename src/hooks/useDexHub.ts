@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import type { DexAlert } from '@/app/api/dex/alerts/route';
 import type { DexContextData } from '@/app/api/dex/context/route';
 import { derivarPendencias } from '@/lib/dex/pendencias';
-import type { DexEvento, DexHubData, DexNumero } from '@/lib/dex/tipos';
+import type { DexEvento, DexHubData, DexMesData, DexNumero, DexRetencaoData } from '@/lib/dex/tipos';
 
 function construirAgora(ctx: DexContextData | null): DexHubData['agora'] {
   if (!ctx) return { proximo: null, consultasHoje: 0, entrouHoje: 0, amanha: 0 };
@@ -19,31 +19,27 @@ function construirAgora(ctx: DexContextData | null): DexHubData['agora'] {
   };
 }
 
-function construirNumeros(ctx: DexContextData | null): DexNumero[] {
-  if (!ctx) return [];
+/** R-103c — coluna "O mês" (D10 do R-103a resolvido). 3 números, sem "recorrentes" (D2
+ *  cortada) — só formatação pt-BR aqui, a regra de negócio mora em numeros-mes.ts. */
+function construirNumerosMes(mes: DexMesData | null): DexNumero[] {
+  if (!mes) return [];
+  const { atendimentos, atendimentosMesAnterior, crescimentoPct, pacientesAtendidos, visitasPorPaciente } = mes;
+
+  const crescimentoValor = crescimentoPct !== null
+    ? `${crescimentoPct >= 0 ? '+' : ''}${crescimentoPct}%`
+    : atendimentos > 0 ? 'novo' : '—';
+  const crescimentoDetalhe = atendimentosMesAnterior > 0
+    ? `${atendimentos} vs ${atendimentosMesAnterior} no mês passado`
+    : 'sem atendimentos no mês passado';
+
   return [
+    { label: 'Atendimentos', valor: String(atendimentos), detalhe: null },
     {
-      label: 'Consultas na semana',
-      valor: String(ctx.consultasSemana),
-      detalhe: `${ctx.agendamentosHoje} hoje · ${ctx.agendamentosAmanha} amanhã`,
-    },
-    {
-      label: 'Orçamentos aprovados',
-      valor: String(ctx.orcamentosAprovadosSemana),
-      detalhe: 'nos últimos 7 dias',
-    },
-    {
-      label: 'Orçamentos em aberto',
-      valor: String(ctx.orcamentosPendentes),
+      label: 'Visitas por paciente',
+      valor: pacientesAtendidos > 0 ? visitasPorPaciente.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '—',
       detalhe: null,
     },
-    {
-      label: 'Aniversariantes hoje',
-      valor: String(ctx.aniversariantesHoje.length),
-      detalhe: ctx.aniversariantesHoje.length > 0
-        ? ctx.aniversariantesHoje.map((a) => a.nome.split(' ')[0]).join(', ')
-        : null,
-    },
+    { label: 'Crescimento', valor: crescimentoValor, detalhe: crescimentoDetalhe },
   ];
 }
 
@@ -54,6 +50,8 @@ function construirNumeros(ctx: DexContextData | null): DexNumero[] {
 export function useDexHub() {
   const [alerts, setAlerts] = useState<DexAlert[]>([]);
   const [ctx, setCtx] = useState<DexContextData | null>(null);
+  const [retencao, setRetencao] = useState<DexRetencaoData | null>(null);
+  const [mes, setMes] = useState<DexMesData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -61,15 +59,21 @@ export function useDexHub() {
     setLoading(true);
     setError(false);
     try {
-      const [alertsRes, ctxRes] = await Promise.all([
+      const [alertsRes, ctxRes, retencaoRes, mesRes] = await Promise.all([
         fetch('/api/dex/alerts'),
         fetch('/api/dex/context'),
+        fetch('/api/dex/retencao'),
+        fetch('/api/dex/mes'),
       ]);
-      if (!alertsRes.ok || !ctxRes.ok) throw new Error('fetch falhou');
+      if (!alertsRes.ok || !ctxRes.ok || !retencaoRes.ok || !mesRes.ok) throw new Error('fetch falhou');
       const alertsData = (await alertsRes.json()) as { alerts: DexAlert[] };
       const ctxData = (await ctxRes.json()) as DexContextData;
+      const retencaoData = (await retencaoRes.json()) as DexRetencaoData;
+      const mesData = (await mesRes.json()) as DexMesData;
       setAlerts(alertsData.alerts ?? []);
       setCtx(ctxData);
+      setRetencao(retencaoData);
+      setMes(mesData);
     } catch {
       setError(true);
     } finally {
@@ -109,7 +113,7 @@ export function useDexHub() {
       .catch(() => void carregar());
   }, [carregar]);
 
-  const pendencias = ctx ? derivarPendencias(alerts, ctx) : [];
+  const pendencias = ctx ? derivarPendencias(alerts, ctx, retencao) : [];
   const eventos: DexEvento[] = alerts
     .filter((a) => a.isNotif)
     .map((a) => ({
@@ -133,7 +137,7 @@ export function useDexHub() {
     pendencias,
     eventos,
     agora: construirAgora(ctx),
-    numeros: construirNumeros(ctx),
+    numeros: construirNumerosMes(mes),
     badge,
     recarregar: carregar,
     marcarLida,

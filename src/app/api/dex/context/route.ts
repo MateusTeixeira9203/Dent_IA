@@ -6,16 +6,12 @@ import { withRateLimit } from '@/lib/rate-limit';
 export interface DexContextData {
   agendamentosHoje: number;
   agendamentosHojeList: { hora: string; paciente: string; status: string }[];
-  orcamentosPendentes: number;
   orcamentosAtrasados30d: number;
   proximoPaciente: string | null;
   proximoAgendamentoId: string | null;
   proximoHorario: string | null;
   entrouHoje: number;
   followUpPendentes: number;
-  aniversariantesHoje: { nome: string; id: string }[];
-  consultasSemana: number;
-  orcamentosAprovadosSemana: number;
   /** Agendamentos marcados para amanhã */
   agendamentosAmanha: number;
   /** Listas de drill-down para cada insight (até 5 itens cada) */
@@ -48,16 +44,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const hojeFim = new Date(agora);
     hojeFim.setHours(23, 59, 59, 999);
 
-    // Início da semana (segunda-feira)
-    const diaSemana = agora.getDay(); // 0=dom, 1=seg...
-    const diasAteLegSeg = diaSemana === 0 ? 6 : diaSemana - 1;
-    const semanaInicio = new Date(agora);
-    semanaInicio.setDate(agora.getDate() - diasAteLegSeg);
-    semanaInicio.setHours(0, 0, 0, 0);
-    const semanaFim = new Date(semanaInicio);
-    semanaFim.setDate(semanaInicio.getDate() + 6);
-    semanaFim.setHours(23, 59, 59, 999);
-
     const tresDiasAtras = new Date(agora);
     tresDiasAtras.setDate(tresDiasAtras.getDate() - 3);
     const trintaDiasAtras = new Date(agora);
@@ -69,11 +55,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     amanhaInicio.setHours(0, 0, 0, 0);
     const amanhaFim = new Date(amanhaInicio);
     amanhaFim.setHours(23, 59, 59, 999);
-
-    // Padrão MM-DD para filtrar aniversariantes do dia
-    const mesStr = String(agora.getMonth() + 1).padStart(2, '0');
-    const diaStr = String(agora.getDate()).padStart(2, '0');
-    const mesdia = `-${mesStr}-${diaStr}`;
 
     let agendamentosQuery = supabase
       .from('agendamentos')
@@ -90,12 +71,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       .gte('data_hora', hojeInicio.toISOString())
       .lte('data_hora', hojeFim.toISOString())
       .not('status', 'eq', 'cancelled');
-
-    let orcamentosQuery = supabase
-      .from('orcamentos')
-      .select('id', { count: 'exact', head: true })
-      .eq('clinica_id', dentista.clinica_id)
-      .in('status', ['rascunho', 'enviado']);
 
     let orcamentosAtrasados30dQuery = supabase
       .from('orcamentos')
@@ -130,22 +105,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       .eq('status', 'enviado')
       .lte('updated_at', tresDiasAtras.toISOString());
 
-    let consultasSemanaQuery = supabase
-      .from('agendamentos')
-      .select('id', { count: 'exact', head: true })
-      .eq('clinica_id', dentista.clinica_id)
-      .gte('data_hora', semanaInicio.toISOString())
-      .lte('data_hora', semanaFim.toISOString())
-      .not('status', 'eq', 'cancelled');
-
-    let orcamentosAprovadosSemanaQuery = supabase
-      .from('orcamentos')
-      .select('id', { count: 'exact', head: true })
-      .eq('clinica_id', dentista.clinica_id)
-      .eq('status', 'aprovado')
-      .gte('updated_at', semanaInicio.toISOString())
-      .lte('updated_at', semanaFim.toISOString());
-
     let agendamentosAmanhaQuery = supabase
       .from('agendamentos')
       .select('id', { count: 'exact', head: true })
@@ -168,54 +127,35 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       .eq('status', 'enviado')
       .lte('updated_at', tresDiasAtras.toISOString());
 
-    // Aniversariantes — fato da clínica inteira, não escopado por dentista
-    const aniversariantesQuery = supabase
-      .from('pacientes')
-      .select('id, nome')
-      .eq('clinica_id', dentista.clinica_id)
-      .like('data_nascimento', `%${mesdia}`)
-      .limit(10);
-
     if (scopado) {
-      agendamentosQuery              = agendamentosQuery.eq('dentista_id', dentista.id);
-      agendamentosListQuery          = agendamentosListQuery.eq('dentista_id', dentista.id);
-      orcamentosQuery                = orcamentosQuery.eq('dentista_id', dentista.id);
-      orcamentosAtrasados30dQuery    = orcamentosAtrasados30dQuery.eq('dentista_id', dentista.id);
-      proximoQuery                   = proximoQuery.eq('dentista_id', dentista.id);
-      pagamentosHojeQuery            = pagamentosHojeQuery.eq('dentista_id', dentista.id);
-      followUpQuery                  = followUpQuery.eq('dentista_id', dentista.id);
-      consultasSemanaQuery           = consultasSemanaQuery.eq('dentista_id', dentista.id);
-      orcamentosAprovadosSemanaQuery = orcamentosAprovadosSemanaQuery.eq('dentista_id', dentista.id);
-      agendamentosAmanhaQuery        = agendamentosAmanhaQuery.eq('dentista_id', dentista.id);
-      atrasados30dListQuery          = atrasados30dListQuery.eq('dentista_id', dentista.id);
-      followUpListQuery              = followUpListQuery.eq('dentista_id', dentista.id);
+      agendamentosQuery           = agendamentosQuery.eq('dentista_id', dentista.id);
+      agendamentosListQuery       = agendamentosListQuery.eq('dentista_id', dentista.id);
+      orcamentosAtrasados30dQuery = orcamentosAtrasados30dQuery.eq('dentista_id', dentista.id);
+      proximoQuery                = proximoQuery.eq('dentista_id', dentista.id);
+      pagamentosHojeQuery         = pagamentosHojeQuery.eq('dentista_id', dentista.id);
+      followUpQuery                = followUpQuery.eq('dentista_id', dentista.id);
+      agendamentosAmanhaQuery     = agendamentosAmanhaQuery.eq('dentista_id', dentista.id);
+      atrasados30dListQuery       = atrasados30dListQuery.eq('dentista_id', dentista.id);
+      followUpListQuery           = followUpListQuery.eq('dentista_id', dentista.id);
     }
 
     const [
       agendamentosRes,
       agendamentosListRes,
-      orcamentosRes,
       orcamentosAtrasados30dRes,
       proximoRes,
       pagamentosHojeRes,
       followUpRes,
-      aniversariantesRes,
-      consultasSemanaRes,
-      orcamentosAprovadosSemanaRes,
       agendamentosAmanhaRes,
       atrasados30dListRes,
       followUpListRes,
     ] = await Promise.all([
       agendamentosQuery,
       agendamentosListQuery.order('data_hora', { ascending: true }).limit(10),
-      orcamentosQuery,
       orcamentosAtrasados30dQuery,
       proximoQuery.order('data_hora', { ascending: true }).limit(1).maybeSingle(),
       pagamentosHojeQuery,
       followUpQuery,
-      aniversariantesQuery,
-      consultasSemanaQuery,
-      orcamentosAprovadosSemanaQuery,
       agendamentosAmanhaQuery,
       atrasados30dListQuery.order('updated_at', { ascending: true }).limit(5),
       followUpListQuery.order('updated_at', { ascending: true }).limit(5),
@@ -231,11 +171,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       hora: new Date(ag.data_hora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
       paciente: (ag.paciente as unknown as { nome: string } | null)?.nome ?? 'Paciente',
       status: ag.status as string,
-    }));
-
-    const aniversariantes = (aniversariantesRes.data ?? []).map((p) => ({
-      nome: p.nome as string,
-      id: p.id as string,
     }));
 
     // Helper para mapear lista de orçamentos com join de paciente
@@ -263,16 +198,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({
       agendamentosHoje:                         agendamentosRes.count ?? 0,
       agendamentosHojeList,
-      orcamentosPendentes:                      orcamentosRes.count ?? 0,
       orcamentosAtrasados30d:                   orcamentosAtrasados30dRes.count ?? 0,
       proximoPaciente:                          pacienteData?.nome ?? null,
       proximoAgendamentoId:                     (proximoRes.data?.id as string | null) ?? null,
       proximoHorario,
       entrouHoje,
       followUpPendentes:                        followUpRes.count ?? 0,
-      aniversariantesHoje:                      aniversariantes,
-      consultasSemana:                          consultasSemanaRes.count ?? 0,
-      orcamentosAprovadosSemana:                orcamentosAprovadosSemanaRes.count ?? 0,
       agendamentosAmanha:                       agendamentosAmanhaRes.count ?? 0,
       orcamentosAtrasados30dList,
       followUpPendentesList,
@@ -282,16 +213,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({
       agendamentosHoje: 0,
       agendamentosHojeList: [],
-      orcamentosPendentes: 0,
       orcamentosAtrasados30d: 0,
       proximoPaciente: null,
       proximoAgendamentoId: null,
       proximoHorario: null,
       entrouHoje: 0,
       followUpPendentes: 0,
-      aniversariantesHoje: [],
-      consultasSemana: 0,
-      orcamentosAprovadosSemana: 0,
       agendamentosAmanha: 0,
       orcamentosAtrasados30dList: [],
       followUpPendentesList: [],

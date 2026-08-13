@@ -1,6 +1,6 @@
 import type { DexAlert } from '@/app/api/dex/alerts/route';
 import type { DexContextData } from '@/app/api/dex/context/route';
-import type { DexPendencia, DexSeveridade } from './tipos';
+import type { DexPendencia, DexRetencaoData, DexSeveridade } from './tipos';
 
 const SEVERIDADE_POR_TIPO: Record<DexAlert['type'], DexSeveridade> = {
   danger: 'alta',
@@ -17,11 +17,15 @@ const CTA_POR_ID: Record<string, string> = {
 const ORDEM_SEVERIDADE: Record<DexSeveridade, number> = { alta: 0, media: 1, baixa: 2 };
 
 /**
- * (DexAlert[], DexContextData) -> DexPendencia[] ordenada por severidade. Função pura,
- * sem fetch, sem React — ponto de extensão que o R-103b usa pra entrar com as 3
- * pendências novas (faltou, cancelou, parou de vir).
+ * (DexAlert[], DexContextData, DexRetencaoData) -> DexPendencia[] ordenada por severidade.
+ * Função pura, sem fetch, sem React. `retencao` é o R-103b: 1 card por tipo (nunca por
+ * paciente) — os buckets já vêm deduplicados entre si por `classificarRetencao` (A2/D7).
  */
-export function derivarPendencias(alerts: DexAlert[], ctx: DexContextData): DexPendencia[] {
+export function derivarPendencias(
+  alerts: DexAlert[],
+  ctx: DexContextData,
+  retencao: DexRetencaoData | null = null,
+): DexPendencia[] {
   const pendencias: DexPendencia[] = [];
 
   // Alertas computados (perfil incompleto, sem confirmação, rascunhos). 'computed_followup'
@@ -69,6 +73,54 @@ export function derivarPendencias(alerts: DexAlert[], ctx: DexContextData): DexP
       chips: ctx.followUpPendentesList.slice(0, 4).map((o) => o.paciente),
       cta: { label: n > 1 ? 'Ver orçamentos' : 'Ver orçamento', href: '/dashboard/orcamentos' },
     });
+  }
+
+  // R-103b — retenção: faltou > cancelou > parou (D5), 1 card por tipo, nunca por paciente.
+  if (retencao) {
+    const { faltouNaoVoltou, cancelouNaoRemarcou, parouDeVir } = retencao;
+
+    if (faltouNaoVoltou.total > 0) {
+      const n = faltouNaoVoltou.total;
+      pendencias.push({
+        id: 'retencao_faltou',
+        severidade: 'alta',
+        titulo: n === 1 ? '1 paciente faltou e não voltou' : `${n} pacientes faltaram e não voltaram`,
+        descricao: 'Sem retorno agendado depois da falta.',
+        valorParado: null,
+        chips: faltouNaoVoltou.pacientes.slice(0, 4).map((p) => p.nome),
+        cta: { label: 'Ver agenda', href: '/dashboard/agendamentos' },
+        retencaoTipo: 'faltou_nao_voltou',
+      });
+    }
+
+    if (cancelouNaoRemarcou.total > 0) {
+      const n = cancelouNaoRemarcou.total;
+      pendencias.push({
+        id: 'retencao_cancelou',
+        severidade: 'media',
+        titulo: n === 1 ? '1 paciente cancelou e não remarcou' : `${n} pacientes cancelaram e não remarcaram`,
+        descricao: 'Sem novo horário depois do cancelamento.',
+        valorParado: null,
+        chips: cancelouNaoRemarcou.pacientes.slice(0, 4).map((p) => p.nome),
+        cta: { label: 'Ver agenda', href: '/dashboard/agendamentos' },
+        retencaoTipo: 'cancelou_nao_remarcou',
+      });
+    }
+
+    // Card existe pelo limiar de 60 (A4) — a sublinha de 30 é contexto, não gatilho.
+    if (parouDeVir.total60 > 0) {
+      const n60 = parouDeVir.total60;
+      pendencias.push({
+        id: 'retencao_parou',
+        severidade: 'baixa',
+        titulo: n60 === 1 ? '1 paciente parou de vir' : `${n60} pacientes pararam de vir`,
+        descricao: `${n60} há +60 dias · ${parouDeVir.total30} há +30 dias`,
+        valorParado: null,
+        chips: parouDeVir.pacientes.slice(0, 4).map((p) => p.nome),
+        cta: { label: 'Ver pacientes', href: '/dashboard/pacientes' },
+        retencaoTipo: 'parou_de_vir',
+      });
+    }
   }
 
   return pendencias.sort((a, b) => ORDEM_SEVERIDADE[a.severidade] - ORDEM_SEVERIDADE[b.severidade]);
