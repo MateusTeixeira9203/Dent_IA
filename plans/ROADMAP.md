@@ -130,7 +130,7 @@ prioridade, por melhor que seja.
 | [R-38](specs/R-38-orcamento-apresentacao-ao-paciente.md) | Orçamento: como o paciente vê — PDF sem preço por item, só total e condição | 🟡 codado, testado, commitado e no ar (31/07) — toggle no rodapé, PDF respeita o flag, snapshot do aceite grava o flag (G1-G6 verificados) | P |
 | [R-10](ROADMAP.md) | P2: tirar a observação clínica do documento que o paciente lê | ⏳ P1 ✅ em prod. P2 precisa de decisão — `dentes_observacoes` alimenta orçamento **e** prontuário | P |
 | [**R-98a**](specs/R-98-apresentar-visual-blocos-modelo.md) | Tipo de bloco (`texto`/`imagem`/`odontograma`) + fix do bug de persistência | 🟡 **codado, testado ao vivo e aprovado por ele 10/08** (`4fe53e2`..`0b86843`, migration 134). 🐛 corrigido: geração por IA nunca salvava — 23 chamadas, 6 de dentistas reais, 0 linhas correspondentes. 2 achados extras corrigidos no teste: botão Apresentar preso a ter ficha, protético sem `PageContainer`. **Falta produção — veredito dele hoje à noite** | G |
-| **R-98b** | Modelo reutilizável — dentista salva a sequência de blocos e reusa a partir do 2º paciente | 🟡 **codado 11/08** (migration 136 aplicada) — mas o botão "Salvar como meu modelo" está **desativado** a pedido dele, motivo não explicado. `Usar meu modelo` fica inerte sem ele. Sem commit | M |
+| **R-98b** | Modelo reutilizável — dentista salva a sequência de blocos e reusa a partir do 2º paciente | ✂️ **cortado 13/08** — ficou desativado desde 11/08 sem motivo registrado; decisão dele foi descartar em vez de reativar. Código local revertido (nunca commitado); tabela `apresentacao_modelos` dropada em produção (migration 140, 0 linhas, nunca usada) | M |
 
 ## Bloco 3 — Assinatura e prova
 

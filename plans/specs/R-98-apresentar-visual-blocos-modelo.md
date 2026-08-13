@@ -122,7 +122,12 @@ apagam: regenerar com IA por cima de seções existentes, remover bloco (`remove
 `src/components/ui/alert-dialog.tsx` e já tem precedente de uso em
 `src/app/dashboard/configuracoes/usuarios/_components/usuarios-client.tsx` — reusar, não criar.
 
-### 4.2 — R-98b: modelo reutilizável (depende de 4.1)
+### 4.2 — R-98b: modelo reutilizável (depende de 4.1) — ✂️ **cortado 13/08**
+
+> Codado 11/08, migration 136 aplicada, mas o botão "Salvar como meu modelo" ficou desativado
+> a pedido dele sem motivo registrado. Em 13/08 decidiu descartar em vez de reativar. Código
+> local revertido (nunca commitado); tabela `apresentacao_modelos` dropada em produção
+> (migration 140, 0 linhas, nunca usada). §4.2 abaixo fica só como registro histórico do desenho.
 
 **SQL — migration 135**, RLS espelhando `planejamento_secoes` (migration 099) linha a linha:
 
