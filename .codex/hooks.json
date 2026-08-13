@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File 'C:\\Users\\mateu\\Desktop\\Odonto.IA-main\\.codex\\hooks\\estado-check.ps1'"
+          }
+        ]
+      }
+    ]
+  }
+}
