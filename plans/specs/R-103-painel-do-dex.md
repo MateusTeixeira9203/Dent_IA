@@ -81,7 +81,7 @@ muito legal, então é melhor a gente já tirar"*. Não é mais proposta da spec
 | Sub-item | Escopo | Estado |
 |---|---|---|
 | [**R-103a**](R-103a-destravar-o-dex.md) | Destravar (C1-C4), apagar o mock (C3), trocar o painel pela casca de 3 colunas do artefato — **só com dado que já existe e é honesto**. Sino sai do dock; notificação do banco vira zona no hub. Novidades por arquivo estático | spec escrita |
-| **R-103b** | As 3 pendências novas: *faltou e não voltou* · *cancelou e não remarcou* · *parou de vir*. Query sobre `fichas.data_atendimento` + `agendamentos`, com dedup (um paciente = um card só) e exclusão de quem nunca teve ficha. **Absorve o R-26.** Definições propostas em §4 — precisam do ok dele antes de virar spec | ⏳ depois do a |
+| [**R-103b**](R-103b-pendencias-do-dex.md) | As 3 pendências novas: *faltou e não voltou* · *cancelou e não remarcou* · *parou de vir*. Query sobre `fichas.data_atendimento` + `agendamentos`, com dedup (um paciente = um card só) e exclusão de quem nunca teve ficha. **Absorve o R-26.** As 6 abertas do §4 respondidas por ele em 12/08 | **spec escrita** — rascunho aguardando aprovação |
 | **R-103c** | Coluna "O mês": atendimentos, recorrentes, visitas/paciente, Δ vs mês anterior. Copia o molde de `listarUltimosMeses(6)` + `mesWindow()` (`financeiro/actions.ts:247`), que hoje só faz dinheiro. **Contagem de atendimento por mês não existe hoje** — só dia e semana | ⏳ depois do a |
 | **R-104** | Curso do sistema + vídeo por atualização grande + guia da secretária. Precisa de fonte de conteúdo que não existe. **Restrição registrada: despesa nova proibida até o refino** — YouTube não-listado é a opção grátis | ⏳ sem data |
 
@@ -89,37 +89,41 @@ muito legal, então é melhor a gente já tirar"*. Não é mais proposta da spec
 são do b), é majoritariamente deleção, e mata a frase que abriu o item — o Dex passa a abrir.
 A limpeza (fases 1-2) sobe sozinha e é invisível; a fase 3 é a que liga a luz.
 
-## 4. Abertas — só ele responde (todas do R-103b)
+## 4. Abertas — TODAS RESPONDIDAS POR ELE EM 12/08
 
-- **A1 · Definição de cada pendência.** Proposta: **faltou e não voltou** = existe
-  `agendamentos.status='no_show'` entre 7 e 180 dias atrás **e** nenhum agendamento posterior do
-  mesmo paciente fora de `('cancelled','no_show')` (os 7 dias evitam cobrar ação de quem faltou
-  ontem) · **cancelou e não remarcou** = `status='cancelled'` nos últimos 30 dias **e** nenhum
-  agendamento futuro não-cancelado (depois de 30 dias o caso vira "parou de vir") · **parou de
-  vir** = tem ≥1 ficha, `max(fichas.data_atendimento) < current_date - N` **e** nenhum
-  agendamento futuro.
-- **A2 · Dedup.** Proposta: um paciente aparece em **no máximo um card**, precedência
-  *faltou > cancelou > parou de vir*, resolvida numa **query só** que classifica e agrupa — não 3
-  queries independentes somando o mesmo nome.
-- **A3 · "Nunca veio" (226 na Clindent).** Proposta: fica **fora** do card e **não** vira lista
-  própria agora. É base legada importada, não pendência do dia; se virar item, é campanha de
-  reativação (parente do R-45), não painel.
-- **A4 · 30 ou 60 dias.** Ele falou "30, 60". Proposta: **um card, limiar 60**, com o +30 na
-  sublinha ("4 há +60 dias · 6 há +30"). Dois cards com 4 e 6 nomes sobrepostos é ruído.
+> ⚠️ **Este §4 virou histórico.** As definições que valem moram no contrato do
+> [R-103b](R-103b-pendencias-do-dex.md) §1 e §4.2 — **inclusive porque A1 mudou** (ver A1 abaixo).
+> Não implemente a partir daqui.
+
+- **A1 · Definição de cada pendência — RESPONDIDA, e depois CORRIGIDA por ele.** Confirmou a
+  proposta original: **faltou e não voltou** = `status='no_show'` entre 7 e 180 dias atrás **e**
+  nenhum agendamento posterior fora de `('cancelled','no_show')` · **parou de vir** = tem ≥1
+  ficha, última visita há +30 **e** nenhum agendamento futuro. **A correção:** "cancelou e não
+  remarcou" media os 30 dias **só no passado**, e com isso quem cancelava a consulta de amanhã
+  não caía em card nenhum. Fala dele: *"um paciente que ia vir amanhã, cancelou e não remarcou —
+  ele entra nessa aba"*. A janela passou a incluir consulta futura cancelada, e "agendamento
+  futuro" passou a significar futuro **não-cancelado** nos 3 tipos. Contrato final: R-103b D6/D9.
+- **A2 · Dedup — RESPONDIDA (proposta confirmada).** Um paciente em **no máximo um card**,
+  precedência *faltou > cancelou > parou de vir*. (O R-103b resolve em TypeScript puro, não em
+  query única — D2 de lá; a garantia de "um card só" é a mesma.)
+- **A3 · "Nunca veio" (226 na Clindent) — RESPONDIDA (proposta confirmada).** Fica **fora**, e
+  **não** vira lista própria agora. Se virar item, é campanha de reativação (parente do R-45).
+- **A4 · 30 ou 60 dias — RESPONDIDA (proposta confirmada).** **Um card, limiar 60**, com o +30 na
+  sublinha ("4 há +60 dias · 6 há +30"). Dois cards com nomes sobrepostos é ruído.
 - **A5 · Badge — RESOLVIDO 11/08.** Badge = **pendências + notificações não lidas**. Decorre da
   decisão dele de que o painel passa a ser o dono das notificações e o sino sai: sem contar as não
   lidas, uma notificação de check-in chegaria sem aviso visual nenhum. (Registro: o "só
   pendências" das versões anteriores desta spec era **minha** posição, não dele — atribuição
   corrigida.)
-- **A6 · Escopo do dado.** "Faltou e não voltou" é **meu** paciente ou **da clínica**? A RLS de
-  `agendamentos` (migration 089) só entrega o meu; a de `fichas` (099) entrega a clínica toda.
-  A proposta segue o precedente `scopado = role !== 'secretaria'`, e o preço é: paciente que
-  remarcou com o **colega** aparece como "não remarcou" pra mim. Ampliar exigiria RPC
-  `SECURITY DEFINER` nova — exatamente o que o R-43 caça. **Esta é a única pergunta cuja resposta
-  pode mudar o schema.**
-- **A7 · CTA de WhatsApp.** O artefato mostra "Chamar os 3 no WhatsApp". Proposta: nesta fase o
-  CTA abre a lista/agenda; disparo em lote vira item próprio (superfície nova, template aprovado,
-  janela de 24h da Meta).
+- **A6 · Escopo do dado — RESPONDIDA 12/08: "meu".** Segue o precedente
+  `scopado = role !== 'secretaria'`. **Nenhum schema muda** — era a única pergunta que podia
+  mudar, e a resposta fechou o risco: zero RPC `SECURITY DEFINER`, zero policy nova. Preço aceito
+  conscientemente: paciente que remarcou com o **colega** aparece como "não remarcou" pra mim.
+  Consequência técnica registrada no R-103b §4.1 — `fichas` (RLS da clínica inteira desde a 099)
+  precisa do filtro `dentista_id` **na query**, senão app e RLS discordam.
+- **A7 · CTA de WhatsApp — RESPONDIDA 12/08 (proposta confirmada).** Nesta fase o CTA abre a
+  lista/agenda; disparo em lote vira item próprio (superfície nova, template aprovado, janela de
+  24h da Meta).
 - **A8 · Sobre o C3 — RESOLVIDO 11/08.** Não: o mock nunca rodou em produção, porque o Dex estava
   desativado. Consequência que ele não pediu mas decorre disso: **a limpeza do mock tem que vir
   ANTES de destravar**, senão o R-103a publica ficção em produção no exato commit que conserta o
