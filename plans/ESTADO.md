@@ -1,69 +1,64 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-08-13 03:06 · sessão #39
-> **Item ativo:** R-107 · **Modo da sessão:** discussão → planejamento → execução (×4) →
-> discussão de design → commit → sessão fechando
+> **ESTADO** · atualizado 2026-08-13 15:05 · sessão #40
+> **Item ativo:** R-108 (+ R-108b, R-109 aprovadas, sem código ainda)
 
 ## Agora
 
-**R-107 (a-d): codado, testado ao vivo e commitado. 5 commits locais, zero push.**
+**R-108 Fatia A+B — codado, gates verificados ao vivo por ele, nada commitado.**
 
-- [R-107a](specs/R-107a-barra-meu-dia.md) — barra do campo mágico sem Status/Observação
-  globais, chips de Profilaxia/Clareamento portados de `FichasTab.tsx`.
-- [R-107b](specs/R-107b-perfil-do-dente.md) — busca livre no painel do dente, tipo genérico
-  `outro`, "Dente ausente". **Migration 139 aplicada em produção.**
-- [R-107c](specs/R-107c-altura-estavel-perfil-dente.md) — `min-h-[308px]` no card da direita,
-  para o colapso visual entre dente vazio e mapa.
-- [R-107d](specs/R-107d-lote-multidente.md) — faixa de lote (2+ dentes → 1 procedimento),
-  Restauração pede face antes (checado em produção, não suposto). **+ adendo "Modo
-  multidente"** (toggle que impede o clique de trocar o espelho pelo histórico — resolve o
-  "clica, fecha, clica, fecha").
+- Migration 141 no ar: `fichas.nome` + tabela `ficha_evolucoes` (RLS = padrão
+  `planejamento_secoes`) + backfill 174/174, 0 ficha tocada.
+- Ficha com evento ganha cabeçalho (nome do tratamento + progresso) + timeline "Evoluções —
+  uma por visita". Ficha legada (sem evento) continua exatamente como sempre foi.
+- **Feito:** G1, G2, G4, G5, G6, G7, G8, G9, G10, G11 — G5/G7/G8/G9 confirmados ao vivo por
+  ele (light e dark, paciente "tes"/"teste" em Teste01). Nome derivado com 8/8 testes.
+- **Falta:** G3 (RLS 2 contas) — represado, mesma fila do G3 do R-103b/c. Commit e push —
+  ele pediu pra segurar os dois até terminar ficha+Meu dia.
 
-Todos os 4 com gates confirmados ao vivo por mim (typecheck/lint/build limpos, zero erro de
-console, interações reais). Falta só a verificação dele mesmo — nenhum gate exige login que só
-ele tem, diferente do R-103b/c.
+**R-108b (roteamento da visita) e R-109 (registro na ficha) — specs aprovadas por ele nesta
+sessão, zero código ainda.** R-108b é quem mata o bug de origem que abriu esta discussão
+inteira: evento de procedimento fica preso na ficha onde foi *planejado*, não na ficha da
+visita que o concluiu (achado real, 12/08: endodontia presa numa ficha de 26/07, 17 dias de
+distância). **Esse bug continua no ar** — a Fatia A+B do R-108 não o resolve, só monta o
+modelo em cima do qual o R-108b vai rotear.
 
-**Pendente, não é bug:** posição do "Modo multidente" na tela. Está codado acima do
-odontograma; recomendei mover pra dentro da faixa do campo mágico (mesma família de
-Profilaxia/Clareamento). Ele quer opinião de dentistas reais antes de decidir — nada aplicado.
-Raciocínio completo no [R-107d §9](specs/R-107d-lote-multidente.md#9-adendo-1308-pedido-dele-ao-vivo-depois-da-execução-original--modo-multidente).
+**Decisão dele no fechamento:** retomar o R-108b **em Opus** na próxima sessão — é a única
+fatia do épico que muda rota de escrita com paciente real (a spec já marcava isso: "Opus,
+não descer pra Sonnet"). R-109 pode ir em Sonnet, é independente e mais mecânico (porta
+lote multidente/campo mágico já testados no Meu dia).
 
-**Também commitado nesta sessão:** R-103b/c (código de #38, sem trabalho novo meu hoje) — a
-pedido dele, junto com o lote do R-107.
-
-Detalhe da sessão (debate completo, decisões, achados de teste): [handoff](handoffs/handoff-2026-08-13-0306.md).
+**Achado a não esquecer:** o backfill da migration 141 rodou em todas as 174 fichas do banco,
+incluindo as 124 da Clindent (clínica real da família, só-leitura na minha memória) — é
+INSERT aditivo, zero UPDATE/DELETE no dado deles, mas eu não separei o escopo por clínica
+antes de rodar. Avisei ele, sem reação — registrado aqui, não silenciado.
 
 ## Travado
 
 | O quê | Trava o quê | Hipótese / próximo passo |
 |---|---|---|
+| G3 do R-108 sem 2 contas | Fechar R-108 como ✅ | Mesma fila do G3 do R-103b/c |
+| G3 do R-103b/c sem dado nem conta pra testar | Fechar R-103b/c como ✅ | Ele recusou seed sintético — espera dado real |
+| Posição do "Modo multidente" (R-107d §9) | Fechar R-107d de vez | Ele quer opinião de dentistas reais — 3 opções documentadas, é só aplicar quando decidir |
 | Preço novo não fechado (herdado do R-92) | Retomar o R-92 | `lib/planos.ts` é fonte única — trocar o número é barato quando ele decidir |
-| R-36 reescrita sem aprovação dele | Começar a codar a R-36 | §7 do doc tem 3 decisões abertas; a mais pesada é se cadastro solo continua criando clínica |
-| G3 do R-103b/c sem dado nem conta pra testar | Fechar R-103b/c como ✅ | Ele recusou seed sintético (script SQL pronto, não rodado) — vai esperar dado real com o tempo |
-| Posição do "Modo multidente" (R-107d §9) | Fechar R-107d de vez | Ele quer opinião de dentistas reais amanhã — 3 opções já documentadas na spec, é só aplicar quando decidir |
+| R-36 reescrita sem aprovação dele | Começar a codar a R-36 | §7 do doc tem 3 decisões abertas |
 
 ## Esperando você
 
-- **Posição do "Modo multidente"** — pega a opinião dos dentistas amanhã; 3 opções e minha
-  recomendação estão no R-107d §9, pronto pra eu aplicar assim que decidir
-- **Push dos 5 commits de hoje** (R-107a-d + R-103b/c) — nenhum foi pra produção ainda
-- **R-107b/c/d — G3/G4/G5/G6/G8 formais** (gates que dependem de login/2 contas/design-review)
-  — testei tudo que dava pra testar sozinho; o resto segue como sempre: exige você
-- **R-103b e R-103c — mesmos gates**, mesma trava de #38 (2 contas reais). Script SQL de seed
-  sintético já foi oferecido e recusado — decisão é esperar dado real
-- **R-98b — por que desativar o botão "Salvar como meu modelo"?** Codado, migration 136 no ar,
-  não commitado. Sem o motivo eu não sei quando/se reativar
-- **R-102 — G1-G6 sem teste formal**, mesmo no ar
+- **Retomar R-108b em Opus** — spec pronta (`aprovada`), é o que mata o bug de origem
+- **R-109** — spec pronta (`aprovada`), pode entrar em Sonnet, em qualquer ordem
+- **Commit + push do R-108** — combinado que espera terminar ficha+Meu dia
+- G3 do R-108 e do R-103b/c — represados junto (2 contas reais)
+- Posição do "Modo multidente" — [R-107d §9](specs/R-107d-lote-multidente.md#9-adendo-1308-pedido-dele-ao-vivo-depois-da-execução-original--modo-multidente)
+- R-102 — G1-G6 sem teste formal, mesmo no ar
 - Veredito de produção do R-98a — sem confirmação desde a sessão #35
 - Aprovar a [R-36](specs/R-36-um-login-uma-clinica.md) reescrita (§7: 3 decisões)
-- G6 do R-94 — teste deliberado de 2 contas (dentista cria pedido → protético marca entregue)
+- G6 do R-94 — teste deliberado de 2 contas
 - Gate de 2 contas represado (R-29/R-30/R-31a/R-32/R-34/R-39/R-03c) — parado há semanas
 - Testar pessoalmente R-85/R-86/R-65/R-66 (herdados, ainda 🟡)
 
 ## Próximo da fila
 
-Sem sinal de push, R-107 fica como está. Depois da opinião dos dentistas sobre o "Modo
-multidente", é só aplicar a posição escolhida e fechar o R-107d de vez. Sem gate de 2 contas
-represa R-103b/c. Enquanto isso, sem trava de login: R-104 (curso do sistema, sem spec) ou
-R-106 (status realizado/indicado — precisa investigação antes do eval). `ROADMAP.md` segue
-precisando de poda dedicada — 255 linhas, teto ~200, estourado há várias sessões.
+R-108b assim que a sessão abrir em Opus — é o item que fecha o bug real. R-109 pode intercalar
+em Sonnet a qualquer momento, sem depender do 108b. `ROADMAP.md` segue precisando de poda
+dedicada — 258 linhas, teto ~200, estourado há várias sessões.
