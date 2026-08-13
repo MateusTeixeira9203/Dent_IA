@@ -48,11 +48,13 @@ import { RegistroCard, type RegistroCardData } from '@/components/fichas/registr
 import { DenteGrupoHeader } from '@/components/fichas/dente-grupo-header';
 import { corpoEspecialidade, corpoEspecialidadeEditavel } from '@/components/fichas/corpo-especialidade';
 import { eventosParaCards } from '@/lib/odontograma/eventos-para-cards';
+import { eventoRotina, cycleRotina } from '@/lib/odontograma/rotina-boca';
+import type { MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
 import { TIPO_LABEL, corDoRegistro } from '@/types/odontograma';
 import type {
   OrtoManutencaoInfo, OdontogramaEventoDraft,
   TipoRegistroOdontograma, StatusRegistro, OrigemRegistro, AncoraClinica,
-  NivelAncora, Arcada, FaceDental, QuadranteFDI, PapelNoGrupo, MomentoPlanejado,
+  NivelAncora, Arcada, FaceDental, PapelNoGrupo, MomentoPlanejado,
 } from '@/types/odontograma';
 import { alternarStatusRegistro, alternarMomentoRegistro, encaminharProcedimento, atualizarStatusEncaminhado, preencherDetalheEncaminhado, assinarProcedimentos, assinarTodosRealizadosDaFicha } from '@/server/patients/registro-actions';
 import { salvarFicha, deletarFicha, contarVinculosFicha, type VinculosFicha } from '@/server/patients/salvar-ficha';
@@ -485,9 +487,12 @@ interface FichasTabProps {
   canWrite?: boolean;
   /** #6 — abre o modal de orçamento no pai, já mirado nesta ficha. */
   onGerarOrcamento?: (fichaId: string) => void;
+  /** R-107b — catálogo do dentista, repassado pros `ToothDetailPanel` daqui (busca livre do
+   *  painel do dente). Ausente = a busca casa só os tipos estruturais, sem catálogo. */
+  catalogoProcedimentos?: MeuDiaCatalogoProcedimento[];
 }
 
-export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWrite = true, onGerarOrcamento }: FichasTabProps) {
+export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWrite = true, onGerarOrcamento, catalogoProcedimentos }: FichasTabProps) {
   // O histórico é da CLÍNICA (todo dentista lê), o trabalho é do AUTOR (só ele escreve) —
   // migration 099. `canWrite` cobre papel/plano; a autoria é uma segunda condição, não a
   // mesma. Esconder o controle é conveniência: quem barra de verdade é a RLS (invariante #9).
@@ -718,45 +723,12 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     setEventosDraft((prev) => prev.map((ev, i) => (i === idx ? { ...ev, detalhe } : ev)));
   };
 
-  /**
-   * R-07 — chips de rotina (spec R-06-07 Fase 3): cicla o evento de boca/quadrante no rascunho
-   * (sem registro → indicado → realizado → remove), mesmo ciclo dos chips de dente do painel.
-   * Nível 'boca' quando sem quadrante (profilaxia/clareamento/flúor); raspagem ancora por quadrante.
-   */
-  const eventoRotina = (tipo: TipoRegistroOdontograma, quadrante?: QuadranteFDI) =>
-    eventosDraft.find((e) =>
-      e.tipo === tipo && (quadrante == null ? e.ancora.nivel === 'boca' : e.ancora.quadrante === quadrante),
-    ) ?? null;
-
-  const cycleRotina = (tipo: TipoRegistroOdontograma, quadrante?: QuadranteFDI) => {
-    setEventosDraft((prev) => {
-      const i = prev.findIndex((e) =>
-        e.tipo === tipo && (quadrante == null ? e.ancora.nivel === 'boca' : e.ancora.quadrante === quadrante),
-      );
-      if (i === -1) {
-        return [...prev, {
-          id: crypto.randomUUID(),
-          tipo,
-          status: 'indicado' as const,
-          origem: 'clinica' as const,
-          // R-101 §1 — boca/quadrante ficam fora do v1 (sem UI de 3 vias); sempre sessao_atual.
-          momento_planejado: 'sessao_atual' as const,
-          ancora: quadrante != null ? { nivel: 'quadrante' as const, quadrante } : { nivel: 'boca' as const },
-          grupo_id: null,
-          papel_no_grupo: null,
-          observacao: '',
-          realizado_em: null,
-        }];
-      }
-      const e = prev[i];
-      if (e.status === 'indicado') {
-        return prev.map((ev, j) =>
-          j === i ? { ...ev, status: 'realizado' as const, origem: 'clinica' as const, momento_planejado: 'sessao_atual' as const, realizado_em: ev.realizado_em ?? hojeBRT() } : ev,
-        );
-      }
-      return prev.filter((_, j) => j !== i);
-    });
-  };
+  // R-07 — chips de rotina (spec R-06-07 Fase 3): ciclo de boca/quadrante no rascunho (sem
+  // registro → indicado → realizado → remove). R-107a extraiu `eventoRotina`/`cycleRotina`
+  // pra `@/lib/odontograma/rotina-boca` (o Meu dia passou a precisar do mesmo ciclo) — os
+  // call sites abaixo passam `eventosDraft` explícito e envolvem `cycleRotina` num
+  // `setEventosDraft` local, já que o util agora é puro (devolve a lista nova, não fecha
+  // sobre state).
 
   /**
    * R-02 Fase 1: alterna planejado ⇄ realizado no RASCUNHO — flip local, sem chamada ao
@@ -1789,6 +1761,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                       dataPadrao={formData.dataAtendimento}
                       gruposAbertos={gruposAbertos}
                       tabelaContainer={tabelaElA}
+                      catalogoProcedimentos={catalogoProcedimentos}
                       // R-30 Parte 7 (contrato 3) — mesmo estado que a arcada calcularia
                       // pra este dente, não mais 'default' fixo.
                       state={computeToothState(denteAberto, {
@@ -1881,13 +1854,13 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                 </label>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {(['profilaxia', 'fluor', 'clareamento', 'exame_periodontal'] as const).map((tipo) => {
-                    const ev = eventoRotina(tipo);
+                    const ev = eventoRotina(eventosDraft, tipo);
                     const cor = ev ? corDoRegistro(ev.status, ev.origem) : null;
                     return (
                       <button
                         key={tipo}
                         type="button"
-                        onClick={() => cycleRotina(tipo)}
+                        onClick={() => setEventosDraft(cycleRotina(eventosDraft, tipo))}
                         aria-label={`${TIPO_LABEL[tipo]} (boca toda) — ${ev ? (ev.status === 'indicado' ? 'a fazer' : 'feito') : 'sem registro'}`}
                         className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all outline-none focus-visible:ring-1 focus-visible:ring-teal"
                         style={{
@@ -1906,13 +1879,13 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                     Raspagem
                   </span>
                   {([1, 2, 3, 4] as const).map((q) => {
-                    const ev = eventoRotina('raspagem', q);
+                    const ev = eventoRotina(eventosDraft, 'raspagem', q);
                     const cor = ev ? corDoRegistro(ev.status, ev.origem) : null;
                     return (
                       <button
                         key={q}
                         type="button"
-                        onClick={() => cycleRotina('raspagem', q)}
+                        onClick={() => setEventosDraft(cycleRotina(eventosDraft, 'raspagem', q))}
                         aria-label={`Raspagem quadrante ${q} — ${ev ? (ev.status === 'indicado' ? 'a fazer' : 'feito') : 'sem registro'}`}
                         title={`Raspagem — quadrante ${q}`}
                         className="px-2 py-1.5 rounded-lg text-[11px] font-mono font-bold transition-all outline-none focus-visible:ring-1 focus-visible:ring-teal"

@@ -599,8 +599,16 @@ export function MeuDiaClient({
                 escrita — achado do Mateus: F0 abria o editor direto, errado); "+ registrar
                 neste dente" (ou "continuar aqui" do grupo aberto) → editor de faces/chips
                 (`ToothDetailPanel`, reusado tal qual, closes de volta pro histórico — não
-                pro espelho). */}
-            <div className="rounded-2xl border border-border bg-surface p-4">
+                pro espelho).
+
+                R-107c (13/08) — `min-h-[308px]`: sem piso, trocar pro `DenteHistoricoCard` de
+                um dente sem registro colapsava o card (medido: 139px) contra o editor vazio
+                (medido: 307px) — o soluço visual que ele sentiu a cada clique num dente vazio.
+                308px = editor vazio arredondado pra cima, não a tabela de especialidade aberta
+                (570px+, que continua livre pra crescer — `min-h`, nunca `h` fixo, não corta
+                dado). `items-stretch` (grid acima) propaga o piso pro card "Nesta ficha"
+                sozinho — não precisa duplicar lá. */}
+            <div className="min-h-[308px] rounded-2xl border border-border bg-surface p-4">
               <AnimatePresence mode="wait" initial={false}>
                 {denteAberto != null && registrandoDenteAberto ? (
                   <motion.div
@@ -619,6 +627,8 @@ export function MeuDiaClient({
                       gruposAbertos={gruposAbertos}
                       onDetalheAbertoChange={setDetalheEspecialidadeAberto}
                       abrirDetalheDoEvento={detalheAlvoId ?? undefined}
+                      // R-107b — catálogo do dentista pro match local da busca livre.
+                      catalogoProcedimentos={catalogoProcedimentos}
                       className="border-0 p-0"
                     />
                   </motion.div>

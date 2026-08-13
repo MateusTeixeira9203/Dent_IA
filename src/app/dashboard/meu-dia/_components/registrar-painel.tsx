@@ -10,10 +10,17 @@
 // R-62 (05/08) — a disclosure "Registrar sem IA" SAIU de vez: o combobox de 17 tipos e a
 // busca no catálogo viraram chips locais dentro do próprio campo mágico
 // (`casar-procedimento-local.ts`, zero rede, zero IA — mantém o I1 de registrar funcionar
-// com a IA fora do ar). O que sobra AQUI (Status, chip de orto, painel "qual tipo clínico?"
-// do catálogo, "+ texto da visita") não estava escondido nem era exclusivo do combobox — vira
+// com a IA fora do ar). O que sobra AQUI (chips de orto/rotina, painel "qual tipo clínico?"
+// do catálogo, "+ Observação") não estava escondido nem era exclusivo do combobox — vira
 // uma faixa sempre visível, sem toggle. `registrar()`/`tipoPendente`/`escolherDoCatalogo`
 // são os MESMOS de sempre, só ganham `aplicarSugestaoLocal` como um 2º chamador.
+//
+// R-107a (13/08, debate ao vivo) — Status (a fazer/feito) e Observação globais SAÍRAM: eram
+// redundantes com o pill de status e o textarea por-evento que já existem em
+// `ToothDetailPanel`/`NestaSessaoBloco`. Todo evento criado por aqui nasce `realizado` fixo
+// (era o default do state removido). Entraram chips de Profilaxia/Clareamento — mesmo ciclo
+// que `FichasTab.tsx` já tinha, portado via `@/lib/odontograma/rotina-boca` em vez de
+// duplicado. "+ texto da visita" virou "+ Observação" (mesmo mecanismo, só rótulo).
 //
 // 04/08 (pedido dele, ao vivo) — `OndeSeletor` (chips de arcada/quadrante) SAIU da barra
 // sem-IA: clicar direto no dente do odontograma já resolve "onde" pros tipos por-dente, e os
@@ -46,10 +53,10 @@
 // linha ficava sem fundo, "flutuando"). `ToothDetailPanel` sem esse prop já renderiza a
 // tabela de especialidade inline, dentro do próprio card do perfil (555px).
 
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { Check, AlertTriangle, Loader2, X } from 'lucide-react';
+import { Check, AlertTriangle, Loader2, X, Search } from 'lucide-react';
 import { Odontograma } from '@/components/odontograma/Odontograma';
 import { salvarEventosOdontograma } from '@/server/patients/registro-actions';
 import { CampoMagicoMeuDia } from './campo-magico-meu-dia';
@@ -63,15 +70,27 @@ import { MarcarRetornoModal, type MarcarRetornoForm } from '@/components/pacient
 import { formatHora } from '@/lib/agenda/disponibilidade';
 import {
   TIPO_LABEL,
+  corDoRegistro,
   type OdontogramaEventoDraft,
-  type StatusRegistro,
   type AncoraClinica,
   type TipoRegistroOdontograma,
+  type FaceDental,
 } from '@/types/odontograma';
 import type { OrtoManutencaoDetalhe } from '@/lib/especialidades/orto';
-import type { SugestaoLocal } from '@/lib/odontograma/casar-procedimento-local';
+import { casarProcedimentoLocal, type SugestaoLocal } from '@/lib/odontograma/casar-procedimento-local';
 import { ditadoDevolveMapa, type SlotCentral } from '@/lib/odontograma/ditado-devolve-mapa';
+import { eventoRotina, cycleRotina } from '@/lib/odontograma/rotina-boca';
+import { criarProcedimento } from '@/app/dashboard/configuracoes/actions';
 import type { MeuDiaPendencia, MeuDiaCatalogoProcedimento, MeuDiaOrto } from '@/server/dashboard/get-meu-dia';
+
+/** R-107d — chips oferecidos em lote (subconjunto de `TIPO_LABEL`, spec §3). Ponte fica de
+ *  fora (fluxo próprio extremo→extremo); Restauração entra à parte (pede face antes, não
+ *  cria direto como os outros). */
+const CHIPS_LOTE: TipoRegistroOdontograma[] = [
+  'endodontia', 'coroa', 'implante', 'pino_nucleo', 'exodontia', 'fratura', 'lesao_periapical',
+];
+
+const FACES_LOTE: FaceDental[] = ['V', 'M', 'O', 'D', 'L'];
 
 const TIPOS = Object.entries(TIPO_LABEL) as Array<[TipoRegistroOdontograma, string]>;
 
@@ -167,7 +186,7 @@ function ancorasDoOnde(v: OndeValor): AncoraClinica[] {
 }
 
 export interface RegistrarPainelSlots {
-  /** Card full-width, topo do fluxo: campo mágico + chips (status/orto) + observação. */
+  /** Card full-width, topo do fluxo: campo mágico + chips (rotina/orto) + observação. */
   campoMagico: ReactNode;
   /** Ocupante default da coluna direita (~555px): mapa espelho ou OrtoForm — nunca os
    *  dois. Quando `denteAberto` está setado, o pai (`meu-dia-client`) mostra o
@@ -198,11 +217,14 @@ export function useRegistrarPainel({
   const [alertaNovo, setAlertaNovo] = useState<string | null>(null);
 
   const [onde, setOnde] = useState<OndeValor>(null);
-  const [status, setStatus] = useState<StatusRegistro>('realizado');
-  /** R-57 F2 — observação livre do dentista, acompanha o PRÓXIMO procedimento registrado.
-   *  Convive com o nome do catálogo (`criarEventos` compõe as duas, nome primeiro) — nunca
-   *  sobrescreve. Reset entre pacientes: ver bloco `agendamentoIdAoResetar` abaixo. */
-  const [observacao, setObservacao] = useState('');
+  /** R-107d (adendo) — "clica, fecha, clica, fecha" era o atrito real: cada clique num dente
+   *  já acumulava em `onde.dentes` (nunca mudou), mas TAMBÉM abria o histórico daquele dente
+   *  (`setDenteAberto`), substituindo o espelho — pra selecionar o 2º dente era preciso
+   *  "voltar à boca" antes. Com o modo ligado, `onToothToggle` pula esse `setDenteAberto`: o
+   *  espelho nunca sai de vista, clique em sequência funciona direto. Desliga sozinho ao
+   *  aplicar qualquer ação de lote ou ao "✕ limpar" — nunca fica aceso sem o dentista saber
+   *  (o oposto do chip de orto, que ele apontou como o padrão errado de copiar). */
+  const [modoMultidente, setModoMultidente] = useState(false);
   // R-62 — carrega `dentes` junto (não só o item): quando a sugestão veio do texto do campo
   // mágico com número ("resina Z350 no 24"), o dente tem que sobreviver até o clique em
   // "qual tipo clínico?" — sem isso o passo seguinte caía de volta no `onde` (possivelmente
@@ -210,6 +232,23 @@ export function useRegistrarPainel({
   const [catalogoPendente, setCatalogoPendente] = useState<{ item: MeuDiaCatalogoProcedimento; dentes: number[] } | null>(null);
   /** 03/08 — procedimento escolhido antes de haver "onde". Some assim que o onde chegar. */
   const [tipoPendente, setTipoPendente] = useState<{ tipo: TipoRegistroOdontograma; observacao: string } | null>(null);
+
+  // R-107d — faixa de lote (spec §3): aparece só com `onde.dentes.length >= 2`. Reusa `onde`
+  // que já existe — nenhum estado de seleção novo, só o que a faixa precisa pra si mesma.
+  const [loteBusca, setLoteBusca] = useState('');
+  const [loteCatalogoPendente, setLoteCatalogoPendente] = useState<MeuDiaCatalogoProcedimento | null>(null);
+  /** Restauração em lote pede a face ANTES de aplicar — true = chip clicado, esperando face. */
+  const [loteFacePendente, setLoteFacePendente] = useState(false);
+  /** Texto do último avulso lançado em lote — habilita "salvar no catálogo" (mesmo padrão do
+   *  R-107b). O registro já aconteceu antes disto existir; pular não desfaz nada. */
+  const [loteAvulso, setLoteAvulso] = useState<string | null>(null);
+  const [lotePrecoCatalogo, setLotePrecoCatalogo] = useState<string | null>(null);
+  const [loteSalvandoCatalogo, setLoteSalvandoCatalogo] = useState(false);
+
+  const loteSugestoes: SugestaoLocal[] = useMemo(
+    () => (loteBusca.trim() ? casarProcedimentoLocal(loteBusca, catalogoProcedimentos) : []),
+    [loteBusca, catalogoProcedimentos],
+  );
   /** 04/08 — chip "Manutenção ortodôntica". Pré-preenche com a última manutenção real do
    *  paciente quando existe (herança R-05b); nasce vazio (OrtoForm cai em ORTO_VAZIO) quando
    *  não há histórico ainda. */
@@ -243,8 +282,8 @@ export function useRegistrarPainel({
 
   // R-78 F0 — reset explícito ao trocar de paciente. Antes disto era de graça: o pai
   // desmontava/remontava o componente inteiro via `key={agendamentoId}` (comentário acima,
-  // em `observacao`, ainda descrevia esse mecanismo). Virando HOOK, não existe mais key que
-  // force remount — sem este bloco, orto/observação/catálogo pendente etc. de um paciente
+  // ainda descrevia esse mecanismo). Virando HOOK, não existe mais key que
+  // force remount — sem este bloco, orto/catálogo pendente etc. de um paciente
   // vazariam pro próximo. Mesmo padrão de "comparar id durante o render" que
   // `meu-dia-client.tsx` (`idAoResetar`) já usa, pelo mesmo motivo (o lint do projeto,
   // `react-hooks/set-state-in-effect`, bloqueia a versão com `useEffect`).
@@ -254,10 +293,14 @@ export function useRegistrarPainel({
     setTextoAberto(false);
     setAlertaNovo(null);
     setOnde(null);
-    setStatus('realizado');
-    setObservacao('');
+    setModoMultidente(false);
     setCatalogoPendente(null);
     setTipoPendente(null);
+    setLoteBusca('');
+    setLoteCatalogoPendente(null);
+    setLoteFacePendente(false);
+    setLoteAvulso(null);
+    setLotePrecoCatalogo(null);
     setOrtoChipAberto(false);
     setOrtoValor(orto?.valor ?? null);
     setIsSaving(false);
@@ -314,18 +357,14 @@ export function useRegistrarPainel({
     setOrtoChipAberto(true);
   }
 
-  /** R-57 F2 — nome do catálogo (quando houver) primeiro, observação do dentista depois;
-   *  as duas coexistem, nenhuma sobrescreve a outra. */
-  function textoObservacao(doCatalogo: string): string {
-    return [doCatalogo, observacao.trim()].filter(Boolean).join(' — ');
-  }
-
+  /** R-107a — sem controle de status na barra: todo evento criado por aqui (dente/catálogo/
+   *  texto do campo mágico) nasce 'realizado', igual sempre foi o default antes do controle
+   *  sair. Correção pós-criação é o pill em "Nesta sessão" (`nesta-sessao-bloco.tsx`). */
   function criarEventos(tipo: TipoRegistroOdontograma, observacaoDoCatalogo: string, ancoras: AncoraClinica[]): OdontogramaEventoDraft[] {
-    const texto = textoObservacao(observacaoDoCatalogo);
     return ancoras.map((ancora) => ({
       id: crypto.randomUUID(),
       tipo,
-      status,
+      status: 'realizado',
       origem: 'clinica',
       // R-101 — este painel não tem o controle de 3 vias (só os 4 pontos listados na spec
       // têm); todo evento criado aqui nasce 'sessao_atual', igual sempre foi antes do R-101.
@@ -333,8 +372,8 @@ export function useRegistrarPainel({
       ancora,
       grupo_id: null,
       papel_no_grupo: null,
-      observacao: texto,
-      realizado_em: status === 'realizado' ? dataPadrao : null,
+      observacao: observacaoDoCatalogo,
+      realizado_em: dataPadrao,
     }));
   }
 
@@ -349,18 +388,18 @@ export function useRegistrarPainel({
   // 2º chip com dente diferente no texto (ex.: "canal 18" depois de "restauração 34") lia o
   // `onde` velho (ainda [34]) e o evento nascia no dente ERRADO — achado ao vivo, não por
   // leitura de código (dois cliques seguidos foram parar os dois no mesmo dente).
-  // R-57 F2 — o parâmetro chama `observacaoDoCatalogo` (não `observacao`) de propósito: o
-  // componente já tem um state `observacao` (a digitada pelo dentista); nomes iguais aqui
-  // esconderiam qual das duas cada linha está lendo. `criarEventos` compõe as duas.
   function registrar(tipo: TipoRegistroOdontograma, observacaoDoCatalogo = '', dentesSugeridos: number[] = []) {
     // 03/08 — profilaxia/clareamento/flúor/exame periodontal não têm "onde": a âncora é
     // SEMPRE boca, e nenhum dente clicado antes se aplica aqui — não é esquecido, é ignorado
     // de propósito (D5 do R-06-07: nível boca nunca pinta dente).
+    // R-107a — este branch (caminho digitado/ditado) continua acrescentando sem dedup; os
+    // chips de Profilaxia/Clareamento na barra usam `cycleRotina` (dedup real) em vez deste
+    // caminho. Digitar o mesmo tipo 2x no campo mágico ainda cria 2 eventos — comportamento
+    // pré-existente, fora de escopo desta fatia (spec R-107a §6).
     if (TIPOS_NIVEL_BOCA.has(tipo)) {
       setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacaoDoCatalogo, [{ nivel: 'boca' }])]);
       setTipoPendente(null);
       setCatalogoPendente(null);
-      setObservacao('');
       return;
     }
     let ancoras: AncoraClinica[];
@@ -390,7 +429,6 @@ export function useRegistrarPainel({
     setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacaoDoCatalogo, ancoras)]);
     setTipoPendente(null);
     setCatalogoPendente(null);
-    setObservacao('');
   }
 
   function handleOndeChange(novoOnde: OndeValor) {
@@ -400,7 +438,6 @@ export function useRegistrarPainel({
     if (ancoras.length === 0) return;
     setEventosDraft([...eventosDraft, ...criarEventos(tipoPendente.tipo, tipoPendente.observacao, ancoras)]);
     setTipoPendente(null);
-    setObservacao('');
   }
 
   // C5 (contrato §5.5) — toque no odontograma escreve no MESMO "onde" que o resto do painel lê
@@ -411,11 +448,15 @@ export function useRegistrarPainel({
   // pendente aguardando onde (tipoPendente) — clicar um 2º dente diferente aplica o mesmo tipo
   // aos dois. Clicar um dente JÁ selecionado remove ele do lote (multi-seleção só sobrevive
   // pra esse caso — G12 do C6: não é o clique que muda, é o que ele decide fazer).
+  //
+  // R-107d (adendo) — com `modoMultidente` ligado, pula o `setDenteAberto`: é exatamente o
+  // que fazia o espelho sumir a cada clique (achado testando o R-107d, "clica, fecha, clica,
+  // fecha"). Fora do modo, comportamento 100% igual a antes.
   function onToothToggle(dente: number) {
     const sel = onde?.dentes ?? [];
     if (!sel.includes(dente)) {
       handleOndeChange({ dentes: [...sel, dente] });
-      setDenteAberto(dente);
+      if (!modoMultidente) setDenteAberto(dente);
       return;
     }
     const resto = sel.filter((d) => d !== dente);
@@ -438,6 +479,123 @@ export function useRegistrarPainel({
       return;
     }
     if (s.tipo) registrar(s.tipo, '', s.dentes);
+  }
+
+  /** R-107d — chips dente-inteiro em lote: cria em todos os dentes de `onde` de uma vez, sem
+   *  cycle (mesma filosofia do `registrar()` digitado). Guard simples contra duplicata óbvia:
+   *  pula dente que já tem esse tipo com origem clínica — não impede o dentista de repetir de
+   *  propósito por outro caminho, só evita clique duplo criando 2 idênticos sem querer. */
+  function aplicarLote(tipo: TipoRegistroOdontograma) {
+    if (!onde) return;
+    const novos = onde.dentes
+      .filter((d) => !eventosDraft.some((e) => e.tipo === tipo && e.origem === 'clinica' && e.ancora.dente === d))
+      .map((d): OdontogramaEventoDraft => ({
+        id: crypto.randomUUID(), tipo, status: 'realizado', origem: 'clinica',
+        momento_planejado: 'sessao_atual', ancora: { nivel: 'dente', dente: d },
+        grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: dataPadrao,
+      }));
+    if (novos.length > 0) setEventosDraft([...eventosDraft, ...novos]);
+    // R-107d (adendo) — aplicar é o sinal de "terminei de selecionar". Desliga sozinho, nunca
+    // fica aceso sem o dentista perceber (mesmo raciocínio nas outras 3 ações de lote abaixo).
+    setModoMultidente(false);
+  }
+
+  /** R-107d — Restauração em lote pede a face 1x (não os outros tipos): consulta em produção
+   *  mostrou quase metade das fichas com 4+ dentes tendo faces DIFERENTES por dente — aplicar
+   *  sem perguntar estaria errado na metade dos casos (spec §2). Face diferente por dente
+   *  continua fora daqui, dente a dente (fora de escopo, spec §6). */
+  function aplicarLoteRestauracao(face: FaceDental) {
+    if (!onde) return;
+    const novos: OdontogramaEventoDraft[] = onde.dentes.map((d) => ({
+      id: crypto.randomUUID(), tipo: 'carie_restauracao', status: 'realizado', origem: 'clinica',
+      momento_planejado: 'sessao_atual', ancora: { nivel: 'face', dente: d, faces: [face] },
+      grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: dataPadrao,
+    }));
+    setEventosDraft([...eventosDraft, ...novos]);
+    setLoteFacePendente(false);
+    setModoMultidente(false);
+  }
+
+  /** R-107d — "Dente ausente" em lote: mesma regra do R-107b (`exodontia` + `origem:
+   *  'preexistente'`), batelada. Não colide com "Extração" por dente porque `cycleDenteTipo`/
+   *  chips de dente único já filtram por origem (R-107b) — aqui é só criação em massa, sem
+   *  cycle, mesmo guard de duplicata do `aplicarLote`. */
+  function aplicarLoteAusente() {
+    if (!onde) return;
+    const novos = onde.dentes
+      .filter((d) => !eventosDraft.some((e) => e.tipo === 'exodontia' && e.origem === 'preexistente' && e.ancora.dente === d))
+      .map((d): OdontogramaEventoDraft => ({
+        id: crypto.randomUUID(), tipo: 'exodontia', status: 'realizado', origem: 'preexistente',
+        momento_planejado: 'sessao_atual', ancora: { nivel: 'dente', dente: d },
+        grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: null,
+      }));
+    if (novos.length > 0) setEventosDraft([...eventosDraft, ...novos]);
+    setModoMultidente(false);
+  }
+
+  /** R-107d — busca livre em lote: mesmo matcher do R-107b (`casarProcedimentoLocal`),
+   *  aplicado a `onde.dentes` em vez de 1 dente fixo. Restauração NUNCA vem por aqui — o
+   *  matcher casa pelo `TIPO_LABEL`, e o clique no chip "Restauração" da faixa (não a busca)
+   *  é o único caminho pro seletor de face. Tipo sem chip em `CHIPS_LOTE` (ex.: selante) cai
+   *  fora de propósito — mesmo recorte do §3 da spec. */
+  function aplicarSugestaoLote(s: SugestaoLocal) {
+    if (s.catalogo) { setLoteCatalogoPendente(s.catalogo); return; }
+    if (s.tipo && CHIPS_LOTE.includes(s.tipo)) aplicarLote(s.tipo);
+    setLoteBusca('');
+  }
+
+  /** R-107d — nada casou: mesmo escape hatch do R-107b (`outro`), em lote. */
+  function lancarLoteAvulso() {
+    const texto = loteBusca.trim();
+    if (!onde || !texto) return;
+    const novos: OdontogramaEventoDraft[] = onde.dentes.map((d) => ({
+      id: crypto.randomUUID(), tipo: 'outro', status: 'realizado', origem: 'clinica',
+      momento_planejado: 'sessao_atual', ancora: { nivel: 'dente', dente: d },
+      grupo_id: null, papel_no_grupo: null, observacao: texto, realizado_em: dataPadrao,
+    }));
+    setEventosDraft([...eventosDraft, ...novos]);
+    setLoteAvulso(texto);
+    setLoteBusca('');
+    setLoteCatalogoPendente(null);
+    setModoMultidente(false);
+  }
+
+  /** R-107d — reusa `criarProcedimento` tal qual (mesma action do R-107b) — 1 chamada só, o
+   *  nome/preço valem pros N dentes do lote, não 1 por dente. */
+  async function salvarLoteNoCatalogo() {
+    if (!loteAvulso || lotePrecoCatalogo == null) return;
+    const preco = Number(lotePrecoCatalogo.replace(',', '.'));
+    if (!Number.isFinite(preco) || preco < 0) {
+      toast.error('Informe um valor válido.');
+      return;
+    }
+    setLoteSalvandoCatalogo(true);
+    let res: { error?: string };
+    try {
+      res = await criarProcedimento({
+        nome: loteAvulso, descricao: '', categoria: 'Outros',
+        preco_padrao: preco, duracao_minutos: 30,
+      });
+    } catch {
+      res = { error: 'Falha de conexão. Tente novamente.' };
+    }
+    setLoteSalvandoCatalogo(false);
+    if (res.error) { toast.error(res.error); return; }
+    toast.success(`"${loteAvulso}" salvo no seu catálogo.`);
+    setLoteAvulso(null);
+    setLotePrecoCatalogo(null);
+  }
+
+  /** "✕ limpar" — só esvazia a seleção, nunca desfaz o que já foi registrado (spec §3).
+   *  R-107d (adendo) — também desliga o modo multidente: fim do lote, fim do modo. */
+  function limparLote() {
+    setOnde(null);
+    setModoMultidente(false);
+    setLoteBusca('');
+    setLoteCatalogoPendente(null);
+    setLoteFacePendente(false);
+    setLoteAvulso(null);
+    setLotePrecoCatalogo(null);
   }
 
   // I1 — 1 clique = 1 ficha: `salvarFicha` não é idempotente por agendamentoId, o `disabled`
@@ -520,10 +678,12 @@ export function useRegistrarPainel({
         onAplicarSugestao={aplicarSugestaoLocal}
       />
 
-      {/* R-62 — o que sobra do antigo painel "sem IA": nada disso era exclusivo do combobox
-       * (Status/orto/catálogo-pendente sempre foram controles à parte), então vira faixa
-       * sempre visível, sem toggle. "+ texto da visita" fica de propósito (não é redundante:
-       * é o único jeito de salvar uma nota pura sem passar pelo Dex — I1, IA fora do ar). */}
+      {/* R-62 — o que sobra do antigo painel "sem IA": catálogo-pendente/orto/rotina sempre
+       * foram controles à parte, então vira faixa sempre visível, sem toggle. R-107a tirou
+       * Status e Observação globais (redundantes com os pills/textareas por-evento que já
+       * existem em `ToothDetailPanel`/`NestaSessaoBloco`) e trouxe os chips de rotina que já
+       * existiam em `FichasTab.tsx`. "+ Observação" fica de propósito (não é redundante: é o
+       * único jeito de salvar uma nota pura sem passar pelo Dex — I1, IA fora do ar). */}
       <div className="mt-3 flex flex-col gap-2.5 border-t border-border pt-3">
         {catalogoPendente && (
           <div className="rounded-lg border border-teal/30 bg-teal/5 px-3 py-2">
@@ -555,24 +715,35 @@ export function useRegistrarPainel({
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Status</span>
-            {([['indicado', 'a fazer'], ['realizado', 'feito']] as const).map(([s, label]) => (
+        {/* R-107a — chips de rotina (Profilaxia/Clareamento): mesmo ciclo sem registro → a
+            fazer → feito → remove que já existe em `FichasTab.tsx`, portado via
+            `@/lib/odontograma/rotina-boca` (dedup real — nunca duplica). Flúor/raspagem/exame
+            periodontal ficam de fora (spec R-107a §6, sem sinal de uso na barra do Meu dia). */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(['profilaxia', 'clareamento'] as const).map((tipo) => {
+            const ev = eventoRotina(eventosDraft, tipo);
+            const cor = ev ? corDoRegistro(ev.status, ev.origem) : null;
+            return (
               <button
-                key={s}
+                key={tipo}
                 type="button"
-                onClick={() => setStatus(s)}
-                className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                  status === s
-                    ? 'border-teal bg-teal/10 text-teal-ink'
-                    : 'border-border bg-surface-alt text-text-secondary hover:border-teal/40'
-                }`}
+                onClick={() => setEventosDraft(cycleRotina(eventosDraft, tipo))}
+                aria-label={`${TIPO_LABEL[tipo]} (boca toda) — ${ev ? (ev.status === 'indicado' ? 'a fazer' : 'feito') : 'sem registro'}`}
+                className="rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
+                style={{
+                  background: cor
+                    ? `color-mix(in srgb, var(--color-${cor}) 16%, var(--color-surface-alt))`
+                    : 'var(--color-surface-alt)',
+                  color: cor ? `var(--color-${cor}-ink)` : 'var(--color-text-secondary)',
+                  borderColor: cor
+                    ? `color-mix(in srgb, var(--color-${cor}) 45%, var(--color-border))`
+                    : 'var(--color-border)',
+                }}
               >
-                {label}
+                {TIPO_LABEL[tipo]}
               </button>
-            ))}
-          </div>
+            );
+          })}
 
           {/* 04/08 — 1º chip de "não usa o odontograma". Pré-preenchido com a última
               manutenção real (herança R-05b) quando existe. */}
@@ -589,21 +760,182 @@ export function useRegistrarPainel({
           </button>
         </div>
 
-        {/* R-57 F2 — sempre visível, sem clique pra abrir (um clique extra anularia o
-            ganho). Acompanha o PRÓXIMO procedimento registrado; convive com o nome do
-            catálogo, nunca sobrescreve (criarEventos compõe as duas). */}
-        <div className="flex items-center gap-1.5">
-          <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-text-secondary">
-            Observação
-          </span>
-          <input
-            type="text"
-            value={observacao}
-            onChange={(e) => setObservacao(e.target.value)}
-            placeholder="Opcional — acompanha o próximo procedimento"
-            className="min-w-0 flex-1 rounded-lg border border-border bg-surface-alt px-2.5 py-1 text-[11px] text-text-primary outline-none focus:border-teal"
-          />
-        </div>
+        {/* R-107d — faixa de lote: só com 2+ dentes selecionados no espelho (`onde` já existe
+            e já acumula por clique, R-46-C6/R-62 — isto só a deixa VISÍVEL e clicável). 1
+            dente continua exclusivo do `ToothDetailPanel`/`DenteHistoricoCard`. */}
+        {onde && onde.dentes.length >= 2 && (
+          <div className="rounded-lg border border-teal/30 bg-teal/5 px-3 py-2 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold text-text-primary">
+                {onde.dentes.length} dentes selecionados: {onde.dentes.join(', ')}
+              </p>
+              <button
+                type="button"
+                onClick={limparLote}
+                className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary hover:text-coral"
+              >
+                <X className="h-3 w-3" /> limpar
+              </button>
+            </div>
+
+            {loteFacePendente ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                  Restauração — face
+                </span>
+                {FACES_LOTE.map((face) => (
+                  <button
+                    key={face}
+                    type="button"
+                    onClick={() => aplicarLoteRestauracao(face)}
+                    className="rounded-full border border-teal/30 bg-surface px-2.5 py-1 text-[11px] font-bold text-teal-ink hover:bg-teal/10"
+                  >
+                    {face}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setLoteFacePendente(false)}
+                  className="text-[11px] font-semibold text-text-secondary hover:text-coral"
+                >
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {CHIPS_LOTE.map((tipo) => (
+                  <button
+                    key={tipo}
+                    type="button"
+                    onClick={() => aplicarLote(tipo)}
+                    className="rounded-full border border-teal/30 bg-surface px-2.5 py-1 text-[11px] font-semibold text-teal-ink hover:bg-teal/10"
+                  >
+                    {TIPO_LABEL[tipo]}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setLoteFacePendente(true)}
+                  className="rounded-full border border-teal/30 bg-surface px-2.5 py-1 text-[11px] font-semibold text-teal-ink hover:bg-teal/10"
+                >
+                  Restauração ▾
+                </button>
+                <button
+                  type="button"
+                  onClick={aplicarLoteAusente}
+                  className="rounded-full border border-teal/30 bg-surface px-2.5 py-1 text-[11px] font-semibold text-teal-ink hover:bg-teal/10"
+                >
+                  Dente ausente
+                </button>
+              </div>
+            )}
+
+            {!loteFacePendente && (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Search size={12} strokeWidth={2.4} className="text-text-muted shrink-0" aria-hidden />
+                  <input
+                    type="text"
+                    value={loteBusca}
+                    onChange={(e) => { setLoteBusca(e.target.value); setLoteCatalogoPendente(null); }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') { e.preventDefault(); setLoteBusca(''); setLoteCatalogoPendente(null); return; }
+                      if (e.key !== 'Enter') return;
+                      e.preventDefault();
+                      if (loteSugestoes.length > 0) aplicarSugestaoLote(loteSugestoes[0]);
+                      else lancarLoteAvulso();
+                    }}
+                    placeholder="Outro procedimento pros dentes selecionados"
+                    aria-label="Buscar ou digitar procedimento pros dentes selecionados"
+                    className="min-w-0 flex-1 rounded-md border border-border bg-surface-alt px-2 py-1 text-[11px] text-text-primary outline-none focus:border-teal"
+                  />
+                </div>
+
+                {loteCatalogoPendente ? (
+                  <div className="flex flex-wrap gap-1">
+                    <span className="text-[10.5px] font-semibold text-text-primary">
+                      &ldquo;{loteCatalogoPendente.nome}&rdquo; — qual tipo clínico?
+                    </span>
+                    {CHIPS_LOTE.map((tipo) => (
+                      <button
+                        key={tipo}
+                        type="button"
+                        onClick={() => { aplicarLote(tipo); setLoteBusca(''); setLoteCatalogoPendente(null); }}
+                        className="rounded-full border border-teal/30 bg-surface px-2 py-0.5 text-[10px] font-semibold text-teal-ink"
+                      >
+                        {TIPO_LABEL[tipo]}
+                      </button>
+                    ))}
+                  </div>
+                ) : loteBusca.trim() && (
+                  <div className="flex flex-wrap gap-1">
+                    {loteSugestoes.filter((s) => s.catalogo || (s.tipo && CHIPS_LOTE.includes(s.tipo))).map((s, i) => (
+                      <button
+                        key={`${s.tipo ?? s.catalogo?.id}-${i}`}
+                        type="button"
+                        onClick={() => aplicarSugestaoLote(s)}
+                        className="rounded-full border border-teal/30 bg-surface px-2 py-0.5 text-[10px] font-semibold text-teal-ink"
+                      >
+                        {s.tipo ? TIPO_LABEL[s.tipo] : s.catalogo?.nome}
+                      </button>
+                    ))}
+                    {loteSugestoes.filter((s) => s.catalogo || (s.tipo && CHIPS_LOTE.includes(s.tipo))).length === 0 && (
+                      <button
+                        type="button"
+                        onClick={lancarLoteAvulso}
+                        className="rounded-full bg-teal px-2 py-0.5 text-[10px] font-bold text-white"
+                      >
+                        Lançar &ldquo;{loteBusca.trim()}&rdquo; nos {onde.dentes.length} dentes
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {loteAvulso && (
+                  lotePrecoCatalogo == null ? (
+                    <button
+                      type="button"
+                      onClick={() => setLotePrecoCatalogo('')}
+                      className="w-fit text-[10.5px] font-semibold text-teal-ink"
+                    >
+                      + Salvar &ldquo;{loteAvulso}&rdquo; no meu catálogo
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">R$</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={lotePrecoCatalogo}
+                        onChange={(e) => setLotePrecoCatalogo(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void salvarLoteNoCatalogo(); } }}
+                        placeholder="0,00"
+                        autoFocus
+                        aria-label={`Preço de ${loteAvulso} no catálogo`}
+                        className="w-24 rounded-md border border-border bg-surface-alt px-2 py-1 text-[11px] font-mono text-text-primary outline-none focus:border-teal"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void salvarLoteNoCatalogo()}
+                        disabled={loteSalvandoCatalogo}
+                        className="rounded-md bg-teal px-2 py-1 text-[10.5px] font-bold text-white disabled:opacity-40"
+                      >
+                        {loteSalvandoCatalogo ? 'Salvando…' : 'Salvar'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setLotePrecoCatalogo(null); setLoteAvulso(null); }}
+                        className="text-[10.5px] font-semibold text-text-secondary"
+                      >
+                        Agora não
+                      </button>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {tipoPendente && (
           <p className="text-[11px] font-semibold text-teal-ink">
@@ -615,7 +947,7 @@ export function useRegistrarPainel({
           <textarea
             value={textoVisita}
             onChange={(e) => setTextoVisita(e.target.value)}
-            placeholder="Anotação da visita (opcional)"
+            placeholder="Observação da visita (opcional)"
             rows={3}
             autoFocus
             className="w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm text-text-primary outline-none focus:border-teal"
@@ -626,7 +958,7 @@ export function useRegistrarPainel({
             onClick={() => setTextoAberto(true)}
             className="w-fit text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
           >
-            + texto da visita
+            + Observação
           </button>
         )}
       </div>
@@ -659,15 +991,37 @@ export function useRegistrarPainel({
               <OrtoForm valor={ortoValor} onChange={setOrtoValor} />
             </div>
           ) : (
-            <Odontograma
-              eventos={eventosDraft}
-              eventosPersistidos={boca}
-              selectedTeeth={onde?.dentes ?? []}
-              onToothToggle={onToothToggle}
-              compact
-              zoom={0.68}
-              hideFilters
-            />
+            <div className="flex flex-col gap-1.5">
+              {/* R-107d (adendo, pedido dele ao vivo) — fica colado no odontograma, não na
+                  faixa do campo mágico: o toggle muda o que o CLIQUE no dente faz, então
+                  precisa estar no mesmo campo de visão de onde o clique acontece. Longe dali
+                  recria o problema que ele apontou no chip de orto (liga aqui, efeito lá,
+                  ninguém lembra que ligou). */}
+              <div className="flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setModoMultidente((v) => !v)}
+                  aria-pressed={modoMultidente}
+                  className="rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
+                  style={{
+                    background: modoMultidente ? 'var(--color-teal)' : 'var(--color-surface-alt)',
+                    color: modoMultidente ? 'white' : 'var(--color-text-secondary)',
+                    borderColor: modoMultidente ? 'var(--color-teal)' : 'var(--color-border)',
+                  }}
+                >
+                  {modoMultidente ? '✓ Modo multidente' : 'Modo multidente'}
+                </button>
+              </div>
+              <Odontograma
+                eventos={eventosDraft}
+                eventosPersistidos={boca}
+                selectedTeeth={onde?.dentes ?? []}
+                onToothToggle={onToothToggle}
+                compact
+                zoom={0.68}
+                hideFilters
+              />
+            </div>
           )}
         </motion.div>
       )}

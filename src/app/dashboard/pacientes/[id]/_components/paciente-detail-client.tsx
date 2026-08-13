@@ -1382,6 +1382,12 @@ export function PacienteDetailClient({
                         patientName={displayNome}
                         canWrite={canWriteClinical}
                         onGerarOrcamento={role !== 'secretaria' ? (fichaId) => void orcamentoModal.abrirOrcamentoParaFicha(fichaId) : undefined}
+                        // R-107b — catálogo pro match local da busca livre do painel do dente.
+                        // `categoria` não vem da query (`ProcedimentoClinica` é o contrato do
+                        // fluxo de orçamento e tem outros produtores) e não é usada pelo
+                        // matcher, que só lê `nome` — preenchida vazia em vez de alargar um
+                        // type compartilhado por um campo que ninguém consome aqui.
+                        catalogoProcedimentos={procedimentosClinica.map((p) => ({ ...p, categoria: '' }))}
                       />
                     )}
                   </TabsContent>

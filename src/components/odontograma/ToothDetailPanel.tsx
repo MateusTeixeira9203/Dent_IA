@@ -8,8 +8,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronRight, ChevronLeft, X, Forward, Clock } from 'lucide-react';
+import { ChevronRight, ChevronLeft, X, Forward, Clock, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { GrupoAberto } from '@/lib/odontograma/grupos-abertos';
 import {
@@ -33,6 +34,12 @@ import { endoDetalheSchema, type EndoDetalhe } from '@/lib/especialidades/endo';
 import { EndoForm } from '@/components/fichas/endo-form';
 import { implanteDetalheSchema, type ImplanteDetalhe } from '@/lib/especialidades/implante';
 import { ImplanteForm } from '@/components/fichas/implante-form';
+// R-107b — busca livre reusa o MESMO matcher zero-rede do campo mágico (28/28 fixtures),
+// zero mudança na função. `criarProcedimento` reusa a action de configuracoes tal qual —
+// já autoriza dentista (não só admin), já é o único caminho de escrita em `procedimentos`.
+import { casarProcedimentoLocal, type SugestaoLocal } from '@/lib/odontograma/casar-procedimento-local';
+import { criarProcedimento } from '@/app/dashboard/configuracoes/actions';
+import type { MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
 
 const FACES: FaceDental[] = ['V', 'M', 'O', 'D', 'L'];
 
@@ -62,14 +69,15 @@ const ROTULO_ESTADO_FACE = {
   coral: 'a fazer', teal: 'feito', slate: 'pré-existente', warning: 'próxima seção',
 } satisfies Record<CorClinica, string>;
 
-/** Chips de ação a nível de dente inteiro — cada um cicla os `modos` e depois remove. */
+/** Chips de ação a nível de dente inteiro — cada um cicla os `modos` e depois remove.
+ *  R-107b — `inclusao` saiu (uso real na base: 1 evento, 1 paciente — peso morto). O tipo
+ *  continua existindo no TS/CHECK; o evento já registrado renderiza igual a antes. */
 const CHIPS: { tipo: TipoRegistroOdontograma; modos: StatusRegistro[] }[] = [
   { tipo: 'endodontia',       modos: ['indicado', 'realizado'] },
   { tipo: 'coroa',            modos: ['indicado', 'realizado'] },
   { tipo: 'implante',         modos: ['indicado', 'realizado'] },
   { tipo: 'pino_nucleo',      modos: ['indicado', 'realizado'] },
   { tipo: 'exodontia',        modos: ['indicado', 'realizado'] },
-  { tipo: 'inclusao',         modos: ['indicado'] },
   { tipo: 'fratura',          modos: ['indicado'] },
   { tipo: 'lesao_periapical', modos: ['indicado'] },
   { tipo: 'selante',          modos: ['realizado'] },
@@ -131,6 +139,12 @@ export interface ToothDetailPanelProps {
    * comportamento de sempre (nasce fechado, I3 — os outros consumidores não passam isto).
    */
   abrirDetalheDoEvento?: string;
+  /**
+   * R-107b — catálogo pro match local da busca livre (§3.1 da spec). Ausente = a busca só
+   * casa os 18 tipos estruturais, sem sugestão de catálogo — mesmo padrão de degradação que
+   * `captura-livre-card.tsx` já usa quando o catálogo não chega.
+   */
+  catalogoProcedimentos?: MeuDiaCatalogoProcedimento[];
 }
 
 export function ToothDetailPanel({
@@ -146,6 +160,7 @@ export function ToothDetailPanel({
   state = 'default',
   onDetalheAbertoChange,
   abrirDetalheDoEvento,
+  catalogoProcedimentos = [],
 }: ToothDetailPanelProps) {
   const superior = (dente >= 11 && dente <= 28) || (dente >= 51 && dente <= 65);
   const doDente = useMemo(
@@ -193,6 +208,24 @@ export function ToothDetailPanel({
   const [confirmGrupo, setConfirmGrupo] = useState<
     { grupo: GrupoAberto; tipo: TipoRegistroOdontograma; modos: StatusRegistro[] } | null
   >(null);
+
+  // R-107b — busca livre: escape hatch pros procedimentos que não estão nos CHIPS (faceta é
+  // o exemplo dele). Reusa `casarProcedimentoLocal` tal qual — zero rede, zero IA, mesmo
+  // matcher do campo mágico. `catalogoPendente` espelha o mesmo padrão de `registrar-painel`
+  // (item do catálogo não vira tipo estrutural sozinho — §A3, sem de-para confiável).
+  const [busca, setBusca] = useState('');
+  const [catalogoPendente, setCatalogoPendente] = useState<MeuDiaCatalogoProcedimento | null>(null);
+  /** Preço em digitação pro "salvar no meu catálogo" — null = a ação nem foi aberta. */
+  const [precoCatalogo, setPrecoCatalogo] = useState<string | null>(null);
+  const [salvandoCatalogo, setSalvandoCatalogo] = useState(false);
+  /** Texto do último "Outro procedimento" lançado — habilita o "salvar no catálogo" logo
+   *  depois do registro (o registro NUNCA espera por essa ação secundária). */
+  const [ultimoAvulso, setUltimoAvulso] = useState<string | null>(null);
+
+  const sugestoes: SugestaoLocal[] = useMemo(
+    () => (busca.trim() ? casarProcedimentoLocal(busca, catalogoProcedimentos) : []),
+    [busca, catalogoProcedimentos],
+  );
 
   // R-06 — mini-fluxo da ponte (spec R-06-07 Fase 1): o dente atual é um extremo; o dentista
   // escolhe o outro, o vão nasce com papéis default (extremos pilar, meio pôntico) e cada
@@ -362,10 +395,17 @@ export function ToothDetailPanel({
     onChange(all);
   }
 
-  /** Chips / raiz: cicla os modos do tipo e depois remove. */
+  /** Chips / raiz: cicla os modos do tipo e depois remove.
+   *  R-107b — pra `exodontia`, ignora eventos `origem: 'preexistente'` (marcados por
+   *  "Dente ausente", `toggleAusente` abaixo): as 2 ações usam o mesmo `tipo` mas são
+   *  reivindicações clínicas diferentes ("eu extraí" × "já chegou faltando") e nunca podem
+   *  se confundir uma com a outra no dedup. */
   function cycleDenteTipo(tipo: TipoRegistroOdontograma, modos: StatusRegistro[]) {
     if (readOnly) return;
-    const i = eventos.findIndex((e) => e.tipo === tipo && e.ancora.dente === dente);
+    const i = eventos.findIndex((e) =>
+      e.tipo === tipo && e.ancora.dente === dente &&
+      (tipo !== 'exodontia' || e.origem !== 'preexistente'),
+    );
     if (i === -1) {
       // R-02 Fase 3: criação. Se há trabalho aberto do mesmo tipo neste dente, confirmar
       // antes de amarrar (nunca em silêncio); senão nasce sem grupo, como sempre.
@@ -386,6 +426,110 @@ export function ToothDetailPanel({
       };
       onChange(all);
     }
+  }
+
+  /** R-107b — "Dente ausente": reusa `exodontia` + `origem: 'preexistente'` em vez de um
+   *  tipo novo (decisão dele). `buildResumos`/`corDoRegistro` já tratam `origem ===
+   *  'preexistente'` como slate/tracejado — zero mudança de render. `realizado_em: null`
+   *  porque "já chegou faltando" não tem data de procedimento nosso pra registrar. */
+  function toggleAusente() {
+    if (readOnly) return;
+    const i = eventos.findIndex(
+      (e) => e.tipo === 'exodontia' && e.origem === 'preexistente' && e.ancora.dente === dente,
+    );
+    if (i === -1) {
+      onChange([...eventos, {
+        id: crypto.randomUUID(),
+        tipo: 'exodontia',
+        status: 'realizado',
+        origem: 'preexistente',
+        momento_planejado: 'sessao_atual',
+        ancora: { nivel: 'dente', dente },
+        grupo_id: null,
+        papel_no_grupo: null,
+        observacao: '',
+        realizado_em: null,
+      }]);
+    } else {
+      onChange(eventos.filter((_, j) => j !== i));
+    }
+  }
+
+  /** R-107b — limpa a busca e tudo que dependia dela. */
+  function limparBusca() {
+    setBusca('');
+    setCatalogoPendente(null);
+    setPrecoCatalogo(null);
+    setUltimoAvulso(null);
+  }
+
+  /** R-107b — clique numa sugestão do matcher local. Mesmos 2 caminhos que o campo mágico
+   *  já usa (`aplicarSugestaoLocal` em registrar-painel.tsx): tipo estrutural registra
+   *  direto; item de catálogo pede o tipo clínico antes (§A3). `s.dentes` é ignorado de
+   *  propósito — aqui o dente é o do painel, não o que o texto por acaso mencionou. */
+  function aplicarSugestao(s: SugestaoLocal) {
+    if (s.catalogo) { setCatalogoPendente(s.catalogo); return; }
+    if (!s.tipo) return;
+    const chip = [...CHIPS, CHIP_ESFOLIACAO].find((c) => c.tipo === s.tipo);
+    // Tipo sem chip correspondente (nível boca, ponte, carie_restauracao) não tem `modos`
+    // definidos — cai no ciclo padrão indicado→realizado, mesmo default de `novo()`.
+    cycleDenteTipo(s.tipo, chip?.modos ?? ['indicado', 'realizado']);
+    limparBusca();
+  }
+
+  /** R-107b — nada casou: registra como `outro` com o texto digitado na observação. É o
+   *  escape hatch — a partir daqui o dentista NUNCA fica preso por falta de tipo. */
+  function lancarAvulso() {
+    if (readOnly) return;
+    const texto = busca.trim();
+    if (!texto) return;
+    onChange([...eventos, {
+      id: crypto.randomUUID(),
+      tipo: 'outro',
+      status: 'realizado',
+      origem: 'clinica',
+      momento_planejado: 'sessao_atual',
+      ancora: { nivel: 'dente', dente },
+      grupo_id: null,
+      papel_no_grupo: null,
+      observacao: texto,
+      realizado_em: dataPadrao,
+    }]);
+    // O registro já aconteceu. `ultimoAvulso` só habilita a ação SECUNDÁRIA de salvar no
+    // catálogo — pular ela não desfaz nem bloqueia nada.
+    setUltimoAvulso(texto);
+    setBusca('');
+    setCatalogoPendente(null);
+  }
+
+  /** R-107b — ação secundária opcional: o procedimento avulso vira item do catálogo do
+   *  dentista, pra da 2ª vez em diante já casar como sugestão (com preço). Reusa
+   *  `criarProcedimento` tal qual — nenhuma escrita nova em `procedimentos`. */
+  async function salvarNoCatalogo() {
+    if (!ultimoAvulso || precoCatalogo == null) return;
+    const preco = Number(precoCatalogo.replace(',', '.'));
+    if (!Number.isFinite(preco) || preco < 0) {
+      toast.error('Informe um valor válido.');
+      return;
+    }
+    setSalvandoCatalogo(true);
+    let res: { error?: string };
+    try {
+      res = await criarProcedimento({
+        nome: ultimoAvulso,
+        descricao: '',
+        categoria: 'Outros',
+        preco_padrao: preco,
+        duracao_minutos: 30,
+      });
+    } catch {
+      res = { error: 'Falha de conexão. Tente novamente.' };
+    }
+    setSalvandoCatalogo(false);
+    if (res.error) { toast.error(res.error); return; }
+    toast.success(`"${ultimoAvulso}" salvo no seu catálogo.`);
+    setUltimoAvulso(null);
+    setPrecoCatalogo(null);
   }
 
   function setData(evento: OdontogramaEventoDraft, data: string) {
@@ -626,6 +770,196 @@ export function ToothDetailPanel({
               </button>
             );
           })()}
+
+          {/* R-107b — "Dente ausente": o dente já chegou faltando (não fui eu que extraí).
+              Reusa `exodontia` + origem preexistente; nunca colide com o chip de Extração
+              (ver `cycleDenteTipo`). Fora do array CHIPS porque não cicla modos — é toggle. */}
+          {(() => {
+            const ausente = doDente.some(
+              (e) => e.tipo === 'exodontia' && e.origem === 'preexistente',
+            );
+            return (
+              <button
+                type="button"
+                onClick={toggleAusente}
+                aria-pressed={ausente}
+                title="O dente já chegou faltando — não foi extraído por mim"
+                className="px-2.5 py-1 rounded-lg text-[10.5px] font-semibold transition-all outline-none focus-visible:ring-1 focus-visible:ring-teal"
+                style={{
+                  background: ausente
+                    ? `color-mix(in srgb, ${COR_TOKEN.slate} 16%, var(--color-surface-alt))`
+                    : 'var(--color-surface-alt)',
+                  color: ausente ? COR_TOKEN_INK.slate : 'var(--color-text-secondary)',
+                  border: `1px solid ${ausente ? `color-mix(in srgb, ${COR_TOKEN.slate} 45%, var(--color-border))` : 'var(--color-border)'}`,
+                }}
+              >
+                Dente ausente
+              </button>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ── R-107b: busca livre (escape hatch) ──
+          O painel deixa de ser gaiola: procedimento que não está nos chips (faceta é o
+          exemplo dele) entra por aqui. Mesmo matcher local do campo mágico
+          (`casarProcedimentoLocal`, zero rede/IA) — casou tipo, registra igual ao chip;
+          casou item do catálogo, pergunta o tipo clínico (§A3); não casou nada, vira
+          `outro` com o texto na observação. */}
+      {!readOnly && (
+        <div className="flex flex-col gap-1.5 pt-2 border-t" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="flex items-center gap-1.5">
+            <Search size={12} strokeWidth={2.4} style={{ color: 'var(--color-text-muted)' }} aria-hidden />
+            <input
+              type="text"
+              value={busca}
+              onChange={(e) => { setBusca(e.target.value); setCatalogoPendente(null); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { e.preventDefault(); limparBusca(); return; }
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                // Enter aplica a 1ª sugestão; sem nenhuma, lança avulso direto.
+                if (sugestoes.length > 0) aplicarSugestao(sugestoes[0]);
+                else lancarAvulso();
+              }}
+              placeholder="Outro procedimento — digite (ex.: faceta)"
+              aria-label={`Buscar ou digitar procedimento pro dente ${dente}`}
+              className="min-w-0 flex-1 rounded-md px-2 py-1 text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-teal"
+              style={{
+                background: 'var(--color-surface-alt)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text-primary)',
+              }}
+            />
+            {busca && (
+              <button
+                type="button"
+                onClick={limparBusca}
+                aria-label="Limpar busca"
+                className="p-0.5 rounded shrink-0 outline-none focus-visible:ring-1 focus-visible:ring-teal"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                <X size={12} strokeWidth={2.4} />
+              </button>
+            )}
+          </div>
+
+          {/* Casou item do catálogo — mesma pergunta que o campo mágico faz (nome comercial
+              nunca vira tipo estrutural sozinho). */}
+          {catalogoPendente ? (
+            <div className="rounded-lg px-2 py-1.5" style={{ border: '1px solid color-mix(in srgb, var(--color-teal) 30%, transparent)', background: 'color-mix(in srgb, var(--color-teal) 5%, transparent)' }}>
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <p className="text-[10.5px] font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                  &ldquo;{catalogoPendente.nome}&rdquo; — qual tipo clínico?
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setCatalogoPendente(null)}
+                  aria-label="Cancelar"
+                  className="shrink-0 outline-none focus-visible:ring-1 focus-visible:ring-teal rounded"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                >
+                  <X size={11} strokeWidth={2.4} />
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {(deciduo ? [...CHIPS, CHIP_ESFOLIACAO] : CHIPS).map(({ tipo, modos }) => (
+                  <button
+                    key={tipo}
+                    type="button"
+                    onClick={() => { cycleDenteTipo(tipo, modos); limparBusca(); }}
+                    className="rounded-full px-2 py-0.5 text-[10px] font-semibold outline-none focus-visible:ring-1 focus-visible:ring-teal"
+                    style={{
+                      background: 'var(--color-surface)',
+                      border: '1px solid color-mix(in srgb, var(--color-teal) 30%, var(--color-border))',
+                      color: 'var(--color-teal-ink)',
+                    }}
+                  >
+                    {TIPO_LABEL[tipo]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : busca.trim() && (
+            <div className="flex flex-wrap gap-1">
+              {sugestoes.map((s, i) => (
+                <button
+                  key={`${s.tipo ?? s.catalogo?.id}-${i}`}
+                  type="button"
+                  onClick={() => aplicarSugestao(s)}
+                  className="rounded-full px-2 py-0.5 text-[10px] font-semibold outline-none focus-visible:ring-1 focus-visible:ring-teal"
+                  style={{
+                    background: 'var(--color-surface-alt)',
+                    border: '1px solid color-mix(in srgb, var(--color-teal) 30%, var(--color-border))',
+                    color: 'var(--color-teal-ink)',
+                  }}
+                >
+                  {s.tipo ? TIPO_LABEL[s.tipo] : s.catalogo?.nome}
+                </button>
+              ))}
+              {/* Nada casou — o escape hatch de verdade. */}
+              {sugestoes.length === 0 && (
+                <button
+                  type="button"
+                  onClick={lancarAvulso}
+                  className="rounded-full px-2 py-0.5 text-[10px] font-bold outline-none focus-visible:ring-1 focus-visible:ring-teal"
+                  style={{ background: 'var(--color-teal)', color: 'white' }}
+                >
+                  Lançar &ldquo;{busca.trim()}&rdquo; neste dente
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Ação SECUNDÁRIA (o registro já aconteceu): virar item do catálogo pra da 2ª vez
+              em diante casar como sugestão, com preço. Pular não desfaz nada. */}
+          {ultimoAvulso && (
+            precoCatalogo == null ? (
+              <button
+                type="button"
+                onClick={() => setPrecoCatalogo('')}
+                className="w-fit text-[10.5px] font-semibold outline-none focus-visible:ring-1 focus-visible:ring-teal rounded px-1"
+                style={{ color: 'var(--color-teal-ink)' }}
+              >
+                + Salvar &ldquo;{ultimoAvulso}&rdquo; no meu catálogo
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--color-text-secondary)' }}>
+                  R$
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={precoCatalogo}
+                  onChange={(e) => setPrecoCatalogo(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void salvarNoCatalogo(); } }}
+                  placeholder="0,00"
+                  autoFocus
+                  aria-label={`Preço de ${ultimoAvulso} no catálogo`}
+                  className="w-24 rounded-md px-2 py-1 text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-teal"
+                  style={{ background: 'var(--color-surface-alt)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => void salvarNoCatalogo()}
+                  disabled={salvandoCatalogo}
+                  className="rounded-md px-2 py-1 text-[10.5px] font-bold outline-none focus-visible:ring-1 focus-visible:ring-teal disabled:opacity-40"
+                  style={{ background: 'var(--color-teal)', color: 'white' }}
+                >
+                  {salvandoCatalogo ? 'Salvando…' : 'Salvar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setPrecoCatalogo(null); setUltimoAvulso(null); }}
+                  className="text-[10.5px] font-semibold outline-none focus-visible:ring-1 focus-visible:ring-teal rounded px-1"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                >
+                  Agora não
+                </button>
+              </div>
+            )
+          )}
         </div>
       )}
 
