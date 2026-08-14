@@ -67,6 +67,37 @@ inteira, ou digitando — sem que exista um segundo mecanismo de seleção compe
 
 ## 4. Contrato técnico
 
+> ### Emenda 14/08 — conferência do código antes da 1ª linha
+>
+> Quatro coisas que a spec afirma e o código desmente. Nenhuma muda a decisão do §2; a terceira
+> muda o **tamanho** do item.
+>
+> 1. **`paciente-detail-client.tsx` não muda.** Ele **já repassa** `catalogoProcedimentos` pro
+>    `FichasTab` ([:1390](../../src/app/dashboard/pacientes/[id]/_components/paciente-detail-client.tsx:1390)),
+>    ligado pelo R-107b pro painel do dente. Um dos 5 arquivos do §4.1 sai da lista.
+> 2. **A justificativa do `categoria` está errada.** A query pega `id, nome, preco_padrao` — o
+>    R-107b **não** adicionou `categoria`; ela é preenchida como `''` no `.map()`, com comentário
+>    explicando. Inofensivo: `casarProcedimentoLocal` não lê `categoria` (zero ocorrências).
+> 3. **O campo mágico da ficha não é "passar 2 props".** `SugestaoLocal` tem **dois ramos** —
+>    `tipo` (estrutural) e `catalogo` (nome comercial, que pede "qual tipo clínico?" depois) — e
+>    o `registrar()` do Meu dia ainda trata um terceiro caso: tipo de **nível boca** (âncora
+>    sempre boca) e tipo **sem dente ainda** (vira `tipoPendente`, espera o clique). A ficha não
+>    tem nenhum desses três mecanismos.
+>    **Decisão:** ligar **só o ramo de tipo** e **filtrar as sugestões de catálogo na ficha**. O
+>    G5 é literalmente *"digitar 'canal 17' oferece o chip local"* — caso de tipo; e a busca por
+>    nome comercial **já existe na ficha**, dentro do `ToothDetailPanel` (R-107b), com o fluxo de
+>    catálogo pendente completo. Nada se perde, e não nasce UI que o artefato não mostra.
+> 4. **Linhas defasadas:** o trilho duplo está em `:1311` (não 1267) e o `CapturaLivreCard` em
+>    `:1705` (não 1661) — o R-107 entrou no meio.
+> 5. **O risco do §4.3 não existe.** A spec avisa que `derivarV2DosEventos` "pula evento com
+>    `dente == null`" e que por isso profilaxia poderia sumir de `procedimentos` ao trocar a
+>    fonte — é o medo que justifica o G4. **Falso:** o `procedimentos.push(rotulo)` está **fora**
+>    do `if (d != null)` ([derivar-campos-legado.ts:41](../../src/lib/odontograma/derivar-campos-legado.ts:41)).
+>    Evento de nível boca **entra** em `procedimentos`; o que ele não alimenta é `dentes` e
+>    `observacoes`, que é o correto (nível boca não pinta dente — D5 do R-06/07).
+>    O G4 continua valendo como verificação, mas o trilho único é **menos arriscado** do que a
+>    spec supõe.
+
 ### 4.1 Arquivos
 
 | Arquivo | Muda |
