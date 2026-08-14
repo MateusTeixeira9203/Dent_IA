@@ -612,7 +612,12 @@ export function MeuDiaClient({
               ficava baixinho do lado do espelho, que é sempre alto (arcada inteira). O
               espelho ainda manda na altura na prática (`NestaSessaoBloco` já tem
               `max-h-[420px]` interno pra quando a lista crescer mais que ele). */}
-          <div className="grid items-stretch gap-3 grid-cols-[minmax(0,1fr)_555px]">
+          {/* R-111 §5 — empilha abaixo de `lg`. A coluna do espelho é FIXA em 555px, então o
+              `minmax(0,1fr)` da lista absorve todo o aperto: em 375px isso cortava 224px, e em
+              753px "cabia" com a lista em **138px** — passa no teste de overflow e é inutilizável,
+              o mesmo falso-passa do Financeiro. Volta a lado a lado só em `lg`, onde a lista fica
+              com ~393px. */}
+          <div className="grid items-stretch gap-3 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_555px]">
             <div className="rounded-2xl border border-border bg-surface p-4">
               <div className="mb-2 flex items-center gap-1.5">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Nesta ficha</p>

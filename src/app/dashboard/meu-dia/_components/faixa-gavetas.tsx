@@ -44,7 +44,12 @@ export function FaixaGavetas({
 
   return (
     <motion.div layout="position" transition={{ duration: 0.2, ease: 'easeOut' }} className="rounded-2xl border border-border bg-surface">
-      <div className="flex items-center gap-1 px-2 py-1.5">
+      {/* R-111 — `flex-wrap`: os 3 botões + o "Ficha completa" somavam 396px numa faixa de
+          342px no celular, e os 54px de sobra sumiam cortados. Rolagem aqui seria pior que
+          quebrar linha, porque o "Ficha completa" nasceria fora da tela e ele é ação, não
+          enfeite. No desktop nada muda: cabendo tudo numa linha, o espaçador continua
+          empurrando o link pra direita. */}
+      <div className="flex flex-wrap items-center gap-1 px-2 py-1.5">
         {gavetas.map(({ id, label, icon: Icon, count }) => (
           <button
             key={id}
@@ -69,7 +74,7 @@ export function FaixaGavetas({
         <div className="flex-1" />
         <Link
           href={`/dashboard/pacientes/${pacienteId}`}
-          className="flex items-center gap-1 px-2 text-[11px] font-semibold text-text-secondary transition-colors hover:text-teal-ink"
+          className="ml-auto flex items-center gap-1 px-2 text-[11px] font-semibold text-text-secondary transition-colors hover:text-teal-ink"
         >
           Ficha completa <ArrowRight className="h-3 w-3" />
         </Link>
