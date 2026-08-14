@@ -277,7 +277,10 @@ internas `12px`. **Proibido hex hardcoded** (CLAUDE.md §Design) — light e dar
   comportamento em produção, e separá-la é o que permite estas 2 fatias subirem sem risco
 - **Registro na ficha** (lote multidente, chips locais, trilho único) —
   [R-109](R-109-registro-na-ficha.md), independente deste item
-- **Quem encerra o tratamento** (`aberta` → `concluida`) — em aberto de propósito, decisão dele
+- ~~**Quem encerra o tratamento**~~ (`aberta` → `concluida`) — **decidido em 13/08 e implementado
+  no [R-108b](R-108b-roteamento-da-visita.md) §2**: derivado do conteúdo (sobrou `indicado` →
+  aberta; tudo `realizado` → concluida). Estava parado aqui até o dado mostrar que o problema
+  nem era encerrar — era que **nada abria**: 71/71 fichas do Meu dia nasciam `concluida`
 - **Ordem/dependência entre procedimentos**, **orçamento sobre o plano** — itens próprios
 - **Consolidar `procedimentos_status`/`procedimentos_concluidos`** (21 e 2 fichas) — restos da
   §1; migrar dado clínico é item próprio, como o R-30 §7 já dizia
