@@ -1,0 +1,307 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+import { Search, X } from 'lucide-react';
+import { toast } from 'sonner';
+import { criarProcedimento } from '@/app/dashboard/configuracoes/actions';
+import { casarProcedimentoLocal, type SugestaoLocal } from '@/lib/odontograma/casar-procedimento-local';
+import {
+  CHIPS_LOTE, FACES_LOTE,
+  eventosDoLote, eventosDoLoteAusente, eventosDoLoteAvulso, eventosDoLoteRestauracao,
+} from '@/lib/odontograma/lote-multidente';
+import type { MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
+import { TIPO_LABEL, type FaceDental, type OdontogramaEventoDraft, type TipoRegistroOdontograma } from '@/types/odontograma';
+
+/**
+ * R-109 — a faixa de lote multidente, extraída de `registrar-painel.tsx` (R-107d) pra que a
+ * ficha monte a MESMA faixa em vez de uma cópia. **Porte, não redesenho** (spec §6): mesmo
+ * contador, mesmos chips, mesma busca, mesmas classes.
+ *
+ * A **seleção** é controlada (`dentes` vem de fora — cada tela tem o seu jeito de selecionar).
+ * O estado interno da faixa (busca, face pendente, item de catálogo, preço) é dela: é UI
+ * efêmera que morre junto com a seleção, e passar isso pra fora só criaria acoplamento.
+ *
+ * **Desvio consciente do §4.1/§4.2 da spec:** o toggle "Modo multidente" **não** entra aqui. No
+ * Meu dia ele vive no cabeçalho do odontograma, longe da faixa; trazer pra dentro mudaria o
+ * layout daquela tela — e "o Meu dia não muda em nada" é invariante do item. A faixa recebe só
+ * `onModoMultidenteChange`, porque precisa **desligar** o modo ao aplicar (R-107d: aplicar é o
+ * sinal de "terminei de selecionar"); quem desenha o botão continua sendo cada tela.
+ */
+export interface FaixaLoteProps {
+  /** Dentes selecionados. A faixa só renderiza com 2+ (invariante do R-107d §4). */
+  dentes: number[];
+  eventosDraft: OdontogramaEventoDraft[];
+  onEventosDraftChange: (eventos: OdontogramaEventoDraft[]) => void;
+  catalogoProcedimentos: MeuDiaCatalogoProcedimento[];
+  /** 'YYYY-MM-DD' — `realizado_em` dos eventos criados em lote. */
+  dataPadrao: string;
+  onLimpar: () => void;
+  onModoMultidenteChange: (v: boolean) => void;
+}
+
+export function FaixaLote({
+  dentes, eventosDraft, onEventosDraftChange, catalogoProcedimentos, dataPadrao,
+  onLimpar, onModoMultidenteChange,
+}: FaixaLoteProps) {
+  const [facePendente, setFacePendente] = useState(false);
+  const [busca, setBusca] = useState('');
+  const [catalogoPendente, setCatalogoPendente] = useState<MeuDiaCatalogoProcedimento | null>(null);
+  const [avulso, setAvulso] = useState<string | null>(null);
+  const [precoCatalogo, setPrecoCatalogo] = useState<string | null>(null);
+  const [salvandoCatalogo, setSalvandoCatalogo] = useState(false);
+
+  const sugestoes: SugestaoLocal[] = useMemo(
+    () => (busca.trim() ? casarProcedimentoLocal(busca, catalogoProcedimentos) : []),
+    [busca, catalogoProcedimentos],
+  );
+
+  /** Só o que a faixa sabe aplicar: tipo com chip em `CHIPS_LOTE`, ou item de catálogo (que
+   *  vira pergunta de tipo). Restauração nunca vem por aqui — o chip dela é o único caminho
+   *  pro seletor de face. */
+  const sugestoesUteis = sugestoes.filter((s) => s.catalogo || (s.tipo && CHIPS_LOTE.includes(s.tipo)));
+
+  if (dentes.length < 2) return null;
+
+  function aplicar(tipo: TipoRegistroOdontograma) {
+    const novos = eventosDoLote(tipo, dentes, eventosDraft, dataPadrao);
+    if (novos.length > 0) onEventosDraftChange([...eventosDraft, ...novos]);
+    onModoMultidenteChange(false);
+  }
+
+  function aplicarRestauracao(face: FaceDental) {
+    onEventosDraftChange([...eventosDraft, ...eventosDoLoteRestauracao(face, dentes, dataPadrao)]);
+    setFacePendente(false);
+    onModoMultidenteChange(false);
+  }
+
+  function aplicarAusente() {
+    const novos = eventosDoLoteAusente(dentes, eventosDraft);
+    if (novos.length > 0) onEventosDraftChange([...eventosDraft, ...novos]);
+    onModoMultidenteChange(false);
+  }
+
+  function aplicarSugestao(s: SugestaoLocal) {
+    if (s.catalogo) { setCatalogoPendente(s.catalogo); return; }
+    if (s.tipo && CHIPS_LOTE.includes(s.tipo)) aplicar(s.tipo);
+    setBusca('');
+  }
+
+  function lancarAvulso() {
+    const texto = busca.trim();
+    if (!texto) return;
+    onEventosDraftChange([...eventosDraft, ...eventosDoLoteAvulso(texto, dentes, dataPadrao)]);
+    setAvulso(texto);
+    setBusca('');
+    setCatalogoPendente(null);
+    onModoMultidenteChange(false);
+  }
+
+  /** Reusa `criarProcedimento` tal qual — 1 chamada só: o nome/preço valem pros N dentes do
+   *  lote, não 1 por dente. */
+  async function salvarNoCatalogo() {
+    if (!avulso || precoCatalogo == null) return;
+    const preco = Number(precoCatalogo.replace(',', '.'));
+    if (!Number.isFinite(preco) || preco < 0) {
+      toast.error('Informe um valor válido.');
+      return;
+    }
+    setSalvandoCatalogo(true);
+    let res: { error?: string };
+    try {
+      res = await criarProcedimento({
+        nome: avulso, descricao: '', categoria: 'Outros',
+        preco_padrao: preco, duracao_minutos: 30,
+      });
+    } catch {
+      res = { error: 'Falha de conexão. Tente novamente.' };
+    }
+    setSalvandoCatalogo(false);
+    if (res.error) { toast.error(res.error); return; }
+    toast.success(`"${avulso}" salvo no seu catálogo.`);
+    setAvulso(null);
+    setPrecoCatalogo(null);
+  }
+
+  function limpar() {
+    setBusca('');
+    setCatalogoPendente(null);
+    setFacePendente(false);
+    setAvulso(null);
+    setPrecoCatalogo(null);
+    onLimpar();
+  }
+
+  return (
+    <div className="rounded-lg border border-teal/30 bg-teal/5 px-3 py-2 flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold text-text-primary">
+          {dentes.length} dentes selecionados: {dentes.join(', ')}
+        </p>
+        <button
+          type="button"
+          onClick={limpar}
+          className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary hover:text-coral"
+        >
+          <X className="h-3 w-3" /> limpar
+        </button>
+      </div>
+
+      {facePendente ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+            Restauração — face
+          </span>
+          {FACES_LOTE.map((face) => (
+            <button
+              key={face}
+              type="button"
+              onClick={() => aplicarRestauracao(face)}
+              className="rounded-full border border-teal/30 bg-surface px-2.5 py-1 text-[11px] font-bold text-teal-ink hover:bg-teal/10"
+            >
+              {face}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setFacePendente(false)}
+            className="text-[11px] font-semibold text-text-secondary hover:text-coral"
+          >
+            Cancelar
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {CHIPS_LOTE.map((tipo) => (
+            <button
+              key={tipo}
+              type="button"
+              onClick={() => aplicar(tipo)}
+              className="rounded-full border border-teal/30 bg-surface px-2.5 py-1 text-[11px] font-semibold text-teal-ink hover:bg-teal/10"
+            >
+              {TIPO_LABEL[tipo]}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setFacePendente(true)}
+            className="rounded-full border border-teal/30 bg-surface px-2.5 py-1 text-[11px] font-semibold text-teal-ink hover:bg-teal/10"
+          >
+            Restauração ▾
+          </button>
+          <button
+            type="button"
+            onClick={aplicarAusente}
+            className="rounded-full border border-teal/30 bg-surface px-2.5 py-1 text-[11px] font-semibold text-teal-ink hover:bg-teal/10"
+          >
+            Dente ausente
+          </button>
+        </div>
+      )}
+
+      {!facePendente && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-1.5">
+            <Search size={12} strokeWidth={2.4} className="text-text-muted shrink-0" aria-hidden />
+            <input
+              type="text"
+              value={busca}
+              onChange={(e) => { setBusca(e.target.value); setCatalogoPendente(null); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { e.preventDefault(); setBusca(''); setCatalogoPendente(null); return; }
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                if (sugestoes.length > 0) aplicarSugestao(sugestoes[0]);
+                else lancarAvulso();
+              }}
+              placeholder="Outro procedimento pros dentes selecionados"
+              aria-label="Buscar ou digitar procedimento pros dentes selecionados"
+              className="min-w-0 flex-1 rounded-md border border-border bg-surface-alt px-2 py-1 text-[11px] text-text-primary outline-none focus:border-teal"
+            />
+          </div>
+
+          {catalogoPendente ? (
+            <div className="flex flex-wrap gap-1">
+              <span className="text-[10.5px] font-semibold text-text-primary">
+                &ldquo;{catalogoPendente.nome}&rdquo; — qual tipo clínico?
+              </span>
+              {CHIPS_LOTE.map((tipo) => (
+                <button
+                  key={tipo}
+                  type="button"
+                  onClick={() => { aplicar(tipo); setBusca(''); setCatalogoPendente(null); }}
+                  className="rounded-full border border-teal/30 bg-surface px-2 py-0.5 text-[10px] font-semibold text-teal-ink"
+                >
+                  {TIPO_LABEL[tipo]}
+                </button>
+              ))}
+            </div>
+          ) : busca.trim() && (
+            <div className="flex flex-wrap gap-1">
+              {sugestoesUteis.map((s, i) => (
+                <button
+                  key={`${s.tipo ?? s.catalogo?.id}-${i}`}
+                  type="button"
+                  onClick={() => aplicarSugestao(s)}
+                  className="rounded-full border border-teal/30 bg-surface px-2 py-0.5 text-[10px] font-semibold text-teal-ink"
+                >
+                  {s.tipo ? TIPO_LABEL[s.tipo] : s.catalogo?.nome}
+                </button>
+              ))}
+              {sugestoesUteis.length === 0 && (
+                <button
+                  type="button"
+                  onClick={lancarAvulso}
+                  className="rounded-full bg-teal px-2 py-0.5 text-[10px] font-bold text-white"
+                >
+                  Lançar &ldquo;{busca.trim()}&rdquo; nos {dentes.length} dentes
+                </button>
+              )}
+            </div>
+          )}
+
+          {avulso && (
+            precoCatalogo == null ? (
+              <button
+                type="button"
+                onClick={() => setPrecoCatalogo('')}
+                className="w-fit text-[10.5px] font-semibold text-teal-ink"
+              >
+                + Salvar &ldquo;{avulso}&rdquo; no meu catálogo
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">R$</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={precoCatalogo}
+                  onChange={(e) => setPrecoCatalogo(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void salvarNoCatalogo(); } }}
+                  placeholder="0,00"
+                  autoFocus
+                  aria-label={`Preço de ${avulso} no catálogo`}
+                  className="w-24 rounded-md border border-border bg-surface-alt px-2 py-1 text-[11px] font-mono text-text-primary outline-none focus:border-teal"
+                />
+                <button
+                  type="button"
+                  onClick={() => void salvarNoCatalogo()}
+                  disabled={salvandoCatalogo}
+                  className="rounded-md bg-teal px-2 py-1 text-[10.5px] font-bold text-white disabled:opacity-40"
+                >
+                  {salvandoCatalogo ? 'Salvando…' : 'Salvar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setPrecoCatalogo(null); setAvulso(null); }}
+                  className="text-[10.5px] font-semibold text-text-secondary"
+                >
+                  Agora não
+                </button>
+              </div>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
