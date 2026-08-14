@@ -1760,6 +1760,14 @@ export function PacienteDetailClient({
         orcDeleteSaving={orcDeleteSaving}
         orcDeleteError={orcDeleteError}
         onExcluir={handleExcluirOrc}
+        valorJaRecebido={
+          (orcamentosState.find((o) => o.id === confirmDeleteOrcId)?.pagamentos ?? [])
+            .filter((p) => p.status === 'pago')
+            .reduce((s, p) => s + p.valor, 0)
+        }
+        temAceiteAssinado={
+          !!orcamentosState.find((o) => o.id === confirmDeleteOrcId)?.aceite
+        }
       />
 
       <ExcluirPacienteModal

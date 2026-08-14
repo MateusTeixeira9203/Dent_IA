@@ -948,44 +948,17 @@ export async function excluirOrcamento(
     return { error: 'Você não tem permissão para excluir este orçamento — só o dentista responsável pode.' };
   }
 
-  // Protege exclusão de orçamentos com pagamentos já registrados
-  const { count: pagoCount } = await supabase
-    .from('pagamentos')
-    .select('id', { count: 'exact', head: true })
-    .eq('orcamento_id', orcamentoId)
-    .eq('clinica_id', clinicId)
-    .eq('status', 'pago');
+  // Decisão de 14/08: nem pagamento recebido nem aceite assinado bloqueiam mais a exclusão.
+  // Quem decide é o dentista — o sistema avisa o que vai junto (pagamento sai do financeiro,
+  // assinatura de aceite é apagada) no diálogo de confirmação e para por aí. Antes disso o
+  // orçamento errado ficava preso na lista pra sempre, sem caminho de saída.
+  // A assinatura sai por cascade da FK (migration 143, que reverte o RESTRICT da 113).
 
-  if ((pagoCount ?? 0) > 0) {
-    return { error: 'Este orçamento possui pagamentos registrados. Altere o status antes de excluir.' };
-  }
-
-  // R-03c-1: orçamento com aceite assinado é a prova de que o paciente concordou em pagar —
-  // apagar o orçamento apagaria a prova junto. A FK RESTRICT (migration 113) é a rede de
-  // segurança de verdade; esta checagem só existe pra dar uma mensagem legível ao usuário.
-  const { count: aceiteCount } = await supabase
-    .from('assinaturas')
-    .select('id', { count: 'exact', head: true })
-    .eq('orcamento_id', orcamentoId)
-    .eq('clinica_id', clinicId)
-    .eq('tipo', 'orcamento');
-
-  if ((aceiteCount ?? 0) > 0) {
-    return { error: 'Este orçamento tem aceite assinado pelo paciente e não pode ser excluído.' };
-  }
-
-  await supabase
-    .from("pagamentos")
-    .delete()
-    .eq("orcamento_id", orcamentoId)
-    .eq("clinica_id", clinicId);
-
-  await supabase
-    .from("orcamento_itens")
-    .delete()
-    .eq("orcamento_id", orcamentoId)
-    .eq("clinica_id", clinicId);
-
+  // Um único DELETE: as três filhas (orcamento_itens, pagamentos, assinaturas) são todas
+  // ON DELETE CASCADE, então o Postgres as leva junto — atômico. Antes, os filhos eram
+  // apagados um a um ANTES do pai; se o DELETE do pai falhasse depois (FK ou RLS), itens e
+  // pagamentos já tinham sumido e o orçamento sobrevivia furado. Deixar o cascade fazer
+  // isso é o que garante o tudo-ou-nada.
   // R-66 — `error` vem vazio quando a RLS bloqueia (policy orcamentos_delete_own é só dono):
   // 0 linhas afetadas ainda é "sucesso" pro Postgrest. `.select('id')` é a única forma de
   // saber se algo de fato saiu da tabela (mesmo padrão de outros updates otimistas do projeto).
@@ -1003,6 +976,8 @@ export async function excluirOrcamento(
 
   if (pacienteId) revalidatePath(`/dashboard/pacientes/${pacienteId}`);
   revalidatePath("/dashboard/orcamentos");
+  // Pagamento pago agora pode sair junto — o financeiro precisa refletir isso na hora.
+  revalidatePath('/dashboard/financeiro');
   return {};
 }
 

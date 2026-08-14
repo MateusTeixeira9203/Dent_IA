@@ -17,6 +17,10 @@ interface ConfirmarDeleteOrcModalProps {
   orcDeleteSaving: boolean;
   orcDeleteError: string | null;
   onExcluir: () => void;
+  /** Soma dos pagamentos já confirmados deste orçamento. > 0 dispara o aviso reforçado. */
+  valorJaRecebido: number;
+  /** R-03c-1 — aceite assinado pelo paciente. Não bloqueia mais (decisão de 14/08), avisa. */
+  temAceiteAssinado: boolean;
 }
 
 export function ConfirmarDeleteOrcModal({
@@ -25,7 +29,11 @@ export function ConfirmarDeleteOrcModal({
   orcDeleteSaving,
   orcDeleteError,
   onExcluir,
+  valorJaRecebido,
+  temAceiteAssinado,
 }: ConfirmarDeleteOrcModalProps) {
+  const temRecebido = valorJaRecebido > 0;
+  const valorFmt = valorJaRecebido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   return (
     <Dialog
       open={!!confirmDeleteOrcId}
@@ -51,17 +59,49 @@ export function ConfirmarDeleteOrcModal({
         <div className="mx-6 mb-5 bg-surface-alt rounded-xl p-3.5 space-y-1.5">
           <p className="text-[11px] text-text-secondary font-medium">O que será removido:</p>
           <ul className="space-y-1">
-            {['Todos os procedimentos do orçamento', 'Registros de pagamento pendentes'].map(item => (
+            {[
+              'Todos os procedimentos do orçamento',
+              'Registros de pagamento pendentes',
+              ...(temRecebido ? ['Os pagamentos já recebidos, que somem do financeiro'] : []),
+              ...(temAceiteAssinado ? ['A assinatura de aceite do paciente'] : []),
+            ].map(item => (
               <li key={item} className="flex items-center gap-2 text-xs text-text-secondary">
                 <span className="w-1 h-1 rounded-full bg-coral/60 shrink-0" />
                 {item}
               </li>
             ))}
           </ul>
-          <p className="text-[10px] text-text-secondary/60 pt-1">
-            Orçamentos com pagamentos já confirmados são protegidos automaticamente.
-          </p>
         </div>
+
+        {/* Aviso reforçado: pagamento recebido e/ou aceite assinado. Nenhum dos dois bloqueia
+            a exclusão (decisão de 14/08) — a escolha é do dentista, o papel da tela é dizer
+            exatamente o que ele está prestes a perder. */}
+        {(temRecebido || temAceiteAssinado) && (
+          <div className="mx-6 mb-5 flex items-start gap-2.5 rounded-xl bg-coral/10 px-3.5 py-3">
+            <AlertTriangle className="w-4 h-4 text-coral shrink-0 mt-px" />
+            <p className="text-xs text-text-primary leading-relaxed">
+              {temRecebido && temAceiteAssinado ? (
+                <>
+                  Este orçamento tem <strong className="font-semibold text-coral">{valorFmt}</strong>{' '}
+                  recebido <strong className="font-semibold text-coral">e aceite assinado</strong> pelo
+                  paciente. Excluir tira esse valor do financeiro e apaga a assinatura — a prova de
+                  que ele concordou com o valor.
+                </>
+              ) : temRecebido ? (
+                <>
+                  Este orçamento já tem <strong className="font-semibold text-coral">{valorFmt}</strong>{' '}
+                  recebido. Excluir apaga esse recebimento do financeiro — o caixa do dia muda.
+                </>
+              ) : (
+                <>
+                  Este orçamento tem{' '}
+                  <strong className="font-semibold text-coral">aceite assinado</strong> pelo paciente.
+                  Excluir apaga a assinatura — a prova de que ele concordou com o valor.
+                </>
+              )}
+            </p>
+          </div>
+        )}
 
         {orcDeleteError && (
           <p className="mx-6 mb-3 text-xs text-red-500 bg-red-500/10 rounded-xl px-3 py-2">

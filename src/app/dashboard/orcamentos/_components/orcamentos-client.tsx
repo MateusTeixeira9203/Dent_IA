@@ -740,6 +740,11 @@ export function OrcamentosClient({
     setPagRapidoSaving(false);
   };
 
+  // Pagamento recebido não bloqueia mais a exclusão — só levanta o aviso no diálogo.
+  const valorJaRecebidoDelete = (orcamentos.find((o) => o.id === confirmDeleteId)?.pagamentos ?? [])
+    .filter((p) => p.status === 'pago')
+    .reduce((s, p) => s + p.valor, 0);
+
   const handleExcluir = async () => {
     if (!confirmDeleteId) return;
     setDeleteSaving(true);
@@ -1762,9 +1767,20 @@ export function OrcamentosClient({
               Excluir orçamento?
             </DialogTitle>
             <DialogDescription className="text-text-secondary">
-              Esta ação é irreversível. Todos os pagamentos vinculados também serão removidos.
+              Esta ação é irreversível. Os pagamentos vinculados e o aceite assinado, se houver,
+              também serão removidos.
             </DialogDescription>
           </DialogHeader>
+          {valorJaRecebidoDelete > 0 && (
+            <div className="flex items-start gap-2.5 rounded-xl bg-coral/10 px-3.5 py-3">
+              <AlertTriangle className="w-4 h-4 text-coral shrink-0 mt-px" />
+              <p className="text-xs text-text-primary leading-relaxed">
+                Este orçamento já tem{' '}
+                <strong className="font-semibold text-coral">{formatCurrency(valorJaRecebidoDelete)}</strong>{' '}
+                recebido. Excluir apaga esse recebimento do financeiro — o caixa do dia muda.
+              </p>
+            </div>
+          )}
           <DialogFooter className="gap-2">
             <Button
               variant="outline"
