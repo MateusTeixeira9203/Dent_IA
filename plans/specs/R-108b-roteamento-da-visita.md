@@ -232,6 +232,10 @@ informação, mesma posição relativa, sem forkar componente compartilhado.
       `p_sincronizar: false` (§4.3)
 - [ ] **Ficha alcançada não tem nenhum campo próprio sobrescrito** — `anotacoes`,
       `data_atendimento`, `queixa_principal`, `conduta` e `orto_manutencao` saem intactos (§4.2)
+- [ ] Os campos **derivados** (`dentes_afetados`/`dentes_observacoes`/`procedimentos`) **mudam de
+      propósito** — são recalculados do conjunto completo de eventos. Ficha antiga com sentinela
+      de região gravado à mão (pré-R-30, sem evento por trás) **perde o sentinela** ao ser
+      alcançada; `updated_at` também muda, por trigger do banco, e não é restaurável
 - [ ] O agendamento fecha **uma vez só** e a secretária recebe **uma** notificação, não importa
       quantas fichas a visita alcance
 - [ ] Evolução `automatica: true` nunca é apresentada como relato do dentista
@@ -253,8 +257,20 @@ informação, mesma posição relativa, sem forkar componente compartilhado.
       cria **0 fichas** — segue sem prova
 - [~] **G2** — **metade.** A tela sem seletor no Estado A foi confirmada (2 pendências no
       rascunho, nenhum seletor). A escrita alcançando 2 tratamentos distintos, não
-- [ ] **G3** — Estado B "absorver" → **não testado**: nas duas rodadas escolhi "+ Novo
-      tratamento". O caminho aditivo é o mesmo do G4, mas o destino escolhido não foi exercido
+- [x] **G3** — ✅ **"absorver" provado ao vivo 14/08.** Procedimento novo (Extração 18) mandado
+      pra dentro do tratamento aberto `27a07854`: a ficha foi de **11 → 12 eventos**, o evento
+      novo nasceu com `ficha_id` = a escolhida, e **nenhuma ficha foi criada**.
+      `data_atendimento` (10/08), `queixa_principal` e `anotacoes` da ficha alcançada saíram
+      **intactos** — é a emenda §4.2 provada pelo lado do absorver. O seletor veio **pré-marcado**
+      no tratamento aberto: o caso é de zero clique, como §2 prometia.
+      **Efeito colateral que o gate revelou:** absorver **re-deriva os campos legados** da ficha
+      alcançada. Aqui isso removeu o sentinela `99` de `dentes_afetados` — que **não tinha evento
+      por trás** (resto do caminho pré-R-30). É correção, não perda (R-30 elegeu
+      `odontograma_eventos` como fonte), mas ficha antiga com sentinela manual **perde o sentinela
+      ao ser alcançada**. Precisa estar escrito antes que alguém descubra por acidente.
+      *Caveat de método:* os cliques foram disparados pelos handlers do React, não pelo ponteiro —
+      o painel do navegador estava com o mapeamento de coordenada quebrado. Vale pro que o gate
+      mede (roteamento e persistência), não pro gesto visual
 - [x] **G4** — ✅ **provado 2x.** Rodada 2: `a002c07e` ficou com os 2 concluídos (2 eventos,
       `realizado_em` = hoje) e a Extração nova foi pra ficha nova `2ba069ce`. Nenhum evento
       migrou de ficha. *É o gate que define o item*

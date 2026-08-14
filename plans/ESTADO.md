@@ -30,7 +30,7 @@ então o push fechou a assimetria entre schema e código em produção.
 
 | O quê | Trava o quê | Hipótese / próximo passo |
 |---|---|---|
-| G3 do R-108b sem rodar | Fechar R-108b como ✅ | 5 cliques no mesmo cenário de teste — escolher um tratamento aberto em vez de "+ Novo tratamento" |
+| ~~G3 do R-108b~~ | — | ✅ **rodou 14/08 e passou**: novo procedimento absorvido num tratamento aberto (11→12 eventos, 0 fichas criadas, campos da ficha intactos). Restam G7, G9 e o G8 de 2 contas |
 | Barra de encaminhar não vista | Fechar o pontual | Só renderiza em ficha expandida com procedimento `indicado`; não alcancei sem escrever dado |
 | G8 (2 contas) do R-108/R-108b/R-103b/c | Fechar os três como ✅ | Represado há semanas — ele recusou seed sintético, espera dado real |
 | Posição do "Modo multidente" (R-107d §9) | Fechar R-107d | Ele quer opinião de dentistas reais; 3 opções documentadas |
