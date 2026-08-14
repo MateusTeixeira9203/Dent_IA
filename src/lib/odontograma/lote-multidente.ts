@@ -1,0 +1,104 @@
+import type {
+  FaceDental, OdontogramaEventoDraft, TipoRegistroOdontograma,
+} from '@/types/odontograma';
+
+/**
+ * R-109 — o lote multidente, extraído de `registrar-painel.tsx` (R-107d §3) pra que a ficha
+ * consuma o MESMO mecanismo em vez de uma cópia. Cópia diverge; foi o que o R-107a já tinha
+ * provado ao extrair `rotina-boca.ts` no sentido contrário (da ficha pro Meu dia).
+ *
+ * **Puras de propósito.** Cada função devolve só os eventos NOVOS; quem chama é que concatena
+ * no rascunho e mexe no próprio estado de UI (desligar o Modo multidente, limpar a busca). Sem
+ * isso o módulo carregaria os setters de uma tela só e não serviria pra outra — que é
+ * exatamente o problema que ele existe pra resolver.
+ *
+ * Comportamento **byte-equivalente** ao que estava inline (invariante do R-109 §7): mesmos
+ * guards de duplicata, mesmos defaults, mesma âncora. O que mudou de lugar não mudou de regra.
+ */
+
+/** R-107d — chips oferecidos em lote (subconjunto de `TIPO_LABEL`, spec §3). Ponte fica de
+ *  fora (fluxo próprio extremo→extremo); Restauração entra à parte (pede face antes, não
+ *  cria direto como os outros). */
+export const CHIPS_LOTE: TipoRegistroOdontograma[] = [
+  'endodontia', 'coroa', 'implante', 'pino_nucleo', 'exodontia', 'fratura', 'lesao_periapical',
+];
+
+export const FACES_LOTE: FaceDental[] = ['V', 'M', 'O', 'D', 'L'];
+
+/**
+ * Chip dente-inteiro em lote: cria em todos os dentes de uma vez, sem cycle (mesma filosofia
+ * do caminho digitado). Guard simples contra duplicata óbvia: pula dente que já tem esse tipo
+ * com origem clínica — não impede o dentista de repetir de propósito por outro caminho, só
+ * evita clique duplo criando 2 idênticos sem querer.
+ */
+export function eventosDoLote(
+  tipo: TipoRegistroOdontograma,
+  dentes: number[],
+  eventosDraft: OdontogramaEventoDraft[],
+  dataPadrao: string,
+): OdontogramaEventoDraft[] {
+  return dentes
+    .filter((d) => !eventosDraft.some((e) => e.tipo === tipo && e.origem === 'clinica' && e.ancora.dente === d))
+    .map((d): OdontogramaEventoDraft => ({
+      id: crypto.randomUUID(), tipo, status: 'realizado', origem: 'clinica',
+      momento_planejado: 'sessao_atual', ancora: { nivel: 'dente', dente: d },
+      grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: dataPadrao,
+    }));
+}
+
+/**
+ * Restauração em lote pede a face 1x (não os outros tipos): consulta em produção mostrou quase
+ * metade das fichas com 4+ dentes tendo faces DIFERENTES por dente — aplicar sem perguntar
+ * estaria errado na metade dos casos (R-107d §2). Face diferente por dente continua fora,
+ * dente a dente.
+ *
+ * Sem guard de duplicata, igual ao original: a face escolhida distingue, e o dentista pode
+ * legitimamente restaurar 2 faces do mesmo dente na mesma rodada.
+ */
+export function eventosDoLoteRestauracao(
+  face: FaceDental,
+  dentes: number[],
+  dataPadrao: string,
+): OdontogramaEventoDraft[] {
+  return dentes.map((d) => ({
+    id: crypto.randomUUID(), tipo: 'carie_restauracao', status: 'realizado', origem: 'clinica',
+    momento_planejado: 'sessao_atual', ancora: { nivel: 'face', dente: d, faces: [face] },
+    grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: dataPadrao,
+  }));
+}
+
+/**
+ * "Dente ausente" em lote: mesma regra do R-107b (`exodontia` + `origem: 'preexistente'`),
+ * batelada. Não colide com "Extração" por dente porque `cycleDenteTipo`/chips de dente único
+ * já filtram por origem — aqui é só criação em massa, sem cycle, mesmo guard do `eventosDoLote`.
+ *
+ * `realizado_em: null` de propósito: ausência preexistente não tem data de execução.
+ */
+export function eventosDoLoteAusente(
+  dentes: number[],
+  eventosDraft: OdontogramaEventoDraft[],
+): OdontogramaEventoDraft[] {
+  return dentes
+    .filter((d) => !eventosDraft.some((e) => e.tipo === 'exodontia' && e.origem === 'preexistente' && e.ancora.dente === d))
+    .map((d): OdontogramaEventoDraft => ({
+      id: crypto.randomUUID(), tipo: 'exodontia', status: 'realizado', origem: 'preexistente',
+      momento_planejado: 'sessao_atual', ancora: { nivel: 'dente', dente: d },
+      grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: null,
+    }));
+}
+
+/**
+ * Nada casou na busca: escape hatch do R-107b (`outro`), em lote. O termo digitado vira a
+ * observação — é o que aparece no card e no que o dentista reconhece depois.
+ */
+export function eventosDoLoteAvulso(
+  texto: string,
+  dentes: number[],
+  dataPadrao: string,
+): OdontogramaEventoDraft[] {
+  return dentes.map((d) => ({
+    id: crypto.randomUUID(), tipo: 'outro', status: 'realizado', origem: 'clinica',
+    momento_planejado: 'sessao_atual', ancora: { nivel: 'dente', dente: d },
+    grupo_id: null, papel_no_grupo: null, observacao: texto, realizado_em: dataPadrao,
+  }));
+}

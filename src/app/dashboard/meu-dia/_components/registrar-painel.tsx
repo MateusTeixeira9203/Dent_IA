@@ -83,14 +83,13 @@ import { eventoRotina, cycleRotina } from '@/lib/odontograma/rotina-boca';
 import { criarProcedimento } from '@/app/dashboard/configuracoes/actions';
 import type { MeuDiaPendencia, MeuDiaCatalogoProcedimento, MeuDiaOrto } from '@/server/dashboard/get-meu-dia';
 
-/** R-107d — chips oferecidos em lote (subconjunto de `TIPO_LABEL`, spec §3). Ponte fica de
- *  fora (fluxo próprio extremo→extremo); Restauração entra à parte (pede face antes, não
- *  cria direto como os outros). */
-const CHIPS_LOTE: TipoRegistroOdontograma[] = [
-  'endodontia', 'coroa', 'implante', 'pino_nucleo', 'exodontia', 'fratura', 'lesao_periapical',
-];
-
-const FACES_LOTE: FaceDental[] = ['V', 'M', 'O', 'D', 'L'];
+// R-109 — a lógica do lote e as duas listas saíram daqui pro módulo compartilhado; a ficha
+// consome o MESMO mecanismo em vez de uma cópia (spec §2). Aqui ficaram só as cascas que
+// concatenam no rascunho e mexem no estado de UI desta tela.
+import {
+  CHIPS_LOTE, FACES_LOTE,
+  eventosDoLote, eventosDoLoteAusente, eventosDoLoteAvulso, eventosDoLoteRestauracao,
+} from '@/lib/odontograma/lote-multidente';
 
 const TIPOS = Object.entries(TIPO_LABEL) as Array<[TipoRegistroOdontograma, string]>;
 
@@ -493,13 +492,7 @@ export function useRegistrarPainel({
    *  propósito por outro caminho, só evita clique duplo criando 2 idênticos sem querer. */
   function aplicarLote(tipo: TipoRegistroOdontograma) {
     if (!onde) return;
-    const novos = onde.dentes
-      .filter((d) => !eventosDraft.some((e) => e.tipo === tipo && e.origem === 'clinica' && e.ancora.dente === d))
-      .map((d): OdontogramaEventoDraft => ({
-        id: crypto.randomUUID(), tipo, status: 'realizado', origem: 'clinica',
-        momento_planejado: 'sessao_atual', ancora: { nivel: 'dente', dente: d },
-        grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: dataPadrao,
-      }));
+    const novos = eventosDoLote(tipo, onde.dentes, eventosDraft, dataPadrao);
     if (novos.length > 0) setEventosDraft([...eventosDraft, ...novos]);
     // R-107d (adendo) — aplicar é o sinal de "terminei de selecionar". Desliga sozinho, nunca
     // fica aceso sem o dentista perceber (mesmo raciocínio nas outras 3 ações de lote abaixo).
@@ -512,12 +505,7 @@ export function useRegistrarPainel({
    *  continua fora daqui, dente a dente (fora de escopo, spec §6). */
   function aplicarLoteRestauracao(face: FaceDental) {
     if (!onde) return;
-    const novos: OdontogramaEventoDraft[] = onde.dentes.map((d) => ({
-      id: crypto.randomUUID(), tipo: 'carie_restauracao', status: 'realizado', origem: 'clinica',
-      momento_planejado: 'sessao_atual', ancora: { nivel: 'face', dente: d, faces: [face] },
-      grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: dataPadrao,
-    }));
-    setEventosDraft([...eventosDraft, ...novos]);
+    setEventosDraft([...eventosDraft, ...eventosDoLoteRestauracao(face, onde.dentes, dataPadrao)]);
     setLoteFacePendente(false);
     setModoMultidente(false);
   }
@@ -528,13 +516,7 @@ export function useRegistrarPainel({
    *  cycle, mesmo guard de duplicata do `aplicarLote`. */
   function aplicarLoteAusente() {
     if (!onde) return;
-    const novos = onde.dentes
-      .filter((d) => !eventosDraft.some((e) => e.tipo === 'exodontia' && e.origem === 'preexistente' && e.ancora.dente === d))
-      .map((d): OdontogramaEventoDraft => ({
-        id: crypto.randomUUID(), tipo: 'exodontia', status: 'realizado', origem: 'preexistente',
-        momento_planejado: 'sessao_atual', ancora: { nivel: 'dente', dente: d },
-        grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: null,
-      }));
+    const novos = eventosDoLoteAusente(onde.dentes, eventosDraft);
     if (novos.length > 0) setEventosDraft([...eventosDraft, ...novos]);
     setModoMultidente(false);
   }
@@ -554,12 +536,7 @@ export function useRegistrarPainel({
   function lancarLoteAvulso() {
     const texto = loteBusca.trim();
     if (!onde || !texto) return;
-    const novos: OdontogramaEventoDraft[] = onde.dentes.map((d) => ({
-      id: crypto.randomUUID(), tipo: 'outro', status: 'realizado', origem: 'clinica',
-      momento_planejado: 'sessao_atual', ancora: { nivel: 'dente', dente: d },
-      grupo_id: null, papel_no_grupo: null, observacao: texto, realizado_em: dataPadrao,
-    }));
-    setEventosDraft([...eventosDraft, ...novos]);
+    setEventosDraft([...eventosDraft, ...eventosDoLoteAvulso(texto, onde.dentes, dataPadrao)]);
     setLoteAvulso(texto);
     setLoteBusca('');
     setLoteCatalogoPendente(null);
