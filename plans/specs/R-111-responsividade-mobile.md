@@ -2,7 +2,7 @@
 
 > **Modelo:** Opus pro recorte e pras decisões de densidade (§4.4); Sonnet pros consertos
 > mecânicos de corte e alvo de toque, que são determinísticos.
-> **Fase:** `plano` — 14/08. Inventário medido, contrato ainda não fechado.
+> **Fase:** `contrato` — 14/08. Inventário medido, as 3 decisões dele fechadas (§9).
 
 ---
 
@@ -101,7 +101,7 @@ desktop encolhido.
 |---|---|---|
 | 1 | **Nada cortado sem rolagem** | `el.scrollWidth - el.clientWidth <= 4` para todo elemento cujo pai não role, em 375 e 768 |
 | 2 | **Testado com o teclado aberto** | Todo formulário e diálogo conferido em **375×500** |
-| 3 | **Alvo de toque ≥ 44px** | Todo `button`/`a`/`input`/`select` com altura **e** largura ≥ 44px (links de texto inline saem — ver §9) |
+| 3 | **Alvo de toque ≥ 44px** | Todo `button`/`input`/`select` com altura **e** largura ≥ 44px. **Link de texto inline é isento** (decisão dele, 14/08): "Ver perfil completo" tem 16px porque é texto corrido, e forçar 44px mudaria o visual de várias telas sem ganho — o alvo real ali é a linha inteira |
 | 4 | **Densidade adaptada** | Grade de 3 colunas vira 1; tabela vira card; semana vira dia |
 
 ### 4.2 Diálogos — a correção estrutural
@@ -110,13 +110,25 @@ Todo diálogo passa a ter `max-height: 100dvh` (não `vh`: `dvh` acompanha o tec
 `overflow-y: auto`, com cabeçalho e rodapé de ação fixos e só o miolo rolando. O botão primário
 **nunca** rola pra fora.
 
-`Dialog` do shadcn é o componente único — a correção entra lá e alcança todos de uma vez.
-**A conferir antes de codar:** quantos diálogos existem e se todos usam esse componente.
+`DialogContent` (`src/components/ui/dialog.tsx`) é o componente único — conferido: **22 arquivos o
+usam e só 1 define `max-h` próprio**, então a correção na classe base alcança 21 de uma vez.
+
+**Feito 14/08:** `max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain` na classe base.
+Provado por sonda: num viewport de 500px a caixa trava em 468px e rola os 432px restantes.
+
+> **Risco que essa correção cria — verificar antes de fechar o G4.** O dropdown de busca de
+> paciente ([agendamentos-client.tsx:1462](../../src/app/dashboard/agendamentos/_components/agendamentos-client.tsx:1462)
+> e `:1860`) é um `absolute z-50` **sem portal**. Com `overflow-y: auto` no diálogo ele passa a
+> ser recortado pelo container de rolagem em vez de vazar por cima. Se a lista de resultados
+> ficar cortada, a saída é portalizar o dropdown — mas isso é mudança na tela de agendamentos,
+> não no `Dialog`, e vira decisão à parte.
 
 ### 4.3 Agenda — o que muda
 
-- **Celular:** a visão padrão deixa de ser Semana. Semana em 375px é indefensável — são 7 colunas
-  de 48px. **Decisão aberta (§9).**
+- **Celular: a visão padrão vira Dia** (decisão dele, 14/08). Semana em 375px são 7 colunas de
+  48px — indefensável. A Semana continua existindo e passa a **rolar na horizontal com dica
+  visual**; o que muda é só qual abre primeiro. A escolha do dentista dentro da sessão manda: o
+  padrão só decide o estado inicial, nunca sobrescreve quem trocou de visão.
 - **Tablet:** o cabeçalho não pode virar `sm:flex-row` — o conteúdo precisa de 1135px. Sobe pro
   breakpoint que realmente comporta, ou quebra em duas linhas.
 
@@ -183,12 +195,11 @@ candidata), aí sim entra artefato, e só pra ela.
 **Fora:** Configurações, WhatsApp, Protético, Bot, Planos, login/cadastro, onboarding. PWA e app
 nativo — tema próprio, e este item é pré-requisito dos dois de qualquer jeito.
 
-**Decisões que são dele:**
+**Decisões dele — as 3 fechadas em 14/08:**
 
-1. **Agenda no celular — o que substitui a semana?** Visão do dia por padrão (mais legível, perde
-   a noção de semana) ou semana rolando na horizontal (mantém a noção, exige gesto)?
-2. **Alvo de toque: link de texto inline conta?** "Ver perfil completo" tem 16px de altura porque
-   é texto, não botão. Forçar 44px muda o visual de várias telas. Isentar links inline e aplicar
-   só a botões e campos é o padrão comum — confirmar.
-3. **Isto vira o item 🔵?** Hoje o ativo é o R-108b, e o R-109 está no meio (pedaço 3 no ar,
-   pedaços 1 e 2 abertos). Máximo é 1 ativo.
+1. ✅ **Agenda no celular: visão do Dia por padrão.** Contrato no §4.3.
+2. ✅ **Link de texto inline é isento** do alvo de 44px. Contrato no §4.1, critério 3.
+3. ✅ **R-111 é o item 🔵.** O R-108b sai de ativo (segue 🟡, com G7/G9/G8 em aberto) e o R-109
+   fica 🟡 com os pedaços 1 e 2 na fila.
+
+**Nenhuma decisão aberta.** Spec em fase `contrato` — a implementação executa contra ela.
