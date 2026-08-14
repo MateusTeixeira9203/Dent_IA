@@ -242,6 +242,20 @@ export function WeekView({
         </button>
       </div>
 
+      {/* R-111 §4.3 — a semana ROLA na horizontal em vez de cortar. Medido em 14/08 no celular:
+          504px de conteúdo em 342px visíveis, sem scroll nenhum — quinta, sexta e sábado eram
+          inalcançáveis, e a coluna de HOJE caía justamente no pedaço cortado.
+
+          O scroll começa aqui e não no topo do componente de propósito: a barra de navegação da
+          semana (‹ 9 de ago – 15 de ago › Hoje) tem que ficar parada. São as 3 faixas alinhadas
+          — cabeçalho de dias, mapa de carga e grade cheia — que precisam andar juntas, e por
+          isso o `min-w` vai no wrapper que abraça as três, nunca em cada uma.
+
+          600px = os 144px do gutter `w-36` + 7 colunas de ~65px. Inerte no desktop, onde o
+          container já passa disso. */}
+      <div className="relative">
+        <div className="overflow-x-auto">
+          <div className="min-w-[600px]">
       {/* Day headers — vale nos dois estados; é o atalho pro Dia daquela data.
           w-36 tem que bater com a coluna de nome do mapa de carga logo abaixo e com o
           gutter de hora da grade cheia — as 3 faixas alinham as mesmas 7 colunas. */}
@@ -463,6 +477,16 @@ export function WeekView({
           </div>
         </div>
       )}
+          </div>
+        </div>
+        {/* Dica de que tem mais semana pra direita. Só no celular — no desktop a semana cabe
+            inteira e a faixa seria sujeira. `pointer-events-none` pra não roubar o clique da
+            coluna de sábado, que fica bem embaixo dela. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface to-transparent md:hidden"
+        />
+      </div>
     </div>
   );
 }

@@ -54,6 +54,7 @@ import {
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
+import { useIsMobile } from '@/hooks/use-mobile';
 import {
   Dialog,
   DialogContent,
@@ -139,6 +140,8 @@ interface Props {
   temSecretaria: boolean;
   /** Visão ativa — vem da URL (`?v=`), não de estado local. */
   visao: VisaoAgenda;
+  /** R-111 — `?v=` estava mesmo na URL? Falso = ninguém escolheu, é só o padrão do servidor. */
+  visaoExplicita: boolean;
   /** Dia de referência da janela carregada, 'yyyy-MM-dd' — vem da URL (`?d=`). */
   ancora: string;
   /** Pode criar agendamentos: plano SOLO ou secretária */
@@ -160,7 +163,8 @@ export function AgendamentosClient({
   dentistas,
   calendarConnectedPerDentista,
   temSecretaria,
-  visao,
+  visao: visaoUrl,
+  visaoExplicita,
   ancora,
   canEdit,
   autoOpenNovo = false,
@@ -169,6 +173,25 @@ export function AgendamentosClient({
 }: Props) {
   const router = useRouter();
   const isSecretaria = role === 'secretaria';
+
+  /**
+   * R-111 §4.3 — no celular a agenda abre no **Dia**. Semana em 375px são 7 colunas de 48px:
+   * medido em 14/08, a grade tinha 504px de conteúdo em 342px visíveis, **sem scroll
+   * horizontal** — quinta, sexta e sábado eram inalcançáveis, inclusive a coluna de hoje.
+   *
+   * Só decide o **estado inicial**. Assim que o dentista toca em Dia/Semana/Mês, o `irPara`
+   * grava `?v=` na URL, `visaoExplicita` vira true e a escolha dele manda daí em diante — nada
+   * volta atrás pelas costas.
+   *
+   * Renomeado pra `visao` de propósito: o resto do arquivo (grade, atalhos de teclado,
+   * `selectedDate`) continua lendo `visao` e passa a ler o valor efetivo sem nenhuma outra
+   * edição — uma variável só, sem dois conceitos circulando.
+   *
+   * O servidor carregou a janela da SEMANA neste caso, e o Dia é um pedaço dela: nenhuma busca
+   * a mais, nenhum dado faltando.
+   */
+  const ehCelular = useIsMobile();
+  const visao: VisaoAgenda = !visaoExplicita && ehCelular && visaoUrl === 'semana' ? 'dia' : visaoUrl;
 
   // A âncora é a fonte da data em toda a tela. `T12:00` de propósito: `parseISO('2026-08-05')`
   // devolve meia-noite local e, num fuso a leste, cai no dia 4.
