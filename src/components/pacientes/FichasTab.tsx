@@ -33,6 +33,7 @@ import type { PlanoId } from "@/lib/planos";
 import { Odontograma, computeToothState, type ToothStatus } from "@/components/odontograma/Odontograma";
 import { ToothDetailPanel } from "@/components/odontograma/ToothDetailPanel";
 import { OdontogramaComPainel } from "@/components/odontograma/OdontogramaComPainel";
+import { FaixaLote } from "@/components/odontograma/faixa-lote";
 import {
   ARCH_SUPERIOR, ARCH_INFERIOR, ARCH_COMPLETA, ARCH_LABELS,
   QUAD_SUP_DIREITO, QUAD_SUP_ESQUERDO, QUAD_INF_DIREITO, QUAD_INF_ESQUERDO,
@@ -536,6 +537,25 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   const [isPanelOpen, setIsPanelOpen] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);  const [selectedTeeth, setSelectedTeeth] = React.useState<number[]>([]);
   const [sharedTeeth, setSharedTeeth] = React.useState<number[]>([]);  const [sharedNotes, setSharedNotes] = React.useState<string[]>(['']);  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState<string | null>(null);
+  /**
+   * R-109 — seleção do LOTE multidente, estado próprio e separado do `selectedTeeth`.
+   *
+   * Não reusa `selectedTeeth` de propósito, e isso é o oposto do que eu tinha suposto antes de
+   * ler o código. Três motivos, cada um verificado aqui:
+   * 1. `selectedTeeth` carrega **sentinela de região** (91–99, via `toggleArch`). Passar isso pro
+   *    lote criaria evento ancorado no "dente 97" — que o odontograma não desenha e o
+   *    `derivarV2DosEventos` não emite.
+   * 2. Editar ficha legada **pré-carrega** `selectedTeeth` com os dentes da ficha antiga. A faixa
+   *    nasceria já cheia, e um clique de chip lançaria procedimento em N dentes que o dentista
+   *    nunca selecionou.
+   * 3. `selectedTeeth` é fonte de escrita de `dentes_afetados`. Reusar juntaria de novo os dois
+   *    trilhos exatamente onde o R-109 quer separá-los.
+   *
+   * Mesmo modelo do Meu dia (`onde` + `modoMultidente`) — a MESMA mecânica, não uma cópia dela.
+   */
+  const [dentesLote, setDentesLote] = React.useState<number[]>([]);
+  const [modoMultidente, setModoMultidente] = React.useState(false);
+
   // R-35 item 2 — conta orçamentos/pagamentos que a ficha leva junto (ON DELETE CASCADE)
   // antes de deixar confirmar, em vez de apagar em silêncio.
   const [vinculosFicha, setVinculosFicha] = React.useState<VinculosFicha | null>(null);
@@ -708,6 +728,15 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
 
   const abrirDenteEDestacarRegistro = React.useCallback((dente: number | null) => {
     if (dente == null) { setDenteAberto(null); return; }
+    // R-109 — com o Modo multidente ligado, o clique ACUMULA no lote em vez de abrir o perfil
+    // do dente. Vem antes do ramo do fantasma de propósito: no modo, clicar um dente já
+    // selecionado significa "tira do lote", nunca "apaga a nota antiga dele".
+    // Pula o `setDenteAberto` pelo mesmo motivo do R-107d: era isso que fazia o painel abrir e
+    // fechar a cada clique enquanto se montava a seleção.
+    if (modoMultidente) {
+      setDentesLote((prev) => (prev.includes(dente) ? prev.filter((d) => d !== dente) : [...prev, dente]));
+      return;
+    }
     // R-30 Parte 7 (contrato 4) — clicar num dente "selecionado" sem evento real por trás
     // (fantasma do texto/dentes_observacoes, eventosDraft vazio) desmarca em vez de abrir
     // um painel sem nada pra mostrar. Com evento real, comportamento inalterado: abre.
@@ -719,7 +748,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     setDenteAberto(dente);
     // R-21 Fase 3: abre a seção do dente na lista e rola até ela (antes só destacava o card).
     destacarDente(dente, 'A', setDentesAbertosA, cardsDraft);
-  }, [cardsDraft, destacarDente, eventosDraft, selectedTeeth]);
+  }, [cardsDraft, destacarDente, eventosDraft, modoMultidente, selectedTeeth]);
 
   /** Observação por procedimento (§03 do definitivo) — aplica a todo o grupo. */
   const atualizarObsGrupo = (idxs: number[], obs: string) => {
@@ -1043,6 +1072,27 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   }, [evolutions]);
 
 
+
+  /**
+   * R-109 — o que o odontograma PINTA: união do trilho legado com o lote. União, não troca:
+   * trocar faria a pintura da ficha legada sumir ao ligar o modo, e faria o lote deixar de ser
+   * visível assim que a faixa desliga o modo (ela desliga ao aplicar, mas a seleção continua —
+   * mesmo comportamento do Meu dia, onde `onde` segue pintado depois de aplicar).
+   *
+   * O anel de seleção é desenhado independente de `state`/`clinico` (C5/P13 do `Odontograma`),
+   * então continua aparecendo mesmo com o rascunho já cheio de eventos.
+   */
+  const dentesPintados = React.useMemo(
+    () => (dentesLote.length > 0 ? [...new Set([...selectedTeeth, ...dentesLote])] : selectedTeeth),
+    [selectedTeeth, dentesLote],
+  );
+
+  /** "✕ limpar" da faixa — esvazia a seleção e desliga o modo. Nunca desfaz o que já foi
+   *  lançado no rascunho (mesma regra do Meu dia, R-107d §3). */
+  const limparLote = React.useCallback(() => {
+    setDentesLote([]);
+    setModoMultidente(false);
+  }, []);
 
   const toggleArch = (archNum: number) => {
     setSelectedTeeth((prev) => {
@@ -1483,6 +1533,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     setIsPanelOpen(false);
     setEditingId(null);
     setSelectedTeeth([]);
+    limparLote(); // R-109 — seleção de lote não sobrevive ao fechamento do painel
     setSharedTeeth([]);    setSharedNotes(['']);
     setFormData({ dataAtendimento: hojeBRT(), type: "Evolução", observation: "", teethNotes: [], procedimentos: [], conduta: "", ortoManutencao: null });
     setEventosDraft([]);
@@ -1561,6 +1612,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     // faz upsert por id (R-01), não duplica nem renumera. Bug achado 23/07.
     setEventosDraft(evolution.eventos.map(eventoViewParaDraft));
     setSelectedTeeth(individualNotes.map((tn) => tn.tooth));
+    limparLote(); // R-109 — abrir outra ficha pra editar não herda o lote da anterior
     setIsPanelOpen(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -1579,6 +1631,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     setSharedTeeth([]);
     setSharedNotes(['']);
     setSelectedTeeth([]);
+    limparLote(); // R-109
     setEventosDraft([]);
     setAlertaNovoDetectado(null);
     setFormData({
@@ -1758,9 +1811,27 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                         filtro de responsável ativo na lista.
                       </p>
                     )}
+                    {/* R-109 — mesmo botão do Meu dia, mesma posição relativa: colado no
+                        odontograma. O toggle muda o que o CLIQUE no dente faz, então tem que
+                        estar no campo de visão de onde o clique acontece (R-107d, adendo). */}
+                    <div className="flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setModoMultidente((v) => !v)}
+                        aria-pressed={modoMultidente}
+                        className="rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
+                        style={{
+                          background: modoMultidente ? 'var(--color-teal)' : 'var(--color-surface-alt)',
+                          color: modoMultidente ? 'white' : 'var(--color-text-secondary)',
+                          borderColor: modoMultidente ? 'var(--color-teal)' : 'var(--color-border)',
+                        }}
+                      >
+                        {modoMultidente ? '✓ Modo multidente' : 'Modo multidente'}
+                      </button>
+                    </div>
                     <Odontograma
                       eventos={eventosDraft.length > 0 ? eventosDraft : undefined}
-                      selectedTeeth={selectedTeeth}
+                      selectedTeeth={dentesPintados}
                       sharedTeeth={sharedTeeth}
                       historicalTeeth={editingId ? historicalTeeth : new Set<number>()}
                       onToothToggle={abrirDenteEDestacarRegistro}
@@ -1811,12 +1882,25 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                       state={computeToothState(denteAberto, {
                         clinico: eventosDraft.length > 0,
                         sharedTeeth,
-                        selectedTeeth,
+                        selectedTeeth: dentesPintados,
                         historicalTeeth: editingId ? historicalTeeth : new Set<number>(),
                       })}
                     />
                   ) : null
                 }
+              />
+
+              {/* R-109 — a MESMA faixa do Meu dia (componente compartilhado, spec §2). Devolve
+                  null com menos de 2 dentes, então a regra de visibilidade do R-107d já vive
+                  dentro dela: nada a condicionar aqui. */}
+              <FaixaLote
+                dentes={dentesLote}
+                eventosDraft={eventosDraft}
+                onEventosDraftChange={setEventosDraft}
+                catalogoProcedimentos={catalogoProcedimentos ?? []}
+                dataPadrao={formData.dataAtendimento}
+                onLimpar={limparLote}
+                onModoMultidenteChange={setModoMultidente}
               />
               {/* R-21 Fase 2: a tabela de especialidade (endo/implante) NÃO abre mais aqui — agora
                   monta DENTRO da seção do dente na lista (tabelaContainer via renderSecoesPorDente).
