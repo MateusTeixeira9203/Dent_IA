@@ -153,9 +153,16 @@ mesmo problema com outro nome.
 | Diálogo | tela cheia, cabeçalho e ação fixos, miolo rola | centralizado, `max-height` com folga |
 | Financeiro | cards em 1 coluna | 3 colunas (já cabe) |
 | Prontuário | abas rolam horizontal com dica | como está |
-| Meu dia | campo mágico e espelho empilhados | lado a lado (já cabe) |
+| Meu dia | campo mágico e espelho empilhados | **empilhados também** — ver abaixo |
 
 ---
+
+> **Correção do §5 em 14/08 — o tablet do Meu dia também empilha.** A linha anterior dizia "lado
+> a lado (já cabe)", escrita a partir do inventário, que não acusou corte em 768px. Medindo as
+> colunas, o "já cabe" se desfaz: o grid é `minmax(0,1fr) 555px`, e em 753px isso dá **138px** pra
+> coluna "Nesta ficha" contra 555px do espelho. Não estoura porque `minmax(0,…)` deixa colapsar —
+> **mesmo falso-passa do Financeiro (§1.4)**: passa no teste de overflow e está quebrado.
+> O lado a lado volta em **`lg` (1024px)**, onde a lista fica com ~393px.
 
 ## 6. Referência visual
 
