@@ -89,6 +89,26 @@ inteira, ou digitando — sem que exista um segundo mecanismo de seleção compe
 >    catálogo pendente completo. Nada se perde, e não nasce UI que o artefato não mostra.
 > 4. **Linhas defasadas:** o trilho duplo está em `:1311` (não 1267) e o `CapturaLivreCard` em
 >    `:1705` (não 1661) — o R-107 entrou no meio.
+> 6. **A ordem do §2 está invertida, e o "trilho único" não é limpeza — é remoção de duas coisas
+>    vivas.** O §4.3 trata `selectedTeeth`/`teethNotes` como encanamento morto. Não são:
+>    - **Os chips "Região"** (Arcada sup./inf., Boca toda, Q1–Q4,
+>      [:1774](../../src/components/pacientes/FichasTab.tsx:1774)) escrevem **só** em
+>      `selectedTeeth`, como sentinela, e **não criam evento**. Tirar `selectedTeeth` da escrita
+>      apaga o recurso — é o mesmo sentinela `99` que a limpeza do G3 do R-108b encontrou.
+>    - **`teethNotes` na escrita é o que preserva texto de ficha legada na EDIÇÃO.** Não há mais
+>      UI pra digitar texto por dente (só nasce `['']`, que o save filtra); ele só carrega
+>      conteúdo quando se edita uma ficha antiga. Tirar da escrita faria a edição **apagar** o
+>      texto por dente que veio do banco.
+>
+>    **E a justificativa da ordem não se sustenta:** o §2 diz que portar o lote em cima do trilho
+>    velho é "construir no que vai ser demolido". Mas **o lote não toca `selectedTeeth`** — no Meu
+>    dia ele roda numa seleção própria (`onde`) e na ficha entra como prop controlada
+>    (`FaixaLoteProps.dentes`). São independentes.
+>
+>    **Proposta:** inverter — **lote/faixa primeiro** (é independente e entrega valor sozinho), e
+>    o trilho só morre depois que a Região tiver equivalente em evento. Duas decisões dele antes
+>    disso: (a) o que a Região vira — seleção que alimenta a faixa, como o lote? evento de nível
+>    arcada/quadrante? (b) editar ficha legada preserva o texto por dente, ou aceita perdê-lo?
 > 5. **O risco do §4.3 não existe.** A spec avisa que `derivarV2DosEventos` "pula evento com
 >    `dente == null`" e que por isso profilaxia poderia sumir de `procedimentos` ao trocar a
 >    fonte — é o medo que justifica o G4. **Falso:** o `procedimentos.push(rotulo)` está **fora**
