@@ -8,9 +8,21 @@
  * derivação, orçamento, PDF e progresso (que leem os campos v2) ficariam vazios numa ficha
  * lançada só por evento.
  */
-import { TIPO_LABEL, type OdontogramaEventoDraft } from '@/types/odontograma';
+import { TIPO_LABEL, type TipoRegistroOdontograma } from '@/types/odontograma';
 
-export function derivarV2DosEventos(eventos: OdontogramaEventoDraft[]): {
+/**
+ * R-108b — o parâmetro afrouxou pro subconjunto estrutural que a função de fato lê (tipo,
+ * observação, dente), em vez de exigir `OdontogramaEventoDraft` inteiro. `OdontogramaEventoDraft[]`
+ * continua atendendo sem mudança nenhuma nos chamadores; o roteamento da visita passa a poder
+ * re-derivar os campos legados direto das linhas do banco, sem um mapper novo só pra isso.
+ */
+export function derivarV2DosEventos(
+  eventos: readonly {
+    tipo: TipoRegistroOdontograma;
+    observacao?: string | null;
+    ancora: { dente?: number | null };
+  }[],
+): {
   dentes: number[];
   observacoes: Record<string, string>;
   procedimentos: string[];
