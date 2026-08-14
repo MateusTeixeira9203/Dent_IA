@@ -178,6 +178,22 @@ candidata), aí sim entra artefato, e só pra ela.
 
 ## 8. Gates de aceite
 
+> ### O que ele viu em 14/08
+>
+> Olhou "no geralzão" no navegador dele (o pane que eu dirijo seguia oculto, sem hidratar) e
+> **aprovou**. Isso cobre o que estava construído até aqui — a correção do `DialogContent` e a
+> Agenda — e vale como prova de que **nada regrediu** e de que as duas telas ficaram boas.
+>
+> **Não cobre**, e por isso os gates abaixo continuam abertos:
+> - **G4 e a metade dura do G3** — pedem tocar num campo com o teclado do celular subindo. Era
+>   exatamente o bug que motivou o item; olhar a tela parada não exercita.
+> - **O dropdown de busca de paciente** — risco que a própria correção criou (§4.2). É pequeno e
+>   fica escondido até alguém digitar um nome dentro do diálogo.
+> - **G6** — nem começou: a varredura de alvo de toque é trabalho ainda não feito.
+>
+> E o item **não está pronto**: Meu dia (224px), Prontuário (227px) e a densidade do Financeiro
+> seguem intocados.
+
 - [ ] **G1** — as 8 rotas em **375** com zero corte sem rolagem (descontado o falso positivo §1.5)
 - [ ] **G2** — as 8 rotas em **768**, idem
 - [ ] **G3** — todo diálogo em **375×500** (teclado): título, fechar e botão primário alcançáveis
