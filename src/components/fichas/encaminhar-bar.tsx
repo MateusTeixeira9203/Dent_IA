@@ -54,26 +54,26 @@ export function EncaminharBar({
       // fundo), pra não colidir. z-[60] é reserva pra telas baixas onde ainda encostem.
       className="fixed inset-x-0 bottom-[var(--dock-inset,0px)] z-[60] px-3 pb-3 pointer-events-none"
     >
-      <div className="pointer-events-auto mx-auto w-full max-w-3xl bg-surface border border-border rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.18)] px-3 py-2.5 flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="pointer-events-auto mx-auto w-full max-w-5xl bg-surface border border-border rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.18)] px-4 py-3.5 flex flex-col sm:flex-row sm:items-center gap-3">
         {/* Contador + selecionar tudo/limpar */}
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={onSair}
             aria-label="Sair do modo de encaminhar"
-            className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl text-text-secondary hover:text-text-primary hover:bg-surface-alt outline-none focus-visible:ring-2 focus-visible:ring-teal transition-colors"
+            className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-xl text-text-secondary hover:text-text-primary hover:bg-surface-alt outline-none focus-visible:ring-2 focus-visible:ring-teal transition-colors"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
-          <span className="text-sm font-bold text-text-primary tabular-nums whitespace-nowrap">
+          <span className="text-base font-bold text-text-primary tabular-nums whitespace-nowrap">
             {totalSelecionado} selecionado{totalSelecionado === 1 ? '' : 's'}
           </span>
           <button
             type="button"
             onClick={tudoMarcado ? onLimpar : onSelecionarTudo}
-            className="inline-flex items-center gap-1 min-h-[40px] px-2 text-[11px] font-bold text-teal-ink hover:bg-teal-pale rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-teal transition-colors"
+            className="inline-flex items-center gap-1.5 min-h-[48px] px-2.5 text-[13px] font-bold text-teal-ink hover:bg-teal-pale rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-teal transition-colors"
           >
-            {tudoMarcado ? <Square className="w-3.5 h-3.5" /> : <CheckSquare className="w-3.5 h-3.5" />}
+            {tudoMarcado ? <Square className="w-4 h-4" /> : <CheckSquare className="w-4 h-4" />}
             {tudoMarcado ? 'Limpar' : 'Selecionar tudo'}
           </button>
         </div>
@@ -81,11 +81,11 @@ export function EncaminharBar({
         {/* Destino — avatares (só o avatar do D foi absorvido, decisão #5) */}
         <div className="flex items-center gap-2 min-w-0 flex-1 sm:justify-center">
           {destinosDisponiveis.length === 0 ? (
-            <span className="text-xs text-text-secondary italic">Nenhum outro dentista na clínica</span>
+            <span className="text-sm text-text-secondary italic">Nenhum outro dentista na clínica</span>
           ) : (
             <>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-text-secondary shrink-0">Para</span>
-              <div className="flex items-center gap-1.5 overflow-x-auto">
+              <span className="text-[12px] font-bold uppercase tracking-widest text-text-secondary shrink-0">Para</span>
+              <div className="flex items-center gap-2 overflow-x-auto">
                 {destinosDisponiveis.map((d) => {
                   const ativo = d.id === destino;
                   return (
@@ -96,7 +96,7 @@ export function EncaminharBar({
                       title={d.especialidade ? `${d.nome} · ${d.especialidade}` : d.nome}
                       aria-pressed={ativo}
                       aria-label={`Encaminhar a ${d.nome}`}
-                      className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-[11px] font-bold border-2 outline-none focus-visible:ring-2 focus-visible:ring-teal transition-colors ${
+                      className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-[13px] font-bold border-2 outline-none focus-visible:ring-2 focus-visible:ring-teal transition-colors ${
                         ativo
                           ? 'bg-teal border-teal text-white'
                           : 'bg-surface-alt border-border text-text-secondary hover:border-teal hover:text-teal-ink'
@@ -108,7 +108,7 @@ export function EncaminharBar({
                 })}
               </div>
               {destinoNome && (
-                <span className="text-xs font-semibold text-text-primary truncate max-w-[120px] hidden md:inline">
+                <span className="text-sm font-semibold text-text-primary truncate max-w-[180px] hidden md:inline">
                   {destinoNome}
                 </span>
               )}
@@ -121,9 +121,9 @@ export function EncaminharBar({
           type="button"
           onClick={onConfirmar}
           disabled={!podeConfirmar}
-          className="shrink-0 inline-flex items-center justify-center gap-2 min-h-[40px] px-4 rounded-xl bg-teal text-white font-bold text-sm hover:bg-teal-lt transition-colors disabled:opacity-40 disabled:cursor-not-allowed outline-none focus-visible:ring-2 focus-visible:ring-teal"
+          className="shrink-0 inline-flex items-center justify-center gap-2 min-h-[48px] px-5 rounded-xl bg-teal text-white font-bold text-base hover:bg-teal-lt transition-colors disabled:opacity-40 disabled:cursor-not-allowed outline-none focus-visible:ring-2 focus-visible:ring-teal"
         >
-          <Forward className="w-4 h-4" />
+          <Forward className="w-5 h-5" />
           Encaminhar{totalSelecionado > 0 ? ` ${totalSelecionado}` : ''}
         </button>
       </div>
