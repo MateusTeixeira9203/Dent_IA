@@ -118,6 +118,29 @@ inteira, ou digitando — sem que exista um segundo mecanismo de seleção compe
 >    O G4 continua valendo como verificação, mas o trilho único é **menos arriscado** do que a
 >    spec supõe.
 
+> ### Emenda 14/08 (2) — dois desvios do §4.1/§4.2, decididos no código
+>
+> 1. **O toggle "Modo multidente" NÃO entrou no `<FaixaLote>`.** No Meu dia ele vive colado no
+>    cabeçalho do odontograma, longe da faixa — trazer pra dentro mudaria o layout daquela tela,
+>    e "o Meu dia não muda em nada" é invariante (§7). A faixa recebe só `onModoMultidenteChange`
+>    (precisa **desligar** o modo ao aplicar); quem desenha o botão é cada tela. Por isso
+>    `modoMultidente: boolean` saiu de `FaixaLoteProps`.
+> 2. **O que alimenta `dentes` na ficha é estado próprio (`dentesLote`), não `selectedTeeth`.**
+>    Reusar `selectedTeeth` — que era a hipótese inicial — está errado por três motivos, todos
+>    conferidos no código: (a) ele carrega **sentinela de região** 91–99 (`toggleArch`), e isso
+>    viraria evento ancorado no "dente 97", que o odontograma não desenha e o
+>    `derivarV2DosEventos` não emite; (b) editar ficha legada **pré-carrega** `selectedTeeth` com
+>    `dentes_afetados`, então a faixa nasceria cheia e um clique de chip lançaria procedimento em
+>    N dentes que ninguém selecionou; (c) `selectedTeeth` é fonte de escrita de `dentes_afetados`,
+>    então reusar juntaria de novo os dois trilhos exatamente onde este item quer separá-los.
+>    O modelo é o mesmo do Meu dia (`onde` + `modoMultidente`) — a mesma mecânica, não uma cópia.
+>    O odontograma pinta a **união** dos dois (trocar faria a pintura da ficha legada sumir ao
+>    ligar o modo, e o lote sumir quando a faixa desliga o modo depois de aplicar).
+>
+> **Consequência pro pedaço 1:** os dois trilhos coexistem sem brigar — provado ao vivo (chip Q1
+> continua marcando e **não** alimenta a faixa). A remoção do trilho velho segue dependendo só
+> das duas decisões dele (o que a Região vira; texto por dente na edição de ficha legada).
+
 ### 4.1 Arquivos
 
 | Arquivo | Muda |
@@ -193,24 +216,31 @@ A faixa de lote **não muda de aparência** em relação ao que já está em pro
 
 ## 7. Invariantes
 
-- [ ] Extração do lote pro módulo compartilhado é **byte-equivalente em comportamento** — o
-      Meu dia não muda em nada (os 8 gates do R-107d continuam passando)
-- [ ] Faixa só aparece com `dentes.length >= 2`
-- [ ] Nenhum chip de lote cria evento duplicado (guard do R-107d)
-- [ ] Restauração em lote sempre pede face antes
+- [x] Extração do lote pro módulo compartilhado é **byte-equivalente em comportamento** — o
+      Meu dia não muda em nada (os 8 gates do R-107d continuam passando) · 14/08, ao vivo
+- [x] Faixa só aparece com `dentes.length >= 2` · a regra vive dentro do componente
+- [x] Nenhum chip de lote cria evento duplicado (guard do R-107d) · 2º clique em "Canal" criou 0
+- [x] Restauração em lote sempre pede face antes · provado nas **duas** telas
 - [ ] Leitura de ficha antiga por `teethNotes` continua intacta
-- [ ] `derivarV2DosEventos` não muda de assinatura nem de comportamento
-- [ ] Nenhuma migration, nenhuma policy — item 100% de client/lib
+- [x] `derivarV2DosEventos` não muda de assinatura nem de comportamento
+- [x] Nenhuma migration, nenhuma policy — item 100% de client/lib
 
 ---
 
 ## 8. Gates de aceite
 
-- [ ] **G1** — Meu dia: os 8 gates do [R-107d §5](R-107d-lote-multidente.md) repassados após a
-      extração; nenhum regride
-- [ ] **G2** — ficha: 2+ dentes → faixa aparece; chip aplica nos N; contador de "Nesta
-      evolução" sobe pelo número certo
-- [ ] **G3** — ficha: "Restauração ▾" não cria nada até a face ser escolhida
+- [x] **G1** — Meu dia: os 8 gates do [R-107d §5](R-107d-lote-multidente.md) repassados após a
+      extração; nenhum regride · **14/08, localhost, Teste01.** Faixa renderiza igual · chip
+      "Canal" criou 1 evento por dente (16, 17) · 2º clique criou 0 (guard) · Restauração pediu
+      face e não criou nada antes da escolha · busca "zxqw" ofereceu *Lançar "zxqw" nos 2 dentes*
+      · "✕ limpar" esvaziou a seleção e o modo sem desfazer o lançado · modo desliga ao aplicar
+- [x] **G2** — ficha: 2+ dentes → faixa aparece; chip aplica nos N; contador de "Nesta
+      evolução" sobe pelo número certo · **14/08:** modo ligado, 24 e 25 selecionados **sem
+      abrir o painel do dente**, "Coroa total" → 2 registros. Com o modo desligado, clicar num
+      dente volta a abrir o perfil (26). Chip "Região" Q1 continua marcando e **não** alimenta a
+      faixa
+- [x] **G3** — ficha: "Restauração ▾" não cria nada até a face ser escolhida · **14/08:** faces
+      V M O D L com 0 registros; face O → "Restauração O · dente 34" e "· dente 35"
 - [ ] **G4** — ficha nova com **só** profilaxia (nível boca, `dente == null`): `procedimentos`
       gravado corretamente — a regressão que a troca de fonte pode causar (§4.3)
 - [ ] **G5** — digitar "canal 17" no campo mágico da ficha oferece o chip local **sem rede**
@@ -218,7 +248,7 @@ A faixa de lote **não muda de aparência** em relação ao que já está em pro
 - [ ] **G6** — `grep -n "selectedTeeth\|teethNotes" FichasTab.tsx` não devolve nenhuma
       ocorrência em caminho de **escrita**; as de leitura continuam
 - [ ] **G7** — ficha antiga só-texto (uma das 55) abre igual a antes
-- [ ] **G8** — typecheck + lint + `next build` limpos; zero erro de console
+- [x] **G8** — typecheck + lint + `next build` limpos; zero erro de console · 14/08
 
 ---
 
