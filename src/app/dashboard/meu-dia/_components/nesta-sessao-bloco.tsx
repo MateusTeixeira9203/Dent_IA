@@ -36,6 +36,11 @@ export interface NestaSessaoBlocoProps {
    *  qualquer id aqui é trabalho de ficha anterior sendo fechado hoje, não indicação nova
    *  desta ficha — ganha a legenda "de consulta anterior", mesmo card, mesma lista. */
   idsDeAntes: ReadonlySet<string>;
+  /** R-108b (artefato bloco 7) — `eventoId → nome do tratamento`. A legenda genérica "de
+   *  consulta anterior" vira "→ Reabilitação inf. direita": a pendência passa a dizer PRA ONDE
+   *  ela volta, que é a pergunta que a tela deixa de fazer. Fica no fallback antigo quando o
+   *  evento não tem tratamento resolvível (ficha só-texto). */
+  nomeTratamentoPorEvento: Readonly<Record<string, string>>;
 }
 
 /** `OdontogramaEventoDraft` é snake_case (`grupo_id`/`realizado_em`) — `EventoParaCard` não
@@ -62,7 +67,7 @@ function paraCard(e: OdontogramaEventoDraft): EventoParaCard {
 
 const TEM_DETALHE = new Set(['endodontia', 'implante', 'exame_periodontal']);
 
-export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, onAbrirDenteGrande, idsDeAntes }: NestaSessaoBlocoProps) {
+export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, onAbrirDenteGrande, idsDeAntes, nomeTratamentoPorEvento }: NestaSessaoBlocoProps) {
   function toggleStatus(ids: string[]) {
     onEventosDraftChange(eventosDraft.map((e) => (ids.includes(e.id)
       ? {
@@ -125,6 +130,10 @@ export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, on
           // R-84 §4 — grupo misto (ex: ponte que ganhou elemento novo hoje) conta como "de
           // antes" pra marca visual: QUALQUER id do card já existia no banco.
           const deAntes = ids.some((id) => idsDeAntes.has(id));
+          // Grupo (ponte etc.) nasce inteiro numa ficha só — o 1º id resolvido basta.
+          const tratamento = deAntes
+            ? ids.map((id) => nomeTratamentoPorEvento[id]).find(Boolean)
+            : undefined;
           return (
             <div key={key} className="flex flex-col gap-0.5">
               <RegistroCard
@@ -137,7 +146,10 @@ export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, on
                 onAbrirGrande={temDetalhe ? () => onAbrirDenteGrande(dente, ids[0]) : undefined}
               />
               {deAntes && (
-                <p className="px-1 text-[11px] text-text-secondary">de consulta anterior</p>
+                // Artefato bloco 7: DM Mono 11.5px, --tx3, 2px abaixo do card.
+                <p className="mt-0.5 px-1 font-mono text-[11.5px] text-text-secondary">
+                  {tratamento ? `→ ${tratamento}` : 'de consulta anterior'}
+                </p>
               )}
             </div>
           );

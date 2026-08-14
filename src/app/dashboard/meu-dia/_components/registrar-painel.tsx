@@ -131,6 +131,11 @@ interface RegistrarPainelProps {
    *  já criou a ficha desta consulta (pra não deixar o orçamento com `ficha_id=null`),
    *  `handleSalvar` EDITA essa ficha em vez de criar uma 2ª. */
   fichaRascunhoId: string | null;
+  /** R-108b — destino dos eventos que NASCEM nesta sessão, escolhido no seletor "o novo vai
+   *  para" (dono é `meu-dia-client`, mesmo padrão de `eventosDraft`). `null` = tratamento novo.
+   *  Pendência não passa por aqui: volta pra ficha onde foi planejada, sem pergunta (spec §2).
+   *  Ignorado quando há `fichaRascunhoId` — o R-85 vence o roteamento. */
+  destinoNovos: string | null;
   /** C2 (P7) — avisa o pai que a visita salvou (odontograma incluso, ver `eventosFalharam`
    *  abaixo). Nunca chamado enquanto o odontograma não gravou (I4). */
   onSalvo: () => void;
@@ -205,6 +210,7 @@ export function useRegistrarPainel({
   textoVisita, onTextoVisitaChange: setTextoVisita,
   temFichaHoje,
   fichaRascunhoId,
+  destinoNovos,
   onSalvo,
   anexarTexto,
   orto,
@@ -615,6 +621,9 @@ export function useRegistrarPainel({
         // finalizarAtendimento omitido (default true) — É este clique que fecha o atendimento.
         fichaId: fichaRascunhoId ?? undefined,
         pacienteId, agendamentoId, textoVisita, eventosDraft, alertaNovo, ortoManutencao: ortoValor,
+        // R-108b — só governa o que NASCEU nesta sessão. A pendência concluída volta pra ficha
+        // onde foi planejada sozinha, decidida no servidor pelo `ficha_id` que ela já tem.
+        destinoNovos: { fichaId: destinoNovos },
       });
     } catch {
       resultado = { ok: false, error: 'Falha de conexão. Tente novamente.' };

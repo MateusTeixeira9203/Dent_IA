@@ -67,7 +67,24 @@ import { AnexarDocumentosBloco } from './anexar-documentos-bloco';
 import { AFazerBloco } from './a-fazer-bloco';
 import { NestaSessaoBloco } from './nesta-sessao-bloco';
 import { FaixaGavetas, type GavetaId } from './faixa-gavetas';
+import { ondeLabel } from './meu-dia-format';
 import { useRegistrarPainel, pendenciaParaDraft } from './registrar-painel';
+
+/** R-108b — rótulo do procedimento novo no eyebrow do seletor ("Restauração 26", artefato
+ *  bloco 8). Dente entra como número puro, do jeito que o artefato mostra; âncora de região
+ *  cai no `ondeLabel` que o resto do Meu dia já usa; nível-boca fica só com o tipo. */
+function rotuloNovo(e: OdontogramaEventoDraft): string {
+  const label = TIPO_LABEL[e.tipo];
+  if (e.ancora.dente != null) return `${label} ${e.ancora.dente}`;
+  if (e.ancora.arcada != null || e.ancora.quadrante != null) {
+    return `${label} · ${ondeLabel({
+      dente: null,
+      arcada: e.ancora.arcada ?? null,
+      quadrante: e.ancora.quadrante ?? null,
+    })}`;
+  }
+  return label;
+}
 import { DenteHistoricoCard } from './dente-historico-card';
 import { VisitaLeituraCard } from './visita-leitura-card';
 import { ToothDetailPanel } from '@/components/odontograma/ToothDetailPanel';
@@ -76,7 +93,7 @@ import { NovoOrcamentoModal } from '@/app/dashboard/pacientes/[id]/_components/m
 import { hojeBRT } from '@/lib/hora-brt';
 import { responsavelPassaFiltro, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
 import type { MeuDiaData, MeuDiaPendencia, MeuDiaVisita } from '@/server/dashboard/get-meu-dia';
-import type { OdontogramaEventoDraft } from '@/types/odontograma';
+import { TIPO_LABEL, type OdontogramaEventoDraft } from '@/types/odontograma';
 import type { EventoOdontogramaParaOrc } from '@/app/dashboard/pacientes/[id]/_components/types';
 import type { GrupoAberto } from '@/lib/odontograma/grupos-abertos';
 
@@ -200,10 +217,16 @@ export function MeuDiaClient({
   // sempre visível, gaveta é sob demanda, T5/orçamento vertical).
   const [gavetaAberta, setGavetaAberta] = useState<GavetaId | null>(null);
 
+  /** R-108b — destino dos eventos que NASCEM nesta sessão (spec §4). `undefined` = o dentista
+   *  ainda não tocou no seletor, então vale o pré-marcado (1º tratamento aberto — "caso comum
+   *  segue zero clique", spec §2). `null` = "+ Novo tratamento". */
+  const [destinoEscolhido, setDestinoEscolhido] = useState<string | null | undefined>(undefined);
+
   const [idAoResetar, setIdAoResetar] = useState(selecionadoId);
   if (selecionadoId !== idAoResetar) {
     setIdAoResetar(selecionadoId);
     setEventosDraft([]);
+    setDestinoEscolhido(undefined); // R-108b — tratamento aberto é do paciente anterior
     setFichaRascunhoId(null); // R-85 — ficha do orçamento antecipado é do paciente anterior
     setDenteAberto(null);
     setDetalheEspecialidadeAberto(false); // R-63 — paciente novo não herda tabela aberta do anterior
@@ -236,6 +259,19 @@ export function MeuDiaClient({
     () => new Set((contexto?.boca ?? []).map((b) => b.id)),
     [contexto?.boca],
   );
+
+  // R-108b — o seletor "o novo vai para" (artefato bloco 8). Só existe quando há ambiguidade
+  // real: nasceu procedimento novo E há tratamento aberto pra absorvê-lo. Observação dele:
+  // "quando já tiver todos os em aberto fechado, não vai precisar do trigger".
+  const tratamentosAbertos = contexto?.tratamentosAbertos ?? [];
+  const eventosNovosDaSessao = eventosDraft.filter((e) => !idsDeAntes.has(e.id));
+  // R-85 vence o roteamento (invariante §7): com a ficha do orçamento antecipado já criada, o
+  // destino está decidido e perguntar seria mentira — o `fichaId` explícito ganha de qualquer
+  // escolha feita aqui.
+  const mostraSeletor =
+    fichaRascunhoId == null && eventosNovosDaSessao.length > 0 && tratamentosAbertos.length > 0;
+  const destinoNovos =
+    destinoEscolhido !== undefined ? destinoEscolhido : (tratamentosAbertos[0]?.fichaId ?? null);
 
   // R-46h — picker de orçamento (Histórico por-visita + rodapé do Registrar). Meu dia é
   // dentista-only (page.tsx redireciona secretaria): isSecretaria sempre false,
@@ -273,6 +309,7 @@ export function MeuDiaClient({
     onTextoVisitaChange: setTextoVisita,
     temFichaHoje: slotSelecionado?.temFichaHoje ?? false,
     fichaRascunhoId,
+    destinoNovos,
     onSalvo: handleSalvo,
     anexarTexto,
     orto: contexto?.orto ?? null,
@@ -590,7 +627,59 @@ export function MeuDiaClient({
                 onEventosDraftChange={setEventosDraft}
                 onAbrirDenteGrande={abrirDenteGrande}
                 idsDeAntes={idsDeAntes}
+                nomeTratamentoPorEvento={contexto?.nomeTratamentoPorEvento ?? {}}
               />
+
+              {/* R-108b — seletor "o novo vai para" (artefato bloco 8). Geometria portada por
+                  extração do artefato, não medida no olho: .drop mt 9px / p 7px / borda 0.8px
+                  --teal / raio 10px; opção 12px, p 7px 9px, raio 7px; ativa em --teal-pale +
+                  --teal-ink 700 (o artefato usa teal-ink no light e teal-lt no dark — é o par
+                  que `teal-ink` já resolve sozinho); "+ Novo tratamento" separado por borda
+                  superior, mt 4px, p 10px 9px 7px, --tx2.
+
+                  Só aparece com ambiguidade real, e os CONCLUÍDOS não entram nesta escolha —
+                  eles voltam pra ficha onde foram planejados, sempre (spec §2). */}
+              {mostraSeletor && (
+                <div className="mt-[9px] rounded-[10px] border-[0.8px] border-teal p-[7px]">
+                  <p className="px-[9px] pb-1.5 pt-[3px] text-[10px] font-extrabold uppercase tracking-[1.6px] text-text-secondary">
+                    {eventosNovosDaSessao.length === 1
+                      ? `O novo (${rotuloNovo(eventosNovosDaSessao[0])}) vai para`
+                      : `Os ${eventosNovosDaSessao.length} novos vão para`}
+                  </p>
+                  {tratamentosAbertos.map((t) => (
+                    <button
+                      key={t.fichaId}
+                      type="button"
+                      aria-pressed={destinoNovos === t.fichaId}
+                      onClick={() => setDestinoEscolhido(t.fichaId)}
+                      className={`flex w-full items-center justify-between gap-[9px] rounded-[7px] px-[9px] py-[7px] text-left text-[12px] transition-colors ${
+                        destinoNovos === t.fichaId
+                          ? 'bg-teal-pale font-bold text-teal-ink'
+                          : 'text-foreground hover:bg-surface-alt'
+                      }`}
+                    >
+                      <span className="min-w-0 truncate">{t.nome}</span>
+                      <span className="shrink-0 font-mono">{t.concluidos} de {t.totalProcedimentos}</span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    aria-pressed={destinoNovos === null}
+                    onClick={() => setDestinoEscolhido(null)}
+                    className={`mt-1 flex w-full items-center justify-between gap-[9px] rounded-[7px] border-t-[0.8px] border-border px-[9px] pb-[7px] pt-[10px] text-left text-[12px] transition-colors ${
+                      destinoNovos === null
+                        ? 'bg-teal-pale font-bold text-teal-ink'
+                        : 'text-text-secondary hover:bg-surface-alt'
+                    }`}
+                  >
+                    <span className="min-w-0 truncate">+ Novo tratamento</span>
+                    {/* Medido a 820px (card de 190px): sem `truncate` aqui o rótulo estourava
+                        o card em 32px. A coluna é `minmax(0,1fr)` ao lado de um espelho fixo
+                        de 555px, então ela encolhe de verdade em tela pequena. */}
+                    <span className="shrink truncate font-mono">ficha à parte</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Ocupante único da direita (§3.2), 3 níveis (F2, 08/08): sem dente → o que

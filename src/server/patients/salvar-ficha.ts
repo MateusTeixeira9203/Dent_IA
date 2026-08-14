@@ -3,8 +3,14 @@
 import { z } from 'zod';
 import { requireClinicContext } from '@/server/auth/clinic';
 import { revalidatePath } from 'next/cache';
-import { inserirNotificacao } from '@/lib/notificacoes';
 import { registrarLog } from '@/lib/activity-log';
+// R-108b — as duas saíram DESTE arquivo pra módulos puros: `montarRowsEventos` porque o
+// roteamento da visita precisa dela (3ª cópia era o bug silencioso da 137 esperando acontecer),
+// e `finalizarAtendimentoSeAplicavel` porque fechar o atendimento deixou de depender de existir
+// ficha nova (visita que só conclui pendência não cria nenhuma).
+import { montarRowsEventos } from '@/lib/odontograma/montar-rows-eventos';
+import { statusDoTratamento } from '@/lib/ficha/status-tratamento';
+import { finalizarAtendimentoSeAplicavel } from '@/server/patients/finalizar-atendimento';
 import { EVENTS, ENTITY_TYPES } from '@/lib/events';
 import { DENTES_FDI } from '@/lib/odonto-dictionary';
 import {
@@ -94,94 +100,29 @@ const salvarFichaSchema = z.object({
 });
 
 /**
- * Monta as linhas de `odontograma_eventos` — mesma lógica que
- * `src/server/patients/registro-actions.ts:montarRowsEventos` (movido de `app/consulta/` no
- * R-72). Duplicada aqui em vez de importada porque sua função não é exportada — a Fase 2
- * desta migração remove o caminho antigo, momento em que a duplicação (não a função)
- * desaparece — a próxima leitura desta nota confirma se já foi feito.
+ * R-108b — `fichas.status` é o estado do TRATAMENTO (R-108 §2), então sai do CONTEÚDO e não da
+ * origem: sobrou procedimento `indicado`, o tratamento está aberto; saiu tudo `realizado`, ele
+ * fechou. Antes vinha de `origem`, e era por isso que **71 de 71** fichas do Meu dia nasciam
+ * `concluida` (conferido em produção 13/08) — nenhum tratamento jamais abria pela entrada
+ * principal do produto, e o seletor "o novo vai para" nunca teria o que oferecer.
+ *
+ * Ficha sem evento nenhum não tem o que derivar e mantém a regra antiga — é a ficha só-texto
+ * da ficha rápida, que nunca foi um tratamento.
  */
-function montarRowsEventos(
-  eventos: OdontogramaEventoDraft[],
-  ctx: { clinicId: string; pacienteId: string; dentistaId: string; fichaId: string },
-) {
-  const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-  return eventos.map((ev) => ({
-    id:             ev.id,
-    clinica_id:     ctx.clinicId,
-    paciente_id:    ctx.pacienteId,
-    dentista_id:    ctx.dentistaId,
-    ficha_id:       ctx.fichaId,
-    grupo_id:       ev.grupo_id,
-    tipo:           ev.tipo,
-    status:         ev.status,
-    origem:         ev.origem,
-    // R-101 — sem isso, todo save reseta silenciosamente pro default da RPC (sessao_atual),
-    // mesmo que o dentista tenha marcado "próxima seção" na tela. É o R1 da spec.
-    momento_planejado: ev.momento_planejado,
-    nivel:          ev.ancora.nivel,
-    arcada:         ev.ancora.arcada ?? null,
-    quadrante:      ev.ancora.quadrante ?? null,
-    dente:          ev.ancora.dente ?? null,
-    faces:          ev.ancora.faces ?? [],
-    papel_no_grupo: ev.papel_no_grupo,
-    observacao:     ev.observacao || null,
-    detalhe:        ev.detalhe ?? null,
-    realizado_em:
-      ev.status === 'realizado'
-        ? (ev.realizado_em ?? (ev.origem === 'clinica' ? hoje : null))
-        : null,
-  }));
-}
-
-/**
- * R-85 — side-effects de FIM de consulta, extraídos pra rodar tanto no ramo de criação quanto
- * no de edição (antes só o de criação alcançava, porque `salvarVisitaMeuDia` nunca editava —
- * sempre criava fresh). Fecha o agendamento e avisa a secretária SÓ quando `finalizarAtendimento`
- * não é `false` — quem grava a ficha no meio da consulta (orçamento gerado antes de salvar)
- * passa `false` e chama de novo, mais tarde, pra rodar isto de verdade.
- */
-async function finalizarAtendimentoSeAplicavel(
-  supabase: Awaited<ReturnType<typeof requireClinicContext>>['supabase'],
-  ctx: {
-    clinicId: string;
-    dentistaId: string;
-    pacienteId: string;
-    fichaId: string;
-    origem: OrigemFicha;
-    agendamentoId?: string;
-    finalizarAtendimento?: boolean;
-  },
-) {
-  if (ctx.finalizarAtendimento === false) return;
-  if (ctx.origem !== 'modo_consulta' || !ctx.agendamentoId) return;
-
-  await supabase
-    .from('agendamentos')
-    .update({ status: 'completed' })
-    .eq('id', ctx.agendamentoId)
-    .eq('clinica_id', ctx.clinicId);
-
-  const { data: paciente } = await supabase
-    .from('pacientes')
-    .select('nome')
-    .eq('id', ctx.pacienteId)
-    .maybeSingle<{ nome: string }>();
-
-  await inserirNotificacao(supabase, {
-    clinicaId:    ctx.clinicId,
-    paraRole:     'secretaria',
-    deDentistaId: ctx.dentistaId,
-    tipo:         'consulta_finalizada',
-    titulo:       `Consulta finalizada — ${paciente?.nome ?? 'Paciente'}`,
-    mensagem:     'A consulta foi encerrada pelo dentista.',
-    href:         '/dashboard/agendamentos',
-  });
+function statusDoConteudo(
+  origem: OrigemFicha,
+  eventos: OdontogramaEventoDraft[] | undefined,
+): 'aberta' | 'concluida' {
+  // R-46c (D6) — importada é registro histórico transcrito, nunca trabalho em aberto.
+  if (origem === 'importado') return 'concluida';
+  if (!eventos || eventos.length === 0) return origem === 'modo_consulta' ? 'concluida' : 'aberta';
+  return statusDoTratamento(eventos);
 }
 
 /**
  * salvarFicha — cria (sem fichaId) ou edita (com fichaId) o documento-ficha. `status` e
- * `origem` nunca vêm do input: `status` é derivado de `origem` no servidor (modo_consulta →
- * concluida, manual → aberta) e `origem` não muda depois de criada (update não a aceita).
+ * `origem` nunca vêm do input: `status` é derivado do conteúdo no servidor
+ * (`statusDoConteudo`) e `origem` não muda depois de criada (update não a aceita).
  * Update de ficha assinada é rejeitado (`ficha_assinada`) — mesma classe de proteção que a
  * RPC 107 já dá a `odontograma_eventos`.
  */
@@ -233,6 +174,14 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
         // `?? null` sempre — a ficha rápida nunca mandava a chave, então reeditar por ela
         // uma ficha que tinha alerta real (ex.: vindo do modo consulta) apagava o alerta.
         ...(data.alertaNovo !== undefined && { alerta_novo: data.alertaNovo }),
+        // R-108b — o estado do tratamento acompanha o conteúdo também na edição: sem isto, a
+        // ficha nascida com uma indicação continuaria `aberta` para sempre depois que o
+        // dentista marcasse tudo como feito. Só quando o payload traz os eventos — chamador
+        // que não manda `odontogramaEventos` não está dizendo nada sobre o plano, e o status
+        // fica como está.
+        ...(data.odontogramaEventos !== undefined && {
+          status: statusDoConteudo(data.origem, data.odontogramaEventos as OdontogramaEventoDraft[]),
+        }),
         orto_manutencao:     data.ortoManutencao ?? null,
         updated_at:          new Date().toISOString(),
       })
@@ -294,7 +243,7 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
     // false) e o Salvar de verdade, depois, EDITAR essa mesma ficha e só então fechar/avisar.
     if (resultado.ok) {
       await finalizarAtendimentoSeAplicavel(supabase, {
-        clinicId, dentistaId, pacienteId: data.pacienteId, fichaId: data.fichaId as string,
+        clinicId, dentistaId, pacienteId: data.pacienteId,
         origem: data.origem, agendamentoId: data.agendamentoId, finalizarAtendimento: data.finalizarAtendimento,
       });
     }
@@ -302,9 +251,8 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
     return resultado;
   }
 
-  // Create — status derivado da origem, nunca do input. R-46c (D6): 'importado' também
-  // fecha na hora — é registro histórico, não trabalho em aberto.
-  const status = data.origem === 'modo_consulta' || data.origem === 'importado' ? 'concluida' : 'aberta';
+  // Create — status derivado do CONTEÚDO (R-108b), nunca do input.
+  const status = statusDoConteudo(data.origem, data.odontogramaEventos as OdontogramaEventoDraft[] | undefined);
 
   const { data: nova, error } = await supabase
     .from('fichas')
@@ -371,7 +319,7 @@ export async function salvarFicha(input: SalvarFichaInput): Promise<SalvarFichaR
   // agendamento nem avisar a secretária no meio da consulta.
   if (resultado.ok) {
     await finalizarAtendimentoSeAplicavel(supabase, {
-      clinicId, dentistaId, pacienteId: data.pacienteId, fichaId,
+      clinicId, dentistaId, pacienteId: data.pacienteId,
       origem: data.origem, agendamentoId: data.agendamentoId, finalizarAtendimento: data.finalizarAtendimento,
     });
   }
@@ -410,6 +358,10 @@ async function finalizarEventos(
     p_clinica_id:  ctx.clinicId,
     p_paciente_id: ctx.pacienteId,
     p_eventos:     rows,
+    // R-108b (migration 142) — explícito, não pelo default: aqui quem chama é dono do conteúdo
+    // INTEIRO da ficha (é a ficha da sessão), então card removido da tela continua removendo o
+    // evento. O roteamento de pendência, que grava subconjunto em ficha alheia, passa `false`.
+    p_sincronizar: true,
   });
 
   if (error) {

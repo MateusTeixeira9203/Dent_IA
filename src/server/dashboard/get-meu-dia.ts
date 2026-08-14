@@ -4,7 +4,9 @@
 import { createClient } from '@/lib/supabase/server';
 import { hojeBRT, inicioDoDiaBRT, fimDoDiaBRT } from '@/lib/hora-brt';
 import { calcularIdade } from '@/lib/paciente-form-helpers';
+import { nomeTratamentoDerivado } from '@/lib/ficha/nome-tratamento';
 import type { AgendamentoStatus } from '@/types/database';
+import type { TratamentoAberto } from '@/types/ficha';
 import type {
   Arcada, QuadranteFDI, NivelAncora, FaceDental, OrigemRegistro, PapelNoGrupo,
   TipoRegistroOdontograma, OrtoManutencaoInfo, StatusRegistro, OdontogramaEventoDraft,
@@ -161,6 +163,21 @@ export interface MeuDiaContexto {
   /** C0 — substitui `ultimaVisita`: histórico inteiro (`fichasRecentes`), não só a 1ª. */
   visitas: MeuDiaVisita[];
   pendencias: MeuDiaPendencia[];
+  /**
+   * R-108b — tratamentos `aberta` DESTE dentista, pro seletor "o novo vai para". Só do
+   * dentista logado de propósito: a leitura de ficha é compartilhada na clínica (migration
+   * 099) mas a escrita continua siloada, então oferecer a ficha de um colega como destino
+   * seria oferecer uma gravação que a RLS vai recusar (spec §5, "Sem permissão").
+   * Derivado dos MESMOS eventos e fichas já buscados — zero query nova.
+   */
+  tratamentosAbertos: TratamentoAberto[];
+  /**
+   * R-108b — `eventoId → nome do tratamento` de TODAS as fichas do paciente (não só as
+   * abertas, e não só as deste dentista): é o rótulo "→ Reabilitação inf. direita" que a
+   * pendência ganha na lista "Nesta ficha" (artefato bloco 7), e pendência pode ter nascido
+   * numa ficha já concluída ou de um colega.
+   */
+  nomeTratamentoPorEvento: Record<string, string>;
   orto: MeuDiaOrto | null;
   /** R-46g (D9) — mesma fonte e parse do chip de alerta do hero (`next-appointment-hero.tsx`
    *  `alertas`): `pacientes.observacoes` quebrada por linha. Não é a derivação mais cara do
@@ -277,6 +294,10 @@ type FichaRow = {
   dentista: { nome: string } | null;
   /** R-46c — dispara o rótulo "histórico importado" e o resumo por trecho colado. */
   origem: 'modo_consulta' | 'manual' | 'importado';
+  /** R-108 — o estado do tratamento (a ficha É o tratamento, 1↔1). */
+  status: 'aberta' | 'concluida';
+  /** R-108 — nome do tratamento; `null` cai no derivado dos eventos (R-108 §4.3). */
+  nome: string | null;
 };
 
 type EventoRow = {
@@ -388,7 +409,9 @@ export async function getMeuDiaData({
     // por paciente, que o Postgrest não faz nativamente.
     supabase
       .from('fichas')
-      .select('id, paciente_id, data_atendimento, queixa_principal, procedimentos, anotacoes, orto_manutencao, origem, dentista_id, dentista:dentistas(nome)')
+      // R-108b — `status` e `nome` entram nesta MESMA query (nenhuma solta, spec §4): são o
+      // que o seletor "o novo vai para" precisa pra listar os tratamentos abertos.
+      .select('id, paciente_id, data_atendimento, queixa_principal, procedimentos, anotacoes, orto_manutencao, origem, status, nome, dentista_id, dentista:dentistas(nome)')
       .eq('clinica_id', clinicId)
       .in('paciente_id', pacienteIds)
       .order('data_atendimento', { ascending: false })
@@ -642,9 +665,41 @@ export async function getMeuDiaData({
       break;
     }
 
+    // R-108b — uma passada só resolve as duas coisas que o roteamento precisa mostrar na tela:
+    // o nome do tratamento de cada evento (rótulo "→ Reabilitação inf. direita" na pendência,
+    // artefato bloco 7) e a lista de tratamentos abertos que o seletor oferece (bloco 8).
+    // Fichas sem nenhum evento ficam de fora das duas: não há tratamento em curso pra absorver
+    // procedimento (são fichas só-texto), e o nome derivado não teria de onde sair (R-108 §4.3
+    // deriva de evento).
+    const tratamentosAbertos: TratamentoAberto[] = [];
+    const nomeTratamentoPorEvento: Record<string, string> = {};
+
+    for (const f of fichas) {
+      const eventosDaFicha = eventosDoPaciente.filter((e) => e.ficha_id === f.id);
+      if (eventosDaFicha.length === 0) continue;
+
+      const nome = f.nome ?? nomeTratamentoDerivado(eventosDaFicha.map(eventoParaBoca));
+      for (const e of eventosDaFicha) nomeTratamentoPorEvento[e.id] = nome;
+
+      // Só do dentista logado: a leitura de ficha é compartilhada na clínica (migration 099)
+      // mas a escrita continua siloada — oferecer a ficha de um colega como destino seria
+      // oferecer uma gravação que a RLS vai recusar depois (spec §5, "Sem permissão").
+      if (f.status === 'aberta' && f.dentista_id === dentistaId) {
+        tratamentosAbertos.push({
+          fichaId: f.id,
+          nome,
+          dentes: [...new Set(eventosDaFicha.map((e) => e.dente).filter((d): d is number => d != null))],
+          totalProcedimentos: eventosDaFicha.length,
+          concluidos: eventosDaFicha.filter((e) => e.status === 'realizado').length,
+        });
+      }
+    }
+
     contextoPorPaciente[pid] = {
       visitas,
       pendencias: pendenciasPorPaciente.get(pid) ?? [],
+      tratamentosAbertos,
+      nomeTratamentoPorEvento,
       orto,
       alertas: parseAlertas(observacoesPorPaciente.get(pid) ?? null),
       // R-61 — todos os eventos do paciente (os 2 status, exodontia/esfoliação realizada
