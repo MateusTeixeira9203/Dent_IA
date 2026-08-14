@@ -1,55 +1,51 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-08-13 15:05 · sessão #40
-> **Item ativo:** R-108 (+ R-108b, R-109 aprovadas, sem código ainda)
+> **ESTADO** · atualizado 2026-08-13 21:30 · sessão #41
+> **Item ativo:** R-108b (no ar, não verificado por inteiro)
 
 ## Agora
 
-**R-108 Fatia A+B — codado, gates verificados ao vivo por ele, nada commitado.**
+**R-108b no ar desde hoje** — a visita passou a rotear. Pendência concluída volta pra ficha onde
+foi planejada; só o que nasce na sessão escolhe destino, e o seletor nasce pré-marcado. O bug de
+origem do épico (endodontia de 12/08 presa numa ficha de 26/07) está fechado.
 
-- Migration 141 no ar: `fichas.nome` + tabela `ficha_evolucoes` (RLS = padrão
-  `planejamento_secoes`) + backfill 174/174, 0 ficha tocada.
-- Ficha com evento ganha cabeçalho (nome do tratamento + progresso) + timeline "Evoluções —
-  uma por visita". Ficha legada (sem evento) continua exatamente como sempre foi.
-- **Feito:** G1, G2, G4, G5, G6, G7, G8, G9, G10, G11 — G5/G7/G8/G9 confirmados ao vivo por
-  ele (light e dark, paciente "tes"/"teste" em Teste01). Nome derivado com 8/8 testes.
-- **Falta:** G3 (RLS 2 contas) — represado, mesma fila do G3 do R-103b/c. Commit e push —
-  ele pediu pra segurar os dois até terminar ficha+Meu dia.
+Junto subiu o **`fichas.status` derivado do conteúdo** — sem isso o item não funcionava: 71 de 71
+fichas do Meu dia nasciam `concluida`, então nenhum tratamento abria pela entrada principal e o
+seletor nunca teria o que oferecer.
 
-**R-108b (roteamento da visita) e R-109 (registro na ficha) — specs aprovadas por ele nesta
-sessão, zero código ainda.** R-108b é quem mata o bug de origem que abriu esta discussão
-inteira: evento de procedimento fica preso na ficha onde foi *planejado*, não na ficha da
-visita que o concluiu (achado real, 12/08: endodontia presa numa ficha de 26/07, 17 dias de
-distância). **Esse bug continua no ar** — a Fatia A+B do R-108 não o resolve, só monta o
-modelo em cima do qual o R-108b vai rotear.
+- **Provado ao vivo na Teste01** (dado apagado depois): G4 (os concluídos permanecem na origem, só
+  o novo vai pra ficha nova), G6, G11 (não-destruição, RPC e tela), G12 (1 notificação por visita
+  mesmo alcançando 2 fichas), G13 (nasce aberta, fecha sozinha), G10.
+- **Não rodou:** **G3 — "absorver"** num tratamento aberto já existente. É o único caminho de
+  escrita que subiu sem ser exercido. Usa a mesma função já provada 2x com pendência, então o
+  risco é baixo — mas é onde olhar primeiro se algo quebrar. Também de fora: G7 (ficha assinada),
+  G9 (R-85 não regride), G8 (2 contas).
+- **Barra de encaminhar maior** (pontual): 🟡 no ar **sem eu ter visto na tela** — só typecheck e
+  lint. Conferir em Prontuário → ficha com procedimento planejado → botão Encaminhar.
 
-**Decisão dele no fechamento:** retomar o R-108b **em Opus** na próxima sessão — é a única
-fatia do épico que muda rota de escrita com paciente real (a spec já marcava isso: "Opus,
-não descer pra Sonnet"). R-109 pode ir em Sonnet, é independente e mais mecânico (porta
-lote multidente/campo mágico já testados no Meu dia).
-
-**Achado a não esquecer:** o backfill da migration 141 rodou em todas as 174 fichas do banco,
-incluindo as 124 da Clindent (clínica real da família, só-leitura na minha memória) — é
-INSERT aditivo, zero UPDATE/DELETE no dado deles, mas eu não separei o escopo por clínica
-antes de rodar. Avisei ele, sem reação — registrado aqui, não silenciado.
+**Push feito:** 8 commits, `416bf2f..eac3b75`. A migration 142 já estava aplicada desde a tarde,
+então o push fechou a assimetria entre schema e código em produção.
 
 ## Travado
 
 | O quê | Trava o quê | Hipótese / próximo passo |
 |---|---|---|
-| G3 do R-108 sem 2 contas | Fechar R-108 como ✅ | Mesma fila do G3 do R-103b/c |
-| G3 do R-103b/c sem dado nem conta pra testar | Fechar R-103b/c como ✅ | Ele recusou seed sintético — espera dado real |
-| Posição do "Modo multidente" (R-107d §9) | Fechar R-107d de vez | Ele quer opinião de dentistas reais — 3 opções documentadas, é só aplicar quando decidir |
-| Preço novo não fechado (herdado do R-92) | Retomar o R-92 | `lib/planos.ts` é fonte única — trocar o número é barato quando ele decidir |
-| R-36 reescrita sem aprovação dele | Começar a codar a R-36 | §7 do doc tem 3 decisões abertas |
+| G3 do R-108b sem rodar | Fechar R-108b como ✅ | 5 cliques no mesmo cenário de teste — escolher um tratamento aberto em vez de "+ Novo tratamento" |
+| Barra de encaminhar não vista | Fechar o pontual | Só renderiza em ficha expandida com procedimento `indicado`; não alcancei sem escrever dado |
+| G8 (2 contas) do R-108/R-108b/R-103b/c | Fechar os três como ✅ | Represado há semanas — ele recusou seed sintético, espera dado real |
+| Posição do "Modo multidente" (R-107d §9) | Fechar R-107d | Ele quer opinião de dentistas reais; 3 opções documentadas |
+| Preço novo (herdado do R-92) | Retomar o R-92 | `lib/planos.ts` é fonte única |
+| R-36 reescrita sem aprovação | Começar a codar a R-36 | §7 tem 3 decisões abertas |
 
 ## Esperando você
 
-- **Retomar R-108b em Opus** — spec pronta (`aprovada`), é o que mata o bug de origem
-- **R-109** — spec pronta (`aprovada`), pode entrar em Sonnet, em qualquer ordem
-- **Commit + push do R-108** — combinado que espera terminar ficha+Meu dia
-- G3 do R-108 e do R-103b/c — represados junto (2 contas reais)
-- Posição do "Modo multidente" — [R-107d §9](specs/R-107d-lote-multidente.md#9-adendo-1308-pedido-dele-ao-vivo-depois-da-execução-original--modo-multidente)
+- **Conferir a barra de encaminhar** — 10 segundos, e vira ✅ ou volta pra ajuste
+- **Horários da agenda valendo de verdade** — item novo ⏳ no ROADMAP, com 5 decisões que só você
+  toma (dentista sem grade cadastrada · override da recepção · vale pro dentista também? ·
+  editar/arrastar agendamento · agendamentos legados fora do horário)
+- **Backfill de status?** As 71 fichas antigas com procedimento indicado continuam `concluida`.
+  Não mexi — mudar status de ficha real sem você pedir é o tipo de coisa que aparece errada
+  semanas depois
 - R-102 — G1-G6 sem teste formal, mesmo no ar
 - Veredito de produção do R-98a — sem confirmação desde a sessão #35
 - Aprovar a [R-36](specs/R-36-um-login-uma-clinica.md) reescrita (§7: 3 decisões)
@@ -59,6 +55,5 @@ antes de rodar. Avisei ele, sem reação — registrado aqui, não silenciado.
 
 ## Próximo da fila
 
-R-108b assim que a sessão abrir em Opus — é o item que fecha o bug real. R-109 pode intercalar
-em Sonnet a qualquer momento, sem depender do 108b. `ROADMAP.md` segue precisando de poda
-dedicada — 258 linhas, teto ~200, estourado há várias sessões.
+R-109 (spec aprovada, zero código, independente, pode ir em Sonnet) ou fechar os gates soltos do
+R-108b. `ROADMAP.md` segue precisando de poda dedicada — teto ~200 linhas, estourado há sessões.
