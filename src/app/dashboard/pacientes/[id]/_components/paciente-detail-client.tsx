@@ -1053,7 +1053,11 @@ export function PacienteDetailClient({
         className="mb-6 space-y-3"
       >
         {/* Breadcrumb nav */}
-        <div className="flex items-center justify-between">
+        {/* R-111 — quebra linha no celular. São 7 ações à direita (editar, exportar, excluir,
+            emitir, Apresentar, Marcar retorno) contra o "Pacientes" à esquerda: 438px numa faixa
+            de 343px, 95px cortados. O rótulo do "Marcar retorno" já era `hidden sm:inline`, o que
+            ajudava mas não bastava. */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <button
             onClick={() => router.push('/dashboard/pacientes')}
             className="flex items-center gap-1.5 text-text-secondary hover:text-text-primary transition-colors text-sm font-medium"
@@ -1061,7 +1065,7 @@ export function PacienteDetailClient({
             <ArrowLeft className="w-4 h-4" />
             Pacientes
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setIsEditModalOpen(true)}
               className="p-2 rounded-xl border border-border/60 text-text-secondary hover:text-teal hover:border-teal/40 bg-surface transition-colors"

@@ -1691,10 +1691,14 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
           </p>
         </div>
       )}
-      <div className="flex justify-between items-center">
+      {/* R-111 — no celular o título e os botões empilham, e os botões quebram linha entre si.
+          Medido em 14/08: os 3 botões somam 474px e nasciam a 98px da borda (depois do título),
+          chegando a 571px numa faixa de 343px — 228px cortados, o maior corte do Prontuário.
+          Eles têm `shrink-0` no `Button`, então não tinha como o `justify-between` acomodar. */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <h2 className="font-heading text-2xl text-text-primary">Histórico Clínico</h2>
         {!isPanelOpen && canWrite && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {/* R-05b (D4) — atalho secundário: "Nova Evolução" segue o único CTA sólido teal.
                 Só aparece com manutenção dentro da janela; fora dela o caminho do R-05 (botão
                 dentro do form) continua intacto. */}
