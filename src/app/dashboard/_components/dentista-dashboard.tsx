@@ -228,9 +228,12 @@ export function DashboardSkeleton() {
     <div className="animate-pulse">
       {/* Header */}
       <div className="mb-8 md:mb-10 space-y-2">
-        <div className="h-3 w-32 bg-surface-alt rounded" />
-        <div className="h-10 w-72 bg-surface-alt rounded-xl" />
-        <div className="h-4 w-96 bg-surface-alt rounded" />
+        {/* R-111 — `max-w-full`: o `w-96` são 384px fixos e estouravam os 343px úteis do
+            celular. Skeleton com largura fixa é o defeito mais fácil de passar despercebido,
+            porque só aparece durante o carregamento. */}
+        <div className="h-3 w-32 max-w-full bg-surface-alt rounded" />
+        <div className="h-10 w-72 max-w-full bg-surface-alt rounded-xl" />
+        <div className="h-4 w-96 max-w-full bg-surface-alt rounded" />
       </div>
 
       {/* Metrics */}
