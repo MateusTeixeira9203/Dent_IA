@@ -53,7 +53,15 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl hero-glass p-4 text-sm border border-border duration-100 outline-none backdrop-blur-sm sm:max-w-2xl data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // R-111 §4.2 — o `max-h`/`overflow-y` faltava e o diálogo simplesmente passava da
+          // tela nos dois sentidos (centrado por `-translate-y-1/2`, então o corte é simétrico).
+          // Medido em 14/08 no "Novo agendamento": 917px num viewport de 812px, e 872px em 500px
+          // quando o teclado abre — com o título, o Fechar, o "Salvar" e o "Cancelar" fora da
+          // tela e sem como rolar até eles.
+          //
+          // `dvh`, não `vh` nem `%`: os dois últimos resolvem contra a viewport inicial e NÃO
+          // encolhem quando o teclado do celular sobe — que é exatamente o caso que quebrava.
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl hero-glass p-4 text-sm border border-border duration-100 outline-none backdrop-blur-sm sm:max-w-2xl data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}
