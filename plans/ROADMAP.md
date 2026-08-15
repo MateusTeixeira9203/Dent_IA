@@ -16,7 +16,7 @@
 > [rodada 3](auditorias/2026-08-09-mapa-de-atrito-3-recontagem.md). Produziu R-90 (crítico) e R-91.
 > **Discussão aberta:** [como diminuir o atrito](discussoes/como-diminuir-o-atrito.md) (estado × evento)
 >
-> **Fila:** 30 ⏳ · **🟡 no ar sem verificação pessoal dele:** 38 · **💡 ideia sem spec:** 2 ·
+> **Fila:** 32 ⏳ · **🟡 no ar sem verificação pessoal dele:** 39 · **💡 ideia sem spec:** 2 ·
 > **✅ concluídos:** 35 · **🧊 congelados:** 3 · **✂️ cortados:** 12
 
 **Status:** ⏳ fila · 🔵 ativo (máx 1) · 🟡 no ar **não** verificado · ✅ no ar **e** verificado ·
@@ -117,7 +117,9 @@ do sistema inteiro (Landing **C**, Auth **D**).
 | ID | Item | Estado | Peso |
 |---|---|---|---|
 | [**R-92**](specs/R-92-fechar-para-cobrar.md) | **Fechar para cobrar** — sair de **0 pagantes para 3**, com checkout testado ponta a ponta e placar mínimo medindo | ⏳ **pausado 09/08 a pedido dele**. Dia 1 codado, testado e no ar; Dia 2 parcial. Trava: o preço, que só ele decide | G |
-| **R-88** | **Landing de conversão** — vende 3 coisas que a produção contradiz: **"Modo Consulta" como feature nº 1 de uma tela DELETADA pelo R-72**, WhatsApp com 0 uso, e "silos" que o R-36 desmonta. Mais: cores hardcoded, grid de 3 ícones, zero OG tag | ⏳ **adiado pelo R-92**: deve ser escrita **depois** do que os 3 primeiros pagantes ensinarem. Alvo decidido: os dois, solo como principal | G |
+| **R-105** | **Onboarding — a primeira fase guiada** — 2 specs que sobem separadas: **[a](specs/R-105a-primeira-fase-e-ativacao.md)** caminho mais curto até a 1ª ficha + **ativação do trial no fim**; **[b](specs/R-105b-marcos-e-gatilhos.md)** 5 marcos no Dex + cron dos e-mails | ⏳ **artefato aprovado 15/08** ([R-105-onboarding-primeira-fase.html](artefatos/R-105-onboarding-primeira-fase.html), v5) = **contrato visual**; specs fase `contrato` 15/08. **a 🟡 no ar 15/08** (8 de 12 gates; faltam G7/G8 de 2 contas, TTV e teste com dentistas). Nenhuma tela nova, nenhuma migration. Acha a causa do **trial perpétuo**: `iniciarOnboarding` nunca chama `activateTrial`, então `trial_ends_at` fica NULL pra sempre — e `activateTrial` ainda grava `plano:'CLINICA'` hardcoded. Também: **3 dos 5 e-mails de onboarding não têm chamador nem cron** | M |
+| **R-88** | **Landing de conversão** — vende 3 coisas que a produção contradiz: **"Modo Consulta" como feature nº 1 de uma tela DELETADA pelo R-72**, WhatsApp com 0 uso, e "silos" que o R-36 desmonta. Mais: cores hardcoded, grid de 3 ícones, zero OG tag | ⏳ **artefato aprovado 14/08** ([R-88-landing-conversao.html](artefatos/R-88-landing-conversao.html), v7) — vira **contrato visual**. O adiamento "esperar 3 pagantes" caiu: já são 5. Decidido: registro Instrumento · slogan fixo · preço 300/250 · trial **com cartão** · 6 blocos · FAQ escrita contra o código. **Trava: o eixo (Continuidade/Conversão/Gestão) nunca foi escolhido.** E não sobe sozinha — afirma R$300 (`planos.ts`=249) e cobrança no 15º dia (`activateTrial` não pede cartão) | G |
+| **R-88b** | 🔧 **Não existe importação de pacientes** — achado 14/08 conferindo a FAQ. O que importa de arquivo é a tabela de procedimentos; a agenda vem do Google Calendar. A landing responde "o paciente entra quando senta na cadeira", que é verdade, mas **é o maior risco de conversão da página** pra dentista com base grande | ⏳ achado 14/08, sem spec | ? |
 | **R-89** | **Auth (login · cadastro · esqueci · redefinir · verifique-email)** — nota D: 5/12 capturas em branco, dark quebrado, AA reprovado, 2 sistemas de form diferentes | ⏳ depois do R-88 (a landing define a linguagem que o auth herda) | M |
 
 ---
