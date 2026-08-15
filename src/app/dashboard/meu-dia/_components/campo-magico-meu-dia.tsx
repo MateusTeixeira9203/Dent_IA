@@ -15,6 +15,7 @@
 import { useState } from 'react';
 import { Bot, ChevronUp } from 'lucide-react';
 import { CapturaLivreCard } from '@/components/fichas/captura-livre-card';
+import { DicaZona } from './dica-zona';
 import { mesclarEventosSemPerda } from '@/lib/odontograma/dedup-eventos-draft';
 import { hojeBRT } from '@/lib/hora-brt';
 import type { OdontogramaEventoDraft, OrtoManutencaoInfo } from '@/types/odontograma';
@@ -41,13 +42,23 @@ export interface CampoMagicoMeuDiaProps {
   /** R-62 — clique num chip de sugestão local. Dono da lógica é `registrar-painel.tsx`
    *  (mesma função `registrar`/`escolherDoCatalogo` que a antiga "Registrar sem IA" usava). */
   onAplicarSugestao: (sugestao: SugestaoLocal) => void;
+  /** R-105a §4.2 — primeira sessão com paciente na tela: este é o único controle vivo, então
+   *  ele acende. Só vale FECHADO (aberto, o próprio conteúdo já é o foco) e só até o primeiro
+   *  procedimento entrar no rascunho — quem deriva isso é `meu-dia-client.tsx` (I2). */
+  realce?: boolean;
+  /** R-105a §4.2.1 — mostra a dica da zona enquanto o campo nunca foi aberto nesta sessão.
+   *  O "já abriu" mora aqui porque é aqui que `aberto` mora; some pra sempre no 1º clique,
+   *  não volta se ele recolher. */
+  dica?: boolean;
 }
 
 export function CampoMagicoMeuDia({
   pacienteNome, eventosDraft, onEventosDraftChange, textoVisita, onTextoVisitaChange,
   onAlertaNovoChange, onOrtoDetectado, anexarTexto, catalogoProcedimentos, onAplicarSugestao,
+  realce, dica,
 }: CampoMagicoMeuDiaProps) {
   const [aberto, setAberto] = useState(false);
+  const [jaAbriu, setJaAbriu] = useState(false);
 
   function aplicar(data: EvolucaoFormatada) {
     onEventosDraftChange(mesclarEventosSemPerda(eventosDraft, data.odontograma_eventos, hojeBRT()));
@@ -65,15 +76,26 @@ export function CampoMagicoMeuDia({
 
   if (!aberto) {
     return (
+      <>
+      {dica && !jaAbriu && (
+        <DicaZona titulo="O campo mágico">
+          Fale ou cole o relato da consulta. O Dex lê e transforma em procedimentos.
+        </DicaZona>
+      )}
       <button
         type="button"
-        onClick={() => setAberto(true)}
-        className="flex w-full items-center gap-2 rounded-2xl border border-teal/30 bg-surface-alt/40 px-4 py-3.5 text-left transition-colors hover:border-teal/50"
+        onClick={() => { setAberto(true); setJaAbriu(true); }}
+        className={`flex w-full items-center gap-2 rounded-2xl border bg-surface-alt/40 px-4 py-3.5 text-left transition-colors ${
+          realce
+            ? 'border-teal ring-2 ring-teal/15'
+            : 'border-teal/30 hover:border-teal/50'
+        }`}
       >
         <Bot className="h-4 w-4 shrink-0 text-teal-ink" />
         <span className="text-[11px] font-bold uppercase tracking-widest text-teal-ink">Campo mágico</span>
         <span className="text-xs text-text-secondary">Fale, cole, anexe ou digite — o Dex monta a ficha</span>
       </button>
+      </>
     );
   }
 

@@ -25,7 +25,7 @@ export default async function MeuDiaPage({ searchParams }: MeuDiaPageProps) {
 
   const { ag } = await searchParams;
   const now = new Date();
-  const { slots, contextoPorPaciente, catalogoProcedimentos, destinosEncaminhar, meuDentistaId } =
+  const { slots, contextoPorPaciente, catalogoProcedimentos, destinosEncaminhar, meuDentistaId, primeiraSessao } =
     await getMeuDiaData({
       clinicId: dentista.clinica_id,
       dentistaId: dentista.id,
@@ -33,6 +33,17 @@ export default async function MeuDiaPage({ searchParams }: MeuDiaPageProps) {
     });
 
   const agendamentoInicialId = ag && slots.some((s) => s.agendamentoId === ag) ? ag : undefined;
+
+  // R-105a §4.3 — quem pode dar partida no relógio e ver o card de plano. Os três termos vêm
+  // do `DentistaCache` que a página já carregou; nenhuma query nova.
+  //   · admin (I4) — convidado não vê preço, e é o dono que responde "sozinho ou vários"
+  //   · sem assinatura ativa — quem já paga não tem trial pra começar
+  //   · `trial_ends_at` nulo — o relógio ainda não partiu (idempotência, reforçada no WHERE
+  //     da própria action; aqui é só pra não fazer a chamada à toa)
+  const podeAtivarTrial =
+    dentista.role === 'admin' &&
+    dentista.status_assinatura !== 'ativo' &&
+    dentista.trial_ends_at == null;
 
   return (
     <PageContainer variant="wide">
@@ -53,6 +64,9 @@ export default async function MeuDiaPage({ searchParams }: MeuDiaPageProps) {
         destinosEncaminhar={destinosEncaminhar}
         meuDentistaId={meuDentistaId}
         clinicaId={dentista.clinica_id}
+        primeiraSessao={primeiraSessao}
+        podeAtivarTrial={podeAtivarTrial}
+        planoAtual={dentista.plano === 'CLINICA' ? 'CLINICA' : 'SOLO'}
       />
     </PageContainer>
   );

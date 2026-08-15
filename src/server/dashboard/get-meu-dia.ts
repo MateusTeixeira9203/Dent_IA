@@ -220,6 +220,10 @@ export interface MeuDiaData {
   /** R-52 — quem sou eu. O bloco "A fazer" filtra contra isto pra mostrar só o que é meu;
    *  sem este campo o cliente teria que adivinhar autoria. */
   meuDentistaId: string;
+  /** R-105a §4.1 — este DENTISTA ainda não salvou nenhuma ficha. Deriva as 3 strings e o
+   *  realce da primeira fase guiada; nunca persistido (I2). Por dentista, não por clínica
+   *  (I3): quem entra por convite numa clínica que já tem fichas também é primeira sessão. */
+  primeiraSessao: boolean;
 }
 
 type AgendamentoRow = {
@@ -360,15 +364,35 @@ export async function getMeuDiaData({
   // G1 — fuso da clínica, não do servidor (dentista-dashboard.tsx usa startOfDay/endOfDay
   // do date-fns puro, que roda em UTC na Vercel; aqui usamos o padrão correto, o mesmo
   // que SecretaryDashboardServer já usa em dashboard/page.tsx).
-  const { data: agendamentosRaw, error: agendamentosError } = await supabase
-    .from('agendamentos')
-    .select('id, data_hora, status, paciente:pacientes(id, nome, observacoes, data_nascimento)')
-    .eq('clinica_id', clinicId)
-    .eq('dentista_id', dentistaId)
-    .gte('data_hora', inicioDoDiaBRT(now).toISOString())
-    .lte('data_hora', fimDoDiaBRT(now).toISOString())
-    .neq('status', 'cancelled')
-    .order('data_hora', { ascending: true });
+  // R-105a §4.1 — a 2ª query entra AQUI, no mesmo Promise.all da 1ª: `primeiraSessao` precisa
+  // existir antes do early return de "sem agendamento hoje" (que é justamente o estado em que
+  // o dentista novo cai). `select('id').limit(1)` é seek em índice, não `count` — não varre a
+  // tabela de fichas, que cresce pra sempre.
+  const [
+    { data: agendamentosRaw, error: agendamentosError },
+    { data: fichaDoDentista },
+  ] = await Promise.all([
+    supabase
+      .from('agendamentos')
+      .select('id, data_hora, status, paciente:pacientes(id, nome, observacoes, data_nascimento)')
+      .eq('clinica_id', clinicId)
+      .eq('dentista_id', dentistaId)
+      .gte('data_hora', inicioDoDiaBRT(now).toISOString())
+      .lte('data_hora', fimDoDiaBRT(now).toISOString())
+      .neq('status', 'cancelled')
+      .order('data_hora', { ascending: true }),
+
+    supabase
+      .from('fichas')
+      .select('id')
+      .eq('clinica_id', clinicId)
+      .eq('dentista_id', dentistaId)
+      .limit(1),
+  ]);
+
+  // Erro aqui NÃO derruba o Meu dia: no pior caso `primeiraSessao` fica false e o dentista
+  // novo vê as strings normais — degrada pro comportamento de hoje, nunca pra tela vazia.
+  const primeiraSessao = (fichaDoDentista?.length ?? 0) === 0;
 
   // R-46g (D6) — falhar alto em vez de engolir: RLS negando ou query quebrada não pode
   // virar "nenhum atendimento hoje" (mesmo modo de falha do bug histórico de Orçamentos).
@@ -384,7 +408,7 @@ export async function getMeuDiaData({
     // de encaminhamento neste render, então não vale buscar (nenhum dos dois muda por dia).
     return {
       slots: [], contextoPorPaciente: {}, catalogoProcedimentos: [],
-      destinosEncaminhar: [], meuDentistaId: dentistaId,
+      destinosEncaminhar: [], meuDentistaId: dentistaId, primeiraSessao,
     };
   }
 
@@ -728,5 +752,5 @@ export async function getMeuDiaData({
   const catalogoProcedimentos: MeuDiaCatalogoProcedimento[] = (catalogoRaw ?? []) as MeuDiaCatalogoProcedimento[];
   const destinosEncaminhar: MeuDiaDestinoEncaminhar[] = (destinosRaw ?? []) as MeuDiaDestinoEncaminhar[];
 
-  return { slots, contextoPorPaciente, catalogoProcedimentos, destinosEncaminhar, meuDentistaId: dentistaId };
+  return { slots, contextoPorPaciente, catalogoProcedimentos, destinosEncaminhar, meuDentistaId: dentistaId, primeiraSessao };
 }

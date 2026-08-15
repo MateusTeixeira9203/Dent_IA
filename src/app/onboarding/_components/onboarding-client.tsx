@@ -163,7 +163,11 @@ export function OnboardingClient({ initialStep, focoInicial, nomeInicial }: Onbo
         // FASE 1: teatro do onboarding (aha/plano/procedimentos) desativado — ver roadmap-3-fases A1
         setNome(data.nome.trim().split(' ')[0]);
         await marcarOnboardingCompleto();
-        router.replace('/dashboard');
+        // R-105a §4.1 — destino é o Meu dia, não o dashboard. O dashboard de um dentista
+        // recém-criado tem as 3 métricas em 0, hero nulo e painel de atenção vazio: a primeira
+        // tela do produto provava que ele estava vazio. O trabalho mora no Meu dia, e é lá que
+        // a primeira fase guiada acontece.
+        router.replace('/dashboard/meu-dia');
       } else {
         toast.error(result.error ?? 'Erro ao salvar. Tente novamente.');
       }

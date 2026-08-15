@@ -151,6 +151,11 @@ interface RegistrarPainelProps {
    *  uma. Independente do estado de "Salvar" — nunca herda `disabled`/`semRascunho`, é ação
    *  separada (não precisa ter rascunho pra gerar orçamento de uma ficha antiga). */
   onAbrirPickerOrcamento: () => void;
+  /** R-105a §4.2 — repassado direto pro campo mágico. Derivado em `meu-dia-client.tsx`
+   *  (dono da regra do realce); aqui é só passagem, nenhuma lógica. */
+  realceCampoMagico?: boolean;
+  /** R-105a §4.2.1 — idem: passagem pura pro campo mágico, que é quem sabe se já foi aberto. */
+  dicaCampoMagico?: boolean;
 }
 
 /** Converte a pendência (já um evento real no banco, `status='indicado'`) num draft que
@@ -211,6 +216,8 @@ export function useRegistrarPainel({
   boca,
   detalheEspecialidadeAberto,
   onAbrirPickerOrcamento,
+  realceCampoMagico,
+  dicaCampoMagico,
 }: RegistrarPainelProps): RegistrarPainelSlots {
   const [textoAberto, setTextoAberto] = useState(false);
   /** D1 — só escrita pro campo mágico; quem lê é `handleSalvar` abaixo (I3). */
@@ -551,6 +558,8 @@ export function useRegistrarPainel({
         anexarTexto={anexarTexto}
         catalogoProcedimentos={catalogoProcedimentos}
         onAplicarSugestao={aplicarSugestaoLocal}
+        realce={realceCampoMagico}
+        dica={dicaCampoMagico}
       />
 
       {/* R-62 — o que sobra do antigo painel "sem IA": catálogo-pendente/orto/rotina sempre

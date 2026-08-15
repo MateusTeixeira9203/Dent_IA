@@ -57,6 +57,9 @@ export interface RailProps {
    *  ficha rápida fora do fluxo, ou corrigir clique errado). Reusa `atualizarStatusAgendamento`
    *  já usado pela Agenda — mesma escrita, novo ponto de entrada. */
   onMudarStatus: (agendamentoId: string, status: AgendamentoStatus) => void;
+  /** R-105a §4.2 — este dentista ainda não salvou ficha nenhuma. Troca a frase do estado
+   *  vazio e o rótulo do botão, e acende o botão. Some sozinho na 2ª sessão. */
+  primeiraSessao?: boolean;
 }
 
 const LIMIAR_ARRASTE_PX = 5;
@@ -65,17 +68,29 @@ const LIMIAR_ARRASTE_PX = 5;
 const TEMPO_MIN_ARRASTE_MS = 100;
 
 /** R-57 F1 — fora do `<button>` do slot (nota do topo: não aninhar botão em botão). Mesmo
- *  recorte de tamanho do card de slot; borda tracejada marca "adicionar", não um card real. */
-function BotaoEncaixe({ onEncaixe }: { onEncaixe: () => void }) {
+ *  recorte de tamanho do card de slot; borda tracejada marca "adicionar", não um card real.
+ *
+ *  R-105a §4.2 — na primeira sessão o rótulo vira "Atender agora" e a borda acende. "Encaixe"
+ *  é jargão de agenda: é o único botão vivo da tela pro dentista que acabou de se cadastrar, e
+ *  ele não tem como saber o que a palavra quer dizer (Krug: nomes usam a palavra do cliente).
+ *  O realce é o MESMO `border-teal` que o slot selecionado já usa — nenhum estilo novo. */
+function BotaoEncaixe(
+  { onEncaixe, primeiraSessao, aceso }:
+  { onEncaixe: () => void; primeiraSessao?: boolean; aceso?: boolean },
+) {
   return (
     <button
       type="button"
       data-rail-alvo="encaixe"
       onClick={onEncaixe}
-      className="flex min-w-[112px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border px-3 py-2.5 text-text-secondary transition-colors hover:border-teal/40 hover:text-teal [scroll-snap-align:start]"
+      className={`flex min-w-[112px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl border px-3 py-2.5 transition-colors [scroll-snap-align:start] ${
+        aceso
+          ? 'border-teal bg-teal/[0.06] text-teal-ink'
+          : 'border-dashed border-border text-text-secondary hover:border-teal/40 hover:text-teal'
+      }`}
     >
       <Plus className="h-4 w-4" />
-      <span className="text-[10.5px] font-bold">Encaixe</span>
+      <span className="text-[10.5px] font-bold">{primeiraSessao ? 'Atender agora' : 'Encaixe'}</span>
     </button>
   );
 }
@@ -91,7 +106,7 @@ interface ArrasteState {
   alvo: string | null;
 }
 
-export function Rail({ slots, selecionadoId, onSelecionar, onEncaixe, onMudarStatus }: RailProps) {
+export function Rail({ slots, selecionadoId, onSelecionar, onEncaixe, onMudarStatus, primeiraSessao }: RailProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const arraste = useRef<ArrasteState | null>(null);
   const [arrastando, setArrastando] = useState(false);
@@ -178,8 +193,14 @@ export function Rail({ slots, selecionadoId, onSelecionar, onEncaixe, onMudarSta
   if (slots.length === 0) {
     return (
       <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-5 py-6">
-        <p className="flex-1 text-sm font-medium text-text-secondary">Nenhum atendimento hoje.</p>
-        <BotaoEncaixe onEncaixe={onEncaixe} />
+        {/* R-105a §4.2 — "Nenhum atendimento hoje." é uma frase de beco sem saída pra quem
+            acabou de se cadastrar; na primeira sessão ela vira o convite. */}
+        <p className={`flex-1 text-sm font-medium ${primeiraSessao ? 'text-text-primary' : 'text-text-secondary'}`}>
+          {primeiraSessao ? 'Seu primeiro paciente entra por aqui.' : 'Nenhum atendimento hoje.'}
+        </p>
+        {/* I2 — rail vazio na primeira sessão é o ÚNICO estado em que o Encaixe é o realce
+            (com slot na tela, quem acende é o campo mágico). */}
+        <BotaoEncaixe onEncaixe={onEncaixe} primeiraSessao={primeiraSessao} aceso={primeiraSessao} />
       </div>
     );
   }
@@ -254,7 +275,7 @@ export function Rail({ slots, selecionadoId, onSelecionar, onEncaixe, onMudarSta
             </div>
           );
         })}
-        <BotaoEncaixe onEncaixe={onEncaixe} />
+        <BotaoEncaixe onEncaixe={onEncaixe} primeiraSessao={primeiraSessao} />
       </div>
       {temMais && (
         <div

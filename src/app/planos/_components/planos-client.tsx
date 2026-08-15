@@ -78,8 +78,11 @@ export function PlanosClient({
     setErrorMsg(null);
     setLoadingPlan('CLINICA_TRIAL');
     startTransition(async () => {
+      // R-105a §4.3 — `activateTrial` não redireciona mais (o card do Meu dia precisa do
+      // resultado na mão). Este chamador, que dependia do redirect da action, navega sozinho.
       const result = await activateTrial();
-      if (result?.error) { setErrorMsg(result.error); setLoadingPlan(null); }
+      if (!result.ok) { setErrorMsg(result.error); setLoadingPlan(null); return; }
+      router.push('/dashboard?status=trial_activated');
     });
   };
 

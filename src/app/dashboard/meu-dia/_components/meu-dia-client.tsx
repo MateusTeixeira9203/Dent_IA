@@ -90,6 +90,11 @@ import { VisitaLeituraCard } from './visita-leitura-card';
 import { ToothDetailPanel } from '@/components/odontograma/ToothDetailPanel';
 import { useOrcamentoModal } from '@/app/dashboard/pacientes/[id]/_components/use-orcamento-modal';
 import { NovoOrcamentoModal } from '@/app/dashboard/pacientes/[id]/_components/modals/novo-orcamento-modal';
+import { AtivacaoCard } from './ativacao-card';
+import { DicaZona } from './dica-zona';
+import { DexBoasVindas } from './dex-boas-vindas';
+import { activateTrial } from '@/app/planos/actions';
+import type { PlanoClinica } from '@/app/onboarding/actions';
 import { hojeBRT } from '@/lib/hora-brt';
 import { responsavelPassaFiltro, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
 import type { MeuDiaData, MeuDiaPendencia, MeuDiaVisita } from '@/server/dashboard/get-meu-dia';
@@ -131,11 +136,16 @@ interface MeuDiaClientProps extends MeuDiaData {
   /** R-46h — o hook de orçamento compartilhado (pacientes/[id]/_components) precisa disto
    *  pra escopar a query; MeuDiaData não carrega (é parâmetro do fetch, não parte do retorno). */
   clinicaId: string;
+  /** R-105a §4.3 — tudo que o card de ativação precisa já vive no `DentistaCache`; a página
+   *  repassa em vez de buscar de novo. `podeAtivarTrial` é a regra de I4 + idempotência
+   *  resolvida no servidor: admin, sem assinatura ativa e com o relógio ainda parado. */
+  podeAtivarTrial: boolean;
+  planoAtual: PlanoClinica;
 }
 
 export function MeuDiaClient({
   slots, contextoPorPaciente, agendamentoInicialId, catalogoProcedimentos, meuDentistaId,
-  destinosEncaminhar, clinicaId,
+  destinosEncaminhar, clinicaId, primeiraSessao, podeAtivarTrial, planoAtual,
 }: MeuDiaClientProps) {
   const router = useRouter();
 
@@ -249,6 +259,11 @@ export function MeuDiaClient({
   /** R-52 — pendência recebida sendo concluída agora (trava o botão durante a escrita). */
   const [concluindoId, setConcluindoId] = useState<string | null>(null);
 
+  /** R-105a §4.3 — data real devolvida por `activateTrial` depois do primeiro save. `null` =
+   *  o card não aparece. Estado local de propósito: o card é o último beat da PRIMEIRA fase,
+   *  não um aviso persistente — recarregar a página não deve trazê-lo de volta. */
+  const [ativacao, setAtivacao] = useState<{ trialEndsAt: string } | null>(null);
+
   const slotSelecionado = selecionadoId ? (slots.find((s) => s.agendamentoId === selecionadoId) ?? null) : null;
   const contexto = slotSelecionado ? contextoPorPaciente[slotSelecionado.pacienteId] : null;
 
@@ -272,6 +287,28 @@ export function MeuDiaClient({
     fichaRascunhoId == null && eventosNovosDaSessao.length > 0 && tratamentosAbertos.length > 0;
   const destinoNovos =
     destinoEscolhido !== undefined ? destinoEscolhido : (tratamentosAbertos[0]?.fichaId ?? null);
+
+  // R-105a §4.2 — a regra do realce, derivada a cada render e nunca persistida (I2). No
+  // máximo UM aceso por vez, e nenhum depois que a primeira ficha existe. O rail vazio cuida
+  // do caso 'encaixe' sozinho (ele já recebe `primeiraSessao`); aqui só falta o campo mágico,
+  // que acende enquanto o rascunho está vazio — assim que o 1º procedimento entra, o realce
+  // apaga e quem passa a ensinar é o "Salvar e passar" perdendo o disabled.
+  const realceCampoMagico =
+    primeiraSessao && slotSelecionado != null && eventosDraft.length === 0;
+
+  // R-105a §4.2.1 — as dicas de zona. Cada uma some quando A SUA zona é usada, não no fim de
+  // tudo: é o que impede as 5 de virarem mobília. Todas derivadas aqui (I2), exceto a do campo
+  // mágico (mora lá, é lá que vive o "aberto") e a do dente, que precisa de um "já tocou"
+  // porque `denteAberto` volta a null quando o dentista fecha o perfil.
+  const [jaTocouDente, setJaTocouDente] = useState(false);
+  const semRascunhoAqui = eventosDraft.length === 0 && textoVisita.trim() === '';
+  const dicas = {
+    rail:       primeiraSessao && slots.length === 0,
+    campo:      primeiraSessao,
+    nestaFicha: primeiraSessao && eventosDraft.length === 0,
+    odontograma: primeiraSessao && !jaTocouDente,
+    rodape:     primeiraSessao && semRascunhoAqui,
+  };
 
   // R-46h — picker de orçamento (Histórico por-visita + rodapé do Registrar). Meu dia é
   // dentista-only (page.tsx redireciona secretaria): isSecretaria sempre false,
@@ -325,6 +362,8 @@ export function MeuDiaClient({
     // procedimento registrado depois do 1º "Gerar orçamento" entrava no orçamento sem nunca
     // ter sido gravado (mesmo bug, só que a partir do 2º item em diante). O Salvar de verdade,
     // depois, edita essa mesma ficha de novo e SÓ ELE fecha o atendimento/avisa a secretária.
+    realceCampoMagico,
+    dicaCampoMagico: dicas.campo,
     onAbrirPickerOrcamento: () => {
       const eventosNovos = eventosDraft.filter((e) => !idsDeAntes.has(e.id));
       if (eventosNovos.length === 0 || !slotSelecionado) {
@@ -394,8 +433,27 @@ export function MeuDiaClient({
     setDetalheAlvoId(null);
     setLeituraGrande(null);
     setTextoVisita('');
+    // R-105a §4.3 — a primeira ficha deste dentista acabou de existir: dá partida no relógio
+    // do trial. `primeiraSessao` vem do servidor deste render, então ainda descreve o estado
+    // ANTES deste save — é exatamente a janela em que a partida deve acontecer.
+    if (primeiraSessao) void darPartidaNoTrial();
     avancarProximo();
     router.refresh();
+  }
+
+  /** R-105a §4.3 — best-effort por contrato (I6): erro aqui **nunca** pode voltar pro
+   *  dentista como falha de salvamento — a ficha já está gravada, e trial é assunto de
+   *  cobrança, não de prontuário. Quem ficar pra trás é corrigido pelo cron do R-105b em
+   *  até 24h (I5). Por isso: sem toast de erro, só log. */
+  async function darPartidaNoTrial() {
+    if (!podeAtivarTrial) return;
+    try {
+      const res = await activateTrial();
+      if (res.ok) setAtivacao({ trialEndsAt: res.trialEndsAt });
+      else console.error('[R-105a] partida do trial não aconteceu:', res.error);
+    } catch (err) {
+      console.error('[R-105a] partida do trial falhou:', err);
+    }
   }
 
   // R-57 F1 — o modal já fechou sozinho (onOpenChange(false) antes de chamar onCriado).
@@ -422,6 +480,7 @@ export function MeuDiaClient({
   }
 
   function handleDenteAbertoChange(dente: number | null) {
+    if (dente != null) setJaTocouDente(true); // R-105a §4.2.1 — dispensa a dica do odontograma
     setDenteAberto(dente);
     // R-63 — nova seleção (ou fechar via ✕) nunca herda a tabela aberta do dente anterior;
     // o próprio ToothDetailPanel também reseta o índice local pro mesmo efeito (§4.2/I3).
@@ -551,12 +610,16 @@ export function MeuDiaClient({
 
   return (
     <div className="flex flex-col gap-4">
+      {/* §4.2.2 — antes do primeiro atendimento quem explica é o Dex, num card inteiro (há
+          espaço e não há ninguém na cadeira). Depois disso, só as dicas de zona. */}
+      {dicas.rail && <DexBoasVindas />}
       <Rail
         slots={slots}
         selecionadoId={selecionadoId}
         onSelecionar={setSelecionadoId}
         onEncaixe={() => setEncaixeAberto(true)}
         onMudarStatus={handleMudarStatus}
+        primeiraSessao={primeiraSessao}
       />
       <AtenderAgoraModal
         open={encaixeAberto}
@@ -619,6 +682,11 @@ export function MeuDiaClient({
               com ~393px. */}
           <div className="grid items-stretch gap-3 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_555px]">
             <div className="rounded-2xl border border-border bg-surface p-4">
+              {dicas.nestaFicha && (
+                <DicaZona titulo="Nesta ficha">
+                  Tudo que o Dex entendeu cai aqui. Dá pra corrigir antes de salvar.
+                </DicaZona>
+              )}
               <div className="mb-2 flex items-center gap-1.5">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Nesta ficha</p>
                 <Contador n={eventosDraft.length} />
@@ -627,7 +695,11 @@ export function MeuDiaClient({
                   status juntos), `RegistroCard` editável — pill clicável, observação
                   inline, detalhe de especialidade colapsável (`nesta-sessao-bloco.tsx`). */}
               <NestaSessaoBloco
-                vazio="Nada registrado ainda nesta consulta."
+                // R-105a §4.2 — na primeira sessão a frase deixa de constatar o vazio e passa
+                // a dizer o que vai acontecer ali quando o dentista falar.
+                vazio={primeiraSessao
+                  ? 'O que o Dex entender do seu relato aparece aqui.'
+                  : 'Nada registrado ainda nesta consulta.'}
                 eventosDraft={eventosDraft}
                 onEventosDraftChange={setEventosDraft}
                 onAbrirDenteGrande={abrirDenteGrande}
@@ -761,6 +833,13 @@ export function MeuDiaClient({
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.15, ease: 'easeOut' }}
                   >
+                    {/* Só no espelho: quando há dente aberto a dica já foi dispensada
+                        (`jaTocouDente`), então nunca aparece sobre o perfil do dente. */}
+                    {dicas.odontograma && (
+                      <DicaZona titulo="O odontograma">
+                        A boca do paciente. Toque um dente pra ver o histórico dele.
+                      </DicaZona>
+                    )}
                     {registrarPainel.slotCentral}
                   </motion.div>
                 )}
@@ -815,6 +894,11 @@ export function MeuDiaClient({
               card "Registrar" antigo. Sem card próprio no artefato — mas mantém 1 aqui
               (consistência com campo-mágico/miolo) até a auditoria visual dizer o contrário. */}
           <div className="rounded-2xl border border-border bg-surface p-5">
+            {dicas.rodape && (
+              <DicaZona titulo="O que sai daqui">
+                Da ficha salva saem o orçamento e o retorno, sem redigitar nada.
+              </DicaZona>
+            )}
             {registrarPainel.rodape}
           </div>
 
@@ -836,6 +920,11 @@ export function MeuDiaClient({
             )}
           </AnimatePresence>
         </>
+      ) : ativacao ? (
+        // R-105a §4.3 — estado 7 do artefato: o card ocupa o lugar do bloco de fim de dia,
+        // uma vez só. Se ainda houver paciente na fila o cockpit continua montado e o card
+        // espera o fim do dia — atendimento em curso não é hora de perguntar de cobrança.
+        <AtivacaoCard trialEndsAt={ativacao.trialEndsAt} planoAtual={planoAtual} />
       ) : slots.length > 0 ? (
         <div className="rounded-2xl border border-border bg-surface px-5 py-10 text-center">
           <p className="text-sm font-semibold text-text-primary">Todos os atendimentos de hoje foram registrados.</p>
