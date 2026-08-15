@@ -5,6 +5,7 @@ import {
   onboardingD1InativoHtml,
   onboardingD3Html,
   onboardingD7Html,
+  onboardingD14Html,
 } from '@/lib/email/templates/onboarding';
 
 const FROM = 'Odonto.IA <equipe@dentia.app.br>';
@@ -92,5 +93,27 @@ export async function enviarEmailD7({
     });
   } catch (err) {
     console.error('[onboarding-email] D7 falhou:', err);
+  }
+}
+
+/** R-105b §4.2 — vespera da cobranca. Fecha a regua que o Playbook pede ate D14. */
+export async function enviarEmailD14({
+  email,
+  nomeDentista,
+  fichasCriadas,
+}: {
+  email: string;
+  nomeDentista: string;
+  fichasCriadas: number;
+}): Promise<void> {
+  try {
+    await getResend().emails.send({
+      from: FROM,
+      to: email,
+      subject: 'Seu teste termina amanhã.',
+      html: onboardingD14Html({ nomeDentista, fichasCriadas }),
+    });
+  } catch (err) {
+    console.error('[onboarding-email] D14 falhou:', err);
   }
 }
