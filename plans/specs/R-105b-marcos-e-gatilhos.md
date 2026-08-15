@@ -118,8 +118,21 @@ log de envio.
 
 ### 4.3 A rede de segurança do trial (dívida do R-105a)
 
-Na mesma varredura diária: clínica com ≥ 1 ficha e `trial_ends_at` NULL recebe a partida do
-relógio. É o que sustenta o **I5 do R-105a** quando a chamada imediata falha por rede.
+Na mesma varredura diária: clínica com ≥ 1 ficha, `trial_ends_at` NULL **e criada nos últimos
+30 dias** recebe a partida do relógio. É o que sustenta o **I5 do R-105a** quando a chamada
+imediata falha por rede.
+
+> **A janela de 30 dias não é folga, é trava — achada em 15/08 antes de commitar.** Sem ela, a
+> primeira execução em produção daria partida no relógio de **Clindent (140 fichas), Império
+> (34) e Vip (7)**, as três em trial perpétuo desde abril/julho. Elas bateriam no fim do trial
+> em 14 dias, e **não existe checkout funcionando** (R-92 pausado): dentistas reais trancados
+> fora de um sistema que usam todo dia, por causa de um cron de onboarding.
+>
+> A rede cobre falha de rede de **horas** atrás, não migração de base antiga. O que fazer com as
+> clínicas legadas é decisão de cobrança e o dono é o R-92.
+>
+> Conferido por SQL com a trava no lugar: **nenhuma clínica é alcançada hoje** — as 3 reais
+> estão fora da janela, a QA TESTE tem 0 fichas e as outras 2 já têm relógio.
 
 ### 4.4 Gatilhos in-app — as frases
 
@@ -176,14 +189,30 @@ renderiza.
 
 ## 8. Gates de aceite
 
-- [ ] **G1** — os 4 marcos **aparecem** quando a condição vale, um a um, em clínica de teste
-- [ ] **G2** — os 4 marcos **somem** quando a condição cai — é a metade que costuma faltar
-- [ ] **G3** — badge da bola bate com a contagem do painel (marcos + eventos), sem duplicar
-- [ ] **G4** — cron: D1 nas 2 versões, D3, D7 com contagem e data reais, D14.
-      **Rodar 2× no mesmo dia não duplica.** Conferir no painel do Resend, não só no log
-- [ ] **G5** — rota do cron rejeita chamada sem `Bearer CRON_SECRET` (401)
-- [ ] **G6** — rede de segurança: clínica com ficha e `trial_ends_at` NULL é corrigida na
-      próxima passada
+> **Rodada em 15/08** na clínica `QA R-105a (apagar)`, a mesma criada pelo cadastro real do
+> R-105a. Estado de partida conferido por SQL antes de cada passo.
+
+- [x] **G1** — ✅ **marco 2 no ar**, e só ele: com `fichas=1, temOrcamento=false` o painel
+      mostrou "Sua ficha pode virar orçamento em um clique" na coluna *Precisa de você*, com a
+      CTA pro Meu dia. Os outros 3 **não** apareceram, como o estado previa (`fichas<2`,
+      `agendamentos<3`, `procedimentosPendente=false`). O bloco `onboarding` da API bateu campo
+      a campo com o SQL
+- [x] **G2** — ✅ **provado pelo gesto que o próprio marco pede.** Gerei o orçamento pelo rodapé
+      do Meu dia; `temOrcamento` virou `true` e o marco **sumiu** do painel, dando lugar à
+      pendência normal do sistema ("1 orçamento em rascunho"). Nenhum estado de "concluído" foi
+      gravado — a condição caiu, o card saiu.
+      *Falta:* a transição dos marcos 3, 4 e 5 não foi exercitada uma a uma
+- [x] **G3** — ✅ bola do dock com badge **1** enquanto o marco existia; o Dex saudou com
+      "1 coisa pede você hoje". Sem duplicar com as pendências antigas
+- [ ] **G4** — cron: **não rodado de ponta a ponta.** A janela é de dia exato, então provar D1
+      exige um dentista com 1 dia de idade — hoje o único da clínica de teste tem 0. Conferir
+      no painel do Resend, não só no log
+- [x] **G5** — ✅ 401 sem header e 401 com `Bearer` errado
+- [x] **G6** — ✅ **provado por consulta, no sentido que importa: alcance zero.** Com a trava de
+      30 dias (§4.3) nenhuma das 6 clínicas é tocada hoje — as 3 reais estão fora da janela, a
+      QA TESTE tem 0 fichas e as outras 2 já têm relógio. *Falta:* ver a rede **corrigir** uma
+      clínica de verdade, o que exige forjar o estado (ficha + `trial_ends_at` NULL) numa
+      clínica nova descartável
 - [ ] **G7** — **2 contas logadas**: os marcos de dentista A não vazam pro painel do dentista B
       na mesma clínica. *`fichas`, `temRetornoMarcado` e `temGradeHorario` são por dentista;
       `temOrcamento` e `procedimentosPendente` são da clínica* — o gate é conferir que cada um
