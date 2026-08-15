@@ -17,6 +17,25 @@ export interface DexContextData {
   /** Listas de drill-down para cada insight (até 5 itens cada) */
   orcamentosAtrasados30dList: { id: string; paciente: string; pacienteId: string; total: number }[];
   followUpPendentesList: { id: string; paciente: string; pacienteId: string; total: number }[];
+  /** R-105b §4.1 — os 5 marcos da semana 1. `null` para secretária e protético: nenhum dos
+   *  gestos que os marcos cobram é deles (G8). Escopo de cada campo importa e está comentado
+   *  na query — misturar clínica com dentista aqui vaza marco de um pro painel do outro (G7). */
+  onboarding: DexOnboarding | null;
+}
+
+export interface DexOnboarding {
+  /** Deste DENTISTA. */
+  fichas: number;
+  /** Desta CLÍNICA — orçamento é da clínica, não do dentista. */
+  temOrcamento: boolean;
+  /** Desta CLÍNICA (`clinicas.procedimentos_pendente`). */
+  procedimentosPendente: boolean;
+  /** Deste DENTISTA — algum agendamento futuro. */
+  temRetornoMarcado: boolean;
+  /** Deste DENTISTA (`horarios_disponiveis`). */
+  temGradeHorario: boolean;
+  /** Deste DENTISTA — total, não só de hoje. */
+  agendamentos: number;
 }
 
 /**
@@ -188,6 +207,36 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       }).filter((o) => !!o.pacienteId);
     }
 
+    // R-105b §4.1 — os marcos. Só pra quem decide (admin/dentista); `scopado` já é exatamente
+    // esse recorte. Cada `head:true` é count sem trazer linha, e o `limit(1)` dos booleanos é
+    // seek em índice — 6 queries baratas em paralelo, no mesmo round-trip do resto.
+    let onboarding: DexOnboarding | null = null;
+    if (scopado) {
+      const [fichasRes, orcRes, clinicaRes, retornoRes, gradeRes, agsRes] = await Promise.all([
+        supabase.from('fichas').select('id', { count: 'exact', head: true })
+          .eq('clinica_id', dentista.clinica_id).eq('dentista_id', dentista.id),
+        supabase.from('orcamentos').select('id')
+          .eq('clinica_id', dentista.clinica_id).limit(1),
+        supabase.from('clinicas').select('procedimentos_pendente')
+          .eq('id', dentista.clinica_id).maybeSingle(),
+        supabase.from('agendamentos').select('id')
+          .eq('clinica_id', dentista.clinica_id).eq('dentista_id', dentista.id)
+          .gt('data_hora', agora.toISOString()).not('status', 'eq', 'cancelled').limit(1),
+        supabase.from('horarios_disponiveis').select('id')
+          .eq('dentista_id', dentista.id).limit(1),
+        supabase.from('agendamentos').select('id', { count: 'exact', head: true })
+          .eq('clinica_id', dentista.clinica_id).eq('dentista_id', dentista.id),
+      ]);
+      onboarding = {
+        fichas: fichasRes.count ?? 0,
+        temOrcamento: (orcRes.data?.length ?? 0) > 0,
+        procedimentosPendente: clinicaRes.data?.procedimentos_pendente === true,
+        temRetornoMarcado: (retornoRes.data?.length ?? 0) > 0,
+        temGradeHorario: (gradeRes.data?.length ?? 0) > 0,
+        agendamentos: agsRes.count ?? 0,
+      };
+    }
+
     const orcamentosAtrasados30dList = mapOrcList(
       atrasados30dListRes.data as { id: unknown; total: unknown; paciente: unknown }[] | null,
     );
@@ -207,6 +256,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       agendamentosAmanha:                       agendamentosAmanhaRes.count ?? 0,
       orcamentosAtrasados30dList,
       followUpPendentesList,
+      onboarding,
     } satisfies DexContextData);
   } catch (err) {
     console.error('[dex/context] Erro:', err);
@@ -222,6 +272,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       agendamentosAmanha: 0,
       orcamentosAtrasados30dList: [],
       followUpPendentesList: [],
+      // R-105b — no fallback de erro os marcos não aparecem: melhor o Dex ficar quieto do que
+      // cobrar um gesto com base em contagem que a query não conseguiu ler.
+      onboarding: null,
     } satisfies DexContextData);
   }
 }

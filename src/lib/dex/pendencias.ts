@@ -123,5 +123,72 @@ export function derivarPendencias(
     }
   }
 
+  // R-105b §4.1 — os marcos da semana 1. Severidade `baixa` sempre: não competem com
+  // "orçamento parado há 30 dias", que é dinheiro escorrendo agora.
+  //
+  // A regra que os mantém honestos é a coluna "some quando" da spec: cada marco só existe
+  // enquanto a condição vale, e some no instante em que o gesto acontece. Nada é persistido,
+  // não há estado de "onboarding concluído" — quando os 4 caem, o Dex volta ao normal sozinho.
+  //
+  // Ordem é a do aprendizado, não a da configuração: o dentista só é cobrado a colocar preço
+  // DEPOIS de ver um orçamento sair com o preço padrão, e a cadastrar horário DEPOIS de já
+  // estar marcando coisa. Configuração como consequência do uso, nunca pré-requisito (I3).
+  pendencias.push(...marcosDeOnboarding(ctx.onboarding));
+
   return pendencias.sort((a, b) => ORDEM_SEVERIDADE[a.severidade] - ORDEM_SEVERIDADE[b.severidade]);
+}
+
+function marcosDeOnboarding(onb: DexContextData['onboarding']): DexPendencia[] {
+  // `null` = secretária ou protético. Nenhum dos 4 gestos é deles (G8).
+  if (!onb) return [];
+  const marcos: DexPendencia[] = [];
+  const base = { severidade: 'baixa' as const, valorParado: null, chips: [] };
+
+  // Marco 2 — o orçamento sai do que acabou de ser registrado.
+  if (onb.fichas >= 1 && !onb.temOrcamento) {
+    marcos.push({
+      ...base,
+      id: 'onb_orcamento',
+      titulo: 'Sua ficha pode virar orçamento em um clique',
+      descricao: 'O que você indicou já está registrado — o orçamento nasce dele, sem redigitar.',
+      cta: { label: 'Abrir o Meu dia', href: '/dashboard/meu-dia' },
+    });
+  }
+
+  // Marco 3 — os preços. Só DEPOIS que ele viu um orçamento sair com o preço padrão.
+  if (onb.temOrcamento && onb.procedimentosPendente) {
+    marcos.push({
+      ...base,
+      id: 'onb_precos',
+      titulo: 'Seu orçamento está saindo com preço padrão',
+      descricao: 'Colocar os seus leva 5 minutos e vale pra todos os próximos.',
+      cta: { label: 'Ajustar preços', href: '/dashboard/configuracoes?aba=procedimentos' },
+    });
+  }
+
+  // Marco 4 — o retorno. É o "investimento" do ciclo do Hooked: dado que o dentista põe hoje
+  // e que faz o dia de amanhã nascer cheio em vez de vazio.
+  if (onb.fichas >= 2 && !onb.temRetornoMarcado) {
+    marcos.push({
+      ...base,
+      id: 'onb_retorno',
+      titulo: 'Amanhã seu dia abre vazio',
+      descricao: 'Marque o retorno antes do paciente sair — leva um clique no rodapé da ficha.',
+      cta: { label: 'Abrir o Meu dia', href: '/dashboard/meu-dia' },
+    });
+  }
+
+  // Marco 5 — o expediente. 11 de 14 dentistas em produção não têm grade (levantamento do
+  // R-110), e é a causa de 13,8% dos agendamentos caírem fora do horário.
+  if (!onb.temGradeHorario && onb.agendamentos >= 3) {
+    marcos.push({
+      ...base,
+      id: 'onb_horario',
+      titulo: 'Sua agenda aceita qualquer horário hoje',
+      descricao: 'Sem expediente cadastrado, dá pra marcar 22h de domingo sem aviso nenhum.',
+      cta: { label: 'Definir expediente', href: '/dashboard/configuracoes?aba=horarios' },
+    });
+  }
+
+  return marcos;
 }
