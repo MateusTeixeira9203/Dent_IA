@@ -1,3 +1,5 @@
+import { PLANOS } from '@/lib/planos';
+
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://dentia.app.br';
 
 const header = `
@@ -155,7 +157,7 @@ export function onboardingD7Html({
         <p style="margin:0 0 24px;font-size:15px;color:#555555;line-height:1.6;">
           Continue usando sem interrupção com o Plano Solo.
         </p>
-        ${ctaButton(link, '→ Continuar com o Plano Solo — R$249/mês')}
+        ${ctaButton(link, `→ Continuar com o Plano Solo — R$${PLANOS.SOLO.preco}/mês`)}
         <p style="margin:0;font-size:13px;color:#888888;line-height:1.6;">
           PS: Precisa de mais tempo para avaliar? Responda este e-mail.
         </p>

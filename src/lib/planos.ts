@@ -3,9 +3,9 @@
 //
 // Dois planos:
 //   SOLO    — dentista autônomo, 1 dentista + 1 secretária. Features clínicas completas.
-//             Sem WhatsApp. Cobrança única de R$249/mês.
+//             Sem WhatsApp. Cobrança única de R$299/mês.
 //   CLINICA — múltiplos dentistas, secretária com visão unificada, WhatsApp integrado.
-//             R$179/dentista/mês. Mínimo 3 dentistas. Cada dentista paga individualmente.
+//             R$259/dentista/mês. Mínimo 3 dentistas. Cada dentista paga individualmente.
 
 export type PlanoId = 'SOLO' | 'CLINICA';
 
@@ -49,7 +49,7 @@ export const PLANOS: Record<PlanoId, PlanoConfig> = {
     id: 'SOLO',
     label: 'Consultório',
     labelContexto: 'Consultório',
-    preco: 249,
+    preco: 299,
     precoPorDentistaExtra: null,
     limiteDentistas: 1,
     features: {
@@ -69,8 +69,8 @@ export const PLANOS: Record<PlanoId, PlanoConfig> = {
     id: 'CLINICA',
     label: 'Clínica',
     labelContexto: 'Clínica',
-    preco: 179,
-    precoPorDentistaExtra: null, // cada dentista paga R$179 individualmente
+    preco: 259,
+    precoPorDentistaExtra: null, // cada dentista paga R$259 individualmente
     limiteDentistas: 99,
     features: {
       botCustomizavel:  true,
