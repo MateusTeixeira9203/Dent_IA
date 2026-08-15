@@ -109,7 +109,9 @@ export async function getPatientWorkspaceData({
         supabase
           .from('agendamentos')
           .select(
-            'id, data_hora, duracao_minutos, status, observacoes, dentista:dentistas(nome)'
+            // R-67: FK nomeada — `agendamentos` embeda `dentistas` por dentista_id
+            // e por created_by; sem escolher, o embed e ambiguo e a lista volta vazia.
+            'id, data_hora, duracao_minutos, status, observacoes, dentista:dentistas!agendamentos_dentista_id_fkey(nome)'
           )
           .eq('paciente_id', patientId)
           .eq('clinica_id', clinicId)

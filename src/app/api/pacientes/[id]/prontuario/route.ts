@@ -45,7 +45,10 @@ export async function GET(
       .order('created_at', { ascending: false }),
     supabase
       .from('agendamentos')
-      .select('data_hora, status, observacoes, dentista:dentistas(nome)')
+      // R-67: `agendamentos` tem DOIS caminhos pra `dentistas` (dentista_id e
+      // created_by). Sem nomear a FK o PostgREST recusa o embed, a query inteira
+      // volta vazia e o prontuario exportado sai SEM as consultas.
+      .select('data_hora, status, observacoes, dentista:dentistas!agendamentos_dentista_id_fkey(nome)')
       .eq('paciente_id', id)
       .eq('clinica_id', dentista.clinica_id)
       .order('data_hora', { ascending: false })

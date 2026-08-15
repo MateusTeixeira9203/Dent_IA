@@ -66,7 +66,9 @@ export async function getVisibleTimelineEvents({
       // Agendamentos → appointment_created / rescheduled / cancelled
       supabase
         .from('agendamentos')
-        .select('id, created_at, status, observacoes, dentista:dentistas(nome)')
+        // R-67: FK nomeada. `agendamentos` chega em `dentistas` por dentista_id e por
+        // created_by -- embed ambiguo derruba a query e a timeline nunca mostra consulta.
+        .select('id, created_at, status, observacoes, dentista:dentistas!agendamentos_dentista_id_fkey(nome)')
         .eq('paciente_id', patientId)
         .eq('clinica_id', clinicId)
         .order('created_at', { ascending: false })
@@ -75,7 +77,9 @@ export async function getVisibleTimelineEvents({
       // Orçamentos → budget_created
       supabase
         .from('orcamentos')
-        .select('id, created_at, status, total, dentista:dentistas(nome)')
+        // R-67: `orcamentos` tem TRES caminhos pra `dentistas` (dentista_id,
+        // aprovado_por_id, plano_definido_por_id). O autor e o dentista_id.
+        .select('id, created_at, status, total, dentista:dentistas!orcamentos_dentista_id_fkey(nome)')
         .eq('paciente_id', patientId)
         .eq('clinica_id', clinicId)
         .order('created_at', { ascending: false })
