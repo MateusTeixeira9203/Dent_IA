@@ -256,32 +256,33 @@ export function OnboardingClient({ initialStep, focoInicial, nomeInicial }: Onbo
                   {errors.nome && <p className="text-xs text-coral">{errors.nome.message}</p>}
                 </div>
 
-                {/* CRO + Especialidade */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">
-                      CRO
-                    </label>
-                    <input
-                      placeholder="CRO-SP 12345"
-                      disabled={isLoading}
-                      className={inputClass}
-                      {...register('cro')}
-                    />
-                    {errors.cro && <p className="text-xs text-coral">{errors.cro.message}</p>}
-                  </div>
+                {/* CRO — 15/08: era metade de um `grid-cols-2` com Especialidades do lado.
+                    Oito chips de rótulo longo em ~216px não cabem de jeito nenhum; a linha
+                    própria abaixo dá os ~448px que eles precisam. O CRO é campo curto e não
+                    perde nada ocupando a linha inteira. */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">
+                    CRO
+                  </label>
+                  <input
+                    placeholder="CRO-SP 12345"
+                    disabled={isLoading}
+                    className={inputClass}
+                    {...register('cro')}
+                  />
+                  {errors.cro && <p className="text-xs text-coral">{errors.cro.message}</p>}
+                </div>
 
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">
-                      Especialidades
-                    </label>
-                    <EspecialidadeChips
-                      selected={especialidadeValue ?? []}
-                      onChange={(next) => setValue('especialidade', next, { shouldValidate: true })}
-                      disabled={isLoading}
-                    />
-                    {errors.especialidade && <p className="text-xs text-coral">{errors.especialidade.message}</p>}
-                  </div>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">
+                    Especialidades
+                  </label>
+                  <EspecialidadeChips
+                    selected={especialidadeValue ?? []}
+                    onChange={(next) => setValue('especialidade', next, { shouldValidate: true })}
+                    disabled={isLoading}
+                  />
+                  {errors.especialidade && <p className="text-xs text-coral">{errors.especialidade.message}</p>}
                 </div>
 
                 {/* Nome do consultório */}
