@@ -1,59 +1,66 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-08-13 21:30 · sessão #41
-> **Item ativo:** R-108b (no ar, não verificado por inteiro)
+> **ESTADO** · atualizado 2026-08-15 21:13
+> Reescrito do zero — funde o que a sessão do R-88/R-67/R-92 (execução) e a sessão paralela do
+> R-105 (discussão, intocada por mim) deixaram em aberto.
 
 ## Agora
 
-**R-108b no ar desde hoje** — a visita passou a rotear. Pendência concluída volta pra ficha onde
-foi planejada; só o que nasce na sessão escolhe destino, e o seletor nasce pré-marcado. O bug de
-origem do épico (endodontia de 12/08 presa numa ficha de 26/07) está fechado.
+**R-88 está no ar em `dentia.app.br`, ninguém além de mim olhou.** Eixo Continuidade, preço
+299/259 lendo de `lib/planos.ts`, artefato v7 seguido geometricamente. Testei sozinho (curl em
+produção, clique real no Google OAuth) — pelo `CLAUDE.md` isso é 🟡, não ✅, até você olhar.
 
-Junto subiu o **`fichas.status` derivado do conteúdo** — sem isso o item não funcionava: 71 de 71
-fichas do Meu dia nasciam `concluida`, então nenhum tratamento abria pela entrada principal e o
-seletor nunca teria o que oferecer.
+**R-67 (embed ambíguo) corrigido e no ar** — provado por SQL antes/depois. Falta o gate de tela:
+exportar um prontuário logado e ver as consultas no PDF.
 
-- **Provado ao vivo na Teste01** (dado apagado depois): G4 (os concluídos permanecem na origem, só
-  o novo vai pra ficha nova), G6, G11 (não-destruição, RPC e tela), G12 (1 notificação por visita
-  mesmo alcançando 2 fichas), G13 (nasce aberta, fecha sozinha), G10.
-- **Não rodou:** **G3 — "absorver"** num tratamento aberto já existente. É o único caminho de
-  escrita que subiu sem ser exercido. Usa a mesma função já provada 2x com pendência, então o
-  risco é baixo — mas é onde olhar primeiro se algo quebrar. Também de fora: G7 (ficha assinada),
-  G9 (R-85 não regride), G8 (2 contas).
-- **Barra de encaminhar maior** (pontual): 🟡 no ar **sem eu ter visto na tela** — só typecheck e
-  lint. Conferir em Prontuário → ficha com procedimento planejado → botão Encaminhar.
+**R-92 retomado, muda de provedor.** AbacatePay sai do checkout de plano, entra **Stripe** —
+decisão sua, chave chega **segunda-feira**. Emenda técnica pronta em
+`specs/R-92-fechar-para-cobrar.md` §8. A 2ª integração AbacatePay (Pix avulso de paciente) sai do
+sistema de vez — virou tarefa própria, você já iniciou (`task_471aea18`).
 
-**Push feito:** 8 commits, `416bf2f..eac3b75`. A migration 142 já estava aplicada desde a tarde,
-então o push fechou a assimetria entre schema e código em produção.
+**R-105 (onboarding) segue em discussão**, intocado por esta sessão — artefato v2 verificado, 3
+perguntas suas sem resposta (abaixo). Não é item de roadmap ainda.
 
 ## Travado
 
 | O quê | Trava o quê | Hipótese / próximo passo |
 |---|---|---|
-| ~~G3 do R-108b~~ | — | ✅ **rodou 14/08 e passou**: novo procedimento absorvido num tratamento aberto (11→12 eventos, 0 fichas criadas, campos da ficha intactos). Restam G7, G9 e o G8 de 2 contas |
-| Barra de encaminhar não vista | Fechar o pontual | Só renderiza em ficha expandida com procedimento `indicado`; não alcancei sem escrever dado |
-| G8 (2 contas) do R-108/R-108b/R-103b/c | Fechar os três como ✅ | Represado há semanas — ele recusou seed sintético, espera dado real |
-| Posição do "Modo multidente" (R-107d §9) | Fechar R-107d | Ele quer opinião de dentistas reais; 3 opções documentadas |
-| Preço novo (herdado do R-92) | Retomar o R-92 | `lib/planos.ts` é fonte única |
-| R-36 reescrita sem aprovação | Começar a codar a R-36 | §7 tem 3 decisões abertas |
+| **Chave da Stripe** | R-92 Dia 3 (checkout de verdade) | Chega segunda, por você |
+| **`activateTrial` não cobra cartão** | "Cobrança no 15º dia" virar verdade (já publicado na landing e no e-mail D7) | Resolve quando R-92 Dia 3 subir |
+| Ninguém verificou a landing/R-67 pessoalmente | Virarem ✅ | Abrir `dentia.app.br` e exportar um prontuário |
+| PDF da ponte ("receber a ficha") é manual | CTA transicional virar 100% automática | Falta encenar na Teste01, exportar, anonimizar, plugar no Resend |
+| Foto da ClinDent é placeholder | Bloco "Quem usa" ficar real | Precisa da foto cedida pela clínica |
+| **R-105 sem as 3 respostas** (abaixo) | Virar item de roadmap | Perguntas de sessão anterior, seguem abertas |
+| Conflito de item ativo (🔵) nunca resolvido | Saber a prioridade real | Carrega de sessões passadas — ver "Esperando você" |
+| G8 (2 contas) — R-108/R-108b/R-103b/c **e** R-29/30/31a/32/34/39/03c | Fechar esses itens como ✅ | Represado — ele recusou seed sintético, espera dado real |
+| R-36 reescrita sem aprovação | Começar a codar | §7 tem 3 decisões abertas |
+| Posição do "Modo multidente" (R-107d §9) | Fechar R-107d | Quer opinião de dentistas reais |
 
 ## Esperando você
 
-- **Conferir a barra de encaminhar** — 10 segundos, e vira ✅ ou volta pra ajuste
-- **Horários da agenda valendo de verdade** — item novo ⏳ no ROADMAP, com 5 decisões que só você
-  toma (dentista sem grade cadastrada · override da recepção · vale pro dentista também? ·
-  editar/arrastar agendamento · agendamentos legados fora do horário)
-- **Backfill de status?** As 71 fichas antigas com procedimento indicado continuam `concluida`.
-  Não mexi — mudar status de ficha real sem você pedir é o tipo de coisa que aparece errada
-  semanas depois
-- R-102 — G1-G6 sem teste formal, mesmo no ar
+- ⚠️ **Qual é o item ativo?** `ROADMAP.md` tem **R-111 como 🔵** (responsividade mobile). Nem o
+  R-88 nem o R-92 reivindicaram o 🔵 nesta sessão. Nunca respondido — **você decide**.
+- **Olhar a landing** em `dentia.app.br` — é o que promove R-88 de 🟡 pra ✅
+- **Segunda-feira:** a chave da Stripe
+- **R-105 — 3 perguntas paradas:**
+  1. "Apresentação" na lista de momentos de valor é planejamento renascendo, ou apresentação do
+     orçamento ao paciente?
+  2. Cronograma de volta de planejamento/tratamento/despesa/modo-consulta-novo — o onboarding já
+     nasce prevendo, ou espera cada um voltar?
+  3. Registra o R-105 no `ROADMAP.md` agora, ou segue em discussão?
+- **"+300 pacientes por mês" e "3 meses em uso"** — já estão publicados na landing sem
+  confirmação. Registro interno tem 302 pacientes na base *inteira*, não mensal — número torto
+  em canal de indicação é o que o colega confere
+- **A frase do Dr. Renato está no ar sem o sim dele** — é rascunho seu/meu, assinado com o nome
+  dele. Risco imediato, não hipotético
+- Programa de indicação (mês grátis, Berger) — custa diferente a R$299 do que custava a R$249
+- Conferir a barra de encaminhar (pontual 🟡 de 13/08, nunca visto na tela)
+- Backfill de status — 71 fichas antigas com procedimento indicado seguem `concluida`
 - Veredito de produção do R-98a — sem confirmação desde a sessão #35
-- Aprovar a [R-36](specs/R-36-um-login-uma-clinica.md) reescrita (§7: 3 decisões)
-- G6 do R-94 — teste deliberado de 2 contas
-- Gate de 2 contas represado (R-29/R-30/R-31a/R-32/R-34/R-39/R-03c) — parado há semanas
 - Testar pessoalmente R-85/R-86/R-65/R-66 (herdados, ainda 🟡)
 
 ## Próximo da fila
 
-R-109 (spec aprovada, zero código, independente, pode ir em Sonnet) ou fechar os gates soltos do
-R-108b. `ROADMAP.md` segue precisando de poda dedicada — teto ~200 linhas, estourado há sessões.
+Segunda: R-92 Dia 3 com a chave da Stripe. Até lá, o que não depende dela é você olhar a landing
+e o R-67 com seus próprios olhos, e responder as 3 perguntas do R-105.
+`ROADMAP.md` segue precisando de poda — teto ~200 linhas, estourado há sessões.

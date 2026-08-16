@@ -131,5 +131,76 @@ Varredura das 4 telas que importam no celular: Meu dia · Agenda · Ficha · Fin
 
 ## 7. Aberto, esperando ele
 
-- [ ] **O preço.** Único item do plano que só ele decide, e trava o Dia 2.
+- [x] **O preço.** Decidido 14/08: Consultório R$299, Clínica R$259/dentista. Aplicado em
+      `lib/planos.ts` ([343e8a4](../../../commit/343e8a4)).
 - [ ] Confirmar que a cobrança das 3 é por conversa, não por gate automático.
+
+## 8. Emenda 15/08 — Dia 3 muda de provedor: AbacatePay → Stripe
+
+**Decisão dele:** troca de provedor. Chave do Stripe chega **segunda-feira**. "Considero ela
+melhor" — sem justificativa pedida, então o Dia 3 original (`createCheckout` ligando a API do
+AbacatePay) está **superseded**. Ele continua no §4 como histórico; o contrato daqui é o que
+vale.
+
+**Por que não é só trocar a chave:** o `createCheckout` de hoje chama
+`POST /v1/billing/create` da AbacatePay — cobra **na hora** (Pix ou cartão), sem tokenizar nada
+pra depois. Não existe caminho de "cartão agora, cobra só no 15º dia" nesse endpoint. A promessa
+que está no ar desde ontem (`page.tsx`, e-mail D7) só é possível com um mecanismo de trial nativo
+do provedor. Verificado no Stripe: existe, é estável, é exatamente isso.
+
+### 8.1 O mecanismo certo (verificado na doc oficial, não a preview)
+
+`Checkout Session` em `mode: 'subscription'`, passando
+[`subscription_data.trial_period_days`](https://docs.stripe.com/payments/checkout/free-trials.md?payment-ui=stripe-hosted).
+Por padrão a Checkout Session **já coleta o cartão** mesmo com trial ativo — não precisa (e não
+deve) passar `payment_method_collection: 'if_required'`, que é a opção pra trial *sem* cartão.
+Quando o trial acaba, a Stripe fatura o valor cheio automaticamente, sem ação do cliente.
+
+```
+POST /v1/checkout/sessions
+mode=subscription
+line_items[0][price]={{PRICE_ID}}
+subscription_data[trial_period_days]=14
+```
+
+**Cuidado que quase entrou errado:** a primeira busca achou a API `Trial Offer`
+(`/v1/product_catalog/trial_offers`, versão preview `2026-03-25.preview`) — é mais nova, mais
+flexível (permite trial *pago*), mas a própria doc diz que ela **não funciona com Checkout**, só
+com a API de Subscriptions direto, e exige header de versão preview. Não é pra este caso.
+`trial_period_days` legado é o caminho estável e é o que o Checkout aceita.
+
+Webhooks que importam: `checkout.session.completed` (assinatura criada, ainda em trial),
+`customer.subscription.trial_will_end` (dispara 3 dias antes — pode substituir o aviso que hoje
+sai de `onboarding-emails.ts`), `invoice.paid` (a cobrança do dia 15 caiu).
+
+### 8.2 Achado que muda o escopo — Pix no Stripe tem pré-requisito
+
+Pix pela Stripe só libera pra contas que **já processaram pagamento nos últimos 60 dias e estão
+em dia** ([Stripe — Pix no Brasil](https://stripe.com/br/payment-method/pix)). Conta nova não
+tem Pix no dia 1. Se o checkout do plano precisa aceitar Pix desde o lançamento, os primeiros ~60
+dias são **só cartão** — ou o Pix de assinatura continua na AbacatePay enquanto o Stripe esquenta.
+
+### 8.3 Escopo da troca — decidido 15/08
+
+O projeto tinha **dois** usos de AbacatePay, não um:
+1. Assinatura de plano (`createCheckout`, webhook `/api/webhooks/abacate`) — **este migra pro Stripe**
+2. Cobrança avulsa de paciente via Pix (webhook `/api/webhooks/abacatepay`, usado em orçamentos)
+
+**Decisão dele: a (2) não migra — ela deixa de existir.** Cobrar o paciente passa a ser por
+conta do dentista, fora do sistema; o app só registra o que já foi recebido (é a direção que o
+Dia 1 já tomava — "Registrar Dinheiro", default virou `dinheiro`). Levantei um achado que reforça
+isso: não encontrei nenhum ponto do código hoje que **cria** uma cobrança Pix pra orçamento — só
+o webhook que a **recebe** (`ChargeEventSchema`, evento `charge.paid`). Ou seja, é provável que já
+seja código morto, receptor sem emissor.
+
+**Não removi agora** — decommission de rota + schema é trabalho à parte, não Dia 3. Registrado
+como tarefa separada (ver handoff).
+
+### 8.4 Bloqueado até segunda
+
+Nada do Dia 3 é codável sem a chave. `ABACATE_PAY_*` seguem ausentes de `.env.local`; nenhuma das
+equivalentes `STRIPE_*` existe ainda. Quando a chave chegar: criar os 2 Price (Consultório
+R$299/mês, Clínica R$259/mês) no Stripe, reescrever `createCheckout` pra `checkout/sessions` com
+`trial_period_days: 14`, reescrever o webhook (evento + schema Zod), e só então `activateTrial`
+sai — ele deixa de existir, porque quem cria o trial passa a ser o Stripe, não uma escrita direta
+no banco.
