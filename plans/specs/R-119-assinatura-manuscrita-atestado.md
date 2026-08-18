@@ -1,34 +1,34 @@
-# R-119 — Assinatura manuscrita no atestado
+# R-119 — Assinatura manuscrita em atestado e receita
 
 > **SPEC** · **R-119** · 🔵 ativo
 > **Aberto:** 2026-08-18 · **Fechado:** — · **Fase:** aprovada · **Migration:** zero
 
 ## 1. Problema
 
-O PDF de atestado já identifica o dentista com nome e CRO, mas só exibe a linha de assinatura
-vazia. A assinatura existente no sistema é do paciente/responsável, vinculada a aceite e ficha;
-reutilizá-la como assinatura do dentista atribuiria o ato à pessoa errada.
+Os PDFs de atestado e receita já identificam o dentista com nome e CRO, mas só exibem a linha
+de assinatura vazia. A assinatura existente no sistema é do paciente/responsável, vinculada a
+aceite e ficha; reutilizá-la como assinatura do dentista atribuiria o ato à pessoa errada.
 
 ## 2. Decisão
 
-Ao emitir **atestado**, o dentista desenha sua assinatura manuscrita no modal antes de gerar o
-PDF. A imagem entra no próprio PDF, acima do nome e CRO já existentes. É uma etapa provisória
-até a integração ICP-Brasil: o produto não a chama de assinatura digital nem promete validação
-por certificado.
+Ao emitir **atestado ou receita**, o dentista desenha sua assinatura manuscrita no modal antes
+de gerar o PDF. A imagem entra no próprio PDF, acima do nome e CRO já existentes. É uma etapa
+provisória até a integração ICP-Brasil: o produto não a chama de assinatura digital nem promete
+validação por certificado.
 
 ## 3. Objetivo
 
-O dentista gera um atestado já organizado, com assinatura manuscrita, nome e CRO, em um único
-fluxo. Receita e pedido de exame permanecem exatamente como estão.
+O dentista gera atestado ou receita já organizados, com assinatura manuscrita, nome e CRO, em
+um único fluxo. Pedido de exame permanece exatamente como está.
 
 ## 4. Contrato técnico
 
 ### `EmitirDocumentoModal`
 
-- Quando `tipo === 'atestado'` e há modelo selecionado, renderiza `SignaturePad` abaixo dos
-  campos do modelo.
+- Quando `tipo` é `atestado` ou `receita` e há modelo selecionado, renderiza `SignaturePad`
+  abaixo dos campos do modelo.
 - Ao clicar em gerar, recusa pad vazio com mensagem clara; pad preenchido gera `data:image/png`.
-- Botão do atestado: `Assinar e gerar atestado`. Demais tipos: `Gerar documento`.
+- Botão do atestado/receita: `Assinar e gerar {tipo}`. Pedido de exame: `Gerar documento`.
 - Trocar tipo ou fechar o modal descarta a assinatura que ainda não foi emitida.
 
 ### `emitirDocumento`
@@ -44,8 +44,9 @@ type EmitirDocumentoParams = {
 };
 ```
 
-- Para `atestado`, `assinaturaDataUrl` é obrigatória e aceita somente PNG em data URL, até 2 MB.
-- Para receita/pedido de exame, o campo é ignorado.
+- Para `atestado` e `receita`, `assinaturaDataUrl` é obrigatória e aceita somente PNG em data
+  URL, até 2 MB.
+- Para pedido de exame, o campo é ignorado.
 - A action continua gravando somente o PDF final em `fichas/{clinica}/{paciente}/docs`; não há
   nova tabela, bucket ou credencial.
 
@@ -67,14 +68,14 @@ interface DocumentoPDFData {
 
 | Estado | Resultado |
 |---|---|
-| Atestado sem assinatura | Não gera; pede assinatura do dentista. |
-| Atestado assinado | Gera, salva em Arquivos e abre o PDF final. |
+| Atestado ou receita sem assinatura | Não gera; pede assinatura do dentista. |
+| Atestado ou receita assinados | Gera, salva em Arquivos e abre o PDF final. |
 | Troca de tipo/modal fecha | Assinatura temporária é descartada. |
-| Receita/pedido de exame | Sem campo novo e sem mudança de geração. |
+| Pedido de exame | Sem campo novo e sem mudança de geração. |
 | PNG inválido/grande | Action recusa antes de gerar ou salvar PDF. |
 
-Exemplo principal: Dr. A escolhe “Atestado de Comparecimento”, preenche o período, assina no
-campo e gera. O PDF mostra o desenho, `Dr. A — CRO: ...` e é salvo uma vez no paciente.
+Exemplo principal: Dr. A escolhe “Atestado de Comparecimento” ou uma receita, preenche os
+campos, assina e gera. O PDF mostra o desenho, `Dr. A — CRO: ...` e é salvo uma vez no paciente.
 
 ## 6. Referência visual
 
@@ -86,7 +87,7 @@ campo e gera. O PDF mostra o desenho, `Dr. A — CRO: ...` e é salvo uma vez no
 ## 7. Invariantes
 
 - [ ] Nunca usar assinatura de paciente/responsável como assinatura do dentista.
-- [ ] A assinatura é obrigatória somente para atestado.
+- [ ] A assinatura é obrigatória para atestado e receita, nunca para pedido de exame.
 - [ ] PDF é salvo somente depois de validar a assinatura; falha não cria documento nem arquivo.
 - [ ] Não rotular essa etapa como assinatura digital/ICP-Brasil.
 - [ ] A futura ICP-Brasil substitui somente a origem de `assinaturaDataUrl`/PDF final, não o
@@ -94,10 +95,11 @@ campo e gera. O PDF mostra o desenho, `Dr. A — CRO: ...` e é salvo uma vez no
 
 ## 8. Gates de aceite
 
-- [ ] Atestado sem traço no pad → mensagem; nenhum arquivo novo em Arquivos.
-- [ ] Atestado assinado → PDF contém o desenho, nome e CRO; registro tem o mesmo dentista emissor.
+- [ ] Atestado ou receita sem traço no pad → mensagem; nenhum arquivo novo em Arquivos.
+- [ ] Atestado e receita assinados → PDF contém o desenho, nome e CRO; registro tem o mesmo
+      dentista emissor.
 - [ ] Fechar e reabrir o modal → pad está vazio.
-- [ ] Receita e pedido de exame → não exibem pad e seguem gerando normalmente.
+- [ ] Pedido de exame → não exibe pad e segue gerando normalmente.
 - [ ] Data URL que não é PNG ou excede 2 MB → action retorna erro sem upload.
 - [ ] `npm run typecheck` passa; teste manual em desktop e celular confirma que o canvas é utilizável.
 

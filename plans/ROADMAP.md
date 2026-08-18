@@ -86,7 +86,7 @@ prioridade, por melhor que seja.
 
 | ID | Item | Estado | Peso |
 |---|---|---|---|
-| [**R-119**](specs/R-119-assinatura-manuscrita-atestado.md) | **Assinatura manuscrita no atestado** — dentista assina no momento da emissão; PDF guarda a imagem, nome e CRO | ⏳ spec em contrato 18/08; ponte provisória até ICP-Brasil, sem chamar de assinatura digital | P |
+| [**R-119**](specs/R-119-assinatura-manuscrita-atestado.md) | **Assinatura manuscrita em atestado e receita** — dentista assina no momento da emissão; PDF guarda a imagem, nome e CRO | 🔵 implementação local 18/08; ponte provisória até ICP-Brasil, sem chamar de assinatura digital | P |
 | **R-40** | Template de contrato/termo pra assinatura — hoje se assina procedimento e orçamento, mas **não existe texto de termo** | ⏳ decisão pendente: termo de consentimento (clínico) **ou** contrato de prestação (comercial)? Muda o item inteiro | ? |
 
 ## Bloco 4 — Fundação e risco
