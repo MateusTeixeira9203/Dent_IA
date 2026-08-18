@@ -75,11 +75,14 @@ export async function criarAgendamento(dados: {
   const dentistaAlvo = dados.dentistaId ?? dentistaPerfil.id;
 
   if (dados.dentistaId && dados.dentistaId !== dentistaPerfil.id) {
+    if (role !== 'secretaria') return { error: 'Sem permissão para marcar na agenda de outro dentista.' };
     const { count: dentCount } = await supabase
       .from('dentistas')
       .select('id', { count: 'exact', head: true })
       .eq('id', dados.dentistaId)
-      .eq('clinica_id', clinicId);
+      .eq('clinica_id', clinicId)
+      .eq('ativo', true)
+      .in('role', ['admin', 'dentista']);
     if ((dentCount ?? 0) === 0) return { error: 'Dentista não encontrado.' };
   }
 

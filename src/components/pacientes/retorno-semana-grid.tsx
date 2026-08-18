@@ -70,7 +70,7 @@ function minutoDoClique(offsetY: number, hourStart: number, hourEnd: number): nu
 }
 
 export interface RetornoSemanaGridProps {
-  dentistaId: string;
+  dentistaId: string | null;
   duracaoMin: number;
   selecionado: { data: string; minutoDoDia: number } | null;
   onSelecionar: (data: string, minutoDoDia: number) => void;
@@ -90,7 +90,7 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
   // padrão de meu-dia-client.tsx ("idAoResetar"): evita o passe de render extra do efeito,
   // e o lint do projeto (react-hooks/set-state-in-effect) bloqueia setState direto no corpo
   // do efeito. O fetch em si (I/O de verdade) continua no useEffect abaixo.
-  const chaveSemana = `${dentistaId}:${semanaInicioISO}`;
+  const chaveSemana = `${dentistaId ?? 'sem-dentista'}:${semanaInicioISO}`;
   const [chaveCarregada, setChaveCarregada] = useState(chaveSemana);
   if (chaveCarregada !== chaveSemana) {
     setChaveCarregada(chaveSemana);
@@ -99,6 +99,7 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
   }
 
   useEffect(() => {
+    if (!dentistaId) return;
     let cancelado = false;
     buscarDisponibilidadeSemana(dentistaId, semanaInicioISO)
       .then((r) => { if (!cancelado) setDias(r); })
@@ -198,7 +199,11 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
         })}
       </div>
 
-      {erro ? (
+        {!dentistaId ? (
+          <div className="flex min-h-48 items-center justify-center px-6 text-center text-sm text-text-secondary">
+            Selecione o dentista para ver a agenda.
+          </div>
+        ) : erro ? (
         <p className="p-4 text-center text-sm text-coral-ink">{erro}</p>
       ) : !dias ? (
         <div className="flex items-center justify-center py-10">

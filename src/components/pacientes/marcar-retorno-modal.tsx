@@ -24,7 +24,15 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { formatHora } from '@/lib/agenda/disponibilidade';
+import type { DentistaRole } from '@/types/database';
 import { RetornoSemanaGrid } from './retorno-semana-grid';
 
 export interface MarcarRetornoForm {
@@ -38,7 +46,10 @@ interface MarcarRetornoModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   pacienteNome: string;
-  dentistaId: string;
+  role: DentistaRole;
+  dentistasClinica: { id: string; nome: string }[];
+  dentistaAlvoId: string | null;
+  onDentistaAlvoChange: (id: string) => void;
   form: MarcarRetornoForm;
   setForm: React.Dispatch<React.SetStateAction<MarcarRetornoForm>>;
   error: string | null;
@@ -70,7 +81,10 @@ export function MarcarRetornoModal({
   open,
   onOpenChange,
   pacienteNome,
-  dentistaId,
+  role,
+  dentistasClinica,
+  dentistaAlvoId,
+  onDentistaAlvoChange,
   form,
   setForm,
   error,
@@ -78,7 +92,8 @@ export function MarcarRetornoModal({
   onMarcarRetorno,
 }: MarcarRetornoModalProps) {
   const duracaoMin = parseInt(form.duracao, 10) || 30;
-  const podeConfirmar = form.data != null && form.minutoDoDia != null;
+  const precisaEscolherDentista = role === 'secretaria';
+  const podeConfirmar = dentistaAlvoId != null && form.data != null && form.minutoDoDia != null;
 
   function fechar() {
     onOpenChange(false);
@@ -129,13 +144,31 @@ export function MarcarRetornoModal({
         {/* Corpo: 2 colunas — grade à esquerda, inputs fixos à direita */}
         <div className="flex flex-col sm:flex-row">
           <div className="min-w-0 flex-1 overflow-y-auto p-6" style={{ maxHeight: '58vh' }}>
+            {precisaEscolherDentista && (
+              <div className="mb-4 space-y-1">
+                <Label className="text-xs text-text-secondary">Dentista responsável *</Label>
+                <Select
+                  value={dentistaAlvoId ?? undefined}
+                  onValueChange={(id) => { if (id) onDentistaAlvoChange(id); }}
+                >
+                  <SelectTrigger className="rounded-xl bg-surface border-border text-text-primary">
+                    <SelectValue placeholder="Selecione o dentista..." />
+                  </SelectTrigger>
+                  <SelectContent className="bg-surface border-border">
+                    {dentistasClinica.map((dentista) => (
+                      <SelectItem key={dentista.id} value={dentista.id}>{dentista.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <RetornoSemanaGrid
-              dentistaId={dentistaId}
+              dentistaId={dentistaAlvoId}
               duracaoMin={duracaoMin}
               selecionado={podeConfirmar ? { data: form.data!, minutoDoDia: form.minutoDoDia! } : null}
               onSelecionar={(data, minutoDoDia) => setForm((f) => ({ ...f, data, minutoDoDia }))}
             />
-            {form.data == null && (
+            {dentistaAlvoId != null && form.data == null && (
               <p className="mt-3 text-[11px] text-text-secondary">
                 Clique um horário livre na semana acima — a data e a hora vêm do clique
                 (dá pra ajustar a hora exata ao lado).
@@ -218,7 +251,9 @@ export function MarcarRetornoModal({
                 <p className="rounded-lg bg-coral-pale p-2 text-xs text-coral-ink">{error}</p>
               )}
               {!error && !podeConfirmar && (
-                <p className="text-xs text-text-secondary">Escolha um dia e hora na grade pra habilitar.</p>
+                <p className="text-xs text-text-secondary">
+                  {dentistaAlvoId == null ? 'Escolha o dentista para ver a agenda.' : 'Escolha um dia e hora na grade pra habilitar.'}
+                </p>
               )}
               <Button
                 onClick={onMarcarRetorno}

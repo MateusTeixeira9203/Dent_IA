@@ -819,7 +819,10 @@ export function useRegistrarPainel({
           if (!open) setRetornoError(null);
         }}
         pacienteNome={pacienteNome}
-        dentistaId={dentistaId}
+        role="dentista"
+        dentistasClinica={[]}
+        dentistaAlvoId={dentistaId}
+        onDentistaAlvoChange={() => undefined}
         form={retornoForm}
         setForm={setRetornoForm}
         error={retornoError}

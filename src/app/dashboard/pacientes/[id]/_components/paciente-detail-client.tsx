@@ -309,6 +309,9 @@ export function PacienteDetailClient({
   });
   const [retornoSaving, setRetornoSaving] = useState(false);
   const [retornoError, setRetornoError] = useState<string | null>(null);
+  const [retornoDentistaAlvoId, setRetornoDentistaAlvoId] = useState<string | null>(
+    role === 'secretaria' ? null : dentistaId,
+  );
 
   // Atividades recentes (visão geral) — inicializado do SSR, sem roundtrip extra ao montar
   const [fichasRecentes, setFichasRecentes] = useState<FichaRecente[]>(fichasRecentesSSR ?? []);
@@ -1015,6 +1018,10 @@ export function PacienteDetailClient({
   };
 
   const handleMarcarRetorno = async () => {
+    if (!retornoDentistaAlvoId) {
+      setRetornoError('Selecione o dentista responsável.');
+      return;
+    }
     if (!retornoForm.data || retornoForm.minutoDoDia == null) {
       setRetornoError('Escolha um horário na grade.');
       return;
@@ -1031,6 +1038,7 @@ export function PacienteDetailClient({
         dataHora,
         duracaoMinutos: parseInt(retornoForm.duracao, 10) || 30,
         observacoes: retornoForm.observacoes || null,
+        dentistaId: retornoDentistaAlvoId,
       });
       if (result.error) {
         setRetornoError(result.error);
@@ -1046,6 +1054,7 @@ export function PacienteDetailClient({
         const quando = `${format(parseISO(dia), 'dd/MM/yyyy')} às ${formatHoraRetorno(retornoForm.minutoDoDia)}`;
         setIsMarcarRetornoOpen(false);
         setRetornoForm({ data: null, minutoDoDia: null, duracao: '30', observacoes: '' });
+        if (role === 'secretaria') setRetornoDentistaAlvoId(null);
         setAgendamentosTabData(null); // força recarregar a aba Agenda na próxima abertura
         toast.success(`Retorno marcado para ${quando}`, {
           // Fora da semana corrente já justifica o atalho — a janela agora é a semana, não o mês.
@@ -1057,6 +1066,12 @@ export function PacienteDetailClient({
     } finally {
       setRetornoSaving(false);
     }
+  };
+
+  const handleRetornoDentistaAlvoChange = (id: string) => {
+    setRetornoDentistaAlvoId(id);
+    setRetornoForm((form) => ({ ...form, data: null, minutoDoDia: null }));
+    setRetornoError(null);
   };
 
   const handleExcluirPaciente = async () => {
@@ -1820,10 +1835,16 @@ export function PacienteDetailClient({
         open={isMarcarRetornoOpen}
         onOpenChange={(open) => {
           setIsMarcarRetornoOpen(open);
-          if (!open) setRetornoError(null);
+          if (!open) {
+            setRetornoError(null);
+            if (role === 'secretaria') setRetornoDentistaAlvoId(null);
+          }
         }}
         pacienteNome={displayNome}
-        dentistaId={dentistaId}
+        role={role}
+        dentistasClinica={dentistasClinica}
+        dentistaAlvoId={retornoDentistaAlvoId}
+        onDentistaAlvoChange={handleRetornoDentistaAlvoChange}
         form={retornoForm}
         setForm={setRetornoForm}
         error={retornoError}
