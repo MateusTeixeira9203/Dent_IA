@@ -7,6 +7,8 @@
 
 | ID | Item | Fechado |
 |---|---|---|
+| R-29, R-30, R-31a, R-32, R-34, R-38, R-39, R-41, R-47, R-50–53, R-55, R-57–59, R-61, R-63–67, R-76, R-77, R-80, R-83, R-85, R-86, R-93, R-94, R-102 | Poda de itens em produção sem trabalho funcional restante | 2026-08-18 — validados como concluídos pelo responsável do produto; evidências e specs permanecem no repositório para auditoria. |
+| R-46d, R-67, R-88, R-98a, R-107, R-108, R-108b | Entregas em produção retiradas da fila operacional | 2026-08-18 — concluídas por decisão do responsável do produto. |
 | [R-101](_arquivo/specs/R-101-odontograma-proxima-secao.md) | Odontograma: 3º estado "próxima seção" (âmbar) | 2026-08-11 — testado e aprovado por ele |
 | [R-99](_arquivo/specs/R-99-anotar-radiografia.md) | Anotar a radiografia — 5 ícones + desenho livre, editor e ao vivo | 2026-08-10 — aprovado por ele, 3 rodadas de ajuste ao vivo |
 | R-103a | Painel do Dex destravado — mock fora, casca de 3 colunas, sino apagado | 2026-08-12 — verificado por ele |

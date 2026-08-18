@@ -1,6 +1,6 @@
 # R-49b — Painel de registro ao vivo: brilho provisório e tabela na hora
 
-> **SPEC** · ⏳ fila
+> **SPEC** · 🧊 congelado — decisão 17/08: não entra na rodada de melhoria da voz atual
 > **Aberto:** 2026-08-10 · **Fechado:** — · **Fase:** plano
 > **Modelo:** Sonnet 5 (superfície + fiação de peças existentes; sem prompt novo, sem migration)
 > **Origem:** discussão dele 10/08 (sessão #36). Sub-item do
@@ -9,6 +9,8 @@
 > **Depende de:** nada codado. **Não bloqueia** nada.
 > **Não substitui o R-49 mãe** — a razão do R-49 existir (66% de endo com odontometria vazia)
 > é o extractor, que continua não existindo. Ver §6.
+> **Condição para voltar:** R-106 e R-49 endodontia verificados em produção; só então reavaliar
+> se resposta visual em tempo real reduz erro ou apenas acrescenta movimento.
 
 ## 1. O problema
 

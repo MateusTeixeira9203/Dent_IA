@@ -1,154 +1,175 @@
-# R-49 — Voz e campos de especialidade: preencher sem digitar 17 vezes
+# R-49 — Endodontia preenchida por texto e voz
 
-> **SPEC** · ⏳ fila — **entra depois do cockpit (R-46)**, por decisão dele (02/08)
-> **Aberto:** 2026-08-02 · **Fechado:** — · **Fase:** debate
-> **Modelo:** Sonnet 5 (parser determinístico + testes; sem IA nova, sem migration)
-> **Origem:** recortada da spec do cockpit ([R-46-cockpit.md](R-46-cockpit.md)) quando ela
-> estourou o teto de 300 linhas — o item era grande demais, como a regra prevê.
-> **Depende de:** nada codado. **Não bloqueia** o cockpit.
+> **SPEC** · **R-49** · ⏳ fila
+> **Aberto:** 2026-08-02 · **Fechado:** — · **Fase:** F1 determinística integrada localmente; F2 IA/dúvidas pendente
+> **Depende de:** R-106 validado. R-100 está congelado; transcrição na ficha será item futuro.
+> **Recorte 17/08:** somente endodontia. Outras especialidades entram em fatias posteriores.
 
-## 1. O problema
+## 1. Problema
 
-Quando o procedimento é de especialidade, ele tem tabela própria. **Um molar de 3 canais são
-17 campos** (5 por canal × 3 + obturação + cimento); o teto teórico é 32. Isso é o oposto de
-"ficha rápida" — e o concorrente real é uma linha de texto no Word.
+Um molar de três canais pode exigir 17 campos. Em produção, 21 de 32 eventos de endodontia
+(66%) tinham odontometria totalmente vazia. Os forms, cards, persistência JSONB e a rota de
+despacho do pass 2 já existem; `endodontiaPlugin.extractor` ainda é `null` e a rota não tem
+chamadores.
 
-**Já está tudo construído** (contrato de plugin de 5 peças, `plugin.ts`): os 4 Forms e os 4
-Cards existem em disco. O que falta é **como preencher sem 17 gestos**.
+O objetivo não é tornar voz infalível. É evitar que o custo de preencher a tabela faça o
+registro desaparecer, mantendo revisão humana visível para números clínicos.
 
-| Especialidade | Campos | Persistência | Form |
-|---|---|---|---|
-| Endodontia | 5 por canal (nome, referência, comprimento mm, lima inicial, lima final) × 1–6 canais + obturação + cimento | `evento-detalhe` (JSONB) | `endo-form.tsx` (193 ln) |
-| Ortodontia | 5 (arcada, fio, ativação, elástico corrente, elástico intermaxilar) | `ficha-coluna` | `orto-form.tsx` (79 ln) |
-| Periodontia | PSR: 6 sextantes × (código 0–4 · ausente · asterisco) | `tabela-satélite` | `psr-form.tsx` |
-| Implantodontia | 8 | `evento-detalhe` | `implante-form.tsx` |
+## 2. Decisão e alternativas descartadas
 
-## 2. O dado que reposiciona a pergunta (medido em produção, 02/08)
-
-Workflow de 20 agentes (4 ângulos → 16 propostas → verificação adversarial) foi medir o banco.
-**A pergunta estava mal-posta: a tabela de endo não é cara demais — ela é majoritariamente
-vazia.**
-
-- **21 de 32 eventos de endodontia (66%) têm ZERO odontometria**, mesmo com a tabela abrindo.
-- **Obturação e cimento: 1 preenchimento real em 32 eventos.**
-- **Implante: 4 dos 8 campos nunca foram preenchidos.**
-- **PSR (perio), construído e no ar: zero uso.**
-
-Mesmo padrão dos 7 campos mortos do §1 da spec-mãe (0/88). **Cortar gestos de um formulário que
-ninguém preenche resolve o problema errado** — antes de otimizar o gesto, decidir se a tabela
-deve abrir sozinha.
-
-## 3. Decisões (dele, 02/08)
-
-| # | Decisão | Alternativa descartada |
+| Decisão | Alternativa descartada | Motivo |
 |---|---|---|
-| **D1** | **O parser é determinístico e come TEXTO, não áudio.** `(texto) => EndoDetalhe` | Extractor `modo:'ia'` com Gemini — LLM no caminho de uma medida clínica |
-| **D2** | **"Refinar a voz" ≠ voz infalível.** A voz gera, o dentista **revisa na própria tabela**, corrige a célula errada e salva | Passo de confirmação campo a campo (17 confirmações = pior que digitar) |
-| **D3** | **Preenchimento manual fácil é obrigatório** — *"a voz pode vir a falhar"*. O campo mágico aceita digitação com o mesmo destaque | Voz como caminho principal |
+| Primeira fatia somente endodontia | endo+implante+orto+perio juntas | vocabulários e validações diferentes; falha fica impossível de isolar |
+| Texto e voz usam o mesmo relato transcrito | caminho exclusivo para áudio | a entrada clínica real do parser é texto |
+| Parser determinístico tenta primeiro; IA só completa o que foi dito | somente IA | gramática estruturada não precisa inferência nem custo |
+| Tabela endodôntica abre após extração com algum detalhe | abrir toda vez que existe evento de canal | não força 17 campos quando nenhum detalhe foi narrado |
+| Origem da célula acompanha o rascunho | gravar provenance clínica permanentemente agora | revisão precisa da marca; prontuário não precisa dessa coluna nesta fatia |
+| Número plausível pode ser preenchido pela IA e revisado | proibir todo número da voz | campo vazio já é o modo de falha dominante medido |
+| Correção manual sempre vence | reextração sobrescreve tabela | evita perda silenciosa |
 
-### D1 — por que determinístico
+## 3. Objetivo e como funciona
 
-O extractor de endo (`endo.ts:42`) é hoje `extractor: null`, com o comentário *"Dex hoje não
-emite odontometria; entrada é manual"*. A vaga existe no contrato (Peça 2) e está vazia.
+**Objetivo:** ditar ou escrever detalhes de canal preenche a tabela endodôntica correspondente,
+abre a revisão no Meu Dia e reduz o preenchimento manual sem inventar campos ausentes.
 
-- **Uma linha digitada resolve:** `MV 21,5 lima 15/35; DV 20,0 15/30; P 22,0 15/40 · lateral · AH Plus`
-- **Precedente no código:** `perio.ts:154` já usa `extractor: { modo: 'deterministico' }`, com o
-  comentário *"I6 — zero LLM no caminho do número"*. Não é caminho novo.
-- **Não aciona o gate de eval** do `CLAUDE.md` (nenhum prompt muda) · zero rota · zero migration.
-- **Gestos:** ~20 interações → **~5** com texto digitado. Por voz o ganho real é ~20 → ~9
-  (fator 2,2×, não 4–5×) — 2 a 4 dúvidas em 17 campos é o caso realista de ASR em consultório.
+O pass 1 identifica evento e dente. Para cada endodontia detectada, o cliente chama o pass 2
+com relato original e dentes. O extractor determinístico resolve abreviações estruturadas;
+quando não bastar, o extractor IA retorna dados e dúvidas. O resultado é mesclado sem substituir
+células já editadas. Se houver detalhe ou dúvida, a tabela do dente abre automaticamente.
 
-**A voz entra depois, em cima de gramática já provada em texto.**
+**Andamento 17/08:** F1 já aplica o parser determinístico após o pass 1, preserva detalhe
+manual/preexistente e abre o perfil do primeiro dente com dado válido. F2 continua pendente:
+dispatcher/IA complementar, dúvidas transitórias e merge por campo. Ela só começa após o gate
+do R-106, para que não se misture falha de classificação do evento com extração de odontometria.
 
-⚠️ **Barra honesta, registrada para não virar promessa falsa:** **voz não reduz erro de
-odontometria — aumenta.** Digitar tem o laço olho-régua-dedo-tela; voz não tem. Se o Dex ouve
-22 onde era 21, os dois são plausíveis e nenhuma validação pega. A meta é *"não menos seguro"*.
+## 4. Contrato técnico
 
-→ Daí: **voz escreve as palavras, o dedo digita os milímetros.** Os 3 `comprimentoRaiz` são 18%
-dos campos e carregam quase todo o risco; são os únicos lidos de instrumento (régua/localizador).
+### Dados
 
-### D2 — a revisão é a tabela (o que dissolve o teatro de confirmação)
+Reusa `odontograma_eventos.detalhe`; zero migration.
 
-Dele: *"quando gerar com a voz, o cara pode olhar, revisar e salvar. Ou já ir pra tabela e só
-corrigir na tabela — é muito mais rápido."*
+```typescript
+export type OrigemCelulaEndo = 'deterministico' | 'ia' | 'manual';
 
-Não existe botão de "aceitar tudo" porque **não existe passo de aceite**. A tabela editável é a
-revisão; corrigir uma célula já é conferir a linha. Isso responde ao guarda-corpo do ECRI Rec D
-(≈100% de aceite sem edição = teatro) sem inventar métrica nova.
+export type DuvidaEndo = {
+  campo: string;
+  trecho: string;
+  motivo: 'sem_canal' | 'fora_da_faixa' | 'resolucao_invalida' | 'conflito';
+};
 
-### ⚠️ EMENDA 04/08 — D1 relaxado: a IA PODE preencher o número
+export type EndoExtraction = {
+  dente: number;
+  detalhe: EndoDetalhe;
+  origemPorCampo: Record<string, OrigemCelulaEndo>;
+  duvidas: DuvidaEndo[];
+};
 
-**Decisão dele, 04/08**, revogando parte do D1:
+export type EndoExtractionResult =
+  | { ok: true; extracoes: EndoExtraction[] }
+  | { ok: false; motivo: 'nada-extraido' | 'erro'; mensagem?: string };
+```
 
-> *"De todo jeito o dentista vai verificar. Se já tiver certo, ótimo, ganhamos pontos; se tiver
-> errado, é uma correção normal. E a gente pode dar prioridade ainda mais pra quando tiver
-> essas operações que entram números, milímetros: o procedimento com a tabela **fica aberto** —
-> o único que vai ficar aberto é esse, porque ele é necessário."*
+`origemPorCampo` e `duvidas` vivem no rascunho da UI; somente `EndoDetalhe` válido persiste.
 
-**Por que a objeção original caiu.** O D1 comparava *número da IA possivelmente errado* contra
-*número certo digitado à mão*. Essa não é a comparação real. O baseline medido nesta mesma spec
-é **66% dos endos com odontometria vazia** — campo em branco não é o estado seguro, é **ausência
-de prontuário**. Uma tabela pré-preenchida que o dentista é obrigado a olhar ganha de um
-formulário que dois terços das vezes nunca é preenchido.
+### Parser determinístico
 
-**A trava que torna isso seguro é dele:** a tabela de um procedimento com campo numérico
-**nasce aberta**, e é a **única** que abre por padrão. Isso converte "preenchido em silêncio"
-em "apresentado pra revisão" — que era exatamente o modo de falha que o D1 temia.
+```typescript
+export function extrairEndoDeterministico(
+  texto: string,
+  dentesContexto: number[],
+): EndoExtractionResult;
+```
 
-**O que muda:**
+Gramática inicial aceita, sem diferenciar maiúsculas e com vírgula/ponto decimal:
 
-| | Antes (D1 original) | Depois (emenda 04/08) |
-|---|---|---|
-| Quem lê o número | só parser determinístico | parser determinístico **ou** a IA do campo mágico |
-| Tabela com número | abre como as outras | **abre sozinha, sempre** |
-| Célula preenchida por máquina | borda teal (já previsto) | idem — **provenance continua obrigatória** |
+```text
+46: MV 21,5 15/35; DV 20 15/30; D 20,5 15/30; obturação lateral; AH Plus
+```
 
-**O que NÃO muda, e fica mais importante ainda:**
+- canal + comprimento + lima inicial/final;
+- obturação e cimento vinculados ao dente corrente;
+- número sem dente/canal inequívoco vira dúvida, nunca palpite.
 
-- **I5 (recusa em vez de chute) vira o guarda-corpo principal.** Com LLM no caminho, a validação
-  de faixa clínica deixa de ser detalhe: a IA emite `45mm` de comprimento radicular sem piscar,
-  e é a faixa que barra. Número fora da faixa ou fora da resolução da régua (0,5 mm) **continua
-  sendo recusado**, nunca arredondado.
-- **I1** — campo que o texto não mencionou continua `null`. A IA preenche o que **foi dito**,
-  nunca completa o que faltou.
-- **I4** — merge nunca sobrescreve célula já preenchida pelo dentista.
-- O parser determinístico **não morre**: quando o texto vier semi-estruturado
-  (`MV 21,5 lima 15/35`), ele resolve sem gastar token nem inferir.
+### Validação clínica
 
-**Risco aceito conscientemente e registrado:** ancoragem. Número plausível já preenchido recebe
-menos escrutínio que campo vazio. A mitigação é a tabela aberta + a marca de proveniência na
-célula — não há como zerar esse risco, e ele foi aceito com o número dos 66% na mão.
+- comprimento: `8–30 mm`, passo de `0,5 mm`;
+- limas: inteiros positivos aceitos pelo schema atual;
+- fora da faixa ou resolução inválida não entra em `detalhe`;
+- campo não mencionado permanece `null`;
+- vazio nunca vira zero;
+- o extractor IA usa Structured Output tipado e passa pela mesma validação local.
 
-**Estados de célula** (desenhados no artefato do cockpit §4):
-- **Veio do texto/voz:** borda teal, editável no lugar.
-- **Parser recusou:** mostra **o que ouviu**, nunca um palpite — em **coral tracejado**, que é a
-  convenção que o `EndoForm` já usa para "não foi ditado" (`endo-form.tsx:65`, `linhaTemDado()`
-  em `:38`). Não inventar um 3º código de cor.
-- Vazio **nunca** vira zero; número fora da faixa clínica vira dúvida, não vira dado.
+### Orquestração
 
-## 4. Invariantes
+`/api/dex/extrair-especialidade` continua como dispatcher. O plugin de endodontia ganha
+`extractor: { modo: 'ia', extrair }`; a implementação tenta o determinístico antes de chamar
+o provider. A resposta reúne resultados de todos os dentes citados.
 
-- [ ] **I1** — Campo não ditado fica `null`, **nunca inferido** (herda a I5 do `endo.ts`).
-- [ ] ~~**I2**~~ — ⚠️ **REVOGADA em 04/08** (ver emenda no §3). Era *"zero LLM no caminho de
-      qualquer número clínico"*. **Substituída por:** a IA pode preencher número clínico, desde
-      que (a) a tabela do procedimento **abra sozinha**, (b) a célula carregue marca de
-      proveniência, e (c) a **I5 valide a faixa** — a validação de faixa deixa de ser rede de
-      segurança e vira o guarda-corpo principal.
-- [ ] **I3** — Nada sai do texto sem virar **linha ou dúvida**: fragmento com número que não
-      ancorou em canal produz dúvida com o texto cru. Silêncio aqui é perda de dado.
-- [ ] **I4** — Merge nunca sobrescreve: canal já preenchido que reaparece com valor diferente
-      gera **conflito visível**, não overwrite (o ditado incremental é o caso real).
-- [ ] **I5** — Recusa em vez de chute: número fora da faixa clínica ou fora da resolução da
-      régua (0,5 mm) é **recusado**, não arredondado — arredondar é inferir.
+No cliente, `CampoMagicoMeuDia`:
 
-## 5. Fora de escopo
+1. aplica o pass 1 sem perda;
+2. deriva dentes com evento `endodontia`;
+3. chama o pass 2 uma vez;
+4. mescla por dente/campo;
+5. abre o perfil do primeiro dente com detalhe/dúvida;
+6. os seguintes ficam acessíveis pelos cards, sem fila em tempo real.
 
-Voz como caminho principal (é o 2º passo, depois da gramática provada em texto) · mexer nos
-schemas para cortar campos (a medição do §2 sugere, mas cortar campo de prontuário é decisão
-com risco legal — item próprio se for o caso) · periograma completo (R-08c).
+### Merge
 
-## 6. Aberta
+Prioridade: `manual > valor já presente > determinístico > IA > vazio`.
 
-- **A1 · A tabela deve abrir sozinha?** Com 66% de odontometria vazia, abrir a tabela em todo
-  canal pode ser o gesto desperdiçado. Alternativa: nível 1 (só o sinal "3 canais") por
-  default, tabela sob demanda. **Não decidido** — depende de ele olhar o dado.
+- mesmo valor: mantém o atual, sem conflito;
+- valor novo diferente de manual/presente: não sobrescreve; cria dúvida `conflito`;
+- nova célula válida: preenche e marca origem;
+- nova dúvida: acumula por chave sem duplicar.
+
+## 5. Comportamento
+
+| Dado / situação | Resultado esperado |
+|---|---|
+| `46 MV 21,5 lima 15/35` | abre 46; MV preenchido; demais canais vazios |
+| `MV 45 mm` | 45 não entra; trecho aparece como dúvida fora da faixa |
+| `MV 21,3 mm` | não arredonda; dúvida de resolução inválida |
+| `21,5 lima 15/35` sem canal | nada associado por palpite; dúvida preserva trecho |
+| IA não extrai nada | evento do pass 1 permanece; form manual continua disponível |
+| célula manual 21,5; reprocessa 22 | mantém 21,5 e mostra conflito |
+| dois dentes narrados | detalhes ligados ao dente correto; abre o primeiro com dado |
+| falha do pass 2 | pass 1 e texto permanecem; erro não impede edição ou save |
+
+## 6. Referência visual
+
+Não cria tela. Reusa `EndoForm` dentro do perfil de dente já existente.
+
+- célula preenchida por parser/IA: borda `teal` existente;
+- dúvida/recusa: coral tracejado, com trecho ouvido;
+- manual: aparência normal do form;
+- light e dark usando tokens, sem cor hardcoded.
+
+## 7. Invariantes
+
+- [ ] Campo não dito fica `null`; nunca inferido para completar a tabela.
+- [ ] Número inválido é recusado, nunca arredondado.
+- [ ] Fragmento numérico não ancorado vira dúvida; nunca desaparece.
+- [ ] Merge nunca sobrescreve célula manual ou valor anterior.
+- [ ] Falha do pass 2 nunca remove o evento produzido pelo pass 1.
+- [ ] Somente detalhe validado persiste; provenance/dúvida são revisão transitória.
+- [ ] Zero comportamento em tempo real enquanto o dentista ainda fala.
+
+## 8. Gates de aceite
+
+- [ ] Testes unitários cobrem a gramática e todos os exemplos da §5.
+- [ ] `45 mm` e `21,3 mm` são recusados sem aparecer em `EndoDetalhe`.
+- [ ] Campo ausente permanece `null` no payload salvo e após recarregar.
+- [ ] Correção manual seguida de reprocessamento não é sobrescrita.
+- [ ] Ditar um caso de 3 canais no localhost preenche o dente certo e abre a tabela.
+- [ ] Falha simulada do pass 2 mantém texto, evento e form editável.
+- [ ] Eval do R-106 não regride após ligar o pass 2.
+- [ ] Light/dark e largura móvel conferidos na tabela aberta.
+- [ ] A futura ficha recolhível de transcrição não é pré-requisito deste fluxo; a tabela
+      endodôntica continua sendo a superfície de revisão desta fatia.
+
+## 9. Fora de escopo
+
+- Brilho, odontograma reagindo enquanto dita e fila de tabelas ao vivo (R-49b congelado).
+- Implantodontia, ortodontia e periodontia; cada uma terá recorte próprio após endodontia.
+- Periograma completo, aprendizado automático e alteração dos campos clínicos existentes.

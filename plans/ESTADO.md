@@ -1,66 +1,74 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-08-15 21:13
-> Reescrito do zero — funde o que a sessão do R-88/R-67/R-92 (execução) e a sessão paralela do
-> R-105 (discussão, intocada por mim) deixaram em aberto.
+> **ESTADO** · atualizado 2026-08-17
+> Sessão de execução responsiva → planejamento da confiabilidade clínica da voz.
 
 ## Agora
 
-**R-88 está no ar em `dentia.app.br`, ninguém além de mim olhou.** Eixo Continuidade, preço
-299/259 lendo de `lib/planos.ts`, artefato v7 seguido geometricamente. Testei sozinho (curl em
-produção, clique real no Google OAuth) — pelo `CLAUDE.md` isso é 🟡, não ✅, até você olhar.
+**R-106 é o único item 🔵, em execução local.** A rodada atual não inclui
+brilho/odontograma reagindo em tempo real; R-49b foi congelado por decisão dele.
 
-**R-67 (embed ambíguo) corrigido e no ar** — provado por SQL antes/depois. Falta o gate de tela:
-exportar um prontuário logado e ver as consultas no PDF.
+Ordem proposta:
 
-**R-92 retomado, muda de provedor.** AbacatePay sai do checkout de plano, entra **Stripe** —
-decisão sua, chave chega **segunda-feira**. Emenda técnica pronta em
-`specs/R-92-fechar-para-cobrar.md` §8. A 2ª integração AbacatePay (Pix avulso de paciente) sai do
-sistema de vez — virou tarefa própria, você já iniciou (`task_471aea18`).
+1. R-106 — código aplicado: realizado exige execução explícita; demais evidências nascem indicadas.
+2. Revisão no Meu Dia — “Confira”, “Tudo indicado” e “✓ tudo feito” estão aplicados.
+3. R-49 — parser endodôntico determinístico integrado ao Meu Dia; ele abre o dente com dados narrados.
+4. Pendente: eval autenticado + ditado real local do R-106; depois IA complementar, dúvidas e merge completo do R-49.
 
-**R-105 (onboarding) segue em discussão**, intocado por esta sessão — artefato v2 verificado, 3
-perguntas suas sem resposta (abaixo). Não é item de roadmap ainda.
+Specs em contrato:
 
-## Travado
+- `R-100-log-pipeline-voz.md` — 🧊 transcrição será seção recolhível da ficha no redesign futuro;
+  não haverá armazenamento temporário.
+- `R-106-status-clinico-da-voz.md` — aprovada; zero migration; só execução explícita nasce realizada.
+- `R-49-voz-e-campos-de-especialidade.md` — aprovada; recortada para endodontia; zero migration.
 
-| O quê | Trava o quê | Hipótese / próximo passo |
-|---|---|---|
-| **Chave da Stripe** | R-92 Dia 3 (checkout de verdade) | Chega segunda, por você |
-| **`activateTrial` não cobra cartão** | "Cobrança no 15º dia" virar verdade (já publicado na landing e no e-mail D7) | Resolve quando R-92 Dia 3 subir |
-| Ninguém verificou a landing/R-67 pessoalmente | Virarem ✅ | Abrir `dentia.app.br` e exportar um prontuário |
-| PDF da ponte ("receber a ficha") é manual | CTA transicional virar 100% automática | Falta encenar na Teste01, exportar, anonimizar, plugar no Resend |
-| Foto da ClinDent é placeholder | Bloco "Quem usa" ficar real | Precisa da foto cedida pela clínica |
-| **R-105 sem as 3 respostas** (abaixo) | Virar item de roadmap | Perguntas de sessão anterior, seguem abertas |
-| Conflito de item ativo (🔵) nunca resolvido | Saber a prioridade real | Carrega de sessões passadas — ver "Esperando você" |
-| G8 (2 contas) — R-108/R-108b/R-103b/c **e** R-29/30/31a/32/34/39/03c | Fechar esses itens como ✅ | Represado — ele recusou seed sintético, espera dado real |
-| R-36 reescrita sem aprovação | Começar a codar | §7 tem 3 decisões abertas |
-| Posição do "Modo multidente" (R-107d §9) | Fechar R-107d | Quer opinião de dentistas reais |
+Validações feitas nesta sessão: `npm run typecheck`, lint dos arquivos tocados e parser de
+endo para dois canais passaram. Não houve gravação em banco nem armazenamento de transcrição.
 
-## Esperando você
+## Trabalho local ainda não entregue
 
-- ⚠️ **Qual é o item ativo?** `ROADMAP.md` tem **R-111 como 🔵** (responsividade mobile). Nem o
-  R-88 nem o R-92 reivindicaram o 🔵 nesta sessão. Nunca respondido — **você decide**.
-- **Olhar a landing** em `dentia.app.br` — é o que promove R-88 de 🟡 pra ✅
-- **Segunda-feira:** a chave da Stripe
-- **R-105 — 3 perguntas paradas:**
-  1. "Apresentação" na lista de momentos de valor é planejamento renascendo, ou apresentação do
-     orçamento ao paciente?
-  2. Cronograma de volta de planejamento/tratamento/despesa/modo-consulta-novo — o onboarding já
-     nasce prevendo, ou espera cada um voltar?
-  3. Registra o R-105 no `ROADMAP.md` agora, ou segue em discussão?
-- **"+300 pacientes por mês" e "3 meses em uso"** — já estão publicados na landing sem
-  confirmação. Registro interno tem 302 pacientes na base *inteira*, não mensal — número torto
-  em canal de indicação é o que o colega confere
-- **A frase do Dr. Renato está no ar sem o sim dele** — é rascunho seu/meu, assinado com o nome
-  dele. Risco imediato, não hipotético
-- Programa de indicação (mês grátis, Berger) — custa diferente a R$299 do que custava a R$249
-- Conferir a barra de encaminhar (pontual 🟡 de 13/08, nunca visto na tela)
-- Backfill de status — 71 fichas antigas com procedimento indicado seguem `concluida`
-- Veredito de produção do R-98a — sem confirmação desde a sessão #35
-- Testar pessoalmente R-85/R-86/R-65/R-66 (herdados, ainda 🟡)
+### R-111 — responsividade
 
-## Próximo da fila
+- 🟡 Corrigido e QA local em 375, 768, 1440 e 375×500 com teclado.
+- Sem overflow nas rotas medidas; alvos de toque ≥44px; modal de agendamento alcançável.
+- Typecheck, lint sem erros e build de produção passaram.
+- Falta commit/deploy e veredito visual dele.
 
-Segunda: R-92 Dia 3 com a chave da Stripe. Até lá, o que não depende dela é você olhar a landing
-e o R-67 com seus próprios olhos, e responder as 3 perguntas do R-105.
-`ROADMAP.md` segue precisando de poda — teto ~200 linhas, estourado há sessões.
+### R-113/R-114 — orçamento
+
+- R-113 B1+B2 codados; migration 144 escrita, **não aplicada** (falta gate de 2 contas).
+- R-114 codado; migrations 145/146 já aplicadas na sessão anterior.
+- Perfil do dentista ganhou aprovação por item, “Aprovar tudo”, estado derivado e PDF coerente.
+- Tela antiga da secretária ficou congelada por decisão dele; teste real seria na segunda.
+- Nenhum dado duplicado da ClinDent foi removido.
+
+### Direção comercial — entrada para planejamento (18/08)
+
+- R-115 (símbolos do odontograma) foi congelado; nenhum SVG de produção mudou. O rascunho
+  anatômico fica guardado para uma revisão clínica posterior.
+- Próxima discussão: competitividade após chegar a análise de concorrentes. Pautas relatadas:
+  Stripe/forma de pagamento, contratos e termos de aceite baixáveis, ajustes no onboarding já
+  montado, nomes em vez de IDs numéricos ao escolher dentista e aprovação parcial do orçamento
+  (R-114 já a cobre, mas ainda precisa de validação).
+- WhatsApp fica fora desta rodada; será planejado com calma depois.
+- Correção pontual aplicada: selects de agenda e vínculo de procedimento nunca mais mostram
+  UUID/ID como fallback; quando o item não existe na lista atual, exibem "indisponível".
+  `npm run typecheck` passou em 18/08.
+- Auditoria read-only da ClinDent (18/08): 367/367 pacientes têm `dentista_id` preenchido
+  (5 dentistas), mas a RLS de `pacientes` só exige clínica ativa + papel clínico. Todos os
+  pacientes são compartilhados para admin/dentista/secretária; `dentista_id` é informativo,
+  não controla visibilidade. Decisão de UX pendente: remover o seletor de "Dentista responsável"
+  do cadastro de paciente da secretária ou renomeá-lo/modelá-lo como atribuição real.
+- Observação mobile (18/08): no iPhone, "Adicionar à Tela de Início" não mostrou ícone do
+  Odonto.IA. Causa confirmada no projeto: só há `favicon.svg`; não existem `apple-touch-icon`,
+  manifest nem configuração de PWA. A CTA da landing só entra junto com esses ativos e QA iOS.
+
+## Decisões esperando ele
+
+1. Antes de subir migration 144: testar RLS com admin + secretária na clínica QA.
+
+## Cuidado com a árvore
+
+Há um lote grande não commitado misturando orçamento (R-113/R-114), responsividade (R-111),
+specs e migrations. Não resetar nem sobrescrever. Commits devem ser separados por mudança
+reversível; migration/RLS nunca vai junto de UI.
