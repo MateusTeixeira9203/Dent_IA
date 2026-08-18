@@ -86,7 +86,7 @@ export default function LandingPage() {
         <div className="env">
           <span className="autoridade sobe" style={{ animationDelay: '.05s' }}>
             <span className="ponto-vivo" />
-            Em uso diário na <b>ClinDent</b> — 6 dentistas, +300 pacientes por mês
+            Em uso diário na <b>ClinDent</b> — 5 dentistas, mais de 300 consultas por mês
           </span>
           <h1 className="sobe" style={{ animationDelay: '.13s' }}>
             Você atende. <em>A IA documenta.</em>
