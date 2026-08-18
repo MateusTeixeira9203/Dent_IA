@@ -825,6 +825,7 @@ export function AgendamentosClient({
           observacao:    novoForm.observacaoProtetico.trim(),
           dataEntrega:   novoForm.dataEntregaProtetico,
           agendamentoId: result.id,
+          ...(isSecretaria && novoForm.dentistaId ? { dentistaId: novoForm.dentistaId } : {}),
         });
         if (pedidoResult.error) {
           toast.error(`Agendamento criado, mas o pedido pro protético falhou: ${pedidoResult.error}`);

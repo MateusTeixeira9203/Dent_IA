@@ -741,6 +741,7 @@ const criarPedidoProteticoSchema = z.object({
     return new Date(`${v}T00:00:00`) >= hoje;
   }, "A data de entrega não pode ser no passado."),
   agendamentoId: z.string().uuid().optional(),
+  dentistaId:    z.string().uuid().optional(),
 });
 
 export async function criarPedidoProtetico(input: {
@@ -749,6 +750,8 @@ export async function criarPedidoProtetico(input: {
   observacao: string;
   dataEntrega: string;
   agendamentoId?: string;
+  /** Só a secretária informa: é o mesmo dentista selecionado no agendamento. */
+  dentistaId?: string;
 }): Promise<{ error?: string; id?: string }> {
   const parsed = criarPedidoProteticoSchema.safeParse(input);
   if (!parsed.success) {
@@ -761,6 +764,23 @@ export async function criarPedidoProtetico(input: {
   // Espelha a RLS (pedidos_protetico_access): protético não cria pedido, só recebe.
   if (role === "protetico") {
     return { error: "Você não tem permissão para criar um pedido." };
+  }
+
+  const dentistaResponsavelId = dados.dentistaId ?? dentistaId;
+  if (dados.dentistaId && dados.dentistaId !== dentistaId) {
+    if (role !== "secretaria") {
+      return { error: "Apenas a secretária pode escolher outro dentista responsável." };
+    }
+    const { count: dentistaCount } = await supabase
+      .from("dentistas")
+      .select("id", { count: "exact", head: true })
+      .eq("id", dados.dentistaId)
+      .eq("clinica_id", clinicId)
+      .in("role", ["admin", "dentista"])
+      .eq("ativo", true);
+    if ((dentistaCount ?? 0) === 0) {
+      return { error: "Dentista responsável não encontrado nesta clínica." };
+    }
   }
 
   const { count: proteticoCount } = await supabase
@@ -789,7 +809,7 @@ export async function criarPedidoProtetico(input: {
     .insert({
       clinica_id:     clinicId,
       protetico_id:   dados.proteticoId,
-      dentista_id:    dentistaId,
+      dentista_id:    dentistaResponsavelId,
       paciente_id:    dados.pacienteId,
       agendamento_id: dados.agendamentoId ?? null,
       observacao:     dados.observacao,
