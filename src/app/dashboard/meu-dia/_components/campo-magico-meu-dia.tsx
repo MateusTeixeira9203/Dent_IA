@@ -18,6 +18,7 @@ import { CapturaLivreCard } from '@/components/fichas/captura-livre-card';
 import { DicaZona } from './dica-zona';
 import { mesclarEventosSemPerda } from '@/lib/odontograma/dedup-eventos-draft';
 import { hojeBRT } from '@/lib/hora-brt';
+import { extrairEndoDeterministico } from '@/lib/especialidades/extrair-endo-deterministico';
 import type { OdontogramaEventoDraft, OrtoManutencaoInfo } from '@/types/odontograma';
 import type { EvolucaoFormatada } from '@/app/api/dex/formatar-evolucao/route';
 import type { SugestaoLocal } from '@/lib/odontograma/casar-procedimento-local';
@@ -34,6 +35,8 @@ export interface CampoMagicoMeuDiaProps {
   /** R-50 — manutenção ortodôntica extraída pela IA. Mesmo padrão de `onAlertaNovoChange`: só
    *  escrita, o dono do estado é `registrar-painel.tsx` (que abre o chip já preenchido). */
   onOrtoDetectado: (orto: OrtoManutencaoInfo) => void;
+  /** R-49 F1 — abre a tabela existente para revisar detalhe que veio do relato. */
+  onEndoDetectado: (dente: number, eventoId: string) => void;
   /** R-46d D8 — "usar este documento de base" (anexar-documentos-bloco.tsx), repassado direto
    *  pro CapturaLivreCard. */
   anexarTexto?: { texto: string; nonce: number; origem: 'audio' | 'documento' };
@@ -54,14 +57,29 @@ export interface CampoMagicoMeuDiaProps {
 
 export function CampoMagicoMeuDia({
   pacienteNome, eventosDraft, onEventosDraftChange, textoVisita, onTextoVisitaChange,
-  onAlertaNovoChange, onOrtoDetectado, anexarTexto, catalogoProcedimentos, onAplicarSugestao,
+  onAlertaNovoChange, onOrtoDetectado, onEndoDetectado, anexarTexto, catalogoProcedimentos, onAplicarSugestao,
   realce, dica,
 }: CampoMagicoMeuDiaProps) {
   const [aberto, setAberto] = useState(false);
   const [jaAbriu, setJaAbriu] = useState(false);
 
-  function aplicar(data: EvolucaoFormatada) {
-    onEventosDraftChange(mesclarEventosSemPerda(eventosDraft, data.odontograma_eventos, hojeBRT()));
+  function aplicar(data: EvolucaoFormatada, relato: string) {
+    const mesclados = mesclarEventosSemPerda(eventosDraft, data.odontograma_eventos, hojeBRT());
+    const dentesEndo = mesclados
+      .filter((evento) => evento.tipo === 'endodontia' && evento.ancora.dente != null)
+      .map((evento) => evento.ancora.dente as number);
+    const detalhes = extrairEndoDeterministico(relato, dentesEndo);
+    const comDetalhe = mesclados.map((evento) => {
+      const dente = evento.tipo === 'endodontia' ? evento.ancora.dente : undefined;
+      const detalhe = dente == null ? undefined : detalhes.get(dente);
+      return detalhe && evento.detalhe == null ? { ...evento, detalhe } : evento;
+    });
+    onEventosDraftChange(comDetalhe);
+
+    const primeiroComDetalhe = comDetalhe.find((evento) => evento.tipo === 'endodontia' && evento.ancora.dente != null && evento.detalhe != null);
+    if (primeiroComDetalhe?.ancora.dente != null) {
+      onEndoDetectado(primeiroComDetalhe.ancora.dente, primeiroComDetalhe.id);
+    }
 
     const partes = [
       textoVisita,

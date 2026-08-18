@@ -96,6 +96,40 @@
       "esperado": { "proibido": [{ "tipo": "endodontia", "dente": 46, "status": "realizado" }] }
     },
     {
+      "id": "status-profilaxia-explicita",
+      "cat": "atual",
+      "relato": "fiz profilaxia hoje com jato de bicarbonato",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "profilaxia", "status": "realizado", "evidencia_status": "execucao_explicita" }] }
+    },
+    {
+      "id": "status-necessidade-indicada",
+      "cat": "atual",
+      "relato": "paciente precisa de profilaxia e indiquei clareamento",
+      "modo": "consulta",
+      "esperado": { "eventos": [
+        { "tipo": "profilaxia", "status": "indicado", "evidencia_status": "indicacao_explicita" },
+        { "tipo": "clareamento", "status": "indicado", "evidencia_status": "indicacao_explicita" }
+      ], "proibido": [
+        { "tipo": "profilaxia", "status": "realizado" },
+        { "tipo": "clareamento", "status": "realizado" }
+      ] }
+    },
+    {
+      "id": "status-canal-ambiguo",
+      "cat": "atual",
+      "relato": "canal no 46",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "endodontia", "dente": 46, "status": "indicado", "evidencia_status": "ambiguo" }], "proibido": [{ "tipo": "endodontia", "dente": 46, "status": "realizado" }] }
+    },
+    {
+      "id": "status-historico-na-consulta",
+      "cat": "atual",
+      "relato": "o paciente relatou que fez canal no 26 há dois anos",
+      "modo": "consulta",
+      "esperado": { "eventos": [{ "tipo": "endodontia", "dente": 26, "status": "indicado", "evidencia_status": "historico" }], "proibido": [{ "tipo": "endodontia", "dente": 26, "status": "realizado" }] }
+    },
+    {
       "id": "multi-dente",
       "cat": "atual",
       "relato": "restaurei o 14 e o 15, ambos na oclusal, com resina",

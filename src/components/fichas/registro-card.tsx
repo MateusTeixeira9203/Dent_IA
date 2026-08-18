@@ -47,6 +47,8 @@ export interface RegistroCardData {
   /** Destino do encaminhamento (R-04) — null = não encaminhado. Leitura é aberta pra
    *  clínica inteira (migration 099); quem AGE é decidido por quem chama o card. */
   encaminhadoPara: { id: string; nome: string } | null;
+  /** R-106 — proposta ambígua do campo mágico; só existe no rascunho editável. */
+  revisarStatus?: boolean;
 }
 
 export interface RegistroCardProps {
@@ -209,6 +211,9 @@ export function RegistroCard({
 
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-sm text-text-primary truncate">{titulo}</p>
+          {data.revisarStatus && (
+            <p className="mt-0.5 text-xs font-semibold text-warning-ink">Confira o status</p>
+          )}
           {editavel ? (
             <input
               type="text"

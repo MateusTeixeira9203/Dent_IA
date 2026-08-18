@@ -71,6 +71,12 @@ test('extrairDentesDoTexto: não duplica dente repetido no texto', () => {
   assert.deepEqual(extrairDentesDoTexto('dente 26, canal do 26'), [26]);
 });
 
+test('endo: medida e limas não viram dentes no chip do campo mágico', () => {
+  const texto = 'Canal no 46: MV 21,5 mm lima 15/35; DV 20 mm lima 15/30. Obturação com AH Plus';
+  assert.deepEqual(extrairDentesDoTexto(texto), [46]);
+  assert.deepEqual(casarProcedimentoLocal(texto, []).find((x) => x.tipo === 'endodontia')?.dentes, [46]);
+});
+
 test('achado 12/08: 3 procedimentos distintos no mesmo relato — cada um só com o seu dente', () => {
   const r = casarProcedimentoLocal('restauração no dente 35 36, fratura no dente 55 e extração no dente 12', []);
   assert.deepEqual(r.find((x) => x.tipo === 'carie_restauracao')?.dentes, [35, 36]);

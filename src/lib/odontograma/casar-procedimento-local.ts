@@ -69,7 +69,9 @@ function casaLabel(norm: string, label: string): boolean {
 /** Generaliza o antigo `extrairDenteDoTexto` (singular) pra multi-dente — "restauração 35 e
  *  36" precisa dos dois. Único parser de número de dente do projeto; não duplicar.
  *
- *  `(?<!\d)\d{2}(?!\d)` — 2 dígitos ISOLADOS, não um trecho de número maior. Sem os
+ *  `(?<![\d/])\d{2}(?![\d/,]|\s*mm\b)` — 2 dígitos isolados, não um trecho de número
+ *  maior, medida decimal (`21,5`), medida em milímetros (`20 mm`) ou par de limas
+ *  (`15/35`). Sem os
  *  lookarounds, "Z350" (nome comercial real de resina — Filtek Z350) casava "35" e virava
  *  dente fantasma (achado pelo teste do catálogo, não por inspeção). O código antigo
  *  (`extrairDenteDoTexto`, buscava só na caixa de busca curta) tinha o mesmo regex cru — o
@@ -77,7 +79,7 @@ function casaLabel(norm: string, label: string): boolean {
 export function extrairDentesDoTexto(texto: string): number[] {
   const vistos = new Set<number>();
   const dentes: number[] = [];
-  for (const n of texto.match(/(?<!\d)\d{2}(?!\d)/g) ?? []) {
+  for (const n of texto.match(/(?<![\d/])\d{2}(?![\d/,]|\s*mm\b)/gi) ?? []) {
     const d = Number(n);
     if (DENTES_VALIDOS.has(d) && !vistos.has(d)) {
       vistos.add(d);

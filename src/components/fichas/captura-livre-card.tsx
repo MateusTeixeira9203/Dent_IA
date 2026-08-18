@@ -28,7 +28,7 @@ export interface CapturaLivreCardProps {
   pacienteNome: string;
   /** Form já tem conteúdo? Gate de confirmação antes de sobrescrever (§8 fluxo, passo 4). */
   formDirty: boolean;
-  onOrganizado: (evolucao: EvolucaoFormatada) => void;
+  onOrganizado: (evolucao: EvolucaoFormatada, relato: string) => void;
   /** R-46d (D8) — "usar este documento de base": `nonce` muda a cada clique, o efeito abaixo
    *  observa a mudança e faz append no texto atual. Opcional — callers existentes (FichasTab)
    *  não passam, comportamento 100% preservado. `origem` (07/08) decide o `modo` que
@@ -123,7 +123,7 @@ export function CapturaLivreCard({
       });
       const data = await res.json() as EvolucaoFormatada & { error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? 'Erro ao formatar');
-      onOrganizado(data);
+      onOrganizado(data, relato);
     } catch (err) {
       console.error('[captura-livre] formatar-evolucao:', err);
       toast.error('O Dex não conseguiu organizar as anotações. Tente novamente.');

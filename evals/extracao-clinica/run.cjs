@@ -32,6 +32,7 @@ function casa(ev, spec) {
   const anc = ev.ancora || {};
   if (spec.tipo != null && ev.tipo !== spec.tipo) return false;
   if (spec.status != null && ev.status !== spec.status) return false;
+  if (spec.evidencia_status != null && ev.evidencia_status !== spec.evidencia_status) return false;
   if (spec.dente != null && anc.dente !== spec.dente) return false;
   if (spec.nivel != null && anc.nivel !== spec.nivel) return false;
   if (spec.faces != null && faceSet(anc.faces) !== faceSet(spec.faces)) return false;

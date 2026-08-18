@@ -151,6 +151,8 @@ interface RegistrarPainelProps {
    *  uma. Independente do estado de "Salvar" — nunca herda `disabled`/`semRascunho`, é ação
    *  separada (não precisa ter rascunho pra gerar orçamento de uma ficha antiga). */
   onAbrirPickerOrcamento: () => void;
+  /** R-49 F1 — o campo mágico extraiu detalhe de endo; abre o editor já expandido. */
+  onAbrirDetalheEndo: (dente: number, eventoId: string) => void;
   /** R-105a §4.2 — repassado direto pro campo mágico. Derivado em `meu-dia-client.tsx`
    *  (dono da regra do realce); aqui é só passagem, nenhuma lógica. */
   realceCampoMagico?: boolean;
@@ -216,6 +218,7 @@ export function useRegistrarPainel({
   boca,
   detalheEspecialidadeAberto,
   onAbrirPickerOrcamento,
+  onAbrirDetalheEndo,
   realceCampoMagico,
   dicaCampoMagico,
 }: RegistrarPainelProps): RegistrarPainelSlots {
@@ -555,6 +558,7 @@ export function useRegistrarPainel({
         onTextoVisitaChange={setTextoVisita}
         onAlertaNovoChange={setAlertaNovo}
         onOrtoDetectado={handleOrtoDetectado}
+        onEndoDetectado={onAbrirDetalheEndo}
         anexarTexto={anexarTexto}
         catalogoProcedimentos={catalogoProcedimentos}
         onAplicarSugestao={aplicarSugestaoLocal}

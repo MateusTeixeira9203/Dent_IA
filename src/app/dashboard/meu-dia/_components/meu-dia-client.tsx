@@ -395,6 +395,7 @@ export function MeuDiaClient({
         void orcamentoModal.abrirPickerFichasAbertas(resultado.fichaId, eventosNovos.map(draftParaEventoOrc));
       })();
     },
+    onAbrirDetalheEndo: abrirDenteGrande,
   });
 
   // C6 — o Sheet precisa da mesma lista que o painel do dente sempre recebeu; migrado de

@@ -62,6 +62,7 @@ function paraCard(e: OdontogramaEventoDraft): EventoParaCard {
     registradoEm: new Date().toISOString(),
     assinaturaId: e.assinaturaId ?? null,
     encaminhadoPara: null,
+    revisar_status: e.revisar_status,
   };
 }
 
@@ -73,6 +74,8 @@ export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, on
       ? {
           ...e,
           status: e.status === 'realizado' ? 'indicado' : 'realizado',
+          revisar_status: false,
+          realizado_em: e.status === 'realizado' ? null : (e.realizado_em ?? hojeBRT()),
           // R-101 — vira realizado aqui: reseta, senão viola a constraint no save (RPC).
           momento_planejado: e.status === 'realizado' ? e.momento_planejado : 'sessao_atual',
         }
@@ -95,8 +98,13 @@ export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, on
   function marcarTudoFeito() {
     onEventosDraftChange(eventosDraft.map((e) => (e.status === 'realizado' ? e : {
       // R-101 — reseta momento_planejado junto (mesma razão do toggleStatus acima).
-      ...e, status: 'realizado', origem: 'clinica', momento_planejado: 'sessao_atual',
+      ...e, status: 'realizado', origem: 'clinica', momento_planejado: 'sessao_atual', revisar_status: false,
       realizado_em: e.realizado_em ?? hojeBRT(),
+    })));
+  }
+  function marcarTudoIndicado() {
+    onEventosDraftChange(eventosDraft.map((e) => (e.status === 'indicado' ? { ...e, revisar_status: false } : {
+      ...e, status: 'indicado', realizado_em: null, revisar_status: false,
     })));
   }
 
@@ -106,11 +114,22 @@ export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, on
 
   const cards = eventosParaCards(eventosDraft.map(paraCard), 'Você', null);
   const temIndicado = eventosDraft.some((e) => e.status === 'indicado');
+  const temRealizado = eventosDraft.some((e) => e.status === 'realizado');
 
   return (
     <div className="flex flex-col gap-2">
-      {temIndicado && (
-        <div className="flex justify-end">
+      {(temIndicado || temRealizado) && (
+        <div className="flex justify-end gap-2">
+          {temRealizado && (
+            <button
+              type="button"
+              onClick={marcarTudoIndicado}
+              className="rounded-lg px-2 py-1 text-[11px] font-bold text-coral-ink transition-colors hover:bg-coral-pale"
+            >
+              Tudo indicado
+            </button>
+          )}
+          {temIndicado && (
           <button
             type="button"
             onClick={marcarTudoFeito}
@@ -118,6 +137,7 @@ export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, on
           >
             ✓ tudo feito
           </button>
+          )}
         </div>
       )}
       <div className="flex max-h-[420px] flex-col gap-2 overflow-y-auto pr-1">

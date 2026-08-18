@@ -53,6 +53,15 @@ export function faceLabel(face: FaceDental, dente: number): string {
 /** O que aconteceu com a intervenção. */
 export type StatusRegistro = 'indicado' | 'realizado';
 
+/** R-106 — justificativa transitória da classificação feita pelo Dex. Não persiste no
+ * odontograma: serve apenas para sinalizar revisão no rascunho da consulta atual. */
+export type EvidenciaStatus =
+  | 'execucao_explicita'
+  | 'indicacao_explicita'
+  | 'negacao'
+  | 'historico'
+  | 'ambiguo';
+
 /** Quem/quando: feito aqui vs. já estava assim quando o paciente chegou. */
 export type OrigemRegistro = 'clinica' | 'preexistente';
 
@@ -249,6 +258,10 @@ export interface OdontogramaEventoInput {
   grupo_id: string | null;
   papel_no_grupo: PapelNoGrupo | null;
   observacao: string;
+  /** R-106 — só no rascunho vindo da IA; omitido antes de persistir. */
+  evidencia_status?: EvidenciaStatus;
+  /** R-106 — ambiguidade/histórico do relato atual pede conferência do dentista. */
+  revisar_status?: boolean;
   /** Dado clínico da especialidade (migration 106) — ver comentário em OdontogramaEvento. */
   detalhe?: unknown | null;
 }

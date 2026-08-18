@@ -19,6 +19,7 @@ export interface EventoParaCard extends RegistroAgrupavel {
   registradoEm: string;
   assinaturaId: string | null;
   encaminhadoPara: { id: string; nome: string } | null;
+  revisar_status?: boolean;
 }
 
 /**
@@ -48,6 +49,7 @@ export function eventosParaCards<T extends EventoParaCard>(
         autorCro,
         assinada: primeiro.assinaturaId != null,
         encaminhadoPara: primeiro.encaminhadoPara,
+        revisarStatus: itens.some((e) => e.revisar_status),
       },
     };
   });
