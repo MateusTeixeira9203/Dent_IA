@@ -3,7 +3,7 @@
 import { useState, useTransition, useMemo } from 'react';
 import {
   Loader2, User, AlertCircle,
-  Phone, Mail, MapPin, FileText, UserCheck, Users, Baby,
+  Phone, Mail, MapPin, FileText, Users, Baby,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -19,19 +19,6 @@ import { BackHeader } from '@/components/ui/back-header';
 import { DateInputDMY } from '@/components/ui/date-input-dmy';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-
-interface Props {
-  isSecretaria: boolean;
-  dentistas: { id: string; nome: string }[];
-}
-
 function formatPhone(v: string): string {
   const d = v.replace(/\D/g, '').slice(0, 11);
   if (d.length <= 2) return d.length ? `(${d}` : '';
@@ -52,7 +39,7 @@ function SectionHeader({ icon: Icon, title, badge }: { icon: React.ElementType; 
   );
 }
 
-export default function NovoPacienteForm({ isSecretaria, dentistas }: Props) {
+export default function NovoPacienteForm() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -74,8 +61,6 @@ export default function NovoPacienteForm({ isSecretaria, dentistas }: Props) {
     responsavel_parentesco: '',
   });
 
-  const [dentistaId, setDentistaId] = useState<string>('');
-
   const idade = useMemo(() => calcularIdade(form.data_nascimento), [form.data_nascimento]);
   const eMenor = idade !== null && idade < 18;
 
@@ -96,7 +81,6 @@ export default function NovoPacienteForm({ isSecretaria, dentistas }: Props) {
         cidade:          form.cidade.trim() || null,
         estado:          form.estado.trim() || null,
         observacoes:     form.observacoes.trim() || null,
-        dentistaId:      isSecretaria ? dentistaId : undefined,
         responsavel_nome:       eMenor ? (form.responsavel_nome.trim() || null) : null,
         responsavel_telefone:   eMenor ? (form.responsavel_telefone.trim() || null) : null,
         responsavel_parentesco: eMenor ? (form.responsavel_parentesco || null) : null,
@@ -117,7 +101,6 @@ export default function NovoPacienteForm({ isSecretaria, dentistas }: Props) {
     e.preventDefault();
     setError(null);
     if (!form.nome.trim()) { setError('O nome do paciente é obrigatório.'); return; }
-    if (isSecretaria && !dentistaId) { setError('Selecione o dentista responsável pelo paciente.'); return; }
     if (eMenor && !form.responsavel_nome.trim()) { setError('Paciente menor de idade requer nome do responsável.'); return; }
     if (form.cpf) {
       const digits = form.cpf.replace(/\D/g, '');
@@ -156,30 +139,6 @@ export default function NovoPacienteForm({ isSecretaria, dentistas }: Props) {
               </motion.div>
             )}
           </AnimatePresence>
-
-          {/* Atribuição — secretária only */}
-          {isSecretaria && dentistas.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.05 }}
-              className="bg-surface rounded-2xl border border-border shadow-sm p-6"
-            >
-              <SectionHeader icon={UserCheck} title="Atribuição" />
-              <AppFormField label="Dentista Responsável" htmlFor="dentista-select" required>
-                <Select value={dentistaId} onValueChange={(v) => v && setDentistaId(v)}>
-                  <SelectTrigger id="dentista-select" className="rounded-xl border-border bg-surface text-text-primary focus:ring-2 focus:ring-teal/20 focus:border-teal/60 h-auto py-3">
-                    <SelectValue placeholder="Selecione o dentista responsável..." />
-                  </SelectTrigger>
-                  <SelectContent className="bg-surface border-border">
-                    {dentistas.map((d) => (
-                      <SelectItem key={d.id} value={d.id}>{d.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </AppFormField>
-            </motion.div>
-          )}
 
           {/* Dados Pessoais */}
           <motion.div

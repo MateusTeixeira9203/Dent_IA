@@ -15,7 +15,6 @@ interface CreatePacienteInput {
   cidade: string | null;
   estado: string | null;
   observacoes: string | null;
-  dentistaId?: string | null;
   responsavel_nome?: string | null;
   responsavel_telefone?: string | null;
   responsavel_parentesco?: string | null;
@@ -38,8 +37,6 @@ export async function createPaciente(
 
   if (!dentistaPerfil) redirect("/onboarding");
 
-  const dentistaAlvo = data.dentistaId ?? dentistaPerfil.id;
-
   // R-31a §3.1 — checagem única, também usada por criarPacienteRapido. CPF sempre bloqueia
   // (identificador de pessoa); nome igual só avisa, e só quando ainda não foi confirmado.
   const duplicatas = await buscarPossiveisDuplicatas(supabase, clinicId, {
@@ -60,7 +57,9 @@ export async function createPaciente(
 
   const { error } = await supabase.from("pacientes").insert({
     clinica_id:      clinicId,
-    dentista_id:     dentistaAlvo,
+    // Paciente é da clínica; este campo registra apenas quem o cadastrou.
+    // Não aceita atribuição vinda do navegador.
+    dentista_id:     dentistaPerfil.id,
     nome:            data.nome,
     cpf:             data.cpf,
     email:           data.email,
