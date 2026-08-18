@@ -59,9 +59,9 @@ export function EmitirDocumentoModal({ open, onClose, patientId, patientName, on
 
   const gerar = async () => {
     if (!modelo) return;
-    const precisaAssinatura = tipo === 'atestado';
+    const precisaAssinatura = tipo === 'atestado' || tipo === 'receita';
     if (precisaAssinatura && (!signaturePadRef.current || signaturePadRef.current.isEmpty())) {
-      toast.error('Assine o atestado antes de gerar.');
+      toast.error('Assine o documento antes de gerar.');
       return;
     }
     setIsSaving(true);
@@ -206,10 +206,10 @@ export function EmitirDocumentoModal({ open, onClose, patientId, patientName, on
                       </label>
                     )}
 
-                    {tipo === 'atestado' && (
+                    {(tipo === 'atestado' || tipo === 'receita') && (
                       <div className="space-y-1.5 pt-1">
                         <label className="text-xs font-semibold text-text-primary">Assinatura do dentista *</label>
-                        <p className="text-xs text-text-secondary">Assine no campo para incluir a assinatura manuscrita no atestado.</p>
+                        <p className="text-xs text-text-secondary">Assine no campo para incluir a assinatura manuscrita no documento.</p>
                         <SignaturePad key={`${tipo}:${modeloId}`} padRef={signaturePadRef} />
                       </div>
                     )}
@@ -221,7 +221,7 @@ export function EmitirDocumentoModal({ open, onClose, patientId, patientName, on
                   className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-white bg-teal hover:bg-teal-lt transition-all disabled:opacity-40"
                 >
                   {isSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando...</> : (
-                    <><FileText className="w-4 h-4" /> {tipo === 'atestado' ? 'Assinar e gerar atestado' : 'Gerar documento'}</>
+                    <><FileText className="w-4 h-4" /> {(tipo === 'atestado' || tipo === 'receita') ? `Assinar e gerar ${TIPO_LABEL[tipo].toLowerCase()}` : 'Gerar documento'}</>
                   )}
                 </button>
               </>

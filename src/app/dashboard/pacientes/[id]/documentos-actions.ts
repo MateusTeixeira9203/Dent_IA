@@ -22,8 +22,9 @@ export async function emitirDocumento(params: {
   if (role === 'secretaria') return { error: 'Sem permissão para emitir documentos.' };
 
   let assinaturaDataUrl: string | undefined;
-  if (params.tipo === 'atestado') {
-    if (!params.assinaturaDataUrl) return { error: 'Assine o atestado antes de gerar.' };
+  const documentoExigeAssinatura = params.tipo === 'atestado' || params.tipo === 'receita';
+  if (documentoExigeAssinatura) {
+    if (!params.assinaturaDataUrl) return { error: 'Assine o documento antes de gerar.' };
     const assinatura = assinaturaManuscritaSchema.safeParse(params.assinaturaDataUrl);
     if (!assinatura.success) {
       return { error: assinatura.error.issues[0]?.message ?? 'Assinatura inválida.' };
