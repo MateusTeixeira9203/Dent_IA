@@ -4,17 +4,23 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   FileText,
   Filter,
-  Calendar,
   Search,
   Loader2,
   Upload,
   Plus,
+  Camera,
+  Images,
+  RotateCcw,
+  RotateCw,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { DexLoader } from '@/components/ui/dex-loader';
 import { GaleriaImagens } from '@/components/fichas/galeria-imagens';
 import { toast } from 'sonner';
 import { toStoragePath } from '@/lib/storage/url';
+import { otimizarFotoClinica, type RotacaoFoto } from '@/lib/storage/otimizar-foto-clinica';
 
 interface Document {
   id: string;
@@ -26,6 +32,8 @@ interface Document {
   url: string;
   storagePath: string;
 }
+
+type FotoNaFila = { id: string; arquivo: File; rotacao: RotacaoFoto };
 
 const CATEGORIES = ['Radiografias', 'Fotografias', 'Documentos', 'Outros'] as const;
 
@@ -92,8 +100,13 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
   const [selecionados, setSelecionados] = useState<string[]>([]);
   const [modoSelecao, setModoSelecao] = useState(false);
   const [soEmitidos, setSoEmitidos] = useState(false);
+  const [fotosNaFila, setFotosNaFila] = useState<FotoNaFila[]>([]);
+  const [indiceFotoRevisada, setIndiceFotoRevisada] = useState(0);
+  const [urlPreviewFoto, setUrlPreviewFoto] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const fotosInputRef = useRef<HTMLInputElement>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSearchChange = (value: string): void => {
@@ -164,6 +177,18 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
       void fetchDocuments();
     }
   }, [patientId, fetchDocuments]);
+
+  const fotoEmRevisao = fotosNaFila[indiceFotoRevisada] ?? null;
+
+  useEffect(() => {
+    if (!fotoEmRevisao) {
+      setUrlPreviewFoto(null);
+      return;
+    }
+    const url = URL.createObjectURL(fotoEmRevisao.arquivo);
+    setUrlPreviewFoto(url);
+    return () => URL.revokeObjectURL(url);
+  }, [fotoEmRevisao]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     const files = Array.from(e.target.files ?? []);
@@ -252,6 +277,107 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
     setUploadProgress(null);
   };
 
+  const handleFotosSelect = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (files.length === 0) return;
+    if (files.length > 10) {
+      toast.error('Selecione no máximo 10 fotos por vez.');
+      return;
+    }
+    const invalidas = files.filter((file) => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type));
+    if (invalidas.length > 0) {
+      toast.error(`Use JPEG, PNG ou WebP. Não foi possível preparar: ${invalidas.map((file) => file.name).join(', ')}.`);
+      return;
+    }
+    const grandes = files.filter((file) => file.size > MAX_UPLOAD_SIZE);
+    if (grandes.length > 0) {
+      toast.error(`Fotos muito grandes (máx. 20 MB): ${grandes.map((file) => file.name).join(', ')}.`);
+      return;
+    }
+
+    setFotosNaFila(files.map((arquivo) => ({ id: crypto.randomUUID(), arquivo, rotacao: 0 })));
+    setIndiceFotoRevisada(0);
+  };
+
+  const girarFotoEmRevisao = (direcao: -90 | 90): void => {
+    if (!fotoEmRevisao) return;
+    setFotosNaFila((atual) => atual.map((foto) => {
+      if (foto.id !== fotoEmRevisao.id) return foto;
+      return { ...foto, rotacao: ((foto.rotacao + direcao + 360) % 360) as RotacaoFoto };
+    }));
+  };
+
+  const enviarFotosClinicas = async (): Promise<void> => {
+    if (fotosNaFila.length === 0) return;
+
+    setIsUploading(true);
+    setUploadProgress({ current: 0, total: fotosNaFila.length });
+    const supabase = createClient();
+    const novos: Document[] = [];
+    const erros: string[] = [];
+
+    for (let i = 0; i < fotosNaFila.length; i += 1) {
+      const fotoDaFila = fotosNaFila[i];
+      setUploadProgress({ current: i + 1, total: fotosNaFila.length });
+      const resultado = await otimizarFotoClinica(fotoDaFila.arquivo, fotoDaFila.rotacao);
+      if (!resultado.ok) {
+        erros.push(fotoDaFila.arquivo.name);
+        continue;
+      }
+
+      const { foto } = resultado;
+      const storagePath = `${clinicaId}/${patientId}/docs/${crypto.randomUUID()}.jpg`;
+      let uploadConcluido = false;
+      try {
+        const { error: storageErr } = await supabase.storage
+          .from('fichas')
+          .upload(storagePath, foto.arquivo, { contentType: 'image/jpeg', upsert: false });
+        if (storageErr) throw storageErr;
+        uploadConcluido = true;
+
+        const { data: docData, error: dbErr } = await supabase
+          .from('paciente_documentos')
+          .insert({
+            paciente_id: patientId,
+            clinica_id: clinicaId,
+            dentista_id: dentistaId,
+            nome: foto.nomeExibicao,
+            url: storagePath,
+            categoria: 'Fotografias',
+          })
+          .select('id, created_at')
+          .single();
+        if (dbErr) throw dbErr;
+
+        const { data: signedData } = await supabase.storage.from('fichas').createSignedUrl(storagePath, 3600);
+        const row = docData as Record<string, unknown>;
+        novos.push({
+          id: row.id as string,
+          name: foto.nomeExibicao,
+          tipo: 'image/jpeg',
+          category: 'Fotografias',
+          date: new Date(row.created_at as string).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }),
+          source: 'Upload Direto',
+          url: signedData?.signedUrl ?? '',
+          storagePath,
+        });
+      } catch (error) {
+        console.error(`Erro no upload de ${foto.nomeExibicao}:`, error);
+        if (uploadConcluido) await supabase.storage.from('fichas').remove([storagePath]);
+        erros.push(foto.nomeExibicao);
+      }
+    }
+
+    if (novos.length > 0) setDocuments((atual) => [...novos.reverse(), ...atual]);
+    if (erros.length > 0) toast.error(`Não foi possível enviar: ${erros.join(', ')}.`);
+    if (novos.length > 0 && erros.length === 0) toast.success(`${novos.length} foto${novos.length > 1 ? 's enviadas' : ' enviada'} com sucesso.`);
+    setFotosNaFila([]);
+    setIndiceFotoRevisada(0);
+    setIsUploading(false);
+    setUploadProgress(null);
+  };
+
   const handleDeleteDoc = async (docId: string, e: React.MouseEvent): Promise<void> => {
     e.stopPropagation();
     const doc = documents.find(d => d.id === docId);
@@ -310,6 +436,22 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
         multiple
         className="hidden"
         onChange={handleFileSelect}
+      />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        capture="environment"
+        className="hidden"
+        onChange={handleFotosSelect}
+      />
+      <input
+        ref={fotosInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        multiple
+        className="hidden"
+        onChange={handleFotosSelect}
       />
 
       {/* Filtros e ações */}
@@ -385,7 +527,7 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
 
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
+            disabled={isUploading || fotosNaFila.length > 0}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-teal text-white rounded-lg text-xs font-bold hover:bg-teal-lt transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isUploading && uploadProgress ? (
@@ -396,8 +538,57 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
               <><Plus className="w-3.5 h-3.5" /> Adicionar</>
             )}
           </button>
+          <button
+            onClick={() => cameraInputRef.current?.click()}
+            disabled={isUploading || fotosNaFila.length > 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-teal/30 text-teal-ink rounded-lg text-xs font-bold hover:bg-teal/10 transition-colors disabled:opacity-50"
+          >
+            <Camera className="w-3.5 h-3.5" /> Tirar foto
+          </button>
+          <button
+            onClick={() => fotosInputRef.current?.click()}
+            disabled={isUploading || fotosNaFila.length > 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-teal/30 text-teal-ink rounded-lg text-xs font-bold hover:bg-teal/10 transition-colors disabled:opacity-50"
+          >
+            <Images className="w-3.5 h-3.5" /> Selecionar fotos
+          </button>
         </div>
       </div>
+
+      {fotoEmRevisao && (
+        <div className="rounded-2xl border border-teal/30 bg-surface p-4 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-bold text-text-primary">Revisar fotos clínicas</p>
+              <p className="text-xs text-text-secondary mt-0.5">Foto {indiceFotoRevisada + 1} de {fotosNaFila.length} · será reduzida para até 2048 px antes do envio.</p>
+            </div>
+            <button onClick={() => { setFotosNaFila([]); setIndiceFotoRevisada(0); }} className="text-xs font-semibold text-text-secondary hover:text-text-primary">Cancelar</button>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-4 items-center">
+            {urlPreviewFoto && (
+              <>
+                {/* URL de objeto local: Next/Image não consegue otimizar um arquivo ainda não enviado. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={urlPreviewFoto}
+                  alt={`Prévia de ${fotoEmRevisao.arquivo.name}`}
+                  className="h-40 w-full sm:w-56 rounded-xl border border-border object-contain bg-surface-alt transition-transform"
+                  style={{ transform: `rotate(${fotoEmRevisao.rotacao}deg)` }}
+                />
+              </>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => girarFotoEmRevisao(-90)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-xs font-semibold text-text-secondary hover:text-text-primary hover:bg-surface-alt"><RotateCcw className="w-3.5 h-3.5" /> Girar à esquerda</button>
+              <button onClick={() => girarFotoEmRevisao(90)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-xs font-semibold text-text-secondary hover:text-text-primary hover:bg-surface-alt"><RotateCw className="w-3.5 h-3.5" /> Girar à direita</button>
+              {fotosNaFila.length > 1 && <>
+                <button disabled={indiceFotoRevisada === 0} onClick={() => setIndiceFotoRevisada((indice) => indice - 1)} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-border text-xs font-semibold disabled:opacity-40"><ChevronLeft className="w-3.5 h-3.5" /> Anterior</button>
+                <button disabled={indiceFotoRevisada === fotosNaFila.length - 1} onClick={() => setIndiceFotoRevisada((indice) => indice + 1)} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-border text-xs font-semibold disabled:opacity-40">Próxima <ChevronRight className="w-3.5 h-3.5" /></button>
+              </>}
+              <button onClick={() => void enviarFotosClinicas()} disabled={isUploading} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-teal text-white text-xs font-bold hover:bg-teal-lt disabled:opacity-50"><Upload className="w-3.5 h-3.5" /> Enviar {fotosNaFila.length} foto{fotosNaFila.length > 1 ? 's' : ''}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Categorias com galeria */}
       {loading ? (
