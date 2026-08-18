@@ -59,19 +59,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       .gte('data_hora', hojeInicio.toISOString())
       .lte('data_hora', amanhaFim.toISOString());
 
+    // R-114 — "rascunho" (agora "Proposto") é derivado: zero item aprovado. A view já
+    // calcula; o filtro vira `estado`.
     let orcamentosRascunhoQuery = supabase
-      .from('orcamentos')
+      .from('orcamentos_com_estado')
       .select('id', { count: 'exact', head: true })
       .eq('clinica_id', dentista.clinica_id)
-      .eq('status', 'rascunho');
+      .eq('estado', 'proposto');
 
-    // Inteligência comercial: orçamentos enviados >3 dias com nome do paciente
+    // Inteligência comercial: orçamentos enviados >3 dias com nome do paciente.
+    // R-114 — enviado_em real (nunca escrito antes) no lugar de updated_at, que muda por
+    // qualquer motivo alheio a "foi mostrado ao paciente".
     let orcamentosAtrasadosQuery = supabase
-      .from('orcamentos')
+      .from('orcamentos_com_estado')
       .select('id, total, paciente:pacientes(nome)')
       .eq('clinica_id', dentista.clinica_id)
-      .eq('status', 'enviado')
-      .lte('updated_at', tresDiasAtras.toISOString());
+      .not('enviado_em', 'is', null)
+      .neq('estado', 'quitado')
+      .lte('enviado_em', tresDiasAtras.toISOString());
 
     if (scopado) {
       agendamentosNaoConfirmadosQuery = agendamentosNaoConfirmadosQuery.eq('dentista_id', dentista.id);
@@ -87,7 +92,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     ] = await Promise.all([
       agendamentosNaoConfirmadosQuery,
       orcamentosRascunhoQuery,
-      orcamentosAtrasadosQuery.order('updated_at', { ascending: true }).limit(5),
+      orcamentosAtrasadosQuery.order('enviado_em', { ascending: true }).limit(5),
 
       // Notificações não lidas: role correto E (sem dentista alvo OU para este dentista)
       supabase

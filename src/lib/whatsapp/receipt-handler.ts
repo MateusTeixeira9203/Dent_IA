@@ -149,16 +149,16 @@ export async function matchReceiptToOrcamento(
     };
   }
 
-  // Busca orçamentos pendentes do paciente
-  // R-35 item 11 — CHECK de orcamentos.status só admite rascunho|enviado|aprovado|recusado;
-  // 'pendente' nunca existiu como status e nunca casava. 'enviado' é o equivalente real
-  // (orçamento mandado pro paciente, aguardando pagamento/decisão).
+  // Busca orçamentos elegíveis do paciente.
+  // R-114 — elegibilidade vira `estado != 'proposto'` (I8: precisa de item aprovado antes
+  // de aceitar dinheiro). Isto substitui o filtro por status E é o que impede este caminho
+  // — que insere pagamento direto, sem passar por registrarPagamento — de furar a I8.
   const { data: orcamentos } = await db
-    .from('orcamentos')
-    .select('id, total, status')
+    .from('orcamentos_com_estado')
+    .select('id, total, estado')
     .eq('clinica_id', clinicaId)
     .eq('paciente_id', paciente.id)
-    .in('status', ['enviado', 'aprovado'])
+    .neq('estado', 'proposto')
     .order('created_at', { ascending: false })
     .limit(5);
 
@@ -210,12 +210,8 @@ export async function matchReceiptToOrcamento(
     };
   }
 
-  // Atualiza o orçamento para aprovado
-  await db
-    .from('orcamentos')
-    .update({ status: 'aprovado' })
-    .eq('id', match.id)
-    .eq('clinica_id', clinicaId);
+  // R-114 — "aprovado" não se escreve mais. Elegibilidade já exigiu item aprovado (acima);
+  // `estado` deriva sozinho pra 'quitado' se este pagamento cobrir o devido.
 
   console.log(
     `[receipt-handler] Pagamento PIX R$ ${analysis.valor.toFixed(2)} vinculado ao orçamento ${match.id}`,

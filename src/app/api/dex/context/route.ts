@@ -91,12 +91,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       .lte('data_hora', hojeFim.toISOString())
       .not('status', 'eq', 'cancelled');
 
+    // R-114 — "atrasado" deixa de ser status='enviado'+updated_at (que muda por qualquer
+    // motivo) e passa a ser enviado_em real + ainda não quitado (view derivada).
     let orcamentosAtrasados30dQuery = supabase
-      .from('orcamentos')
+      .from('orcamentos_com_estado')
       .select('id', { count: 'exact', head: true })
       .eq('clinica_id', dentista.clinica_id)
-      .eq('status', 'enviado')
-      .lte('updated_at', trintaDiasAtras.toISOString());
+      .not('enviado_em', 'is', null)
+      .neq('estado', 'quitado')
+      .lte('enviado_em', trintaDiasAtras.toISOString());
 
     let proximoQuery = supabase
       .from('agendamentos')
@@ -106,23 +109,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       .lte('data_hora', hojeFim.toISOString())
       .not('status', 'eq', 'cancelled');
 
-    // R-65 — !inner + filtro no embed: pagamento cujo orçamento pai é rascunho/recusado
-    // nunca deveria contar como "entrou hoje" (mesma classe corrigida em financeiro).
+    // R-114 — regra única (I7): pagamento pago conta, sem condição por status do pai.
     let pagamentosHojeQuery = supabase
       .from('pagamentos')
-      .select('valor, orcamentos!inner(status)')
+      .select('valor')
       .eq('clinica_id', dentista.clinica_id)
       .eq('status', 'pago')
       .gte('data_pagamento', hojeInicio.toISOString().split('T')[0])
-      .lte('data_pagamento', hojeFim.toISOString().split('T')[0])
-      .not('orcamentos.status', 'in', '(rascunho,recusado)');
+      .lte('data_pagamento', hojeFim.toISOString().split('T')[0]);
 
     let followUpQuery = supabase
-      .from('orcamentos')
+      .from('orcamentos_com_estado')
       .select('id', { count: 'exact', head: true })
       .eq('clinica_id', dentista.clinica_id)
-      .eq('status', 'enviado')
-      .lte('updated_at', tresDiasAtras.toISOString());
+      .not('enviado_em', 'is', null)
+      .neq('estado', 'quitado')
+      .lte('enviado_em', tresDiasAtras.toISOString());
 
     let agendamentosAmanhaQuery = supabase
       .from('agendamentos')
@@ -133,18 +135,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       .not('status', 'eq', 'cancelled');
 
     let atrasados30dListQuery = supabase
-      .from('orcamentos')
+      .from('orcamentos_com_estado')
       .select('id, total, paciente:pacientes(id, nome)')
       .eq('clinica_id', dentista.clinica_id)
-      .eq('status', 'enviado')
-      .lte('updated_at', trintaDiasAtras.toISOString());
+      .not('enviado_em', 'is', null)
+      .neq('estado', 'quitado')
+      .lte('enviado_em', trintaDiasAtras.toISOString());
 
     let followUpListQuery = supabase
-      .from('orcamentos')
+      .from('orcamentos_com_estado')
       .select('id, total, paciente:pacientes(id, nome)')
       .eq('clinica_id', dentista.clinica_id)
-      .eq('status', 'enviado')
-      .lte('updated_at', tresDiasAtras.toISOString());
+      .not('enviado_em', 'is', null)
+      .neq('estado', 'quitado')
+      .lte('enviado_em', tresDiasAtras.toISOString());
 
     if (scopado) {
       agendamentosQuery           = agendamentosQuery.eq('dentista_id', dentista.id);

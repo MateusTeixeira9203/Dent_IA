@@ -1,6 +1,7 @@
 // Shared helpers e builders para export de prontuário e PDF de ficha
 
 import { formatarDataFicha } from './format-data-ficha';
+import { deriveEstadoOrcamento, rotuloEstado } from './orcamentos/estado';
 
 export type PacienteExport = {
   nome: string;
@@ -51,9 +52,11 @@ export type OrcamentoExport = {
   id: string;
   status: string;
   total: number | null;
+  /** R-114 — quando definido (RPCs do R-34), é o devido; nunca escrito por aprovação de item. */
+  valor_acordado: number | null;
   created_at: string;
   condicoes_pagamento: string | null;
-  orcamento_itens: Array<{ descricao: string | null; preco_total: number | null; quantidade: number }> | null;
+  orcamento_itens: Array<{ descricao: string | null; preco_total: number | null; quantidade: number; aprovado: boolean }> | null;
   pagamentos: Array<{ valor: number; status: string; forma_pagamento: string | null }> | null;
 };
 
@@ -261,8 +264,15 @@ function renderFichaCard(f: FichaExport): string {
 }
 
 function renderOrcamentoCard(o: OrcamentoExport): string {
-  const itens = o.orcamento_itens ?? [];
+  // R-114 (I2) — só o aprovado sai no documento; item não aprovado não é compromisso do
+  // paciente, não pode aparecer no prontuário como se fosse.
+  const itens = (o.orcamento_itens ?? []).filter((i) => i.aprovado);
   const pagamentos = o.pagamentos ?? [];
+  const derivado = deriveEstadoOrcamento({
+    valorAcordado: o.valor_acordado,
+    itens: (o.orcamento_itens ?? []).map((i) => ({ precoTotal: i.preco_total, aprovado: i.aprovado })),
+    pagamentos: pagamentos.map((p) => ({ valor: p.valor, status: p.status })),
+  });
 
   const itensHtml = itens.length > 0 ? `
     <div class="field">
@@ -289,14 +299,14 @@ function renderOrcamentoCard(o: OrcamentoExport): string {
       </div>
     </div>` : '';
 
-  const badgeClass = o.status === 'aprovado' ? 'badge-green' : o.status === 'enviado' ? 'badge-amber' : 'badge-gray';
+  const badgeClass = derivado.estado === 'quitado' ? 'badge-green' : derivado.estado === 'aceito' ? 'badge-amber' : 'badge-gray';
 
   return `
     <div class="card">
       <div class="card-header">
         <span class="card-date">${esc(fmtDate(o.created_at))}</span>
-        <span class="badge ${badgeClass}">${STATUS_PT[o.status] ?? o.status}</span>
-        <span class="card-prof money-lg">${fmtMoney(o.total)}</span>
+        <span class="badge ${badgeClass}">${rotuloEstado(derivado)}</span>
+        <span class="card-prof money-lg">${fmtMoney(derivado.valorDevido)}</span>
       </div>
       ${itensHtml}
       ${pagamentosHtml}
@@ -311,6 +321,8 @@ export type OrcamentoHtmlData = {
   created_at: string;
   status: string;
   total: number | null;
+  /** R-114 — quando definido (RPCs do R-34), é o devido; nunca escrito por aprovação de item. */
+  valor_acordado: number | null;
   desconto: number;
   validade_dias: number;
   condicoes_pagamento: string | null;
@@ -323,6 +335,9 @@ export type OrcamentoHtmlData = {
     quantidade: number;
     preco_unitario: number | null;
     preco_total: number | null;
+    /** R-114 (I2) — só o aprovado sai no PDF. O documento é informativo, não cobrança:
+     *  procedimento que o paciente não aceitou não pode aparecer como algo a pagar. */
+    aprovado: boolean;
   }>;
   pagamentos: Array<{
     valor: number;
@@ -527,15 +542,25 @@ export function buildOrcamentoHTML(o: OrcamentoHtmlData): string {
   const now = fmtDateTime(new Date().toISOString());
   const idSnippet = o.id.slice(0, 8).toUpperCase();
 
-  const subtotal     = o.itens.reduce((s, i) => s + (i.preco_total ?? 0), 0);
+  // R-114 (I2) — o PDF é informativo, não cobrança: só o que o paciente aceitou entra.
+  // Item não aprovado continua no sistema (lista viva do que falta fechar), nunca no papel.
+  const itensAprovados = o.itens.filter((i) => i.aprovado);
+
+  const derivado = deriveEstadoOrcamento({
+    valorAcordado: o.valor_acordado,
+    itens: o.itens.map((i) => ({ precoTotal: i.preco_total, aprovado: i.aprovado })),
+    pagamentos: o.pagamentos.map((p) => ({ valor: p.valor, status: p.status })),
+  });
+
+  const subtotal     = itensAprovados.reduce((s, i) => s + (i.preco_total ?? 0), 0);
   const temDesconto  = o.desconto > 0;
-  const totalPago    = o.pagamentos.filter(p => p.status === 'pago').reduce((s, p) => s + p.valor, 0);
+  const totalPago    = derivado.valorPago;
   const totalPendente= o.pagamentos.filter(p => p.status === 'pendente').reduce((s, p) => s + p.valor, 0);
-  const total        = o.total ?? 0;
+  const total        = derivado.valorDevido;
   const pctPago      = total > 0 ? Math.min(100, Math.round((totalPago / total) * 100)) : 0;
 
-  const statusLabel = { aprovado: 'Aprovado', enviado: 'Enviado', rascunho: 'Rascunho', recusado: 'Recusado' }[o.status] ?? o.status;
-  const statusColor = o.status === 'aprovado' ? '#2f9c85' : o.status === 'enviado' ? '#f59e0b' : '#999';
+  const estadoLabel = rotuloEstado(derivado);
+  const estadoColor = derivado.estado === 'quitado' ? '#2f9c85' : derivado.estado === 'aceito' ? '#f59e0b' : '#999';
 
   const validadeDate = new Date(new Date(o.created_at).getTime() + o.validade_dias * 86_400_000);
 
@@ -550,7 +575,7 @@ export function buildOrcamentoHTML(o: OrcamentoHtmlData): string {
 
   const mostrarValor = o.mostrar_valor_por_item;
 
-  const itensHtml = o.itens.map((item, idx) => `
+  const itensHtml = itensAprovados.map((item, idx) => `
     <div class="orc-item">
       <div class="orc-item-num">${idx + 1}</div>
       <div class="orc-item-desc">${esc(item.descricao ?? '—')}${mostrarValor && item.quantidade > 1 ? `<div class="orc-item-qty">${item.quantidade} unid. × ${fmtMoney(item.preco_unitario)}</div>` : ''}</div>
@@ -626,7 +651,7 @@ export function buildOrcamentoHTML(o: OrcamentoHtmlData): string {
     <div class="orc-meta">
       <div class="orc-meta-item">
         <div class="orc-meta-label">Status</div>
-        <div class="orc-meta-val" style="color:${statusColor === '#2f9c85' ? '#a7f3d0' : statusColor === '#f59e0b' ? '#fde68a' : '#e5e7eb'}">${statusLabel}</div>
+        <div class="orc-meta-val" style="color:${estadoColor === '#2f9c85' ? '#a7f3d0' : estadoColor === '#f59e0b' ? '#fde68a' : '#e5e7eb'}">${estadoLabel}</div>
       </div>
       <div class="orc-meta-item">
         <div class="orc-meta-label">Válido até</div>
@@ -645,7 +670,7 @@ export function buildOrcamentoHTML(o: OrcamentoHtmlData): string {
 
     <!-- Procedimentos -->
     <div class="orc-section">
-      <div class="orc-section-title">Procedimentos (${o.itens.length})</div>
+      <div class="orc-section-title">Procedimentos (${itensAprovados.length})</div>
       ${itensHtml}
       ${totalsHtml}
     </div>

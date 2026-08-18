@@ -43,7 +43,12 @@ interface OrcamentoData {
   procedimentos: Procedimento[];
   subtotal: number;
   desconto: number;
+  /** R-114 — o devido (valor_acordado ?? soma dos itens aprovados), não a proposta inteira. */
   total: number;
+  /** R-114 (Fase 4.2) — quando presentes, o documento mostra "Já pago"/"Falta pagar" abaixo
+   *  do total. Ausentes (undefined) = orçamento sem nenhum pagamento ainda, bloco não aparece. */
+  totalPago?: number;
+  totalPendente?: number;
   forma_pagamento?: string;
   observacoes?: string;
 }
@@ -188,6 +193,36 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Helvetica-Bold",
     color: "#2f9c85",
+    textAlign: "right",
+  },
+  // R-114 (Fase 4.2) — bloco "Já pago / Falta pagar", mesmo espírito do totais mas em
+  // caixa própria, pra não competir visualmente com o Total (que é a proposta assinada).
+  pagoBox: {
+    marginTop: 14,
+    alignItems: "flex-end",
+  },
+  pagoRow: {
+    flexDirection: "row",
+    marginBottom: 3,
+  },
+  pagoLabel: {
+    width: 120,
+    fontSize: 9,
+    color: "#666666",
+    textAlign: "right",
+    marginRight: 10,
+  },
+  pagoValue: {
+    width: 100,
+    fontSize: 9,
+    color: "#2f9c85",
+    textAlign: "right",
+  },
+  faltaValue: {
+    width: 100,
+    fontSize: 10,
+    fontFamily: "Helvetica-Bold",
+    color: "#b45309",
     textAlign: "right",
   },
   footer: {
@@ -355,6 +390,25 @@ function OrcamentoPDF({ data }: { data: OrcamentoData }) {
           createElement(Text, { style: styles.totalFinalValue }, formatCurrency(data.total))
         )
       ),
+      // R-114 (Fase 4.2) — só aparece quando há pagamento (pago ou pendente) registrado.
+      data.totalPago !== undefined &&
+        createElement(
+          View,
+          { style: styles.pagoBox },
+          createElement(
+            View,
+            { style: styles.pagoRow },
+            createElement(Text, { style: styles.pagoLabel }, "Já pago:"),
+            createElement(Text, { style: styles.pagoValue }, formatCurrency(data.totalPago))
+          ),
+          data.total - data.totalPago > 0.005 &&
+            createElement(
+              View,
+              { style: styles.pagoRow },
+              createElement(Text, { style: styles.pagoLabel }, "Falta pagar:"),
+              createElement(Text, { style: styles.faltaValue }, formatCurrency(data.total - data.totalPago))
+            )
+        ),
       // Forma de pagamento
       data.forma_pagamento &&
         createElement(

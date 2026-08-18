@@ -17,6 +17,7 @@ import type {
   AncoraClinica,
   OrtoManutencaoInfo,
   PapelNoGrupo,
+  EvidenciaStatus,
 } from '@/types/odontograma';
 
 export interface EvolucaoFormatada {
@@ -52,6 +53,7 @@ interface EvolucaoWire {
 interface OdontogramaEventoWire {
   tipo:       string;
   status:     string;
+  evidencia_status: string;
   nivel:      string;
   arcada?:    string | null;
   quadrante?: number | null;
@@ -83,7 +85,7 @@ interface OrtoManutencaoWire {
 // Mudança gated por eval (evals/extracao-clinica): baseline ATUAL 16/16 não pode regredir.
 const ODONTOGRAMA_EVENTO_SCHEMA: Schema = {
   type: Type.OBJECT,
-  required: ['tipo', 'status', 'nivel', 'faces', 'observacao'],
+  required: ['tipo', 'status', 'evidencia_status', 'nivel', 'faces', 'observacao'],
   properties: {
     tipo: {
       type: Type.STRING,
@@ -92,6 +94,7 @@ const ODONTOGRAMA_EVENTO_SCHEMA: Schema = {
              'ponte', 'esfoliacao', 'profilaxia', 'raspagem', 'clareamento', 'fluor'],
     },
     status:    { type: Type.STRING, enum: ['indicado', 'realizado'] },
+    evidencia_status: { type: Type.STRING, enum: ['execucao_explicita', 'indicacao_explicita', 'negacao', 'historico', 'ambiguo'] },
     nivel:     { type: Type.STRING, enum: ['boca', 'arcada', 'quadrante', 'dente', 'face'] },
     arcada:    { type: Type.STRING, enum: ['superior', 'inferior'], nullable: true },
     quadrante: { type: Type.INTEGER, nullable: true },
@@ -181,6 +184,7 @@ function parseEventos(wire: unknown, modo: 'consulta' | 'exame_inicial'): Odonto
 
     if (!TIPOS_ACEITOS.has(w.tipo as TipoRegistroOdontograma)) continue;
     if (w.status !== 'indicado' && w.status !== 'realizado') continue;
+    if (!['execucao_explicita', 'indicacao_explicita', 'negacao', 'historico', 'ambiguo'].includes(w.evidencia_status)) continue;
     if (!['boca', 'arcada', 'quadrante', 'dente', 'face'].includes(w.nivel)) continue;
 
     const nivel = w.nivel as NivelAncora;
@@ -208,7 +212,15 @@ function parseEventos(wire: unknown, modo: 'consulta' | 'exame_inicial'): Odonto
 
     // R-06: esfoliação só existe em decíduo (51-85) e como fato consumado — evento fora
     // disso é alucinação, descarta (perda silenciosa < dado errado no prontuário).
-    if (w.tipo === 'esfoliacao' && (dente == null || dente < 51 || w.status !== 'realizado')) continue;
+    const evidencia = w.evidencia_status as EvidenciaStatus;
+    // R-106 — no relato da consulta, só verbo explícito de execução permite "realizado".
+    // Histórico importado preserva a regra própria do prompt/exame inicial.
+    const status: StatusRegistro = modo === 'consulta'
+      ? evidencia === 'execucao_explicita' ? 'realizado' : 'indicado'
+      : w.status as StatusRegistro;
+    const revisarStatus = modo === 'consulta' && (evidencia === 'ambiguo' || evidencia === 'historico');
+
+    if (w.tipo === 'esfoliacao' && (dente == null || dente < 51 || status !== 'realizado')) continue;
 
     let grupo_id: string | null = null;
     if (w.grupo_id) {
@@ -225,7 +237,7 @@ function parseEventos(wire: unknown, modo: 'consulta' | 'exame_inicial'): Odonto
 
     out.push({
       tipo:             w.tipo as TipoRegistroOdontograma,
-      status:           w.status as StatusRegistro,
+      status,
       origem,
       // R-101 — a IA nunca decide isso (mesma classe de invariante de realizado_em, §1.10).
       // Todo evento extraído de fala/texto nasce 'sessao_atual', mesmo com intenção futura falada.
@@ -234,6 +246,8 @@ function parseEventos(wire: unknown, modo: 'consulta' | 'exame_inicial'): Odonto
       grupo_id,
       papel_no_grupo:   papel,
       observacao:       typeof w.observacao === 'string' ? w.observacao.trim() : '',
+      evidencia_status: evidencia,
+      revisar_status:   revisarStatus,
     });
   }
   return out;
@@ -312,7 +326,7 @@ Retorne SOMENTE um JSON válido, sem markdown, com exatamente esta estrutura:
   "procedimentos": ["lista resumida dos procedimentos realizados — ex: Tratamento endodôntico, Radiografia periapical"],
   "conduta": "orientações ao paciente, cuidados pós-procedimento, prescrições mencionadas. String vazia se não mencionado.",
   "alerta_novo": "se o dentista mencionar nova alergia ou medicamento novo do paciente, registrar aqui. null se nenhum",
-  "odontograma_eventos": [{"tipo": "carie_restauracao", "status": "realizado", "nivel": "face", "dente": 14, "faces": ["O"], "grupo_id": null, "papel_no_grupo": null, "observacao": "resina composta"}],
+  "odontograma_eventos": [{"tipo": "carie_restauracao", "status": "realizado", "evidencia_status": "execucao_explicita", "nivel": "face", "dente": 14, "faces": ["O"], "grupo_id": null, "papel_no_grupo": null, "observacao": "resina composta"}],
   "orto_manutencao": null
 }
 
@@ -338,7 +352,8 @@ Regras críticas:
 ODONTOGRAMA (camada visual — além dos campos acima):
 Para CADA achado/procedimento que você registrou em dentes_observacoes, emita TAMBÉM o(s) evento(s) visual(is) correspondente(s) em "odontograma_eventos". Um evento descreve o estado clínico de um dente ou face.
 - tipo (escolha o mais específico): "carie_restauracao" (cárie a restaurar OU restauração feita — ancora em FACE), "endodontia" (canal), "exodontia" (extração), "coroa" (coroa total protética UNITÁRIA), "ponte" (prótese fixa multi-dente — ver regra PONTE), "implante", "selante" (sempre face O), "lesao_periapical" (achado radiográfico no ápice), "inclusao" (dente incluso/impactado), "fratura" (trauma dentário), "pino_nucleo" (pino/núcleo intrarradicular), "esfoliacao" (decíduo que caiu naturalmente — SÓ dentes 51-85, sempre "realizado"), "profilaxia" (limpeza — nível boca), "raspagem" (raspagem/alisamento periodontal — nível quadrante; sem quadrante citado, boca), "clareamento" (nível boca), "fluor" (aplicação de flúor — nível boca).
-- status: "indicado" (a fazer/planejado — MESMA regra do PLANEJADO acima) ou "realizado" (feito / verbo no passado).
+- evidencia_status é OBRIGATÓRIA e explica a frase: "execucao_explicita" (só quando o dentista declarou que executou o procedimento), "indicacao_explicita" (indicou/precisa/vai fazer), "negacao" (declarou que NÃO fez), "historico" (feito em outro momento/por outro profissional) ou "ambiguo" (nome do procedimento sem verbo de execução).
+- status: em relato de consulta, use "realizado" APENAS com evidencia_status="execucao_explicita". Nos demais casos use "indicado". Exemplos: "fiz profilaxia" → realizado + execucao_explicita; "paciente precisa de profilaxia" → indicado + indicacao_explicita; "canal no 46" → indicado + ambiguo; "não fiz o canal" → nunca realizado + negacao; "já fez canal há anos" → indicado + historico.
 ${modo === 'exame_inicial' ? `- ⛔⛔ MODO HISTÓRICO/REFERÊNCIA — a regra de status ACIMA NÃO VALE aqui, esta a substitui: o texto é
   documento trazido de fora (prontuário anterior, histórico importado), não o dentista relatando o
   que fez agora. Verbo no passado sozinho ("fez o canal", "extraiu o dente", "restaurou o 26") NÃO

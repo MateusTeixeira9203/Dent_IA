@@ -15,7 +15,6 @@ import {
   ChevronRight,
   Calendar,
   CheckCircle2,
-  XCircle,
   AlertCircle,
   FileText,
   FilePlus,
@@ -65,7 +64,6 @@ import { atualizarPaciente } from '../actions';
 import type { DentistaRole } from '@/types/database';
 import type { PlanoId } from '@/lib/planos';
 import {
-  atualizarStatusOrcamento,
   registrarPagamento,
   registrarPagamentoRapido,
   editarPagamento,
@@ -75,9 +73,12 @@ import {
   excluirOrcamento,
   gerarParcelas,
   atualizarMostrarValorPorItem,
+  // R-114 — substituem atualizarStatusOrcamento nesta tela (o dentista/perfil do paciente).
+  alternarAprovacaoItem,
+  aprovarTodosItens,
   type FormaPagamento,
-  type StatusOrcamento,
 } from '@/app/dashboard/orcamentos/actions';
+import { deriveEstadoOrcamento, rotuloEstado } from '@/lib/orcamentos/estado';
 import { criarAgendamento } from '@/app/dashboard/agendamentos/actions';
 import { buildClinicDatetime } from '@/app/dashboard/agendamentos/_components/date-helpers';
 import type { Paciente } from '@/types/database';
@@ -86,7 +87,6 @@ import { format, parseISO, differenceInCalendarDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { formatarDataFicha } from '@/lib/format-data-ficha';
 import { toast } from 'sonner';
-import { STATUS_ORCAMENTO } from '@/lib/constants/orcamento-status';
 import { parseValorBR, formatValorBR } from '@/lib/valor-br';
 import type { OrcamentoComItens, OrcamentoItem, Pagamento, ProcedimentoClinica, OrcEditItem } from './types';
 import { EditarPacienteModal } from './modals/editar-paciente-modal';
@@ -405,12 +405,25 @@ export function PacienteDetailClient({
   // Orçamento selecionado no detalhe
   const detalheOrc = orcamentosState.find((o) => o.id === detalheOrcId) ?? null;
 
+  // R-114 — estado por orçamento, derivado (não lido de `.status`, que fica inerte pra
+  // orçamento tocado por esta tela). Mesma fórmula de `lib/orcamentos/estado.ts`.
+  const estadoPorOrc = useMemo(
+    () => new Map(orcamentosState.map((o) => [o.id, deriveEstadoOrcamento({
+      valorAcordado: o.valor_acordado,
+      itens: o.itens.map((i) => ({ precoTotal: i.preco_total, aprovado: i.aprovado })),
+      pagamentos: o.pagamentos.map((p) => ({ valor: p.valor, status: p.status })),
+    })])),
+    [orcamentosState]
+  );
+
   const resumoFinanceiro = useMemo(() => {
     const allPagamentos = orcamentosState.flatMap(o => o.pagamentos);
     return {
+      // "Aprovado" na visão de resumo = o que o paciente aceitou em orçamentos com algo
+      // aceito (aceito ou quitado) — soma o DEVIDO, não o total da proposta inteira.
       totalAprovado: orcamentosState
-        .filter(o => o.status === 'aprovado')
-        .reduce((s, o) => s + (o.total ?? 0), 0),
+        .filter(o => estadoPorOrc.get(o.id)?.estado !== 'proposto')
+        .reduce((s, o) => s + (estadoPorOrc.get(o.id)?.valorDevido ?? 0), 0),
       totalPago: allPagamentos
         .filter(p => p.status === 'pago')
         .reduce((s, p) => s + p.valor, 0),
@@ -419,19 +432,11 @@ export function PacienteDetailClient({
         .reduce((s, p) => s + p.valor, 0),
       temHistorico: allPagamentos.length > 0,
     };
-  }, [orcamentosState]);
+  }, [orcamentosState, estadoPorOrc]);
 
   const orcamentosAprovados = useMemo(
-    () => orcamentosState.filter(o => o.status === 'aprovado'),
-    [orcamentosState]
-  );
-  const orcamentosAbertos = useMemo(
-    () => orcamentosState.filter(o => ['rascunho', 'enviado'].includes(o.status)),
-    [orcamentosState]
-  );
-  const orcamentosAguardando = useMemo(
-    () => orcamentosState.filter(o => o.status === 'enviado'),
-    [orcamentosState]
+    () => orcamentosState.filter(o => estadoPorOrc.get(o.id)?.estado !== 'proposto'),
+    [orcamentosState, estadoPorOrc]
   );
   const pendenciasAtivas = useMemo(
     () => pendencias.filter(p => !pendenciasConcluidas.has(p.globalKey)),
@@ -440,7 +445,9 @@ export function PacienteDetailClient({
 
   // Procedimentos clínicos dos orçamentos aprovados — headline da Col 2
   const procedimentosPrincipais = useMemo(() => {
-    const itens = orcamentosAprovados.flatMap(o => o.itens ?? []);
+    // R-114 (I2) — só o que o paciente de fato aceitou. Item ainda não aprovado é proposta,
+    // não pertence ao "que ele já fechou".
+    const itens = orcamentosAprovados.flatMap(o => (o.itens ?? []).filter((i) => i.aprovado));
     return itens.sort((a, b) => (b.preco_total ?? 0) - (a.preco_total ?? 0));
   }, [orcamentosAprovados]);
 
@@ -633,20 +640,42 @@ export function PacienteDetailClient({
     }
   };
 
-  const handleStatusChange = useCallback(async (orcId: string, status: StatusOrcamento) => {
-    try {
-      const result = await atualizarStatusOrcamento(orcId, status);
-      if (!result.error) {
-        setOrcamentosState((prev) =>
-          prev.map((o) => (o.id === orcId ? { ...o, status } : o))
-        );
-        router.refresh();
-      } else {
-        toast.error(result.error);
-      }
-    } catch (err) {
-      console.error('[paciente] handleStatusChange:', err);
-      toast.error('Não foi possível atualizar o status. Tente novamente.');
+  // R-114 — o paciente aceitou (ou desmarcou) UM procedimento. Estado deriva sozinho depois.
+  const handleAlternarAprovacaoItem = useCallback(async (itemId: string, aprovado: boolean) => {
+    // Otimista: a caixa responde na hora, sem esperar o servidor (mesma UX de um checkbox).
+    setOrcamentosState((prev) =>
+      prev.map((o) => ({
+        ...o,
+        itens: o.itens.map((i) => (i.id === itemId ? { ...i, aprovado } : i)),
+      }))
+    );
+    const result = await alternarAprovacaoItem(itemId, aprovado);
+    if (result.error) {
+      // Desfaz o otimista — a trava da I9 (item já pago) só é conhecida no servidor.
+      setOrcamentosState((prev) =>
+        prev.map((o) => ({
+          ...o,
+          itens: o.itens.map((i) => (i.id === itemId ? { ...i, aprovado: !aprovado } : i)),
+        }))
+      );
+      toast.error(result.error);
+    } else {
+      router.refresh();
+    }
+  }, [router]);
+
+  // R-114 — atalho de 1 clique (pedido dele, 16/08): aprova todos os itens ainda não
+  // aprovados de um orçamento, num UPDATE só.
+  const handleAprovarTodosItens = useCallback(async (orcId: string) => {
+    setOrcamentosState((prev) =>
+      prev.map((o) => (o.id === orcId ? { ...o, itens: o.itens.map((i) => ({ ...i, aprovado: true })) } : o))
+    );
+    const result = await aprovarTodosItens(orcId);
+    if (result.error) {
+      toast.error(result.error);
+      router.refresh(); // estado local pode ter divergido do servidor — busca de novo
+    } else {
+      router.refresh();
     }
   }, [router]);
 
@@ -956,6 +985,9 @@ export function PacienteDetailClient({
         descricao: i.descricao,
         quantidade: i.quantidade,
         preco_total: i.quantidade * parseValorBR(i.preco_unitario),
+        // R-114 (I5) — o servidor só deixou passar porque nenhum item era aprovado antes;
+        // a lista reescrita nasce toda não-aprovada, coerente com o que ele acabou de ver.
+        aprovado: false,
       }));
       setOrcamentosState((prev) =>
         prev.map((o) =>
@@ -1060,7 +1092,7 @@ export function PacienteDetailClient({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button
             onClick={() => router.push('/dashboard/pacientes')}
-            className="flex items-center gap-1.5 text-text-secondary hover:text-text-primary transition-colors text-sm font-medium"
+            className="min-h-11 flex items-center gap-1.5 text-text-secondary hover:text-text-primary transition-colors text-sm font-medium"
           >
             <ArrowLeft className="w-4 h-4" />
             Pacientes
@@ -1068,14 +1100,14 @@ export function PacienteDetailClient({
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setIsEditModalOpen(true)}
-              className="p-2 rounded-xl border border-border/60 text-text-secondary hover:text-teal hover:border-teal/40 bg-surface transition-colors"
+              className="h-11 w-11 rounded-xl border border-border/60 text-text-secondary hover:text-teal hover:border-teal/40 bg-surface transition-colors flex items-center justify-center"
               title="Editar paciente"
             >
               <Edit2 className="w-4 h-4" />
             </button>
             <button
               onClick={() => window.open(`/api/pacientes/${paciente.id}/prontuario`, '_blank')}
-              className="p-2 rounded-xl border border-border/60 text-text-secondary hover:text-text-primary bg-surface transition-colors"
+              className="h-11 w-11 rounded-xl border border-border/60 text-text-secondary hover:text-text-primary bg-surface transition-colors flex items-center justify-center"
               title="Exportar prontuário"
             >
               <FileDown className="w-4 h-4" />
@@ -1085,7 +1117,7 @@ export function PacienteDetailClient({
                 decisão dele 07/08). Confirmação com nome digitado mora no modal. */}
             <button
               onClick={() => setExcluirPacienteAberto(true)}
-              className="p-2 rounded-xl border border-border/60 text-text-secondary hover:text-coral hover:border-coral/40 bg-surface transition-colors"
+              className="h-11 w-11 rounded-xl border border-border/60 text-text-secondary hover:text-coral hover:border-coral/40 bg-surface transition-colors flex items-center justify-center"
               title="Excluir paciente"
             >
               <Trash2 className="w-4 h-4" />
@@ -1093,7 +1125,7 @@ export function PacienteDetailClient({
             {canWriteClinical && (
               <button
                 onClick={() => setIsEmitirOpen(true)}
-                className="p-2 rounded-xl border border-border/60 text-text-secondary hover:text-teal hover:border-teal/40 bg-surface transition-colors"
+                className="h-11 w-11 rounded-xl border border-border/60 text-text-secondary hover:text-teal hover:border-teal/40 bg-surface transition-colors flex items-center justify-center"
                 title="Emitir documento (receita, atestado, pedido de exame)"
               >
                 <FilePlus className="w-4 h-4" />
@@ -1119,7 +1151,7 @@ export function PacienteDetailClient({
             )}
             <button
               onClick={() => { setRetornoError(null); setIsMarcarRetornoOpen(true); }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-teal text-white rounded-xl text-xs font-bold hover:bg-teal-lt transition-colors shadow-md"
+              className="min-h-11 shrink-0 flex items-center gap-2 px-4 py-2.5 bg-teal text-white rounded-xl text-xs font-bold hover:bg-teal-lt transition-colors shadow-md"
             >
               <Calendar className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Marcar retorno</span>
@@ -1429,19 +1461,23 @@ export function PacienteDetailClient({
                     </div>
                   ) : (
                     orcamentosState.map((orc) => {
-                      const st = STATUS_ORCAMENTO[orc.status] ?? STATUS_ORCAMENTO.rascunho;
-                      const StatusIcon =
-                        orc.status === 'aprovado'
-                          ? CheckCircle2
-                          : orc.status === 'recusado'
-                          ? XCircle
-                          : AlertCircle;
+                      const derivado = estadoPorOrc.get(orc.id) ?? deriveEstadoOrcamento({
+                        valorAcordado: orc.valor_acordado,
+                        itens: orc.itens.map((i) => ({ precoTotal: i.preco_total, aprovado: i.aprovado })),
+                        pagamentos: orc.pagamentos.map((p) => ({ valor: p.valor, status: p.status })),
+                      });
+                      const StatusIcon = derivado.estado === 'quitado' ? CheckCircle2 : AlertCircle;
+                      const estadoCls = derivado.estado === 'quitado'
+                        ? 'bg-teal-ink text-white'
+                        : derivado.estado === 'aceito'
+                          ? 'bg-warning-pale text-warning-ink'
+                          : 'bg-surface-alt text-text-secondary';
                       return (
                         <div
                           key={orc.id}
                           onClick={() => setDetalheOrcId(orc.id)}
                           className={`rounded-2xl border shadow-sm p-6 cursor-pointer transition-colors ${
-                            (orc.status === 'rascunho' || orc.status === 'enviado')
+                            derivado.estado === 'proposto'
                               ? 'bg-amber-500/[0.03] border-amber-500/40 hover:border-amber-500/60'
                               : 'bg-surface border-border/60 hover:border-teal/30'
                           }`}
@@ -1454,9 +1490,9 @@ export function PacienteDetailClient({
                               <div>
                                 <div className="flex items-center gap-2">
                                   <span
-                                    className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${st.cls}`}
+                                    className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${estadoCls}`}
                                   >
-                                    {st.label}
+                                    {rotuloEstado(derivado)}
                                   </span>
                                 </div>
                                 <div className="text-xs text-text-secondary mt-0.5 flex items-center gap-1">
@@ -1724,7 +1760,8 @@ export function PacienteDetailClient({
         setOrcEditError={setOrcEditError}
         onOpenEditOrc={handleOpenEditOrc}
         onSalvarEdicaoOrc={handleSalvarEdicaoOrc}
-        onStatusChange={handleStatusChange}
+        onAlternarAprovacaoItem={handleAlternarAprovacaoItem}
+        onAprovarTodosItens={handleAprovarTodosItens}
         onToggleMostrarValorPorItem={handleToggleMostrarValorPorItem}
         onRegistrarPagamento={closingPagamentoId ? handleFecharPagamento : handleRegistrarPagamento}
         onRegistrarDinheiroRapido={handlePagamentoRapido}

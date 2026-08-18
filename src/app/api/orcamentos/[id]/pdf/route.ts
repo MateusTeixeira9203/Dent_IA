@@ -20,10 +20,10 @@ export async function GET(
   const { data: raw, error } = await supabase
     .from('orcamentos')
     .select(`
-      id, status, total, desconto, validade_dias, condicoes_pagamento, mostrar_valor_por_item, created_at,
+      id, status, total, valor_acordado, desconto, validade_dias, condicoes_pagamento, mostrar_valor_por_item, created_at,
       paciente:pacientes(nome, telefone),
       dentista:dentistas!orcamentos_dentista_id_fkey(nome),
-      itens:orcamento_itens(descricao, quantidade, preco_unitario, preco_total),
+      itens:orcamento_itens(descricao, quantidade, preco_unitario, preco_total, aprovado),
       pagamentos(valor, status, forma_pagamento, data_pagamento)
     `)
     .eq('id', id)

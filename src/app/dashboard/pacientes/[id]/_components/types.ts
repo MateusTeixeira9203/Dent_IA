@@ -9,6 +9,9 @@ export type OrcamentoItem = {
   descricao: string | null;
   preco_total: number | null;
   quantidade: number;
+  /** R-114 — o paciente aprovou este item? Item não aprovado continua na lista (visível,
+   *  esmaecido); só não conta no devido nem sai no PDF. */
+  aprovado: boolean;
 };
 
 export type Pagamento = {
@@ -25,8 +28,14 @@ export type Pagamento = {
 
 export type OrcamentoComItens = {
   id: string;
+  /** Legado (R-65 e anteriores) — a tela antiga de `/dashboard/orcamentos` ainda declara
+   *  status por aqui; esta tela (perfil do paciente) usa `estado`, derivado (R-114). Não
+   *  remover: `atualizarStatusOrcamento` (usado pela ponte da tela antiga) ainda escreve nele,
+   *  e o campo alimenta o rótulo enquanto a tela antiga não migra. */
   status: 'rascunho' | 'enviado' | 'aprovado' | 'recusado';
   total: number | null;
+  /** R-114 — quando definido (RPCs do R-34), é o devido; nunca escrito por aprovação de item (I1). */
+  valor_acordado: number | null;
   desconto: number | null;
   created_at: string;
   validade_dias: number;

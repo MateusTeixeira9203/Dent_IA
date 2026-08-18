@@ -3,14 +3,13 @@
 import { MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { atualizarStatusOrcamento } from "@/app/dashboard/orcamentos/actions";
+import { marcarOrcamentoEnviado } from "@/app/dashboard/orcamentos/actions";
 
 interface BotaoEnviarWhatsAppProps {
   orcamentoId: string;
   pacienteTelefone: string | null | undefined;
   pacienteNome: string;
   valorTotal: number | null;
-  statusAtual?: string;
   /** "full" exibe botão largo com texto (usado nas ações rápidas da secretária) */
   variant?: 'icon' | 'full';
 }
@@ -30,7 +29,6 @@ export function BotaoEnviarWhatsApp({
   pacienteTelefone,
   pacienteNome,
   valorTotal,
-  statusAtual,
   variant = 'icon',
 }: BotaoEnviarWhatsAppProps) {
   const router = useRouter();
@@ -57,15 +55,12 @@ export function BotaoEnviarWhatsApp({
 
     window.open(`https://wa.me/${telefoneFormatado}?text=${mensagem}`, "_blank");
 
-    // Muda status para "enviado" se ainda estiver em rascunho
-    if (!statusAtual || statusAtual === 'rascunho') {
-      const result = await atualizarStatusOrcamento(orcamentoId, 'enviado');
-      if (!result.error) {
-        toast.success("WhatsApp aberto e orçamento marcado como enviado!");
-        router.refresh();
-      } else {
-        toast.success("WhatsApp aberto! Envie a mensagem para o paciente.");
-      }
+    // R-114 — marcarOrcamentoEnviado é idempotente (só grava se enviado_em ainda for null),
+    // então chama direto, sem checar status antes (que ficou inerte pra orçamento novo).
+    const result = await marcarOrcamentoEnviado(orcamentoId);
+    if (!result.error) {
+      toast.success("WhatsApp aberto e orçamento marcado como enviado!");
+      router.refresh();
     } else {
       toast.success("WhatsApp aberto! Envie a mensagem para o paciente.");
     }

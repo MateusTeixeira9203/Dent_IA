@@ -3,9 +3,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import {
-  Edit2, Trash2, CircleDollarSign, Plus, CheckCircle2,
-  XCircle, Loader2, CreditCard, Banknote, Smartphone,
-  Receipt, User, Send, CalendarClock, Layers, MoreHorizontal, X, PenLine,
+  Edit2, Trash2, CircleDollarSign, Plus, CheckCircle2, Check,
+  Loader2, CreditCard, Banknote, Smartphone,
+  Receipt, User, CalendarClock, Layers, X, PenLine,
 } from 'lucide-react';
 import { AceiteOrcamentoModal } from '@/components/orcamentos/aceite-orcamento-modal';
 import { BotaoDownloadPDF } from '@/components/orcamentos/botao-download-pdf';
@@ -16,10 +16,6 @@ import {
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import type { LucideIcon } from 'lucide-react';
-import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -27,44 +23,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import type { StatusOrcamento, FormaPagamento } from '@/app/dashboard/orcamentos/actions';
-import { STATUS_ORCAMENTO } from '@/lib/constants/orcamento-status';
+import type { FormaPagamento } from '@/app/dashboard/orcamentos/actions';
+import { deriveEstadoOrcamento, rotuloEstado, type EstadoOrcamento } from '@/lib/orcamentos/estado';
 import { parseValorBR, formatValorBR } from '@/lib/valor-br';
 import type { OrcamentoComItens, OrcEditItem, Pagamento } from '../types';
-
-// ─── status options ───────────────────────────────────────────────────────────
-
-type StatusOption = {
-  value: StatusOrcamento;
-  label: string;
-  icon: LucideIcon;
-  active: string;
-  inactive: string;
-};
-
-const STATUS_OPTIONS: StatusOption[] = [
-  {
-    value: 'enviado',
-    label: 'Enviado',
-    icon: Send,
-    active: 'bg-warning-pale border-warning/40 text-warning-ink',
-    inactive: 'border-border text-text-secondary hover:border-warning/30 hover:text-warning-ink',
-  },
-  {
-    value: 'aprovado',
-    label: 'Aprovado',
-    icon: CheckCircle2,
-    active: 'bg-teal/10 border-teal/40 text-teal',
-    inactive: 'border-border text-text-secondary hover:border-teal/30 hover:text-teal',
-  },
-  {
-    value: 'recusado',
-    label: 'Recusado',
-    icon: XCircle,
-    active: 'bg-coral-pale border-coral/40 text-coral-ink',
-    inactive: 'border-border text-text-secondary hover:border-coral/30 hover:text-coral-ink',
-  },
-];
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -121,7 +83,10 @@ interface Props {
   setOrcEditError: (v: string | null) => void;
   onOpenEditOrc: () => void;
   onSalvarEdicaoOrc: () => void;
-  onStatusChange: (id: string, status: StatusOrcamento) => void;
+  /** R-114 — o paciente aceitou (ou desmarcou) UM procedimento. Estado deriva sozinho. */
+  onAlternarAprovacaoItem: (itemId: string, aprovado: boolean) => void;
+  /** R-114 — atalho de 1 clique: aprova todos os itens ainda não aprovados, num UPDATE só. */
+  onAprovarTodosItens: (orcamentoId: string) => void;
   onRegistrarPagamento: () => void;
   /** R-93 — atalho de 1 clique (R-34 §7.1): fecha a próxima parcela aberta, ou cobra o saldo
    *  restante, sempre em dinheiro. Sem isso o caminho mais curto pra receber era 3-4 gestos. */
@@ -165,7 +130,7 @@ export function DetalheOrcamentoModal({
   orcEditMode, setOrcEditMode, orcEditItens, setOrcEditItens,
   orcEditSaving, orcEditError, setOrcEditError,
   onOpenEditOrc, onSalvarEdicaoOrc,
-  onStatusChange, onRegistrarPagamento,
+  onAlternarAprovacaoItem, onAprovarTodosItens, onRegistrarPagamento,
   onRegistrarDinheiroRapido, pagRapidoSaving,
   closingPagamentoId, onIniciarFechamentoPagamento, onCancelarFechamentoPagamento,
   onDeleteClick,
@@ -177,7 +142,6 @@ export function DetalheOrcamentoModal({
   onToggleMostrarValorPorItem,
 }: Props) {
   const hoje = new Date().toISOString().split('T')[0];
-  const [isChangingStatus, setIsChangingStatus] = useState(false);
   /** R-39a: só Procedimentos e Atividade — Pagamentos virou a coluna do dinheiro. */
   const [tab, setTab] = useState<'procedimentos' | 'atividade'>('procedimentos');
   const [showAceiteModal, setShowAceiteModal] = useState(false);
@@ -208,30 +172,33 @@ export function DetalheOrcamentoModal({
     status_alterado: 'Status alterado',
   };
 
-  function handleStatusChangeSafe(id: string, status: StatusOrcamento) {
-    if (isChangingStatus) return;
-    setIsChangingStatus(true);
-    onStatusChange(id, status);
-    setTimeout(() => setIsChangingStatus(false), 1200);
-  }
-
-  const { totalPago, totalPendente, pctPago, quitado, restante } = useMemo(() => {
-    if (!detalheOrc) return { totalPago: 0, totalPendente: 0, pctPago: 0, quitado: false, restante: 0 };
-    const pago    = detalheOrc.pagamentos.filter(p => p.status === 'pago').reduce((s, p) => s + p.valor, 0);
-    const pendente= detalheOrc.pagamentos.filter(p => p.status === 'pendente').reduce((s, p) => s + p.valor, 0);
-    const total   = detalheOrc.total ?? 0;
+  // R-114 — estado derivado dos fatos (item aprovado × pagamento), não mais declarado.
+  // Mesma fórmula de lib/orcamentos/estado.ts — nunca reimplementada aqui.
+  const { totalPago, totalPendente, pctPago, quitado, restante, estado, valorDevido, valorAprovado } = useMemo(() => {
+    if (!detalheOrc) {
+      return {
+        totalPago: 0, totalPendente: 0, pctPago: 0, quitado: false, restante: 0,
+        estado: 'proposto' as EstadoOrcamento, valorDevido: 0, valorAprovado: 0,
+      };
+    }
+    const derivado = deriveEstadoOrcamento({
+      valorAcordado: detalheOrc.valor_acordado,
+      itens: detalheOrc.itens.map((i) => ({ precoTotal: i.preco_total, aprovado: i.aprovado })),
+      pagamentos: detalheOrc.pagamentos.map((p) => ({ valor: p.valor, status: p.status })),
+    });
+    const pendente = detalheOrc.pagamentos.filter(p => p.status === 'pendente').reduce((s, p) => s + p.valor, 0);
     // Arredonda pra centavo antes de comparar — soma de floats (parcelas) raramente bate
-    // exato com o total (ex.: 149.99999999999997), e ">= total" cru deixava "Quitado" sem
-    // aparecer mesmo com o valor certo pago.
-    const restanteArred = Math.max(0, Math.round((total - pago) * 100) / 100);
+    // exato com o devido (ex.: 149.99999999999997).
+    const restanteArred = Math.max(0, Math.round((derivado.valorDevido - derivado.valorPago) * 100) / 100);
     return {
-      totalPago:    pago,
+      totalPago:     derivado.valorPago,
       totalPendente: pendente,
-      pctPago:      total > 0 ? Math.min(100, (pago / total) * 100) : 0,
-      quitado:      total > 0 && restanteArred <= 0,
-      // Mesma definição de "Preencher restante" já usada na página de Orçamentos:
-      // total - pago (não desconta pendências já agendadas separadamente).
-      restante:     restanteArred,
+      pctPago:       derivado.valorDevido > 0 ? Math.min(100, (derivado.valorPago / derivado.valorDevido) * 100) : 0,
+      quitado:       derivado.estado === 'quitado',
+      restante:      restanteArred,
+      estado:        derivado.estado,
+      valorDevido:   derivado.valorDevido,
+      valorAprovado: derivado.valorAprovado,
     };
   }, [detalheOrc]);
 
@@ -274,8 +241,20 @@ export function DetalheOrcamentoModal({
                 <DialogTitle className="font-heading font-semibold text-xl text-text-primary leading-tight">
                   Orçamento
                 </DialogTitle>
-                <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md bg-surface-alt text-text-secondary shrink-0">
-                  {STATUS_ORCAMENTO[detalheOrc.status]?.label ?? detalheOrc.status}
+                {/* R-114 — badge deriva de item aprovado × pagamento, não é mais declarado.
+                    Nenhuma transição manual: "Proposto"/"Aceito"/"Quitado" só mudam quando o
+                    paciente aceita um procedimento (aba Procedimentos) ou paga. */}
+                <span
+                  className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md shrink-0 ${
+                    estado === 'quitado'
+                      ? 'bg-teal-ink text-white'
+                      : estado === 'aceito'
+                        ? 'bg-warning-pale text-warning-ink'
+                        : 'bg-surface-alt text-text-secondary'
+                  }`}
+                >
+                  {estado === 'quitado' && <CheckCircle2 className="w-3 h-3" />}
+                  {rotuloEstado({ estado, valorDevido, valorPago: totalPago, valorAprovado })}
                 </span>
                 <DialogDescription className="text-text-muted text-xs truncate">
                   {format(parseISO(detalheOrc.created_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
@@ -284,44 +263,18 @@ export function DetalheOrcamentoModal({
 
               <div className="flex items-center gap-3 shrink-0">
                 {quitado ? (
-                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full bg-teal text-white">
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full bg-teal-ink text-white">
                     <CheckCircle2 className="w-3 h-3" />
                     Quitado
                   </span>
-                ) : (
+                ) : valorAprovado > 0 ? (
                   <span className="font-mono text-sm font-medium text-text-primary hidden sm:inline">
                     <span className="text-teal-ink">R$ {fmt(totalPago)}</span>
                     <span className="font-sans text-xs text-text-secondary"> de </span>
-                    R$ {fmt(detalheOrc.total ?? 0)}
+                    R$ {fmt(valorDevido)}
                     <span className="font-sans text-xs text-text-secondary"> pagos</span>
                   </span>
-                )}
-
-                {/* Transições de status saem do caminho principal, não do sistema:
-                    'enviado' e 'recusado' somam 2 orçamentos em 52, mas 28 dos 34
-                    aprovados foram aprovados por aqui. Mesma action, mesma assinatura. */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    aria-label="Outras ações"
-                    disabled={isChangingStatus}
-                    className="p-1.5 rounded-lg text-text-secondary hover:bg-surface-alt hover:text-text-primary transition-colors disabled:opacity-50"
-                  >
-                    <MoreHorizontal className="w-4 h-4" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {STATUS_OPTIONS.map(opt => (
-                      <DropdownMenuItem
-                        key={opt.value}
-                        onClick={() => handleStatusChangeSafe(detalheOrc.id, opt.value)}
-                        className={detalheOrc.status === opt.value ? 'text-teal-ink' : 'text-text-secondary'}
-                      >
-                        <opt.icon className="w-3.5 h-3.5" />
-                        Marcar como {opt.label.toLowerCase()}
-                        {detalheOrc.status === opt.value && <CheckCircle2 className="w-3 h-3 ml-auto" />}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                ) : null}
 
                 <button
                   onClick={onClose}
@@ -419,14 +372,35 @@ export function DetalheOrcamentoModal({
                               {detalheOrc.itens.map((item, idx) => (
                                 <div
                                   key={item.id}
-                                  className="flex items-center gap-3 px-4 py-3 border-b border-border/60 last:border-b-0 hover:bg-surface-alt/40 transition-colors"
+                                  className={`flex items-center gap-3 px-4 py-3 border-b border-border/60 last:border-b-0 transition-colors ${
+                                    item.aprovado ? 'hover:bg-surface-alt/40' : 'bg-surface-alt/30'
+                                  }`}
                                 >
-                                  <span className="w-6 h-6 rounded-lg bg-teal/10 text-teal text-xs font-bold flex items-center justify-center shrink-0">
-                                    {idx + 1}
-                                  </span>
+                                  {/* R-114 — o gesto de aprovação: o paciente aceitou este
+                                      procedimento? Item desmarcado NUNCA some — só deixa de
+                                      contar no devido e no PDF (I2). */}
+                                  <button
+                                    type="button"
+                                    role="checkbox"
+                                    aria-checked={item.aprovado}
+                                    aria-label={item.aprovado ? 'Aprovado — clique para desmarcar' : 'Marcar como aprovado pelo paciente'}
+                                    onClick={() => onAlternarAprovacaoItem(item.id, !item.aprovado)}
+                                    className={`w-6 h-6 rounded-lg border flex items-center justify-center shrink-0 transition-colors ${
+                                      item.aprovado
+                                        ? 'bg-teal-ink border-teal-ink text-white'
+                                        : 'border-border bg-surface hover:border-teal/40'
+                                    }`}
+                                  >
+                                    {item.aprovado && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
+                                  </button>
                                   <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-text-primary truncate">
+                                    <p className={`text-sm font-medium truncate ${item.aprovado ? 'text-text-primary' : 'text-text-secondary'}`}>
                                       {item.descricao ?? '—'}
+                                      {!item.aprovado && (
+                                        <span className="ml-2 inline-block text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-md bg-surface-alt text-text-secondary align-middle">
+                                          não incluído
+                                        </span>
+                                      )}
                                     </p>
                                     {item.quantidade > 1 && (
                                       <p className="text-[11px] text-text-secondary font-mono">
@@ -434,16 +408,37 @@ export function DetalheOrcamentoModal({
                                       </p>
                                     )}
                                   </div>
-                                  <span className="font-mono text-sm font-semibold text-text-primary shrink-0">
+                                  <span className={`font-mono text-sm font-semibold shrink-0 ${item.aprovado ? 'text-text-primary' : 'text-text-secondary'}`}>
                                     R$ {fmt(item.preco_total ?? 0)}
                                   </span>
                                 </div>
                               ))}
-                              <div className="flex items-center justify-between px-4 py-3 bg-teal/5">
-                                <span className="text-sm font-bold text-text-primary">Total</span>
-                                <span className="font-mono text-lg font-bold text-teal">
-                                  R$ {fmt(detalheOrc.total ?? 0)}
-                                </span>
+                              <div className="flex items-center justify-between px-4 py-3 bg-teal/5 gap-3">
+                                <div>
+                                  <span className="text-sm font-bold text-text-primary block">Aprovado</span>
+                                  {valorAprovado < (detalheOrc.total ?? 0) && (
+                                    <span className="text-[11px] text-text-secondary">
+                                      Proposto: R$ {fmt(detalheOrc.total ?? 0)}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-3 shrink-0">
+                                  {/* Atalho de 1 clique (pedido dele, 16/08): some sozinho
+                                      quando tudo já está aprovado — sem "desmarcar tudo",
+                                      é direção única (bate na I9 assim que há pagamento). */}
+                                  {detalheOrc.itens.some((i) => !i.aprovado) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onAprovarTodosItens(detalheOrc.id)}
+                                      className="text-[11px] font-bold uppercase tracking-wider text-teal-ink border border-teal/40 rounded-lg px-2.5 py-1 hover:bg-teal/10 transition-colors"
+                                    >
+                                      Aprovar tudo
+                                    </button>
+                                  )}
+                                  <span className="font-mono text-lg font-bold text-teal">
+                                    R$ {fmt(valorAprovado)}
+                                  </span>
+                                </div>
                               </div>
                             </>
                           )}
@@ -468,7 +463,7 @@ export function DetalheOrcamentoModal({
                           {detalheOrc.aceite.croNoAto && <> · CRO {detalheOrc.aceite.croNoAto}</>}
                         </p>
                       </div>
-                    ) : detalheOrc.status !== 'recusado' && (
+                    ) : (
                       <button
                         onClick={() => setShowAceiteModal(true)}
                         className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-border text-sm font-semibold text-text-secondary hover:bg-teal/5 hover:text-teal-ink hover:border-teal/30 transition-all"
@@ -478,7 +473,10 @@ export function DetalheOrcamentoModal({
                       </button>
                     )}
 
-                    {detalheOrc.status === 'aprovado' && (detalheOrc.aprovado_por || detalheOrc.aprovado_em) && (
+                    {/* R-114 — `aprovado_por`/`aprovado_em` são legado (só a ponte da tela
+                        antiga da secretária ainda escreve). `status` fica inerte pra
+                        orçamento tocado por aqui; o gate é só presença do dado. */}
+                    {(detalheOrc.aprovado_por || detalheOrc.aprovado_em) && (
                       <div className="flex items-center gap-2 bg-teal/5 border border-teal/15 rounded-xl px-3 py-2.5">
                         <User className="w-3.5 h-3.5 text-teal shrink-0" />
                         <p className="text-xs text-text-secondary">
@@ -1013,8 +1011,7 @@ export function DetalheOrcamentoModal({
                         orcamentoId={detalheOrc.id}
                         pacienteTelefone={pacienteTelefone}
                         pacienteNome={pacienteNome}
-                        valorTotal={detalheOrc.total}
-                        statusAtual={detalheOrc.status}
+                        valorTotal={valorDevido}
                       />
                     </div>
                     <Button
@@ -1037,8 +1034,10 @@ export function DetalheOrcamentoModal({
           open={showAceiteModal}
           onOpenChange={setShowAceiteModal}
           orcamentoId={detalheOrc.id}
-          itens={detalheOrc.itens}
-          total={detalheOrc.total}
+          // R-114 (I2) — o paciente assina o que ACEITOU, não a proposta inteira. Item não
+          // aprovado não pode aparecer como algo que ele está confirmando pagar.
+          itens={detalheOrc.itens.filter((i) => i.aprovado)}
+          total={valorDevido}
           onAccepted={onAceiteRegistrado}
         />
       )}

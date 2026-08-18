@@ -384,8 +384,8 @@ export function FinanceiroClient({
       transition={{ duration: 0.3 }}
     >
       {/* ── Cabeçalho ──────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between mb-6 sm:mb-8 flex-wrap gap-4">
+        <div className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start">
           <div className="w-10 h-10 rounded-xl bg-teal/10 flex items-center justify-center">
             <Wallet className="w-5 h-5 text-teal" />
           </div>
@@ -411,7 +411,7 @@ export function FinanceiroClient({
           <button
             onClick={() => setIsPrivacy(v => !v)}
             title={isPrivacy ? 'Mostrar valores' : 'Ocultar valores'}
-            className={`w-8 h-8 rounded-xl border flex items-center justify-center transition-colors ${
+            className={`w-11 h-11 rounded-xl border flex items-center justify-center transition-colors ${
               isPrivacy
                 ? 'bg-teal/10 border-teal/40 text-teal'
                 : 'border-border text-text-secondary hover:bg-surface-alt'
@@ -425,7 +425,7 @@ export function FinanceiroClient({
           <div className="flex items-center gap-2">
             <button
               onClick={() => navMes(-1)}
-              className="w-8 h-8 rounded-xl border border-border flex items-center justify-center hover:bg-surface-alt transition-colors"
+              className="w-11 h-11 rounded-xl border border-border flex items-center justify-center hover:bg-surface-alt transition-colors"
             >
               <ChevronLeft className="w-4 h-4 text-text-secondary" />
             </button>
@@ -435,7 +435,7 @@ export function FinanceiroClient({
             <button
               onClick={() => navMes(1)}
               disabled={mesAtual >= format(new Date(), 'yyyy-MM')}
-              className="w-8 h-8 rounded-xl border border-border flex items-center justify-center hover:bg-surface-alt transition-colors disabled:opacity-40"
+              className="w-11 h-11 rounded-xl border border-border flex items-center justify-center hover:bg-surface-alt transition-colors disabled:opacity-40"
             >
               <ChevronRight className="w-4 h-4 text-text-secondary" />
             </button>
@@ -448,7 +448,7 @@ export function FinanceiroClient({
           {showSummary && (
             <>
               {/* ── Inteligência: indicadores derivados ────────────────────── */}
-              <div className="grid grid-cols-3 gap-3 mb-6">
+              <div className="grid grid-cols-1 gap-3 mb-6 sm:grid-cols-3">
                 <IntelCard
                   label="Tendência receita"
                   value={receitaTrend != null ? `${receitaTrend >= 0 ? '+' : ''}${receitaTrend.toFixed(1)}%` : '—'}
@@ -474,7 +474,7 @@ export function FinanceiroClient({
 
               {/* ── Zona 1: Hero — Custo por Hora ──────────────────────────── */}
               <div
-                className="rounded-3xl border border-teal/25 bg-gradient-to-br from-teal/8 via-surface to-surface p-8 mb-6 relative overflow-hidden"
+                className="rounded-3xl border border-teal/25 bg-gradient-to-br from-teal/8 via-surface to-surface p-5 sm:p-8 mb-6 relative overflow-hidden"
                 style={{ boxShadow: '0 10px 40px -12px color-mix(in srgb, var(--color-teal) 18%, transparent)' }}
               >
                 {/* Decoração de fundo */}
@@ -506,7 +506,7 @@ export function FinanceiroClient({
                       <div>
                         <div className="flex items-baseline gap-2">
                           <span className="text-lg font-mono text-text-secondary">R$</span>
-                          <span className="text-5xl font-mono font-bold text-text-primary tracking-tight tabular-nums">
+                          <span className="text-4xl sm:text-5xl font-mono font-bold text-text-primary tracking-tight tabular-nums">
                             {isPrivacy ? '•••' : fmt(custoPorHora!)}
                           </span>
                           <span className="text-lg font-mono text-text-secondary">/h</span>
@@ -524,7 +524,7 @@ export function FinanceiroClient({
                   </div>
 
                   {/* Mini KPIs à direita do hero */}
-                  <div className="flex gap-3 flex-wrap">
+                  <div className="grid w-full grid-cols-1 gap-3 sm:w-auto sm:grid-cols-3">
                     <MiniKpi
                       label="Receita"
                       valor={saldo.receita}
@@ -553,7 +553,7 @@ export function FinanceiroClient({
 
               {/* ── Zona 2: Gráfico de Fluxo de Caixa ─────────────────────── */}
               <div className="bg-surface rounded-3xl border border-border p-6 mb-6">
-                <div className="flex items-center justify-between mb-5">
+                <div className="flex flex-col gap-3 mb-5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h2 className="font-semibold text-text-primary">Fluxo de Caixa</h2>
                     <p className="text-xs text-text-secondary mt-0.5">Entradas × Saídas — últimos 6 meses</p>
@@ -589,7 +589,7 @@ export function FinanceiroClient({
                   onClick={() => void handleExportCsv()}
                   disabled={isExporting}
                   title="Exportar extrato como CSV"
-                  className="rounded-xl border-border text-text-secondary hover:bg-surface-alt gap-1.5 text-xs font-semibold"
+                  className="h-11 rounded-xl border-border text-text-secondary hover:bg-surface-alt gap-1.5 text-xs font-semibold"
                 >
                   {isExporting
                     ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -601,7 +601,7 @@ export function FinanceiroClient({
                   size="sm"
                   variant="outline"
                   onClick={() => setSheetMode('saida')}
-                  className="rounded-xl border-border text-text-secondary hover:text-coral hover:border-coral/40 hover:bg-coral/5 gap-1.5 text-xs font-semibold"
+                  className="h-11 rounded-xl border-border text-text-secondary hover:text-coral hover:border-coral/40 hover:bg-coral/5 gap-1.5 text-xs font-semibold"
                 >
                   <ArrowUpRight className="w-3.5 h-3.5" />
                   Saída
@@ -609,7 +609,7 @@ export function FinanceiroClient({
                 <Button
                   size="sm"
                   onClick={() => setSheetMode('entrada')}
-                  className="rounded-xl bg-teal hover:bg-teal-lt text-white gap-1.5 text-xs font-semibold"
+                  className="h-11 rounded-xl bg-teal hover:bg-teal-lt text-white gap-1.5 text-xs font-semibold"
                 >
                   <ArrowDownLeft className="w-3.5 h-3.5" />
                   Entrada
@@ -1237,7 +1237,7 @@ function MiniKpi({
     : Math.abs(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
-    <div className={`px-4 py-3 rounded-3xl border min-w-[120px] ${
+    <div className={`w-full px-4 py-3 rounded-3xl border sm:min-w-[120px] ${
       destaque
         ? isNeg
           ? 'bg-coral/5 border-coral/20'

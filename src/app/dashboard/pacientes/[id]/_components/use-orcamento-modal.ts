@@ -513,6 +513,9 @@ export function useOrcamentoModal({
         id: result.id ?? crypto.randomUUID(),
         status: 'rascunho',
         total: novoTotal,
+        // R-114 — nasce null: sem plano de pagamento (R-34) ainda, o devido é derivado da
+        // soma dos itens aprovados, não deste campo (I1).
+        valor_acordado: null,
         desconto: descontoValor,
         created_at: new Date().toISOString(),
         validade_dias: 30,
@@ -524,6 +527,9 @@ export function useOrcamentoModal({
           descricao: i.descricao,
           quantidade: i.quantidade,
           preco_total: i.quantidade * parseValorBR(i.preco),
+          // R-114 — orçamento nasce Proposto: nenhum item aprovado ainda (mesmo default da
+          // coluna no banco). É o dentista/secretária que marca o que o paciente aceitou.
+          aprovado: false,
         })),
         pagamentos: [],
         aprovado_por: null,

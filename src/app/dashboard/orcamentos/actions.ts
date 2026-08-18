@@ -6,8 +6,9 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { inserirNotificacao } from "@/lib/notificacoes";
 import { registrarLog } from "@/lib/activity-log";
+import { deriveEstadoOrcamento, orcamentoAceitaPagamento, type EstadoOrcamento } from "@/lib/orcamentos/estado";
 import { hojeBRT } from "@/lib/hora-brt";
-import { STATUS_ORCAMENTO_SEM_PAGAMENTO, ERRO_ORCAMENTO_SEM_PAGAMENTO } from "@/server/orcamentos/pagamento-guards";
+import { ERRO_ORCAMENTO_SEM_APROVACAO } from "@/server/orcamentos/pagamento-guards";
 
 export type FormaPagamento =
   | "dinheiro"
@@ -27,11 +28,239 @@ const FORMA_LABEL: Record<FormaPagamento, string> = {
 const fmtReal = (v: number): string =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+/** Embed usado por toda action que precisa derivar o estado (R-114). Uma query, não três. */
+const SELECT_ORC_PARA_ESTADO =
+  'id, paciente_id, dentista_id, valor_acordado, enviado_em, ' +
+  'orcamento_itens(id, preco_total, aprovado), pagamentos(valor, status), paciente:pacientes(nome)';
+
+type OrcParaEstado = {
+  id: string;
+  paciente_id: string;
+  dentista_id: string;
+  valor_acordado: number | null;
+  enviado_em: string | null;
+  orcamento_itens: { id: string; preco_total: number | null; aprovado: boolean }[] | null;
+  pagamentos: { valor: number; status: string }[] | null;
+  paciente: { nome: string } | null;
+};
+
+const derivarDoOrc = (orc: OrcParaEstado, itensOverride?: { preco_total: number | null; aprovado: boolean }[]) =>
+  deriveEstadoOrcamento({
+    valorAcordado: orc.valor_acordado,
+    itens: (itensOverride ?? orc.orcamento_itens ?? []).map((i) => ({
+      precoTotal: i.preco_total,
+      aprovado: i.aprovado,
+    })),
+    pagamentos: (orc.pagamentos ?? []).map((p) => ({ valor: p.valor, status: p.status })),
+  });
+
+/**
+ * R-114 — avisa a recepção quando o orçamento sai de "proposto" pela primeira vez. Substitui a
+ * notificação que `atualizarStatusOrcamento('aprovado')` disparava. Dispara UMA vez por
+ * orçamento, na transição de zero aprovado pra algum (I11) — não uma por item marcado.
+ */
+async function notificarAceite(
+  supabase: Awaited<ReturnType<typeof requireClinicContext>>['supabase'],
+  clinicId: string,
+  dentistaId: string,
+  orc: OrcParaEstado,
+) {
+  const pacNome = orc.paciente?.nome ?? 'paciente';
+  registrarLog(supabase, {
+    clinicaId:  clinicId,
+    actorId:    dentistaId,
+    pacienteId: orc.paciente_id,
+    entityType: 'orcamento',
+    entityId:   orc.id,
+    action:     'orcamento.aprovado',
+    metadata:   { paciente_nome: pacNome },
+  });
+  await inserirNotificacao(supabase, {
+    clinicaId:    clinicId,
+    paraRole:     'secretaria',
+    deDentistaId: dentistaId,
+    tipo:         'briefing',
+    titulo:       `Orçamento aceito — ${pacNome}`,
+    mensagem:     `${pacNome} aprovou procedimentos do orçamento. Já pode receber.`,
+    href:         '/dashboard/orcamentos',
+  });
+}
+
+/**
+ * R-114 — o paciente aceitou (ou desmarcou) UM procedimento.
+ * RLS: `orcamento_itens_update` já libera dono e secretária (decisão dele: os dois aprovam).
+ */
+export async function alternarAprovacaoItem(
+  itemId: string,
+  aprovado: boolean,
+): Promise<{ error?: string; estado?: EstadoOrcamento; valorDevido?: number }> {
+  const { supabase, clinicId, dentistaId } = await requireClinicContext();
+
+  const { data: item } = await supabase
+    .from('orcamento_itens')
+    .select('id, orcamento_id, aprovado')
+    .eq('id', itemId)
+    .eq('clinica_id', clinicId)
+    .maybeSingle();
+
+  if (!item) return { error: 'Procedimento não encontrado.' };
+
+  const { data: orcRaw } = await supabase
+    .from('orcamentos')
+    .select(SELECT_ORC_PARA_ESTADO)
+    .eq('id', item.orcamento_id)
+    .eq('clinica_id', clinicId)
+    .maybeSingle();
+
+  const orc = orcRaw as unknown as OrcParaEstado | null;
+  if (!orc) return { error: 'Orçamento não encontrado.' };
+
+  const antes = derivarDoOrc(orc);
+
+  // Estado que o clique produziria — calculado ANTES de gravar, pra poder recusar.
+  const itensDepois = (orc.orcamento_itens ?? []).map((i) =>
+    i.id === itemId ? { ...i, aprovado } : i,
+  );
+  const depois = derivarDoOrc(orc, itensDepois);
+
+  // I9 — desmarcar não pode deixar o devido abaixo do que já entrou. Não existe crédito de
+  // paciente no sistema, e este item não cria um (decisão dele, 16/08).
+  if (!aprovado && depois.valorDevido < depois.valorPago) {
+    return {
+      error: `Não dá pra remover: este orçamento já recebeu ${fmtReal(depois.valorPago)}. Estorne o pagamento antes.`,
+    };
+  }
+
+  if (item.aprovado === aprovado) return { estado: antes.estado, valorDevido: antes.valorDevido };
+
+  // Confere linhas afetadas — RLS barrada devolve sucesso com 0 linhas (R-66/R-113).
+  const { data: atualizados, error } = await supabase
+    .from('orcamento_itens')
+    .update({ aprovado })
+    .eq('id', itemId)
+    .eq('clinica_id', clinicId)
+    .select('id');
+
+  if (error) return { error: error.message };
+  if (!atualizados || atualizados.length === 0) {
+    return { error: 'Você não tem permissão para alterar os procedimentos deste orçamento.' };
+  }
+
+  if (antes.valorAprovado === 0 && depois.valorAprovado > 0) {
+    await notificarAceite(supabase, clinicId, dentistaId, orc);
+  }
+
+  revalidatePath(`/dashboard/pacientes/${orc.paciente_id}`);
+  revalidatePath('/dashboard/orcamentos');
+  revalidatePath('/dashboard/financeiro');
+  return { estado: depois.estado, valorDevido: depois.valorDevido };
+}
+
+/**
+ * R-114 — o atalho de 1 clique (pedido dele, 16/08). O caso comum de balcão é o paciente
+ * aceitar tudo; sem isto, receber passaria a exigir marcar N caixas antes — atrito novo bem
+ * na frente do caixa. Um UPDATE só, nunca N chamadas de `alternarAprovacaoItem`.
+ * Direção única: não existe "desmarcar tudo" (é a direção destrutiva, e bate na I9).
+ */
+export async function aprovarTodosItens(
+  orcamentoId: string,
+): Promise<{ error?: string; itensAprovados?: number; estado?: EstadoOrcamento }> {
+  const { supabase, clinicId, dentistaId } = await requireClinicContext();
+
+  const { data: orcRaw } = await supabase
+    .from('orcamentos')
+    .select(SELECT_ORC_PARA_ESTADO)
+    .eq('id', orcamentoId)
+    .eq('clinica_id', clinicId)
+    .maybeSingle();
+
+  const orc = orcRaw as unknown as OrcParaEstado | null;
+  if (!orc) return { error: 'Orçamento não encontrado.' };
+
+  const antes = derivarDoOrc(orc);
+  const pendentes = (orc.orcamento_itens ?? []).filter((i) => !i.aprovado).length;
+
+  // I10 — zero linha afetada é AMBÍGUO aqui: pode ser "já estava tudo aprovado" (sucesso) ou
+  // RLS barrada (erro). Por isso a contagem de não-aprovados vem antes e decide qual é.
+  if (pendentes === 0) return { itensAprovados: 0, estado: antes.estado };
+
+  const { data: atualizados, error } = await supabase
+    .from('orcamento_itens')
+    .update({ aprovado: true })
+    .eq('orcamento_id', orcamentoId)
+    .eq('clinica_id', clinicId)
+    .eq('aprovado', false)
+    .select('id');
+
+  if (error) return { error: error.message };
+  if (!atualizados || atualizados.length === 0) {
+    return { error: 'Você não tem permissão para alterar os procedimentos deste orçamento.' };
+  }
+
+  const depois = derivarDoOrc(
+    orc,
+    (orc.orcamento_itens ?? []).map((i) => ({ ...i, aprovado: true })),
+  );
+
+  if (antes.valorAprovado === 0 && depois.valorAprovado > 0) {
+    await notificarAceite(supabase, clinicId, dentistaId, orc);
+  }
+
+  revalidatePath(`/dashboard/pacientes/${orc.paciente_id}`);
+  revalidatePath('/dashboard/orcamentos');
+  revalidatePath('/dashboard/financeiro');
+  return { itensAprovados: atualizados.length, estado: depois.estado };
+}
+
+/**
+ * R-114 — marca que a proposta foi mostrada ao paciente. `enviado_em` existe desde a migration
+ * 001 e nunca foi escrita por nada; é ela que passa a sustentar os alertas de "orçamento parado
+ * há X dias" (hoje baseados em `updated_at`, que muda por qualquer motivo). Idempotente.
+ */
+export async function marcarOrcamentoEnviado(
+  orcamentoId: string,
+): Promise<{ error?: string }> {
+  const { supabase, clinicId, dentistaId } = await requireClinicContext();
+
+  const { data: atualizados, error } = await supabase
+    .from('orcamentos')
+    .update({ enviado_em: new Date().toISOString() })
+    .eq('id', orcamentoId)
+    .eq('clinica_id', clinicId)
+    .is('enviado_em', null)
+    .select('id, paciente_id');
+
+  if (error) return { error: error.message };
+  if (!atualizados || atualizados.length === 0) return {}; // já estava enviado — idempotente
+
+  registrarLog(supabase, {
+    clinicaId:  clinicId,
+    actorId:    dentistaId,
+    pacienteId: atualizados[0].paciente_id as string | undefined,
+    entityType: 'orcamento',
+    entityId:   orcamentoId,
+    action:     'orcamento.enviado',
+    metadata:   {},
+  });
+
+  revalidatePath('/dashboard/orcamentos');
+  return {};
+}
+
+/**
+ * R-114 — a tela de `/dashboard/orcamentos` (secretária, layout antigo) ainda usa o
+ * dropdown de status; o redesenho dela é trabalho à parte, combinado pra depois. Esta
+ * função continua existindo pra não quebrar aquele fluxo AGORA, mas ganhou uma ponte:
+ * "aprovado" por aqui também aprova todos os itens (mesmo efeito de `aprovarTodosItens`).
+ * Sem isso, a secretária aprovaria pelo dropdown antigo, os itens ficariam com
+ * `aprovado=false`, `estado` continuaria 'proposto', e o guard da I8 bloquearia
+ * qualquer pagamento — quebrando o fluxo dela sob o modelo novo.
+ */
 export async function atualizarStatusOrcamento(
   orcamentoId: string,
   status: StatusOrcamento
 ): Promise<{ error?: string }> {
-  const { supabase, user, clinicId } = await requireClinicContext();
+  const { supabase, user, clinicId, dentistaId } = await requireClinicContext();
 
   const { data: dentistaPerfil } = await supabase
     .from("dentistas")
@@ -57,6 +286,15 @@ export async function atualizarStatusOrcamento(
   if (error) {
     console.error("Erro ao atualizar status do orçamento:", error);
     return { error: 'Não foi possível atualizar o orçamento. Tente novamente.' };
+  }
+
+  if (status === 'aprovado') {
+    // Ponte — ver docstring. Erro aqui não desfaz o status (já gravado); loga e segue,
+    // porque o dropdown antigo não tem onde mostrar um segundo erro.
+    const resultado = await aprovarTodosItens(orcamentoId);
+    if (resultado.error) {
+      console.error('[atualizarStatusOrcamento] ponte pra aprovarTodosItens falhou:', resultado.error);
+    }
   }
 
   if (status === 'enviado' || status === 'aprovado' || status === 'recusado') {
@@ -98,33 +336,11 @@ export async function atualizarStatusOrcamento(
       href:         '/dashboard/orcamentos',
     });
 
-    // R-34 §10.3 — com plano registrado, as parcelas (ou o valor_acordado) já representam
-    // a dívida; inserir mais uma linha pendente do `total` cru duplicaria ou cobraria a mais
-    // (I1/I2). Sem plano, comportamento de sempre: 1 linha pendente pra aprovar sem pagamento.
-    const orcComPlano = orc as unknown as { total: number | null; paciente_id: string; dentista_id: string; plano_forma: string | null; valor_acordado: number | null } | null;
-    if (status === 'aprovado' && orcComPlano && !orcComPlano.plano_forma) {
-      const valorDevido = orcComPlano.valor_acordado ?? orcComPlano.total;
-      if (valorDevido && valorDevido > 0) {
-        const { count } = await supabase
-          .from('pagamentos')
-          .select('id', { count: 'exact', head: true })
-          .eq('orcamento_id', orcamentoId);
-
-        if ((count ?? 0) === 0) {
-          await supabase.from('pagamentos').insert({
-            orcamento_id:    orcamentoId,
-            paciente_id:     orcComPlano.paciente_id,
-            dentista_id:     orcComPlano.dentista_id,
-            clinica_id:      clinicId,
-            valor:           valorDevido,
-            status:          'pendente',
-            forma_pagamento: null,
-            data_pagamento:  null,
-            data_vencimento: null,
-          });
-        }
-      }
-    }
+    // R-114 — a linha de pagamento pendente automática (nascia com o total cheio ao aprovar
+    // sem plano) SAIU. Era a origem de boa parte do saldo fantasma: nascia pendente e nunca
+    // fechava, porque recebimento entrava como linha nova em vez de fechar essa. No modelo
+    // derivado "falta receber" é `valor_devido - valor_pago` — não precisa de linha nenhuma
+    // pra existir. Decisão dele, 16/08.
   }
 
   return {};
@@ -330,17 +546,20 @@ export async function marcarPagamentoPago(
     return { error: "Este pagamento já está marcado como pago." };
   }
 
-  // R-65 — status do orçamento pai checado ANTES do update (guard) e reaproveitado depois
-  // (D6), em vez de 2 queries separadas como antes.
+  // R-114 — estado derivado checado ANTES do update (guard) e reaproveitado depois (D6),
+  // em vez de 2 queries separadas como antes. Substitui o guard por `status` do R-65.
   const { data: orcRow } = await supabase
     .from("orcamentos")
-    .select("total, valor_acordado, status")
+    .select(SELECT_ORC_PARA_ESTADO)
     .eq("id", pagAtual.orcamento_id)
     .eq("clinica_id", clinicId)
     .single();
 
-  if (orcRow && STATUS_ORCAMENTO_SEM_PAGAMENTO.has(orcRow.status)) {
-    return { error: ERRO_ORCAMENTO_SEM_PAGAMENTO };
+  const orcTyped = orcRow as unknown as OrcParaEstado | null;
+  const estadoAntes = orcTyped ? derivarDoOrc(orcTyped) : null;
+
+  if (estadoAntes && !orcamentoAceitaPagamento(estadoAntes.estado)) {
+    return { error: ERRO_ORCAMENTO_SEM_APROVACAO };
   }
 
   const { error } = await supabase
@@ -359,27 +578,14 @@ export async function marcarPagamentoPago(
     return { error: 'Não foi possível registrar o pagamento. Tente novamente.' };
   }
 
-  // D6 — mesma regra de auto-aprovação do registrarPagamento (paridade, não a
-  // reconciliação da parte 3 do achado — essa fica pra decisão de negócio separada).
-  let autoAprovado = false;
-  if (orcRow && orcRow.status === "enviado") {
-    const { data: pagamentos } = await supabase
-      .from("pagamentos")
-      .select("valor")
-      .eq("orcamento_id", pagAtual.orcamento_id)
-      .eq("status", "pago");
-
-    const totalPago = (pagamentos ?? []).reduce((s, p) => s + p.valor, 0);
-    const valorDevido = orcRow.valor_acordado ?? orcRow.total ?? 0; // I1
-    if (totalPago >= valorDevido) {
-      await supabase
-        .from("orcamentos")
-        .update({ status: "aprovado" })
-        .eq("id", pagAtual.orcamento_id)
-        .eq("clinica_id", clinicId);
-      autoAprovado = true;
-    }
-  }
+  // R-114 — "aprovado" deixou de ser algo que se escreve: com o item já aprovado (é o
+  // que a guard acima exige) e o dinheiro contado, `estado` já calcula sozinho se isto
+  // agora está quitado. `autoAprovado` continua no retorno (a tela antiga da secretária
+  // ainda lê este campo) mas passa a significar "este pagamento fechou a conta".
+  const autoAprovado = !!(
+    estadoAntes && estadoAntes.estado !== 'quitado' &&
+    estadoAntes.valorPago + pagAtual.valor >= estadoAntes.valorDevido
+  );
 
   if (role === 'secretaria' && pagAtual.dentista_id) {
     const { data: pac } = await supabase
@@ -535,17 +741,22 @@ export async function registrarPagamento(dados: {
   const hoje = new Date().toISOString().split('T')[0];
   const isAgendado = dados.dataVencimento && dados.dataVencimento > hoje;
 
-  // R-65 — status do orçamento pai checado ANTES do insert (guard) e reaproveitado depois
-  // (D6), em vez de 2 queries separadas como antes.
+  // R-114 — estado derivado checado ANTES do insert (guard) e reaproveitado depois (D6).
+  // Substitui o guard por `status` do R-65 — agora bloqueia por FATO (zero item aprovado).
   const { data: orcRow } = await supabase
     .from("orcamentos")
-    .select("total, valor_acordado, status")
+    .select(SELECT_ORC_PARA_ESTADO)
     .eq("id", dados.orcamentoId)
     .eq("clinica_id", clinicId)
     .single();
 
-  if (orcRow && STATUS_ORCAMENTO_SEM_PAGAMENTO.has(orcRow.status)) {
-    return { error: ERRO_ORCAMENTO_SEM_PAGAMENTO };
+  const orcTyped = orcRow as unknown as OrcParaEstado | null;
+  const estadoAntes = orcTyped ? derivarDoOrc(orcTyped) : null;
+
+  // I8 — sem item aprovado, nem dinheiro imediato nem agendamento futuro fazem sentido:
+  // não se agenda receber por um procedimento que o paciente ainda não aceitou.
+  if (estadoAntes && !orcamentoAceitaPagamento(estadoAntes.estado)) {
+    return { error: ERRO_ORCAMENTO_SEM_APROVACAO };
   }
 
   const { data, error } = await supabase
@@ -569,26 +780,12 @@ export async function registrarPagamento(dados: {
     return { error: error.message };
   }
 
-  let autoAprovado = false;
-
-  if (orcRow && orcRow.status === "enviado") {
-    const { data: pagamentos } = await supabase
-      .from("pagamentos")
-      .select("valor")
-      .eq("orcamento_id", dados.orcamentoId)
-      .eq("status", "pago");
-
-    const totalPago = (pagamentos ?? []).reduce((s, p) => s + p.valor, 0);
-    const valorDevido = orcRow.valor_acordado ?? orcRow.total ?? 0; // I1
-    if (totalPago >= valorDevido) {
-      await supabase
-        .from("orcamentos")
-        .update({ status: "aprovado" })
-        .eq("id", dados.orcamentoId)
-        .eq("clinica_id", clinicId);
-      autoAprovado = true;
-    }
-  }
+  // R-114 — "aprovado" não se escreve mais; `autoAprovado` passa a significar "este
+  // pagamento fechou a conta" (a tela antiga da secretária ainda lê este campo).
+  const autoAprovado = !!(
+    !isAgendado && estadoAntes && estadoAntes.estado !== 'quitado' &&
+    estadoAntes.valorPago + dados.valor >= estadoAntes.valorDevido
+  );
 
   if (role === 'secretaria' && dados.dentistaId) {
     const { data: pac } = await supabase
@@ -747,15 +944,54 @@ export async function editarOrcamento(
   // (recalculava total = subtotal). Compilador acusa qualquer chamador que esquecer.
   desconto: number
 ): Promise<{ error?: string }> {
-  const { supabase, clinicId } = await requireClinicContext();
+  const { supabase, clinicId, dentistaId } = await requireClinicContext();
 
-  const { error: delError } = await supabase
+  const { data: orcRow } = await supabase
+    .from("orcamentos")
+    .select("paciente_id")
+    .eq("id", orcamentoId)
+    .eq("clinica_id", clinicId)
+    .maybeSingle();
+
+  if (!orcRow) return { error: "Orçamento não encontrado." };
+
+  // R-113 — mesma classe do R-66 (memória `project_rls_update_silencioso`). As 3 policies de
+  // `orcamento_itens` são assimétricas: INSERT (`can_act_as_dentista`) e UPDATE
+  // (`is_own_clinical_record`) liberam secretária, mas DELETE (`orcamento_itens_delete_own`)
+  // é só-dono. RLS barrada devolve SUCESSO com 0 linhas, não erro — então o insert abaixo
+  // rodava por cima dos itens que não saíram e a lista duplicava a cada save.
+  // Provado em produção: 3 orçamentos da ClinDent com item repetido, o último em 15/08.
+  const { data: itensAntes } = await supabase
     .from("orcamento_itens")
-    .delete()
+    .select("id, aprovado")
     .eq("orcamento_id", orcamentoId)
     .eq("clinica_id", clinicId);
 
+  // R-114 (I5) — editarOrcamento reescreve TUDO (apaga e reinsere); item novo sempre nasce
+  // aprovado=false. Se algum item já era aprovado, esta edição apagaria a aprovação do
+  // paciente em silêncio — a mesma classe de perda de dado que o R-113 acima já corrigiu
+  // pro caso da RLS, só que aqui a causa é a função em si, não a policy.
+  if ((itensAntes ?? []).some((i) => i.aprovado)) {
+    return {
+      error: "Este orçamento já tem procedimento aprovado pelo paciente — editar a lista inteira apagaria essa aprovação. Ajuste os itens não aprovados um a um.",
+    };
+  }
+
+  const { data: deletados, error: delError } = await supabase
+    .from("orcamento_itens")
+    .delete()
+    .eq("orcamento_id", orcamentoId)
+    .eq("clinica_id", clinicId)
+    .select("id");
+
   if (delError) return { error: delError.message };
+
+  // Havia item e nenhum saiu = RLS bloqueou. Falha honesta antes de inserir qualquer coisa.
+  if ((itensAntes?.length ?? 0) > 0 && (deletados?.length ?? 0) === 0) {
+    return {
+      error: "Você não tem permissão para editar os itens deste orçamento — só o dentista responsável pode.",
+    };
+  }
 
   const itensInsert = itens.map((item) => ({
     orcamento_id:    orcamentoId,
@@ -780,6 +1016,19 @@ export async function editarOrcamento(
     .eq("clinica_id", clinicId);
 
   if (updError) return { error: updError.message };
+
+  // R-113 — editarOrcamento era a única ação financeira que não deixava rastro; o evento
+  // 'orcamento.editado' já existia em lib/events.ts e nunca tinha sido chamado. Foi por isso
+  // que a duplicação da ClinDent só deu pra reconstruir pelos created_at dos itens.
+  registrarLog(supabase, {
+    clinicaId:  clinicId,
+    actorId:    dentistaId,
+    pacienteId: orcRow.paciente_id ?? undefined,
+    entityType: 'orcamento',
+    entityId:   orcamentoId,
+    action:     'orcamento.editado',
+    metadata:   { itens_count: itens.length, total, desconto },
+  });
 
   revalidatePath("/dashboard/orcamentos");
   return {};
@@ -813,16 +1062,20 @@ export async function registrarPagamentoRapido(dados: {
   if (!dentistaPerfil) redirect("/onboarding");
 
   // Regra 1 — lê o estado antes de decidir (hoje: zero leitura, insere às cegas).
-  const { data: orc } = await supabase
+  const { data: orcRaw } = await supabase
     .from("orcamentos")
-    .select("id, dentista_id, status, total, valor_acordado")
+    .select(SELECT_ORC_PARA_ESTADO)
     .eq("id", dados.orcamentoId)
     .eq("clinica_id", clinicId)
     .maybeSingle();
 
+  const orc = orcRaw as unknown as OrcParaEstado | null;
   if (!orc) return { error: "Orçamento não encontrado." };
-  if (STATUS_ORCAMENTO_SEM_PAGAMENTO.has(orc.status)) {
-    return { error: ERRO_ORCAMENTO_SEM_PAGAMENTO };
+
+  const estado = derivarDoOrc(orc);
+  // R-114 — substitui o guard por `status` do R-65.
+  if (!orcamentoAceitaPagamento(estado.estado)) {
+    return { error: ERRO_ORCAMENTO_SEM_APROVACAO };
   }
 
   const { data: pagamentosOrc } = await supabase
@@ -833,7 +1086,7 @@ export async function registrarPagamentoRapido(dados: {
 
   const linhas = pagamentosOrc ?? [];
   const totalPago = linhas.filter((p) => p.status === "pago").reduce((s, p) => s + p.valor, 0);
-  const valorDevido = orc.valor_acordado ?? orc.total ?? 0; // I1
+  const valorDevido = estado.valorDevido; // I1 — valorAcordado ?? soma(itens aprovados)
 
   const abertas = linhas
     .filter((p) => p.status === "pendente")
@@ -882,16 +1135,9 @@ export async function registrarPagamentoRapido(dados: {
     return { error: "Não foi possível registrar o pagamento. Tente novamente." };
   }
 
-  // Regra 5 — auto-aprovação travada (nunca UPDATE incondicional), com autoria.
-  let autoAprovado = false;
-  if (orc.status === "enviado" && totalPago + saldo >= valorDevido) {
-    await supabase
-      .from("orcamentos")
-      .update({ status: "aprovado", aprovado_por_id: dentistaPerfil.id, aprovado_em: new Date().toISOString() })
-      .eq("id", dados.orcamentoId)
-      .eq("clinica_id", clinicId);
-    autoAprovado = true;
-  }
+  // R-114 — "aprovado" não se escreve mais (guard já exigiu item aprovado antes de
+  // chegar aqui); `autoAprovado` passa a significar "este pagamento fechou a conta".
+  const autoAprovado = totalPago + saldo >= valorDevido;
 
   if (role === 'secretaria' && orc.dentista_id) {
     const { data: pac } = await supabase

@@ -45,11 +45,13 @@ export function buildBriefingPrompt(input: BriefingInput): string {
       }).join('\n\n')
     : 'Nenhuma consulta anterior.';
 
+  // R-114 — `o.status` já chega como estado derivado ('proposto'/'aceito'; 'quitado' é
+  // filtrado antes de chegar aqui — orçamentosAbertos só lista o que ainda não fechou).
   const orcamentosTexto = input.orcamentos.length > 0
     ? input.orcamentos.map(o => {
         const itens = o.itens.slice(0, 4).join(', ') || 'sem itens';
-        const atraso = o.status === 'enviado' && o.diasAtualizacao > 3
-          ? ` — enviado há ${o.diasAtualizacao} dias sem retorno`
+        const atraso = o.diasAtualizacao > 3
+          ? ` — parado há ${o.diasAtualizacao} dias sem avançar`
           : '';
         return `• ${o.status.toUpperCase()}: R$ ${o.total.toFixed(2)} (${itens})${atraso}`;
       }).join('\n')

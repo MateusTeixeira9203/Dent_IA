@@ -78,12 +78,13 @@ export async function buildPatientContext(
       .order('data_atendimento', { ascending: false })
       .limit(5),
 
+    // R-114 — "aberto" = ainda não quitado (derivado, não status declarado).
     supabase
-      .from('orcamentos')
-      .select('total, status, updated_at, orcamento_itens(descricao)')
+      .from('orcamentos_com_estado')
+      .select('total, estado, valor_devido, valor_pago, updated_at, orcamento_itens(descricao)')
       .eq('paciente_id', patientId)
       .eq('clinica_id', clinicId)
-      .in('status', ['rascunho', 'enviado', 'aprovado'])
+      .neq('estado', 'quitado')
       .order('created_at', { ascending: false })
       .limit(3),
 
@@ -123,7 +124,8 @@ export async function buildPatientContext(
     return {
       descricao: itens.map((i) => i.descricao).filter(Boolean).join(', ') || 'sem descrição',
       total: (o.total as number) ?? 0,
-      status: o.status as string,
+      // R-114 — estado derivado ('proposto'/'aceito'), não mais um status declarado.
+      status: o.estado as string,
       diasAtualizacao: Math.floor((now.getTime() - new Date(o.updated_at as string).getTime()) / 86400000),
     };
   });

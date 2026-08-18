@@ -5,6 +5,7 @@
 
 import { createServiceClient } from '@/lib/supabase/service';
 import { gerarPDFOrcamento, type OrcamentoData } from '@/lib/pdf/orcamento';
+import { deriveEstadoOrcamento } from '@/lib/orcamentos/estado';
 import { sendFile } from './provider';
 
 const BRT_OFFSET_H = 3;
@@ -18,6 +19,8 @@ interface OrcamentoRow {
   status: string;
   condicoes_pagamento: string | null;
   total: number | null;
+  /** R-114 — quando definido (RPCs do R-34), é o devido; nunca escrito por aprovação de item. */
+  valor_acordado: number | null;
   desconto: number | null;
   paciente: { nome: string; cpf: string | null; telefone: string | null } | null;
   clinica: { nome: string; endereco: string | null; telefone: string | null } | null;
@@ -27,8 +30,12 @@ interface OrcamentoRow {
     descricao: string | null;
     dente: string | null;
     preco_unitario: number | null;
+    preco_total: number | null;
     quantidade: number;
+    /** R-114 (I2) — só o aprovado sai no PDF. */
+    aprovado: boolean;
   }>;
+  pagamentos: Array<{ valor: number; status: string }>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -49,12 +56,20 @@ function formatarDataBRT(iso: string): string {
 }
 
 function montarOrcamentoData(row: OrcamentoRow): OrcamentoData {
-  const itens = row.itens ?? [];
+  // R-114 (I2) — o PDF é informativo, não cobrança: só o que o paciente aceitou entra.
+  const itens = (row.itens ?? []).filter((i) => i.aprovado);
   const subtotal = itens.reduce(
     (acc, i) => acc + (i.preco_unitario ?? 0) * i.quantidade,
     0,
   );
   const numero = numeroExibivel(row.id);
+
+  const derivado = deriveEstadoOrcamento({
+    valorAcordado: row.valor_acordado,
+    itens: (row.itens ?? []).map((i) => ({ precoTotal: i.preco_total, aprovado: i.aprovado })),
+    pagamentos: row.pagamentos ?? [],
+  });
+  const temPagamento = (row.pagamentos ?? []).length > 0;
 
   return {
     id:       row.id,
@@ -85,7 +100,11 @@ function montarOrcamentoData(row: OrcamentoRow): OrcamentoData {
     })),
     subtotal,
     desconto: row.desconto ?? 0,
-    total:    row.total ?? subtotal,
+    total:    derivado.valorDevido,
+    totalPago:      temPagamento ? derivado.valorPago : undefined,
+    totalPendente:  temPagamento
+      ? (row.pagamentos ?? []).filter(p => p.status === 'pendente').reduce((s, p) => s + p.valor, 0)
+      : undefined,
     forma_pagamento: row.condicoes_pagamento ?? undefined,
   };
 }
@@ -137,11 +156,12 @@ export async function sendOrcamentoWhatsApp(
   const { data: row, error } = await db
     .from('orcamentos')
     .select(`
-      id, created_at, validade_dias, status, condicoes_pagamento, total, desconto,
+      id, created_at, validade_dias, status, condicoes_pagamento, total, valor_acordado, desconto,
       paciente:pacientes (nome, cpf, telefone),
       clinica:clinicas (nome, endereco, telefone),
       dentista:dentistas (nome, cro),
-      itens:orcamento_itens (id, descricao, dente, preco_unitario, quantidade)
+      itens:orcamento_itens (id, descricao, dente, preco_unitario, preco_total, quantidade, aprovado),
+      pagamentos (valor, status)
     `)
     .eq('paciente_id', resolvedPacienteId)
     .eq('clinica_id', clinicaId)

@@ -253,6 +253,9 @@ export interface OrcamentoItem {
   quantidade: number;
   preco_unitario: number | null;
   preco_total: number | null;
+  /** R-114 — o paciente aprovou este item? Item não aprovado continua visível no orçamento
+   *  (é a lista viva do que ainda pode ser fechado); só não conta no devido nem sai no PDF. */
+  aprovado: boolean;
   created_at: string;
   updated_at: string;
 }

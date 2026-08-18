@@ -85,12 +85,13 @@ export async function DentistaDashboard({ dentista }: { dentista: DentistaCache 
       .gte('data_hora', todayStart)
       .lte('data_hora', todayEnd),
 
-    // Orçamentos aguardando retorno (com nome do paciente)
+    // R-114 — "aguardando retorno" = ainda não quitado (nada declarado, tudo derivado de
+    // item aprovado × pagamento). A view já calcula; só troca o filtro por `estado`.
     supabase
-      .from('orcamentos')
+      .from('orcamentos_com_estado')
       .select('id, total, paciente_id, paciente:pacientes(nome)')
       .eq('clinica_id', dentista.clinica_id)
-      .in('status', ['rascunho', 'enviado'])
+      .neq('estado', 'quitado')
       .order('created_at', { ascending: false })
       .limit(20),
 
@@ -158,12 +159,13 @@ export async function DentistaDashboard({ dentista }: { dentista: DentistaCache 
         .order('data_atendimento', { ascending: false })
         .limit(1)
         .maybeSingle(),
+      // R-114 — mesma troca: estado != quitado no lugar do status declarado.
       supabase
-        .from('orcamentos')
+        .from('orcamentos_com_estado')
         .select('*', { count: 'exact', head: true })
         .eq('clinica_id', dentista.clinica_id)
         .eq('paciente_id', nextApt.paciente.id)
-        .in('status', ['rascunho', 'enviado']),
+        .neq('estado', 'quitado'),
       supabase
         .from('tratamentos')
         .select('nome')

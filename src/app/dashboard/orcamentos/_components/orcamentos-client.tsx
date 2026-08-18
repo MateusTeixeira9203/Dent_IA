@@ -64,6 +64,10 @@ import {
   atualizarStatusOrcamento,
   registrarPagamento,
   registrarPagamentoRapido,
+  // R-113 — fecha UMA parcela escolhida (UPDATE). Já existia e já era usada na ficha do
+  // paciente; aqui era a única tela do dinheiro sem o gesto, e o formulário de baixo
+  // inseria linha nova em vez de fechar a parcela (12 orçamentos com saldo fantasma).
+  marcarPagamentoPago,
   criarOrcamento,
   editarOrcamento,
   excluirOrcamento,
@@ -173,6 +177,9 @@ export function OrcamentosClient({
   const [pagSaving, setPagSaving] = useState(false);
   const [pagError, setPagError] = useState<string | null>(null);
   const [parcelasMode, setParcelasMode] = useState(false);
+  // R-113 — id da parcela pendente sendo fechada; null = painel em modo "criar pagamento novo".
+  // Mesmo discriminador que a ficha do paciente usa (paciente-detail-client.tsx).
+  const [closingPagamentoId, setClosingPagamentoId] = useState<string | null>(null);
   const [parcelasForm, setParcelasForm] = useState({ numero: '3', primeiroVencimento: '' });
   const [parcelasSaving, setParcelasSaving] = useState(false);
   const [parcelasError, setParcelasError] = useState<string | null>(null);
@@ -723,6 +730,66 @@ export function OrcamentosClient({
     setEditSaving(false);
   };
 
+  // ── R-113: fechar a parcela escolhida ────────────────────────────────────────
+  // Porte do gesto que já existe na ficha do paciente. O caminho antigo desta tela
+  // ("Registrar Pagamento") sempre INSERIA linha nova com parcela_numero null, deixando a
+  // parcela original pendente pra sempre — origem dos R$ 8.090 de saldo fantasma na ClinDent.
+  const handleIniciarFechamentoPagamento = (pg: PagamentoRow) => {
+    setClosingPagamentoId(pg.id);
+    setParcelasMode(false);
+    setPagForm({
+      valor: formatValorBR(pg.valor),
+      formaPagamento: 'dinheiro',
+      data: new Date().toISOString().split('T')[0],
+      dataVencimento: '',
+    });
+    setPagError(null);
+  };
+
+  const handleCancelarFechamentoPagamento = () => {
+    setClosingPagamentoId(null);
+    setPagForm({
+      valor: '',
+      formaPagamento: 'pix',
+      data: new Date().toISOString().split('T')[0],
+      dataVencimento: '',
+    });
+    setPagError(null);
+  };
+
+  const handleFecharPagamento = async () => {
+    if (!closingPagamentoId || !selected) return;
+    setPagError(null);
+    setPagSaving(true);
+
+    const result = await marcarPagamentoPago(closingPagamentoId, {
+      formaPagamento: pagForm.formaPagamento,
+      data: pagForm.data,
+    });
+
+    if (result.error) {
+      setPagError(result.error);
+    } else {
+      // I1 — UPDATE na linha existente, nunca insert. A lista de pagamentos não cresce.
+      const fechadoId = closingPagamentoId;
+      const aplica = (o: OrcamentoRow): OrcamentoRow => ({
+        ...o,
+        pagamentos: o.pagamentos.map((p) =>
+          p.id === fechadoId
+            ? { ...p, status: 'pago', forma_pagamento: pagForm.formaPagamento, data_pagamento: pagForm.data }
+            : p
+        ),
+        status: result.autoAprovado ? 'aprovado' : o.status,
+      });
+      setOrcamentos((prev) => prev.map((o) => (o.id === selected.id ? aplica(o) : o)));
+      setSelected((prev) => (prev ? aplica(prev) : prev));
+      handleCancelarFechamentoPagamento();
+      toast.success('Parcela marcada como paga.');
+      router.refresh();
+    }
+    setPagSaving(false);
+  };
+
   const handlePagamentoRapido = async (formaPagamento: FormaPagamento) => {
     if (!selected) return;
     setPagRapidoSaving(true);
@@ -952,6 +1019,9 @@ export function OrcamentosClient({
                     onClick={() => {
                       setSelected(o);
                       setPagError(null);
+                      // R-113 — sem isto o "fechando parcela" vazaria pro próximo orçamento
+                      // aberto, e o Confirmar fecharia a parcela do orçamento ANTERIOR.
+                      setClosingPagamentoId(null);
                       setPagForm({
                         valor: '',
                         formaPagamento: 'pix',
@@ -1099,7 +1169,6 @@ export function OrcamentosClient({
                           pacienteTelefone={selected.paciente?.telefone}
                           pacienteNome={selected.paciente?.nome ?? ''}
                           valorTotal={selected.total}
-                          statusAtual={selected.status}
                         />
                         <button onClick={handleOpenEdit}
                           className="p-2 rounded-xl text-white/70 hover:text-white hover:bg-white/15 transition-colors" title="Editar">
@@ -1120,8 +1189,13 @@ export function OrcamentosClient({
               </div>
 
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                {/* Ações rápidas da secretária */}
-                {isSecretaria && selected.status !== 'aprovado' && (
+                {/* Ações rápidas da secretária.
+                    R-113 — somem enquanto uma parcela específica está sendo fechada:
+                    `registrarPagamentoRapido` fecha a PRÓXIMA parcela por vencimento, não a
+                    escolhida. Deixar visível seria manter um caminho pra fechar a parcela
+                    errada dentro do item que existe justamente pra impedir isso. Mesma regra
+                    que a ficha do paciente já aplica (detalhe-orcamento-modal.tsx:561). */}
+                {isSecretaria && selected.status !== 'aprovado' && !closingPagamentoId && (
                   <div className="bg-surface-alt/40 border border-border rounded-2xl p-5 space-y-3">
                     <label className="font-mono text-xs text-text-secondary uppercase tracking-widest block">
                       Ações Rápidas
@@ -1147,7 +1221,6 @@ export function OrcamentosClient({
                         pacienteTelefone={selected.paciente?.telefone}
                         pacienteNome={selected.paciente?.nome ?? ''}
                         valorTotal={selected.total}
-                        statusAtual={selected.status}
                         variant="full"
                       />
                       <BotaoMensagemIA
@@ -1475,17 +1548,33 @@ export function OrcamentosClient({
                                 )}
                               </div>
                             </div>
-                            <span
-                              className={`shrink-0 text-xs font-bold uppercase px-2 py-0.5 rounded-md ${
-                                pag.status === 'pago'
-                                  ? 'bg-teal/10 text-teal'
-                                  : isVencido
-                                    ? 'bg-red-500/10 text-red-500'
-                                    : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
-                              }`}
-                            >
-                              {pag.status === 'pago' ? 'Pago' : isVencido ? 'Vencido' : 'Pendente'}
-                            </span>
+                            {/* R-113 — parcela paga continua só leitura; parcela em aberto vira
+                                alvo: clicar troca o painel de baixo pra "Marcar parcela como paga"
+                                (UPDATE nesta linha) em vez de criar um pagamento novo por cima. */}
+                            {pag.status === 'pago' ? (
+                              <span className="shrink-0 text-xs font-bold uppercase px-2 py-0.5 rounded-md bg-teal/10 text-teal">
+                                Pago
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleIniciarFechamentoPagamento(pag)}
+                                aria-label={
+                                  pag.parcela_numero && pag.total_parcelas
+                                    ? `Marcar parcela ${pag.parcela_numero} de ${pag.total_parcelas} como paga`
+                                    : 'Marcar pagamento como pago'
+                                }
+                                className={`shrink-0 text-xs font-bold uppercase px-2 py-0.5 rounded-md transition-colors ${
+                                  closingPagamentoId === pag.id
+                                    ? 'bg-teal/15 text-teal-ink ring-2 ring-teal/30'
+                                    : isVencido
+                                      ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
+                                      : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/20'
+                                }`}
+                              >
+                                {closingPagamentoId === pag.id ? 'Fechando' : isVencido ? 'Vencido' : 'Pendente'}
+                              </button>
+                            )}
                           </div>
                         );
                       })}
@@ -1499,10 +1588,35 @@ export function OrcamentosClient({
                   const restante = Math.max(0, (selected.total ?? 0) - pago);
                   return (
                 <div className="bg-surface-alt/40 border border-border rounded-2xl p-5 space-y-4">
+                  {/* R-113 — faixa de contexto: deixa explícito que este painel está fechando
+                      UMA parcela existente, não criando pagamento novo. Mesma faixa da ficha. */}
+                  {closingPagamentoId && (
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-teal/30 bg-teal/5 px-3 py-2.5">
+                      <p className="text-xs text-text-secondary">
+                        Fechando a parcela de{' '}
+                        <span className="font-mono font-semibold text-teal-ink">R$ {pagForm.valor}</span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleCancelarFechamentoPagamento}
+                        className="text-xs font-semibold text-text-secondary hover:text-teal-ink transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <label className="font-mono text-xs text-text-secondary uppercase tracking-widest flex items-center gap-2">
-                      <CreditCard className="w-3 h-3" /> {parcelasMode ? 'Dividir em Parcelas' : 'Registrar Pagamento'}
+                      <CreditCard className="w-3 h-3" />{' '}
+                      {closingPagamentoId
+                        ? 'Marcar parcela como paga'
+                        : parcelasMode
+                          ? 'Dividir em Parcelas'
+                          : 'Registrar Pagamento'}
                     </label>
+                    {/* Atalhos de criação não fazem sentido enquanto se fecha uma parcela. */}
+                    {!closingPagamentoId && (
                     <div className="flex items-center gap-3">
                       {!parcelasMode && restante > 0 && (
                         <button
@@ -1521,9 +1635,10 @@ export function OrcamentosClient({
                         {parcelasMode ? 'Pagamento único' : 'Dividir em parcelas'}
                       </button>
                     </div>
+                    )}
                   </div>
 
-                  {parcelasMode ? (
+                  {parcelasMode && !closingPagamentoId ? (
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
@@ -1570,7 +1685,9 @@ export function OrcamentosClient({
                     const isAgendado = pagForm.dataVencimento && pagForm.dataVencimento > todayStr;
                     return (
                       <>
-                        <div className="grid grid-cols-2 gap-3">
+                        {/* R-113 — fechando parcela: o valor é o da linha (I2, não editável) e
+                            não há vencimento a agendar. Só forma e data ficam abertas. */}
+                        <div className={closingPagamentoId ? '' : 'grid grid-cols-2 gap-3'}>
                           <div className="space-y-1.5">
                             <Label className="text-text-primary text-xs">Valor (R$)</Label>
                             <Input
@@ -1578,14 +1695,16 @@ export function OrcamentosClient({
                               inputMode="decimal"
                               placeholder={restante > 0 ? formatValorBR(restante) : '0,00'}
                               value={pagForm.valor}
+                              disabled={!!closingPagamentoId}
                               onChange={(e) => setPagForm((f) => ({ ...f, valor: e.target.value }))}
                               onBlur={(e) => {
                                 const parsed = parseValorBR(e.target.value);
                                 setPagForm((f) => ({ ...f, valor: parsed > 0 ? formatValorBR(parsed) : f.valor }));
                               }}
-                              className="rounded-xl bg-surface-alt border-border text-text-primary"
+                              className="rounded-xl bg-surface-alt border-border text-text-primary disabled:opacity-70"
                             />
                           </div>
+                          {!closingPagamentoId && (
                           <div className="space-y-1.5">
                             <Label className="text-text-primary text-xs">
                               Vencimento <span className="text-text-secondary font-normal">(parcela futura)</span>
@@ -1598,6 +1717,7 @@ export function OrcamentosClient({
                               className="rounded-xl bg-surface-alt border-border text-text-primary"
                             />
                           </div>
+                          )}
                         </div>
 
                         {!isAgendado && (
@@ -1649,15 +1769,17 @@ export function OrcamentosClient({
                         )}
 
                         <Button
-                          onClick={() => void handleRegistrarPagamento()}
-                          disabled={pagSaving || !pagForm.valor}
+                          onClick={() => void (closingPagamentoId ? handleFecharPagamento() : handleRegistrarPagamento())}
+                          disabled={pagSaving || (!closingPagamentoId && !pagForm.valor)}
                           className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl disabled:opacity-50"
                         >
                           {pagSaving
                             ? 'Salvando...'
-                            : isAgendado
-                              ? 'Agendar Parcela'
-                              : 'Confirmar Pagamento'}
+                            : closingPagamentoId
+                              ? 'Confirmar Parcela'
+                              : isAgendado
+                                ? 'Agendar Parcela'
+                                : 'Confirmar Pagamento'}
                         </Button>
                       </>
                     );
@@ -2023,7 +2145,7 @@ export function OrcamentosClient({
                         <SelectValue>
                           {(v: string | null) =>
                             v
-                              ? (procedimentosClinica.find((p) => p.id === v)?.nome ?? v)
+                              ? (procedimentosClinica.find((p) => p.id === v)?.nome ?? 'Procedimento indisponível')
                               : 'Vincular ao catálogo (preenche preço)...'
                           }
                         </SelectValue>
