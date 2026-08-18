@@ -57,13 +57,14 @@ prioridade, por melhor que seja.
 | [**R-109**](specs/R-109-registro-na-ficha.md) | **Registro na ficha** — lote multidente + Modo multidente portados do Meu dia, chips locais ligados, trilho duplo morre na escrita | ⏳ pedaço 3 já entregue; sobram pedaço 2 (campo mágico) e pedaço 1 (trilho único), travado em 2 decisões no §4.3 | M |
 | [**R-111**](specs/R-111-responsividade-mobile.md) | **Responsividade no celular e no tablet** — as 8 telas que o dentista abre no celular | ⏳ validado localmente em 17/08; falta commit/deploy e veredito visual em produção. Não é item no ar ainda | G |
 | [**R-110**](specs/R-110-horario-do-dentista-na-agenda.md) | **O horário do dentista vale na agenda** — `criarAgendamento` nunca olha `horarios_disponiveis`; marcar 22h de domingo passa sem piscar | ⏳ [spec](specs/R-110-horario-do-dentista-na-agenda.md) fase `plano` 14/08. **Virou "avisar com override", não bloquear** — o levantamento achou 13,8% dos agendamentos já fora do expediente e **11 de 14 dentistas sem grade cadastrada** (inclusive os 2 mais movimentados da Clindent). Bloqueio travaria a agenda real no deploy. **§9 tem 2 decisões dele** | P |
+| [**R-118**](specs/R-118-retorno-secretaria-dentista.md) | 🐛 **Retorno da secretária na agenda do dentista** — escolhe o profissional e vê a grade correta | ⏳ spec em contrato 18/08; fecha também autorização server-side de agenda entre profissionais | P |
 | [**R-103**](specs/R-103-painel-do-dex.md) | **Painel do Dex** — modal de 3 colunas: pendências · números do negócio · central de atualização | ⏳ fatias a/b/c entregues; resta R-104 (curso). **Absorve o R-26** | G |
 | 🔵 [**R-106**](specs/R-106-status-clinico-da-voz.md) | 🐛 **Voz distingue realizado × indicado × negação × ambiguidade** — só execução explícita nasce feita; ambíguo nasce indicado + “Confira” | spec `aprovada` 17/08, em execução. Eval antes/depois é gate duro; zero migration | M |
 | [**R-115**](specs/R-115-refino-simbolos-odontograma.md) | **Símbolos do odontograma** — implante, coroa e catálogo inteiro com leitura clínica inconfundível | 🧊 congelado 18/08 por decisão dele: rascunho anatômico existe, sem alteração no SVG real; retomar como revisão clínica completa | M |
 | [R-49](specs/R-49-voz-e-campos-de-especialidade.md) | **Endodontia por texto/voz** — preencher odontometria sem digitar 17 vezes | ⏳ spec reescrita em `contrato` 17/08: só endo, parser determinístico primeiro, IA completa o que foi dito, tabela abre quando há detalhe/dúvida. **66% dos endos têm odontometria vazia** | G |
 | [**R-49b**](specs/R-49b-painel-registro-ao-vivo.md) | Painel de registro ao vivo — odontograma acendendo enquanto digita/dita | 🧊 congelado 17/08 por decisão dele. Volta só depois de R-106 + R-49 endo verificados | M |
 | [**R-100**](specs/R-100-log-pipeline-voz.md) | Evidência da pipeline (entrada · saída do modelo · correção salva) | 🧊 congelado 17/08. Transcrição ficará como seção recolhível da ficha quando o documento clínico for reestruturado; não haverá log temporário | P |
-| **R-81** | 👥 Secretária registra PELO dentista — hoje **bloqueado** (`meu-dia/page.tsx:24` redireciona secretaria) | ⏳ achado 08/08, escopo corrigido 10/08: é a secretária **dentro da sala**, na sessão do dentista já logada — sem perfil próprio, sem seletor, sem gate de 2 contas. *"Possivelmente mais valioso que o R-78 inteiro"*. Sem spec | G |
+|  |  |
 | **R-79** | 🔧 Ficha editada não deixa rastro — `salvar-ficha.ts` grava só `updated_at` | ⏳ achado 08/08. Não é regressão. CFO pede rastreabilidade. Sem spec | M |
 | **R-56** | 🐛 `fichasRecentes` e a lista do `FichasTab` mostram "Evolução"/dentista sem checar `origem` | ⏳ achado 03/08. Mesma mentira do R-46c, superfície menor | P |
 | **R-87** | 🔧 Erro de hidratação React (#418) em toda navegação | ⏳ achado 08/08, reproduzido 5× em 4 rotas, mesmo chunk. Não travou tela nem perdeu dado, mas é sistêmico — cheira a componente do layout com mismatch servidor/cliente. Sem causa raiz | P |
@@ -85,6 +86,7 @@ prioridade, por melhor que seja.
 
 | ID | Item | Estado | Peso |
 |---|---|---|---|
+| [**R-119**](specs/R-119-assinatura-manuscrita-atestado.md) | **Assinatura manuscrita no atestado** — dentista assina no momento da emissão; PDF guarda a imagem, nome e CRO | ⏳ spec em contrato 18/08; ponte provisória até ICP-Brasil, sem chamar de assinatura digital | P |
 | **R-40** | Template de contrato/termo pra assinatura — hoje se assina procedimento e orçamento, mas **não existe texto de termo** | ⏳ decisão pendente: termo de consentimento (clínico) **ou** contrato de prestação (comercial)? Muda o item inteiro | ? |
 
 ## Bloco 4 — Fundação e risco
@@ -121,6 +123,7 @@ do sistema inteiro (Landing **C**, Auth **D**).
 | **R-88b** | 🔧 **Não existe importação de pacientes** — achado 14/08 conferindo a FAQ. O que importa de arquivo é a tabela de procedimentos; a agenda vem do Google Calendar. A landing responde "o paciente entra quando senta na cadeira", que é verdade, mas **é o maior risco de conversão da página** pra dentista com base grande | ⏳ achado 14/08, sem spec | ? |
 | **R-89** | **Auth (login · cadastro · esqueci · redefinir · verifique-email)** — nota D: 5/12 capturas em branco, dark quebrado, AA reprovado, 2 sistemas de form diferentes | ⏳ depois do R-88 (a landing define a linguagem que o auth herda) | M |
 | **R-116** | **PWA instalável** — ícone na tela inicial, abertura standalone e CTA “Instalar o app” na landing; sem offline prometido nesta fase | ⏳ descoberto 18/08. Não há manifest, `apple-touch-icon`, ícones PNG nem service worker; depende de QA real iPhone/Android e do fechamento da responsividade | M |
+| [**R-117**](specs/R-117-upload-fotos-mobile.md) | **Fotos clínicas no celular** — câmera, galeria múltipla e upload sequencial otimizado por paciente | ⏳ spec em contrato 18/08; zero migration. Resolve “memória insuficiente” sem recomprimir exames diagnósticos | M |
 
 ---
 

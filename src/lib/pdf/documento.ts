@@ -1,4 +1,4 @@
-import { Document, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
+import { Document, Image, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import { createElement } from "react";
 
 export interface DocumentoPDFData {
@@ -8,6 +8,7 @@ export interface DocumentoPDFData {
   paciente: { nome: string; cpf?: string };
   clinica: { nome: string; endereco?: string; telefone?: string; cnpj?: string };
   dentista: { nome: string; cro: string };
+  assinaturaDataUrl?: string;
   data: string; // ISO
 }
 
@@ -24,6 +25,7 @@ const styles = StyleSheet.create({
   corpo: { fontSize: 11, lineHeight: 1.6, marginBottom: 24 },
   dataLinha: { fontSize: 10, marginTop: 8, marginBottom: 36 },
   assinatura: { alignItems: "center", marginTop: 10 },
+  assinaturaImagem: { width: 180, height: 52, objectFit: "contain", marginBottom: 4 },
   assinaturaLinha: { width: 230, borderBottomWidth: 1, borderBottomColor: "#333333", marginBottom: 4 },
   assinaturaTexto: { fontSize: 9, color: "#444444" },
 });
@@ -53,6 +55,9 @@ function Via({ data, label }: { data: DocumentoPDFData; label?: string }) {
     createElement(Text, { style: styles.dataLinha }, `Data: ${formatDate(data.data)}`),
     createElement(
       View, { style: styles.assinatura },
+      data.assinaturaDataUrl
+        ? createElement(Image, { src: data.assinaturaDataUrl, style: styles.assinaturaImagem })
+        : null,
       createElement(View, { style: styles.assinaturaLinha }),
       createElement(Text, { style: styles.assinaturaTexto },
         `${data.dentista.nome} — CRO: ${data.dentista.cro || "—"}`),

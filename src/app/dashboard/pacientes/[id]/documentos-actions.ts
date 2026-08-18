@@ -3,6 +3,12 @@
 import { requireClinicContext } from '@/server/auth/clinic';
 import { gerarPDFDocumento } from '@/lib/pdf/documento';
 import { getModelo, type TipoDocumento } from '@/lib/documentos/modelos';
+import { z } from 'zod';
+
+const assinaturaManuscritaSchema = z
+  .string()
+  .startsWith('data:image/png;base64,', 'A assinatura deve ser uma imagem PNG.')
+  .max(2_000_000, 'A assinatura é grande demais. Limpe e assine novamente.');
 
 export async function emitirDocumento(params: {
   pacienteId: string;
@@ -10,9 +16,20 @@ export async function emitirDocumento(params: {
   modeloId: string;
   valores: Record<string, string>;
   duasVias: boolean;
+  assinaturaDataUrl?: string;
 }): Promise<{ docId?: string; signedUrl?: string; nome?: string; error?: string }> {
   const { supabase, clinicId, dentistaId, role } = await requireClinicContext();
   if (role === 'secretaria') return { error: 'Sem permissão para emitir documentos.' };
+
+  let assinaturaDataUrl: string | undefined;
+  if (params.tipo === 'atestado') {
+    if (!params.assinaturaDataUrl) return { error: 'Assine o atestado antes de gerar.' };
+    const assinatura = assinaturaManuscritaSchema.safeParse(params.assinaturaDataUrl);
+    if (!assinatura.success) {
+      return { error: assinatura.error.issues[0]?.message ?? 'Assinatura inválida.' };
+    }
+    assinaturaDataUrl = assinatura.data;
+  }
 
   const modelo = getModelo(params.tipo, params.modeloId);
   if (!modelo) return { error: 'Modelo de documento inválido.' };
@@ -49,6 +66,7 @@ export async function emitirDocumento(params: {
         cnpj: undefined,
       },
       dentista: { nome: (dentista?.nome as string) ?? 'Dentista', cro: (dentista?.cro as string | null) ?? '' },
+      assinaturaDataUrl,
       data: hoje.toISOString(),
     });
   } catch (err) {

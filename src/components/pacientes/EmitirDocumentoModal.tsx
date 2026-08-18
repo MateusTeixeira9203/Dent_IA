@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import type SignaturePadLib from 'signature_pad';
+import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, FileText, Loader2, Check, Printer } from 'lucide-react';
 import { toast } from 'sonner';
@@ -9,6 +11,11 @@ import {
   type TipoDocumento, type ModeloDocumento,
 } from '@/lib/documentos/modelos';
 import { emitirDocumento } from '@/app/dashboard/pacientes/[id]/documentos-actions';
+
+const SignaturePad = dynamic(
+  () => import('@/components/fichas/SignaturePad').then((module) => module.SignaturePad),
+  { ssr: false },
+);
 
 interface Props {
   open: boolean;
@@ -27,6 +34,7 @@ export function EmitirDocumentoModal({ open, onClose, patientId, patientName, on
   const [duasVias, setDuasVias] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [result, setResult] = useState<{ signedUrl?: string; nome?: string; docId?: string } | null>(null);
+  const signaturePadRef = useRef<SignaturePadLib | null>(null);
 
   const modelos = modelosPorTipo(tipo);
   const modelo: ModeloDocumento | undefined = modeloId ? getModelo(tipo, modeloId) : undefined;
@@ -51,8 +59,20 @@ export function EmitirDocumentoModal({ open, onClose, patientId, patientName, on
 
   const gerar = async () => {
     if (!modelo) return;
+    const precisaAssinatura = tipo === 'atestado';
+    if (precisaAssinatura && (!signaturePadRef.current || signaturePadRef.current.isEmpty())) {
+      toast.error('Assine o atestado antes de gerar.');
+      return;
+    }
     setIsSaving(true);
-    const r = await emitirDocumento({ pacienteId: patientId, tipo, modeloId: modelo.id, valores, duasVias });
+    const r = await emitirDocumento({
+      pacienteId: patientId,
+      tipo,
+      modeloId: modelo.id,
+      valores,
+      duasVias,
+      assinaturaDataUrl: precisaAssinatura ? signaturePadRef.current?.toDataURL('image/png') : undefined,
+    });
     setIsSaving(false);
     if (r.error) { toast.error(r.error); return; }
     setResult({ signedUrl: r.signedUrl, nome: r.nome, docId: r.docId });
@@ -185,6 +205,14 @@ export function EmitirDocumentoModal({ open, onClose, patientId, patientName, on
                         <span className="text-xs text-text-secondary">Imprimir em 2 vias (ex.: antibiótico)</span>
                       </label>
                     )}
+
+                    {tipo === 'atestado' && (
+                      <div className="space-y-1.5 pt-1">
+                        <label className="text-xs font-semibold text-text-primary">Assinatura do dentista *</label>
+                        <p className="text-xs text-text-secondary">Assine no campo para incluir a assinatura manuscrita no atestado.</p>
+                        <SignaturePad key={`${tipo}:${modeloId}`} padRef={signaturePadRef} />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -192,7 +220,9 @@ export function EmitirDocumentoModal({ open, onClose, patientId, patientName, on
                   onClick={() => void gerar()} disabled={!podeGerar || isSaving}
                   className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-white bg-teal hover:bg-teal-lt transition-all disabled:opacity-40"
                 >
-                  {isSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando...</> : <><FileText className="w-4 h-4" /> Gerar documento</>}
+                  {isSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando...</> : (
+                    <><FileText className="w-4 h-4" /> {tipo === 'atestado' ? 'Assinar e gerar atestado' : 'Gerar documento'}</>
+                  )}
                 </button>
               </>
             )}
