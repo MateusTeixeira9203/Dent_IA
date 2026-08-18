@@ -1707,7 +1707,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                 variant="outline"
                 onClick={abrirNovaComOrto}
                 title={`Abre uma evolução nova com a manutenção de ${dataBR(ultimaOrto.data)} pré-preenchida`}
-                className="rounded-xl px-4 py-5 font-bold text-sm flex items-center gap-2 border-border text-text-secondary hover:text-teal hover:border-teal/50 transition-all active:scale-95"
+                className="min-h-11 rounded-xl px-4 py-5 font-bold text-sm flex items-center gap-2 border-border text-text-secondary hover:text-teal hover:border-teal/50 transition-all active:scale-95"
               >
                 <Plus className="w-4 h-4" />
                 Manutenção
@@ -1717,14 +1717,14 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
             <Button
               variant="outline"
               onClick={() => setColarAberto(true)}
-              className="rounded-xl px-4 py-5 font-bold text-sm flex items-center gap-2 border-border text-text-secondary hover:text-teal hover:border-teal/50 transition-all active:scale-95"
+              className="min-h-11 rounded-xl px-4 py-5 font-bold text-sm flex items-center gap-2 border-border text-text-secondary hover:text-teal hover:border-teal/50 transition-all active:scale-95"
             >
               <FileText className="w-4 h-4" />
               Colar do Word
             </Button>
             <Button
               onClick={() => setIsPanelOpen(true)}
-              className="bg-teal hover:bg-teal-lt text-white rounded-xl px-6 py-5 font-bold text-sm flex items-center gap-2 shadow-[0_0_15px_rgba(47,156,133,0.3)] transition-all active:scale-95"
+              className="min-h-11 bg-teal hover:bg-teal-lt text-white rounded-xl px-6 py-5 font-bold text-sm flex items-center gap-2 shadow-[0_0_15px_rgba(47,156,133,0.3)] transition-all active:scale-95"
             >
               <Plus className="w-4 h-4" />
               Nova Evolução
@@ -2237,7 +2237,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                         <button
                           onClick={() => onGerarOrcamento(evo.id)}
                           title="Gerar orçamento"
-                          className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-teal-ink hover:bg-teal-pale transition-colors"
+                          className="min-h-11 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-teal-ink hover:bg-teal-pale transition-colors"
                         >
                           Gerar orçamento
                         </button>
@@ -2246,7 +2246,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                         <button
                           onClick={() => handleEdit(evo)}
                           title="Editar"
-                          className="p-2 hover:bg-surface-alt rounded-lg transition-colors text-text-secondary hover:text-text-primary"
+                          className="h-11 w-11 hover:bg-surface-alt rounded-lg transition-colors text-text-secondary hover:text-text-primary inline-flex items-center justify-center"
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
@@ -2254,7 +2254,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                       <button
                         onClick={() => window.open(`/api/fichas/${evo.id}/pdf`, '_blank')}
                         title="Baixar"
-                        className="p-2 hover:bg-surface-alt rounded-lg transition-colors text-text-secondary hover:text-text-primary"
+                        className="h-11 w-11 hover:bg-surface-alt rounded-lg transition-colors text-text-secondary hover:text-text-primary inline-flex items-center justify-center"
                       >
                         <Download className="w-4 h-4" />
                       </button>
@@ -2269,7 +2269,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                               .finally(() => setVinculosLoading(false));
                           }}
                           title="Excluir"
-                          className="p-2 hover:bg-surface-alt rounded-lg transition-colors text-text-secondary hover:text-coral"
+                          className="h-11 w-11 hover:bg-surface-alt rounded-lg transition-colors text-text-secondary hover:text-coral inline-flex items-center justify-center"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

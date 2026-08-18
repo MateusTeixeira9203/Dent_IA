@@ -38,7 +38,7 @@ const TRIGGER_CLASS: Record<ApresentarVariant, string> = {
     'inline-flex items-center gap-1.5 bg-gradient-to-r from-teal to-teal-lt text-white px-3 py-1.5 rounded-lg font-bold text-xs shadow-[0_4px_14px_rgba(47,156,133,0.25)] hover:-translate-y-0.5 transition-all',
   // Header: outline-teal — convive com o "Nova Consulta" (teal cheio) sem dois cheios competindo (DESIGN-KL §2).
   header:
-    'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-teal/50 text-teal bg-surface text-xs font-bold hover:bg-teal/5 hover:border-teal transition-colors',
+    'min-h-11 shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-teal/50 text-teal bg-surface text-xs font-bold hover:bg-teal/5 hover:border-teal transition-colors',
 };
 
 export function ApresentarPaciente({

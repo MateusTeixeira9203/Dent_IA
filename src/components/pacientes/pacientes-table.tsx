@@ -179,7 +179,7 @@ export function PacientesTable({
               placeholder="Buscar por nome, email ou telefone..."
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-border bg-surface
+              className="w-full min-h-11 pl-10 pr-10 py-2.5 rounded-xl border border-border bg-surface
                          text-sm text-text-primary placeholder:text-text-muted
                          focus:outline-none focus:ring-2 focus:ring-teal/20 focus:border-teal/60
                          transition-all"

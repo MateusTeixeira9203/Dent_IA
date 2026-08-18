@@ -219,7 +219,7 @@ export function WeekView({
         <div className="flex items-center gap-2">
           <button
             onClick={() => onWeekChange(subWeeks(selectedWeek, 1))}
-            className="p-1.5 hover:bg-surface rounded-lg transition-colors border border-border"
+            className="h-11 w-11 shrink-0 hover:bg-surface rounded-lg transition-colors border border-border flex items-center justify-center"
           >
             <ChevronLeft className="w-4 h-4 text-text-secondary" />
           </button>
@@ -229,14 +229,14 @@ export function WeekView({
           </span>
           <button
             onClick={() => onWeekChange(addWeeks(selectedWeek, 1))}
-            className="p-1.5 hover:bg-surface rounded-lg transition-colors border border-border"
+            className="h-11 w-11 shrink-0 hover:bg-surface rounded-lg transition-colors border border-border flex items-center justify-center"
           >
             <ChevronRight className="w-4 h-4 text-text-secondary" />
           </button>
         </div>
         <button
           onClick={() => onWeekChange(new Date())}
-          className="text-xs font-semibold text-teal hover:opacity-80 transition-colors px-3 py-1.5 rounded-lg bg-teal/5 hover:bg-teal/10"
+          className="min-h-11 text-xs font-semibold text-teal hover:opacity-80 transition-colors px-3 py-1.5 rounded-lg bg-teal/5 hover:bg-teal/10"
         >
           Hoje
         </button>

@@ -1081,7 +1081,7 @@ export function AgendamentosClient({
           </p>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+        <div className="flex items-center gap-3 flex-wrap xl:flex-nowrap">
           {/* Filtro por dentista — tabs para secretária */}
           {isSecretaria && dentistas.length > 0 && (
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -1130,7 +1130,7 @@ export function AgendamentosClient({
                 não o mês de hoje. */}
             <button
               onClick={() => irPara('dia', selectedDate)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              className={`min-h-11 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
                 visao === 'dia' ? 'bg-surface shadow-sm text-text-primary' : 'text-text-secondary hover:text-text-primary'
               }`}
             >
@@ -1139,7 +1139,7 @@ export function AgendamentosClient({
             </button>
             <button
               onClick={() => irPara('semana', selectedDate)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              className={`min-h-11 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
                 visao === 'semana' ? 'bg-surface shadow-sm text-text-primary' : 'text-text-secondary hover:text-text-primary'
               }`}
             >
@@ -1148,7 +1148,7 @@ export function AgendamentosClient({
             </button>
             <button
               onClick={() => irPara('mes', selectedDate)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              className={`min-h-11 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
                 visao === 'mes' ? 'bg-surface shadow-sm text-text-primary' : 'text-text-secondary hover:text-text-primary'
               }`}
             >
@@ -1166,7 +1166,7 @@ export function AgendamentosClient({
               aria-label="Ir para uma data"
               value={ancora}
               onChange={(e) => e.target.value && irPara(visao, e.target.value)}
-              className="h-9 w-[9.5rem] pl-8 text-xs font-semibold rounded-xl bg-surface-alt border-border text-text-primary cursor-pointer"
+              className="h-11 w-[9.5rem] pl-8 text-xs font-semibold rounded-xl bg-surface-alt border-border text-text-primary cursor-pointer"
             />
           </div>
 
@@ -1174,7 +1174,7 @@ export function AgendamentosClient({
           {!isSecretaria && (
             <button
               onClick={() => setIsAtenderAgoraOpen(true)}
-              className="bg-teal text-white hover:bg-teal-lt active:scale-[0.98] px-4 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-md"
+              className="min-h-11 bg-teal text-white hover:bg-teal-lt active:scale-[0.98] px-4 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-md"
             >
               <Stethoscope className="w-4 h-4" />
               Atender agora
@@ -1201,7 +1201,7 @@ export function AgendamentosClient({
           {canEdit && (
             <button
               onClick={() => { setCompromissoEditando(null); setIsCompromissoOpen(true); }}
-              className="border border-border text-text-secondary hover:bg-surface-alt hover:text-text-primary active:scale-[0.98] px-4 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all"
+              className="min-h-11 border border-border text-text-secondary hover:bg-surface-alt hover:text-text-primary active:scale-[0.98] px-4 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all"
             >
               <Lock className="w-4 h-4" />
               Compromisso pessoal
@@ -1212,7 +1212,7 @@ export function AgendamentosClient({
           {canEdit && (
             <button
               onClick={() => abrirNovoAgendamento()}
-              className="bg-gradient-to-r from-teal to-teal-lt text-white px-5 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-[0_8px_32px_rgba(47,156,133,0.38)] hover:-translate-y-0.5 active:scale-[0.98] w-full sm:w-auto group"
+              className="min-h-11 bg-gradient-to-r from-teal to-teal-lt text-white px-5 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-[0_8px_32px_rgba(47,156,133,0.38)] hover:-translate-y-0.5 active:scale-[0.98] w-full sm:w-auto group"
             >
               <Plus className="w-4 h-4" />
               Novo Agendamento
@@ -1233,7 +1233,7 @@ export function AgendamentosClient({
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
           onClick={() => irPara('mes', foraDaJanela.proximaAncora)}
-          className="w-full flex items-center justify-between gap-3 mb-4 px-4 py-2.5 rounded-xl border border-border bg-surface-alt/60 hover:bg-surface-alt hover:border-teal/40 transition-colors group text-left"
+          className="min-h-11 w-full flex items-center justify-between gap-3 mb-4 px-4 py-2.5 rounded-xl border border-border bg-surface-alt/60 hover:bg-surface-alt hover:border-teal/40 transition-colors group text-left"
         >
           <span className="flex items-center gap-2 text-xs text-text-secondary">
             <CalendarClock className="w-3.5 h-3.5 text-teal flex-shrink-0" />
@@ -1368,7 +1368,7 @@ export function AgendamentosClient({
       <Dialog open={isNewModalOpen} onOpenChange={(open) => { if (!open) resetForm(); setIsNewModalOpen(open); }}>
         <DialogContent
           showCloseButton={false}
-          className="max-w-lg sm:max-w-[880px] rounded-2xl bg-surface border-border p-0 gap-0 overflow-hidden"
+          className="max-w-lg sm:max-w-[880px] rounded-2xl bg-surface border-border p-0 gap-0 overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col"
         >
           <DialogDescription className="sr-only">Preencha os dados para marcar uma nova consulta.</DialogDescription>
 
@@ -1380,7 +1380,7 @@ export function AgendamentosClient({
             <button
               onClick={() => { setIsNewModalOpen(false); resetForm(); }}
               aria-label="Fechar"
-              className="p-1.5 rounded-lg text-text-secondary hover:bg-surface-alt hover:text-text-primary transition-colors"
+              className="h-11 w-11 shrink-0 rounded-lg text-text-secondary hover:bg-surface-alt hover:text-text-primary transition-colors flex items-center justify-center"
             >
               <X className="w-4 h-4" />
             </button>
@@ -1420,8 +1420,8 @@ export function AgendamentosClient({
           </div>
 
           {/* ── Corpo: 2 colunas ──────────────────────────────────────── */}
-          <div className="flex flex-col sm:flex-row">
-            <div className="flex-1 min-w-0 p-6 space-y-5 overflow-y-auto" style={{ maxHeight: '58vh' }}>
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-32 sm:flex-row sm:overflow-hidden sm:pb-0">
+            <div className="min-w-0 flex-1 p-6 space-y-5 sm:max-h-[58vh] sm:overflow-y-auto">
 
               {/* Dentista — apenas secretária */}
               {isSecretaria && dentistas.length > 0 && (
@@ -1437,7 +1437,7 @@ export function AgendamentosClient({
                       <SelectValue>
                         {(v: string | null) =>
                           v
-                            ? (dentistas.find((d) => d.id === v)?.nome ?? v)
+                            ? (dentistas.find((d) => d.id === v)?.nome ?? 'Dentista indisponível')
                             : 'Selecione o dentista...'
                         }
                       </SelectValue>
@@ -1613,7 +1613,7 @@ export function AgendamentosClient({
             </div>
 
             {/* ── Coluna fixa: Quando + ações — nunca rola ─────────────── */}
-            <div className="w-full sm:w-72 sm:shrink-0 border-t sm:border-t-0 sm:border-l border-border flex flex-col">
+            <div className="w-full shrink-0 sm:w-72 border-t sm:border-t-0 sm:border-l border-border flex flex-col">
               <div className="p-5 space-y-4 flex-1">
                 <div className="space-y-2">
                   <Label className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">Quando</Label>
@@ -1658,7 +1658,7 @@ export function AgendamentosClient({
                         key={opt.value}
                         type="button"
                         onClick={() => setNovoForm((f) => ({ ...f, duracao: opt.value }))}
-                        className={`py-2 rounded-lg border text-xs font-bold transition-all ${
+                        className={`min-h-11 py-2 rounded-lg border text-xs font-bold transition-all ${
                           novoForm.duracao === opt.value
                             ? 'bg-teal/10 border-teal text-teal-ink'
                             : 'border-border text-text-secondary hover:border-teal/40 hover:text-teal-ink bg-surface-alt'
@@ -1679,7 +1679,7 @@ export function AgendamentosClient({
                       inputMode="numeric"
                       value={novoForm.duracao}
                       onChange={(e) => setNovoForm((f) => ({ ...f, duracao: e.target.value }))}
-                      className="rounded-lg bg-surface-alt border-border text-text-primary text-sm h-8"
+                      className="rounded-lg bg-surface-alt border-border text-text-primary text-sm h-11"
                       aria-label="Duração personalizada em minutos"
                     />
                     <span className="text-xs text-text-secondary shrink-0">min</span>
@@ -1688,7 +1688,7 @@ export function AgendamentosClient({
               </div>
 
               {/* ── Rodapé da coluna de ação ────────────────────────────── */}
-              <div className="p-5 border-t border-border space-y-2.5">
+              <div className="absolute inset-x-0 bottom-0 z-10 p-5 border-t border-border bg-surface space-y-2.5 sm:static">
                 {saveError && !conflitoServidor && (
                   <p className="text-xs text-coral-ink bg-coral-pale rounded-lg p-2">{saveError}</p>
                 )}
@@ -1721,13 +1721,13 @@ export function AgendamentosClient({
                 <Button
                   onClick={() => void handleCriarAgendamento()}
                   disabled={isSaving}
-                  className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl font-bold disabled:opacity-50"
+                  className="min-h-11 w-full bg-teal text-white hover:bg-teal-lt rounded-xl font-bold disabled:opacity-50"
                 >
                   {isSaving ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Salvando...</> : 'Salvar agendamento'}
                 </Button>
                 <button
                   onClick={() => { setIsNewModalOpen(false); resetForm(); }}
-                  className="w-full py-1.5 text-sm font-medium text-text-secondary hover:text-text-primary transition-colors"
+                  className="min-h-11 w-full py-1.5 text-sm font-medium text-text-secondary hover:text-text-primary transition-colors"
                 >
                   Cancelar
                 </button>

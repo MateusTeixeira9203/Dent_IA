@@ -9,7 +9,7 @@ import {
 import { OdontoIALogo } from '@/components/ui/dent-ia-logo';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useTheme } from 'next-themes';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useSyncExternalStore } from 'react';
 import Image from 'next/image';
 import { temFeature } from '@/lib/planos';
 import type { DentistaRole } from '@/types/database';
@@ -44,15 +44,15 @@ const NAV_ITEMS = [
   { href: '/dashboard/configuracoes',icon: Settings,        label: 'Config',     id: 'config',     hideFromSecretaria: true },
 ] as const;
 
+const subscribeMounted = () => () => {};
+
 export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUrl, plano }: FloatingDockProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(subscribeMounted, () => true, () => false);
   const [dexBadge, setDexBadge] = useState(0);
   const { clinicas, loading: clinicasLoading, switching, switchClinic } = useClinicSwitcher();
-
-  useEffect(() => { setMounted(true); }, []);
 
   // Badge da bola do Dex — o hub despacha a contagem (useDexHub.ts), sem provider novo
   useEffect(() => {
@@ -138,7 +138,7 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
         <button
           title="Abrir DEX"
           onClick={() => window.dispatchEvent(new Event('dex-toggle'))}
-          className="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0 hover:scale-110 active:scale-95 transition-transform mx-1 outline-none"
+          className="relative w-11 h-11 rounded-full flex items-center justify-center shrink-0 hover:scale-110 active:scale-95 transition-transform mx-1 outline-none"
           style={{
             background: 'linear-gradient(135deg, #2f9c85 0%, #1a7a65 100%)',
             boxShadow: '0 4px 16px -4px rgba(47,156,133,0.6)',
@@ -159,7 +159,7 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
       <button
         title={mounted ? (theme === 'dark' ? 'Modo Claro' : 'Modo Escuro') : 'Tema'}
         onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-white/45 hover:text-white/80 hover:bg-white/[0.07] transition-all mx-0.5 outline-none"
+        className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-white/45 hover:text-white/80 hover:bg-white/[0.07] transition-all mx-0.5 outline-none"
       >
         {mounted && theme === 'dark'
           ? <Sun style={{ width: 18, height: 18 }} />
@@ -177,7 +177,7 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
         <DropdownMenu.Trigger asChild>
           <button
             title={nome}
-            className="relative ml-1 mr-1 hover:brightness-110 active:opacity-80 transition-all outline-none"
+            className="relative ml-1 mr-1 h-11 w-11 flex items-center justify-center hover:brightness-110 active:opacity-80 transition-all outline-none"
           >
             <div className="w-8 h-8 rounded-full bg-teal flex items-center justify-center text-white font-bold text-[11px] ring-2 ring-teal/20 overflow-hidden">
               {avatarUrl ? (

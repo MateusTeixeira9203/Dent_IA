@@ -23,7 +23,7 @@ export function MobileHeader({ onOpenDrawer }: MobileHeaderProps) {
       </span>
       <button
         onClick={onOpenDrawer}
-        className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-white/[0.07] transition-colors"
+        className="w-11 h-11 flex items-center justify-center rounded-xl hover:bg-white/[0.07] transition-colors"
       >
         <Menu className="w-5 h-5 text-white/70" />
       </button>

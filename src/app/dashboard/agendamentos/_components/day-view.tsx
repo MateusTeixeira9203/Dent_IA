@@ -170,7 +170,7 @@ export function DayView({
         <div className="flex items-center gap-2">
           <button
             onClick={() => onDateChange(subDays(selectedDate, 1))}
-            className="p-1.5 hover:bg-surface rounded-lg transition-colors border border-border"
+            className="h-11 w-11 shrink-0 hover:bg-surface rounded-lg transition-colors border border-border flex items-center justify-center"
           >
             <ChevronLeft className="w-4 h-4 text-text-secondary" />
           </button>
@@ -186,7 +186,7 @@ export function DayView({
           </div>
           <button
             onClick={() => onDateChange(addDays(selectedDate, 1))}
-            className="p-1.5 hover:bg-surface rounded-lg transition-colors border border-border"
+            className="h-11 w-11 shrink-0 hover:bg-surface rounded-lg transition-colors border border-border flex items-center justify-center"
           >
             <ChevronRight className="w-4 h-4 text-text-secondary" />
           </button>
@@ -198,7 +198,7 @@ export function DayView({
           </span>
           <button
             onClick={() => onDateChange(new Date())}
-            className="text-xs font-semibold text-teal hover:opacity-80 transition-colors px-3 py-1.5 rounded-lg bg-teal/5 hover:bg-teal/10 flex items-center gap-1.5"
+            className="min-h-11 text-xs font-semibold text-teal hover:opacity-80 transition-colors px-3 py-1.5 rounded-lg bg-teal/5 hover:bg-teal/10 flex items-center gap-1.5"
           >
             Hoje
             <kbd className="font-mono text-[10px] bg-teal/10 rounded px-1 py-0.5 leading-none text-teal/60">T</kbd>
