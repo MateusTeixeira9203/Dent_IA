@@ -47,12 +47,6 @@ export interface UseOrcamentoModalInput {
   /** Só quem mantém uma lista local de orçamentos (tela do paciente) precisa disto — chamado
    *  com o orçamento otimista recém-criado. Meu dia não passa nada. */
   onOrcamentoCriado?: (orcamento: OrcamentoComItens) => void;
-  /** R-46h (achado ao vivo, 08/08) — o histórico de um paciente é compartilhado entre
-   *  dentistas da clínica; sem isto, `carregarFichasAgregado`/`abrirOrcamentoParaFicha`
-   *  deixam puxar procedimento indicado por um colega pro orçamento. Default false: a tela
-   *  do paciente mantém o agregado compartilhado (decisão de 07/08, filtro de exibição por
-   *  chip Todos/Meus). Meu dia passa true — lá "dinheiro nunca cruza dentista" é a regra. */
-  restringirAoMeuDentista?: boolean;
 }
 
 export interface UseOrcamentoModalResult {
@@ -74,13 +68,13 @@ export interface UseOrcamentoModalResult {
   modalProps: NovoOrcamentoModalProps;
 }
 
-const ITEM_VAZIO: NovoOrcItem = { procedimentoId: '', descricao: '', quantidade: 1, preco: '' };
+const ITEM_VAZIO: NovoOrcItem = { procedimentoId: '', descricao: '', quantidade: 1, preco: '', eventoIds: [], origem: 'manual' };
 
 const CAMPOS_FICHA_ORC =
   'id, created_at, data_atendimento, queixa_principal, dentes_afetados, dentes_observacoes, ' +
   'dentista_id, dentista:dentistas(nome)';
 const CAMPOS_EVENTO_ORC =
-  'id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, assinatura_id, ' +
+  'id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, assinatura_id, observacao, ' +
   'encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(nome)';
 const SELECT_FICHA_PARA_ORC = `${CAMPOS_FICHA_ORC}, odontograma_eventos(${CAMPOS_EVENTO_ORC})`;
 // R-53 (§3) — !inner: só fichas com ≥1 evento indicado/não-assinado voltam, e o embed já vem
@@ -89,7 +83,7 @@ const SELECT_FICHA_PARA_ORC_AGREGADO = `${CAMPOS_FICHA_ORC}, odontograma_eventos
 
 export function useOrcamentoModal({
   pacienteId, clinicaId, meuDentistaId, procedimentosClinica, isSecretaria, dentistasClinica,
-  onOrcamentoCriado, restringirAoMeuDentista = false,
+  onOrcamentoCriado,
 }: UseOrcamentoModalInput): UseOrcamentoModalResult {
   const router = useRouter();
 
@@ -104,6 +98,7 @@ export function useOrcamentoModal({
   const [etapaNovoOrc, setEtapaNovoOrc] = useState<'selecionar' | 'itens'>('itens');
   const [novoOrcValorFinal, setNovoOrcValorFinal] = useState<number | null>(null);
   const [novoOrcDentistaAlvoId, setNovoOrcDentistaAlvoId] = useState('');
+  const [eventoIdsJaOrcados, setEventoIdsJaOrcados] = useState<Set<string>>(() => new Set());
   // Pré-seleciona o 1º dentista da lista assim que ela chega — só quando ainda vazio, nunca
   // sobrescreve uma escolha manual já feita (o pai só popula `dentistasClinica` quando
   // isSecretaria; dentista comum nunca aciona isto, `dentistasClinica` fica sempre []).
@@ -203,14 +198,21 @@ export function useOrcamentoModal({
         descricao,
         quantidade: teeth.length,
         preco: match?.preco_padrao != null ? formatValorBR(match.preco_padrao) : '',
+        eventoIds: [],
+        origem: 'legado',
       };
     });
   };
 
   // R-53 — função PURA sobre uma lista de eventos, serve tanto 1 ficha (fallback) quanto o
   // agregado de N fichas (itensDoAgregado). Só status='indicado' sem assinatura entra.
-  const eventosParaItens = (eventos: EventoOdontogramaParaOrc[]): NovoOrcItem[] => {
-    const elegiveis = eventos.filter((ev) => ev.status === 'indicado' && ev.assinatura_id == null);
+  const eventosParaItens = (
+    eventos: EventoOdontogramaParaOrc[],
+    idsJaOrcados: ReadonlySet<string> = eventoIdsJaOrcados,
+  ): NovoOrcItem[] => {
+    const elegiveis = eventos.filter(
+      (ev) => ev.status === 'indicado' && ev.assinatura_id == null && !idsJaOrcados.has(ev.id),
+    );
     if (elegiveis.length === 0) return [];
 
     const grupos = new Map<string, EventoOdontogramaParaOrc[]>();
@@ -223,7 +225,9 @@ export function useOrcamentoModal({
     return Array.from(grupos.values()).map((grupoEventos) => {
       const primeiro = grupoEventos[0];
       const match = matchProcedimentoPorTipo(primeiro.tipo);
-      const rotulo = TIPO_LABEL[primeiro.tipo];
+      const rotulo = primeiro.tipo === 'outro' && primeiro.observacao?.trim()
+        ? primeiro.observacao.trim()
+        : TIPO_LABEL[primeiro.tipo];
 
       const dentesDistintos = [
         ...new Set(grupoEventos.map((ev) => ev.dente).filter((d): d is number => d != null)),
@@ -243,15 +247,10 @@ export function useOrcamentoModal({
         descricao: alcance ? `${match?.nome ?? rotulo} — ${alcance}` : (match?.nome ?? rotulo),
         quantidade,
         preco: match?.preco_padrao != null ? formatValorBR(match.preco_padrao) : '',
+        eventoIds: grupoEventos.map((evento) => evento.id),
+        origem: 'evento',
       };
     });
-  };
-
-  // R-53 — wrapper de 1 ficha só: preserva o fallback de texto que eventosParaItens (puro,
-  // sem `ficha`) não pode mais decidir sozinho.
-  const fichaParaItens = (ficha: FichaParaOrc): NovoOrcItem[] => {
-    const itens = eventosParaItens(ficha.odontograma_eventos ?? []);
-    return itens.length > 0 ? itens : itensDoTexto(ficha);
   };
 
   // R-53 (§2.1, X1) — adapta o evento cru pro shape que filtro-responsavel.ts espera.
@@ -262,13 +261,63 @@ export function useOrcamentoModal({
   });
 
   // R-53 — flatten de N fichas (o agregado) pro filtro de responsável + eventosParaItens.
-  const itensDoAgregado = (fichas: FichaParaOrc[], alvoDentistaId: string): NovoOrcItem[] => {
+  const itensDoAgregado = (
+    fichas: FichaParaOrc[],
+    alvoDentistaId: string,
+    idsJaOrcados: ReadonlySet<string> = eventoIdsJaOrcados,
+  ): NovoOrcItem[] => {
     const itens = fichas.flatMap((f) => {
       const eventosComResponsavel = (f.odontograma_eventos ?? []).map((ev) => ({ ...ev, ...paraResponsavel(ev) }));
       const visiveis = eventosVisiveis(eventosComResponsavel, f.dentista_id, FILTRO_MEUS, alvoDentistaId);
-      return eventosParaItens(visiveis);
+      return eventosParaItens(visiveis, idsJaOrcados);
     });
     return itens.length > 0 ? itens : [ITEM_VAZIO];
+  };
+
+  // R-125b — a ficha pode ter eventos encaminhados de outro autor. A consulta no banco vem
+  // completa e a responsabilidade é resolvida aqui, por evento; filtrar `fichas.dentista_id`
+  // na query esconderia justamente os encaminhados corretos.
+  const fichaParaItens = (
+    ficha: FichaParaOrc,
+    alvoDentistaId: string,
+    idsJaOrcados: ReadonlySet<string> = eventoIdsJaOrcados,
+  ): NovoOrcItem[] => {
+    const eventos = ficha.odontograma_eventos ?? [];
+    const visiveis = eventosVisiveis(
+      eventos.map((ev) => ({ ...ev, ...paraResponsavel(ev) })),
+      ficha.dentista_id,
+      FILTRO_MEUS,
+      alvoDentistaId,
+    );
+    const itens = eventosParaItens(visiveis, idsJaOrcados);
+    // Texto legado só é fonte quando não há evento algum. Nunca troca uma lista de eventos
+    // invisíveis/indisponíveis por descrição antiga como se fosse procedimento cobravel.
+    return itens.length > 0 ? itens : eventos.length === 0 ? itensDoTexto(ficha) : [];
+  };
+
+  const alvoAtual = () => isSecretaria
+    ? (novoOrcDentistaAlvoId || dentistasClinica[0]?.id || '')
+    : meuDentistaId;
+
+  const carregarEventoIdsJaOrcados = async (
+    fichas: FichaParaOrc[],
+    eventosExtras: EventoOdontogramaParaOrc[] = [],
+  ): Promise<Set<string>> => {
+    const eventoIds = [
+      ...fichas.flatMap((ficha) => (ficha.odontograma_eventos ?? []).map((evento) => evento.id)),
+      ...eventosExtras.map((evento) => evento.id),
+    ];
+    const idsUnicos = [...new Set(eventoIds)];
+    if (idsUnicos.length === 0) return new Set();
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('orcamento_eventos')
+      .select('evento_id')
+      .eq('clinica_id', clinicaId)
+      .in('evento_id', idsUnicos);
+    if (error) throw new Error(error.message);
+    return new Set((data ?? []).map((row) => row.evento_id));
   };
 
   const handleDentistaAlvoChange = (id: string) => {
@@ -276,7 +325,7 @@ export function useOrcamentoModal({
     // Só o fluxo agregado da ficha usa `itensDoAgregado`. O Meu dia e o fallback de uma
     // ficha preservam seus itens próprios — trocar o select nunca pode reinterpretá-los.
     if (isSecretaria && fichaOrcId === null && etapaNovoOrc === 'itens') {
-      setNovoOrcItens(itensDoAgregado(fichasParaOrc, id));
+      setNovoOrcItens(itensDoAgregado(fichasParaOrc, id, eventoIdsJaOrcados));
     }
   };
 
@@ -284,17 +333,15 @@ export function useOrcamentoModal({
   // pontos de entrada que agregam (botão geral e, agora, o picker do Meu dia).
   const carregarFichasAgregado = async (): Promise<FichaParaOrc[]> => {
     const supabase = createClient();
-    let query = supabase
+    const query = supabase
       .from('fichas')
       .select(SELECT_FICHA_PARA_ORC_AGREGADO)
       .eq('paciente_id', pacienteId)
       .eq('clinica_id', clinicaId)
       .eq('odontograma_eventos.status', 'indicado')
       .is('odontograma_eventos.assinatura_id', null);
-    // R-46h — Meu dia nunca deixa puxar procedimento indicado por outro dentista (histórico
-    // é compartilhado da clínica); tela do paciente mantém o agregado completo de propósito.
-    if (restringirAoMeuDentista) query = query.eq('dentista_id', meuDentistaId);
-    const { data } = await query.order('data_atendimento', { ascending: false });
+    const { data, error } = await query.order('data_atendimento', { ascending: false });
+    if (error) throw new Error(error.message);
     return (data as unknown as FichaParaOrc[]) ?? [];
   };
 
@@ -303,30 +350,33 @@ export function useOrcamentoModal({
     setIsLoadingFichaParaOrc(true);
     try {
       const agregado = await carregarFichasAgregado();
+      const idsJaOrcados = await carregarEventoIdsJaOrcados(agregado);
+      setEventoIdsJaOrcados(idsJaOrcados);
 
       if (agregado.length > 0) {
         // fichaOrcId fica null — o orçamento não pertence mais a 1 ficha só (I6). O alvo é o
         // próprio dentista ou, para secretária, o dentista selecionado no campo obrigatório.
-        const alvoId = isSecretaria
-          ? (novoOrcDentistaAlvoId || dentistasClinica[0]?.id || '')
-          : meuDentistaId;
+        const alvoId = alvoAtual();
         setFichasParaOrc(agregado);
         setFichaOrcId(null);
-        setNovoOrcItens(itensDoAgregado(agregado, alvoId));
+        setNovoOrcItens(itensDoAgregado(agregado, alvoId, idsJaOrcados));
         setEtapaNovoOrc('itens');
       } else {
         // G4 — fallback INTACTO: nenhum indicado aberto em ficha nenhuma. Mesmo comportamento
         // de antes do R-53 (10 fichas recentes, decide selecionar vs. texto).
         const supabase = createClient();
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('fichas')
           .select(SELECT_FICHA_PARA_ORC)
           .eq('paciente_id', pacienteId)
           .eq('clinica_id', clinicaId)
           .order('data_atendimento', { ascending: false })
           .limit(10);
+        if (error) throw new Error(error.message);
 
         const fichas = (data as unknown as FichaParaOrc[]) ?? [];
+        const idsJaOrcadosFallback = await carregarEventoIdsJaOrcados(fichas);
+        setEventoIdsJaOrcados(idsJaOrcadosFallback);
         setFichasParaOrc(fichas);
 
         if (fichas.length > 1) {
@@ -335,7 +385,10 @@ export function useOrcamentoModal({
           setNovoOrcItens([ITEM_VAZIO]);
         } else {
           setFichaOrcId(fichas.length === 1 ? fichas[0].id : null);
-          setNovoOrcItens(fichas.length === 1 ? fichaParaItens(fichas[0]) : [ITEM_VAZIO]);
+          const itens = fichas.length === 1
+            ? fichaParaItens(fichas[0], alvoAtual(), idsJaOrcadosFallback)
+            : [];
+          setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
           setEtapaNovoOrc('itens');
         }
       }
@@ -344,6 +397,7 @@ export function useOrcamentoModal({
       setFichaOrcId(null);
       setNovoOrcItens([ITEM_VAZIO]);
       setEtapaNovoOrc('itens');
+      setOrcError('Não foi possível carregar os procedimentos indicados. Tente novamente antes de criar o orçamento.');
     } finally {
       setIsLoadingFichaParaOrc(false);
     }
@@ -362,13 +416,15 @@ export function useOrcamentoModal({
     setIsLoadingFichaParaOrc(true);
     try {
       const fichas = await carregarFichasAgregado();
+      const idsJaOrcados = await carregarEventoIdsJaOrcados(fichas, eventosRascunho);
+      setEventoIdsJaOrcados(idsJaOrcados);
       setFichasParaOrc(fichas);
       // R-85 — antes sempre null (o orçamento nascia órfão). Agora recebe o id real que o
       // chamador já garantiu existir quando há algo novo do rascunho pra orçar.
       setFichaOrcId(fichaId);
 
       if (eventosRascunho.length > 0) {
-        const itens = eventosParaItens(eventosRascunho);
+        const itens = eventosParaItens(eventosRascunho, idsJaOrcados);
         setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
         setEtapaNovoOrc('itens');
       } else {
@@ -389,7 +445,8 @@ export function useOrcamentoModal({
       setNovoOrcItens([ITEM_VAZIO]);
     } else {
       const ficha = fichasParaOrc.find((f) => f.id === fichaId);
-      setNovoOrcItens(ficha ? fichaParaItens(ficha) : [ITEM_VAZIO]);
+      const itens = ficha ? fichaParaItens(ficha, alvoAtual()) : [];
+      setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
     }
     setEtapaNovoOrc('itens');
   };
@@ -401,19 +458,20 @@ export function useOrcamentoModal({
     setIsLoadingFichaParaOrc(true);
     try {
       const supabase = createClient();
-      let query = supabase
+      const query = supabase
         .from('fichas')
         .select(SELECT_FICHA_PARA_ORC)
         .eq('id', fichaId)
         .eq('clinica_id', clinicaId);
-      // R-46h — defesa em profundidade: mesmo que o botão já esteja escondido no Histórico
-      // do Meu dia pra ficha de outro dentista, a busca em si também recusa.
-      if (restringirAoMeuDentista) query = query.eq('dentista_id', meuDentistaId);
-      const { data } = await query.single();
+      const { data, error } = await query.single();
+      if (error) throw new Error(error.message);
       const ficha = data as unknown as FichaParaOrc | null;
+      const idsJaOrcados = await carregarEventoIdsJaOrcados(ficha ? [ficha] : []);
+      setEventoIdsJaOrcados(idsJaOrcados);
       setFichaOrcId(fichaId);
       setFichasParaOrc(ficha ? [ficha] : []);
-      setNovoOrcItens(ficha ? fichaParaItens(ficha) : [ITEM_VAZIO]);
+      const itens = ficha ? fichaParaItens(ficha, alvoAtual(), idsJaOrcados) : [];
+      setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
     } catch {
       setFichaOrcId(fichaId);
       setFichasParaOrc([]);
@@ -489,6 +547,7 @@ export function useOrcamentoModal({
         descricao: i.descricao,
         quantidade: i.quantidade,
         precoUnitario: parseValorBR(i.preco),
+        eventoIds: i.eventoIds ?? [],
       })),
     });
 
@@ -571,6 +630,7 @@ export function useOrcamentoModal({
       setIsNovoOrcOpen(open);
       if (!open) {
         setEtapaNovoOrc('itens'); setFichasParaOrc([]); setOrcError(null); setNovoOrcValorFinal(null);
+        setEventoIdsJaOrcados(new Set());
         setNovoOrcPlanoForma(null); setNovoOrcNumParcelas('3'); setNovoOrcPrimeiroVencimento(''); setNovoOrcParcelasForma('');
       }
     },

@@ -620,20 +620,28 @@ export async function marcarPagamentoPago(
   return { autoAprovado };
 }
 
-export async function criarOrcamento(dados: {
-  pacienteId: string;
-  desconto?: number;
-  itens: Array<{
-    procedimentoId: string | null;
-    descricao: string;
-    quantidade: number;
-    precoUnitario: number;
-  }>;
-  dentistaId?: string;
+const criarOrcamentoSchema = z.object({
+  pacienteId: z.string().uuid(),
+  desconto: z.number().finite().min(0).optional(),
+  itens: z.array(z.object({
+    procedimentoId: z.string().uuid().nullable(),
+    descricao: z.string().trim().min(1).max(500),
+    quantidade: z.number().int().min(1).max(99),
+    precoUnitario: z.number().finite().min(0),
+    eventoIds: z.array(z.string().uuid()).max(100).default([]),
+  })).min(1).max(100),
+  dentistaId: z.string().uuid().optional(),
   /** Ficha de origem do orçamento — vincula orçamento↔ficha p/ a apresentação não vazar entre tratamentos. */
-  fichaId?: string | null;
-}): Promise<{ error?: string; id?: string }> {
+  fichaId: z.string().uuid().nullable().optional(),
+});
+
+export async function criarOrcamento(dados: z.input<typeof criarOrcamentoSchema>): Promise<{ error?: string; id?: string }> {
   const { supabase, user, clinicId } = await requireClinicContext();
+  const parsed = criarOrcamentoSchema.safeParse(dados);
+  if (!parsed.success) {
+    return { error: 'Revise os itens e os valores do orçamento antes de salvar.' };
+  }
+  const entrada = parsed.data;
 
   const { data: dentistaPerfil } = await supabase
     .from("dentistas")
@@ -645,13 +653,13 @@ export async function criarOrcamento(dados: {
   if (!dentistaPerfil) redirect("/onboarding");
 
   if (dentistaPerfil.role === "secretaria") {
-    if (!dados.dentistaId) {
+    if (!entrada.dentistaId) {
       return { error: "Selecione o dentista responsável pelo orçamento." };
     }
     const { data: alvo } = await supabase
       .from("dentistas")
       .select("id")
-      .eq("id", dados.dentistaId)
+      .eq("id", entrada.dentistaId)
       .eq("clinica_id", clinicId)
       .eq("ativo", true)
       // R-94 — .neq("role","secretaria") sozinho deixaria 'protetico' virar
@@ -663,59 +671,35 @@ export async function criarOrcamento(dados: {
     }
   }
 
-  const dentistaAlvoId = dados.dentistaId ?? dentistaPerfil.id;
+  const dentistaAlvoId = entrada.dentistaId ?? dentistaPerfil.id;
+  const { data: orcamentoId, error } = await supabase.rpc('criar_orcamento_com_eventos', {
+    p_paciente_id: entrada.pacienteId,
+    p_dentista_id: dentistaAlvoId,
+    p_ficha_id: entrada.fichaId ?? null,
+    p_desconto: entrada.desconto ?? 0,
+    p_itens: entrada.itens.map((item) => ({
+      procedimento_id: item.procedimentoId,
+      descricao: item.descricao,
+      quantidade: item.quantidade,
+      preco_unitario: item.precoUnitario,
+      evento_ids: item.eventoIds,
+    })),
+  });
 
-  const subtotal = dados.itens.reduce(
-    (sum, item) => sum + item.quantidade * item.precoUnitario,
-    0
-  );
-  const desconto = dados.desconto ?? 0;
-  const total = Math.max(0, subtotal - desconto);
-
-  const { data: orc, error: orcError } = await supabase
-    .from("orcamentos")
-    .insert({
-      clinica_id:   clinicId,
-      dentista_id:  dentistaAlvoId,
-      paciente_id:  dados.pacienteId,
-      ...(dados.fichaId != null && { ficha_id: dados.fichaId }),
-      status:       "rascunho",
-      total,
-      desconto,
-      validade_dias: 30,
-      // Pedido do Mateus 31/07: orçamento novo nasce sem valor por item — só o total.
-      // Dentista ainda pode ligar por orçamento (toggle no detalhe, R-38); o default
-      // da coluna (migration 124) continua true, então aqui é explícito.
-      mostrar_valor_por_item: false,
-    })
-    .select("id")
-    .single();
-
-  if (orcError || !orc) {
-    return { error: orcError?.message ?? "Erro ao criar orçamento." };
+  if (error || !orcamentoId) {
+    const mensagem = error?.message ?? '';
+    if (error?.code === '23505' || mensagem.includes('orcamento_evento_ja_orcado') || mensagem.includes('orcamento_evento_duplicado')) {
+      return { error: 'Um dos procedimentos já entrou em outro orçamento. Recarregue a lista e tente novamente.' };
+    }
+    if (mensagem.includes('orcamento_evento_invalido')) {
+      return { error: 'Um dos procedimentos não está mais disponível para este orçamento. Recarregue a lista.' };
+    }
+    return { error: 'Não foi possível criar o orçamento. Nenhum item foi salvo.' };
   }
 
-  const itensInsert = dados.itens.map((item) => ({
-    orcamento_id:    orc.id,
-    clinica_id:      clinicId,
-    descricao:       item.descricao,
-    procedimento_id: item.procedimentoId ?? null,
-    quantidade:      item.quantidade,
-    preco_unitario:  item.precoUnitario,
-    preco_total:     item.quantidade * item.precoUnitario,
-  }));
-
-  const { error: itensError } = await supabase
-    .from("orcamento_itens")
-    .insert(itensInsert);
-
-  if (itensError) {
-    return { error: itensError.message };
-  }
-
-  revalidatePath(`/dashboard/pacientes/${dados.pacienteId}`);
+  revalidatePath(`/dashboard/pacientes/${entrada.pacienteId}`);
   revalidatePath("/dashboard/orcamentos");
-  return { id: orc.id };
+  return { id: orcamentoId };
 }
 
 export async function registrarPagamento(dados: {
