@@ -45,7 +45,6 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
   return (
     <PlanosClient
       userId={user?.id ?? null}
-      userEmail={user?.email ?? null}
       trialUsed={trialUsed}
       statusAssinatura={statusAssinatura}
       expired={expired}

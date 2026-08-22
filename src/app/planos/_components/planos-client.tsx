@@ -5,13 +5,12 @@ import { motion } from 'motion/react';
 import { Check, Sparkles, Loader2, AlertCircle, Stethoscope, Building2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { NeuralBackground } from '@/components/layout/NeuralBackground';
-import { activateTrial, createCheckout } from '../actions';
+import { createCheckout } from '../actions';
 import { PLANOS } from '@/lib/planos';
 import Link from 'next/link';
 
 interface PlanosClientProps {
   userId: string | null;
-  userEmail: string | null;
   trialUsed: boolean;
   statusAssinatura: 'trial' | 'ativo' | 'inativo';
   expired: boolean;
@@ -27,7 +26,7 @@ const plans = [
     pricePeriod: '/mês',
     description: 'Sistema completo para atendimento clínico — IA, fichas estruturadas, planejamento visual, orçamentos, agenda e secretária. Tudo para atender mais em menos tempo.',
     features: [
-      '1 Dentista + 1 Secretária',
+      '1 dentista com assinatura própria',
       'Ficha clínica estruturada por IA',
       'Planejamento e orçamento visual',
       'Transcrição de voz por IA',
@@ -46,13 +45,13 @@ const plans = [
     icon: Building2,
     price: String(PLANOS.CLINICA.preco),
     pricePeriod: '/dentista/mês',
-    description: 'Tudo do Consultório, mais secretária com visão unificada de todos os dentistas, WhatsApp integrado com bot e lembretes automáticos.',
+    description: 'Para equipes de 2 a 8 dentistas. Cada profissional paga e administra a própria assinatura, mantendo seus silos privados.',
     features: [
-      'A partir de 3 dentistas',
-      'Secretária gerencia todos os dentistas',
-      'WhatsApp com bot e lembretes',
-      'Gestão de funções (admin/dentista)',
-      'Tudo do plano Consultório',
+      'De 2 a 8 dentistas',
+      'Pagamento individual por dentista',
+      'Pacientes e fichas compartilhados',
+      'Agenda, orçamento e financeiro privados',
+      'Gestão colaborativa da clínica',
     ],
     popular: true,
     trial: true,
@@ -63,7 +62,6 @@ const plans = [
 
 export function PlanosClient({
   userId,
-  userEmail: _userEmail,
   trialUsed,
   statusAssinatura,
   expired,
@@ -72,26 +70,18 @@ export function PlanosClient({
   const [isPending, startTransition] = useTransition();
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  const handleTrialClick = () => {
-    if (!userId) { router.push('/cadastro?next=/planos'); return; }
-    setErrorMsg(null);
-    setLoadingPlan('CLINICA_TRIAL');
-    startTransition(async () => {
-      // R-105a §4.3 — `activateTrial` não redireciona mais (o card do Meu dia precisa do
-      // resultado na mão). Este chamador, que dependia do redirect da action, navega sozinho.
-      const result = await activateTrial();
-      if (!result.ok) { setErrorMsg(result.error); setLoadingPlan(null); return; }
-      router.push('/dashboard?status=trial_activated');
-    });
-  };
+  const [ciclo, setCiclo] = useState<'mensal' | 'anual'>('mensal');
 
   const handleCheckoutClick = (planId: 'SOLO' | 'CLINICA') => {
     if (!userId) { router.push('/cadastro?next=/planos'); return; }
+    if (planId === 'CLINICA') {
+      router.push('/dashboard/configuracoes?aba=plano&criar=clinica');
+      return;
+    }
     setErrorMsg(null);
     setLoadingPlan(planId);
     startTransition(async () => {
-      const result = await createCheckout(planId);
+      const result = await createCheckout(planId, ciclo);
       if (result.error) { setErrorMsg(result.error); setLoadingPlan(null); return; }
       if (result.url) window.location.href = result.url;
     });
@@ -149,6 +139,15 @@ export function PlanosClient({
           </div>
         )}
 
+        <div className="mx-auto mt-6 grid w-full max-w-sm grid-cols-2 gap-1 rounded-xl border border-border bg-surface-alt p-1" role="radiogroup" aria-label="Ciclo de cobrança">
+          {(['mensal', 'anual'] as const).map((opcao) => (
+            <button key={opcao} type="button" role="radio" aria-checked={ciclo === opcao} onClick={() => setCiclo(opcao)}
+              className={`min-h-11 rounded-lg px-3 text-sm font-semibold transition-colors ${ciclo === opcao ? 'bg-surface text-teal shadow-sm' : 'text-text-secondary'}`}>
+              {opcao === 'mensal' ? 'Mensal' : 'Anual · 2 meses grátis'}
+            </button>
+          ))}
+        </div>
+
         {/* Cards */}
         <section className="py-12 px-6 max-w-4xl mx-auto">
           <motion.div
@@ -162,8 +161,8 @@ export function PlanosClient({
           >
             {plans.map(plan => {
               const Icon = plan.icon;
-              const isLoading = loadingPlan === plan.id || loadingPlan === 'CLINICA_TRIAL';
-              const canTrial = plan.trial && !trialUsed && !isActive && !!userId;
+              const isLoading = loadingPlan === plan.id;
+              const canTrial = !trialUsed && !isActive && !!userId;
 
               return (
                 <motion.div
@@ -190,7 +189,7 @@ export function PlanosClient({
                     <div className="absolute -top-3.5 right-6">
                       <span className="inline-flex items-center gap-1 bg-surface border border-teal/25 text-teal text-[10px] font-bold px-3 py-1 rounded-full">
                         <Sparkles className="w-3 h-3" />
-                        14 dias grátis
+                        7 dias grátis
                       </span>
                     </div>
                   )}
@@ -212,8 +211,8 @@ export function PlanosClient({
                   {/* Preço */}
                   <div className="mb-5 flex items-baseline gap-1 text-text-primary">
                     <span className="font-mono text-sm text-text-secondary">R$</span>
-                    <span className="font-mono text-5xl font-medium tracking-tight">{plan.price}</span>
-                    <span className="text-text-secondary text-sm">{plan.pricePeriod}</span>
+                    <span className="font-mono text-5xl font-medium tracking-tight">{ciclo === 'mensal' ? plan.price : '2.000'}</span>
+                    <span className="text-text-secondary text-sm">{ciclo === 'mensal' ? plan.pricePeriod : plan.id === 'SOLO' ? '/ano' : '/dentista/ano'}</span>
                   </div>
 
                   <p className="text-sm text-text-secondary leading-relaxed mb-6 min-h-[56px]">
@@ -236,22 +235,6 @@ export function PlanosClient({
                   </ul>
 
                   {/* CTA */}
-                  {canTrial ? (
-                    <button
-                      onClick={handleTrialClick}
-                      disabled={isLoading || isPending}
-                      className="w-full py-3.5 px-4 rounded-xl text-white font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-                      style={{
-                        background: 'linear-gradient(135deg, #2f9c85 0%, #1e7a67 100%)',
-                        boxShadow: '0 4px 20px -4px rgba(47,156,133,0.45)',
-                      }}
-                    >
-                      {isLoading
-                        ? <><Loader2 className="w-4 h-4 animate-spin" /> Ativando…</>
-                        : <><Sparkles className="w-4 h-4" /> Começar 14 dias grátis</>
-                      }
-                    </button>
-                  ) : (
                     <button
                       onClick={() => handleCheckoutClick(plan.id)}
                       disabled={isActive || isLoading || isPending}
@@ -268,10 +251,9 @@ export function PlanosClient({
                     >
                       {isLoading
                         ? <><Loader2 className="w-4 h-4 animate-spin" /> Redirecionando…</>
-                        : isActive ? 'Plano Ativo' : 'Assinar agora'
+                        : isActive ? 'Plano Ativo' : plan.id === 'CLINICA' ? 'Montar equipe' : canTrial ? 'Começar 7 dias grátis' : 'Assinar agora'
                       }
                     </button>
-                  )}
                 </motion.div>
               );
             })}
@@ -284,7 +266,7 @@ export function PlanosClient({
             transition={{ delay: 0.5 }}
             className="text-center text-xs text-text-secondary mt-8"
           >
-            Plano Clínica: mínimo 3 dentistas. Cada dentista paga R$&nbsp;{PLANOS.CLINICA.preco}/mês individualmente.
+            Plano Clínica: mínimo 2 e máximo 8 dentistas. Cada pessoa paga a própria assinatura.
           </motion.p>
         </section>
 

@@ -6,28 +6,35 @@ import { OdontoIALogo } from '@/components/ui/dent-ia-logo';
 import { AgregadoWelcomeClient } from './_components/agregado-welcome-client';
 
 interface Props {
-  searchParams: Promise<{ clinica?: string }>;
+  searchParams: Promise<{ checkout?: 'sucesso' | 'cancelado' }>;
 }
 
 export default async function BemVindoAgregadoPage({ searchParams }: Props) {
-  const { clinica: clinicId } = await searchParams;
+  const { checkout } = await searchParams;
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) redirect('/login');
-  if (!clinicId) redirect('/dashboard');
 
-  // Confirma que o usuário é membro ativo desta clínica (segurança)
+  // A página fica fora do dashboard justamente porque o dentista ainda não
+  // possui membership ativa. O service client confere o vínculo pendente pelo
+  // usuário autenticado, sem confiar em clinicId da URL.
   const db = createServiceClient();
-  const [{ data: membership }, { data: clinicaData }, { data: dentistaData }] = await Promise.all([
-    db
-      .from('clinica_usuarios')
-      .select('role')
-      .eq('usuario_id', user.id)
-      .eq('clinica_id', clinicId)
-      .eq('status', 'ativo')
-      .maybeSingle(),
+  const { data: membership } = await db
+    .from('clinica_usuarios')
+    .select('clinica_id, role, status')
+    .eq('usuario_id', user.id)
+    .in('role', ['admin', 'dentista'])
+    .in('status', ['pendente', 'suspenso'])
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<{ clinica_id: string; role: string; status: string }>();
+
+  if (!membership) redirect('/dashboard');
+
+  const clinicId = membership.clinica_id;
+  const [{ data: clinicaData }, { data: dentistaData }, { data: assinaturaData }, { data: formacaoData }] = await Promise.all([
     db
       .from('clinicas')
       .select('nome')
@@ -39,12 +46,18 @@ export default async function BemVindoAgregadoPage({ searchParams }: Props) {
       .eq('user_id', user.id)
       .eq('clinica_id', clinicId)
       .maybeSingle<{ nome: string }>(),
+    process.env.STRIPE_BILLING_ENABLED === 'true'
+      ? db.from('assinaturas_dentista').select('status')
+          .eq('usuario_id', user.id).eq('clinica_id', clinicId)
+          .maybeSingle<{ status: string }>()
+      : Promise.resolve({ data: null }),
+    process.env.STRIPE_BILLING_ENABLED === 'true'
+      ? db.from('formacoes_clinica').select('id')
+          .eq('clinica_id', clinicId)
+          .in('status', ['aguardando_equipe', 'coletando_pagamento', 'ativando'])
+          .maybeSingle<{ id: string }>()
+      : Promise.resolve({ data: null }),
   ]);
-
-  // Se não for membro ou não for dentista (agregado), vai pro dashboard
-  if (!membership || membership.role !== 'dentista') {
-    redirect('/dashboard');
-  }
 
   // Nome do dentista: perfil clínico > metadata auth > fallback genérico
   const nomeDentista =
@@ -79,8 +92,9 @@ export default async function BemVindoAgregadoPage({ searchParams }: Props) {
         <AgregadoWelcomeClient
           clinicaNome={clinicaData?.nome ?? 'a clínica'}
           nomeDentista={nomeDentista}
-          userId={user.id}
-          userEmail={user.email ?? ''}
+          checkout={checkout}
+          statusAssinatura={assinaturaData?.status ?? 'checkout_pendente'}
+          emFormacao={Boolean(formacaoData)}
         />
       </div>
     </div>

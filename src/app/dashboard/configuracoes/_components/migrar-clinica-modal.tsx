@@ -4,18 +4,17 @@ import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X, Building2, Check, Users, Mail, Loader2,
-  ChevronRight, ArrowLeft, Sparkles, AlertTriangle,
+  ChevronRight, ArrowLeft, CreditCard, AlertTriangle,
 } from 'lucide-react';
 import { enviarConvite } from '../usuarios/actions';
-import { ativarPlanoClinica, verificarStatusMigracao } from '../plano-actions';
-import { PLANOS } from '@/lib/planos';
+import { iniciarFormacaoClinicaAction } from '../plano-actions';
+import { createCheckoutAgregado } from '@/app/bem-vindo-agregado/actions';
 import { toast } from 'sonner';
 
 interface MigrarClinicaModalProps {
   open: boolean;
   onClose: () => void;
   dentistasAtivos: number;
-  onPlanoAtivado: () => void;
 }
 
 type Step = 'explicacao' | 'convites';
@@ -24,18 +23,18 @@ export function MigrarClinicaModal({
   open,
   onClose,
   dentistasAtivos: dentistasInicial,
-  onPlanoAtivado,
 }: MigrarClinicaModalProps) {
   const [step, setStep]                     = useState<Step>('explicacao');
   const [email, setEmail]                   = useState('');
   const [enviando, setEnviando]             = useState(false);
   const [ativando, setAtivando]             = useState(false);
-  const [dentistasAtivos, setDentistas]     = useState(dentistasInicial);
+  const [ciclo, setCiclo]                   = useState<'mensal' | 'anual'>('mensal');
+  const [dentistasAtivos]                   = useState(dentistasInicial);
   const [convidosEnviados, setConvidados]   = useState<string[]>([]);
   const emailInputRef                       = useRef<HTMLInputElement>(null);
 
-  const faltam   = Math.max(0, 3 - dentistasAtivos);
-  const podeAtivar = dentistasAtivos >= 3;
+  const participantesPrevistos = Math.min(2, dentistasAtivos + convidosEnviados.length);
+  const faltam = Math.max(0, 2 - participantesPrevistos);
 
   function handleClose() {
     setStep('explicacao');
@@ -72,29 +71,29 @@ export function MigrarClinicaModal({
     }
   }
 
-  async function handleVerificarEAtivar() {
+  async function handleIniciarFormacao() {
     setAtivando(true);
     try {
-      // Atualiza a contagem antes de tentar ativar
-      const statusResult = await verificarStatusMigracao();
-      if (statusResult.ok) {
-        setDentistas(statusResult.status.dentistasAtivos);
-        if (!statusResult.status.podeAtivar) {
-          toast.error(`São necessários 3 dentistas. Atualmente: ${statusResult.status.dentistasAtivos}.`);
-          return;
-        }
-      }
-
-      const result = await ativarPlanoClinica();
+      const result = await iniciarFormacaoClinicaAction(ciclo);
       if (!result.ok) {
-        toast.error(result.error ?? 'Erro ao ativar plano.');
+        toast.error(result.error ?? 'Erro ao iniciar formação.');
       } else {
-        toast.success('Plano Clínica ativado com sucesso!');
-        onPlanoAtivado();
-        handleClose();
+        toast.success('Formação iniciada. Você tem 48 horas para concluir a equipe.');
+        setStep('convites');
       }
     } catch {
       toast.error('Erro inesperado.');
+    } finally {
+      setAtivando(false);
+    }
+  }
+
+  async function handleAdicionarCartao() {
+    setAtivando(true);
+    try {
+      const result = await createCheckoutAgregado(ciclo);
+      if (result.error) toast.error(result.error);
+      else if (result.url) window.location.href = result.url;
     } finally {
       setAtivando(false);
     }
@@ -173,8 +172,8 @@ export function MigrarClinicaModal({
                     <div className="space-y-3 mb-6">
                       {[
                         { n: 1, titulo: 'Convide seus colegas', desc: 'Envie convites por e-mail direto do sistema.' },
-                        { n: 2, titulo: 'Cada um assina individualmente', desc: `Cada dentista paga R$${PLANOS.CLINICA.preco}/mês com o próprio cartão.` },
-                        { n: 3, titulo: 'Clínica ativada', desc: 'Com 3+ dentistas confirmados, o plano é ativado.' },
+                        { n: 2, titulo: 'Cada um adiciona o próprio cartão', desc: 'Nada é cobrado enquanto a equipe ainda está sendo formada.' },
+                        { n: 3, titulo: 'Clínica ativada', desc: 'Com 2 cartões confirmados, o teste de 7 dias começa para os dois.' },
                       ].map(({ n, titulo, desc }) => (
                         <div key={n} className="flex items-start gap-3">
                           <div
@@ -195,21 +194,32 @@ export function MigrarClinicaModal({
                     <div className="flex items-start gap-2.5 p-3.5 rounded-2xl border border-amber-400/30 bg-amber-400/8 mb-6">
                       <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                       <p className="text-xs text-amber-600 dark:text-amber-400 leading-relaxed">
-                        <span className="font-bold">Cobrança mínima: R${PLANOS.CLINICA.preco * 3}/mês</span>{' '}
-                        (3 × R${PLANOS.CLINICA.preco}). O plano Clínica exige no mínimo 3 dentistas ativos.
+                        <span className="font-bold">Prazo de formação: 48 horas.</span>{' '}
+                        Se a segunda pessoa não concluir, nenhuma assinatura é criada e nada é cobrado.
                       </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 mb-4" role="radiogroup" aria-label="Ciclo de cobrança">
+                      {(['mensal', 'anual'] as const).map((opcao) => (
+                        <button key={opcao} type="button" role="radio" aria-checked={ciclo === opcao}
+                          onClick={() => setCiclo(opcao)}
+                          className={`min-h-11 rounded-xl border px-3 text-sm font-semibold transition-colors ${ciclo === opcao ? 'border-teal bg-teal/10 text-teal' : 'border-border text-text-secondary'}`}>
+                          {opcao === 'mensal' ? 'R$200/mês' : 'R$2.000/ano'}
+                        </button>
+                      ))}
                     </div>
 
                     {/* CTA */}
                     <button
-                      onClick={() => setStep('convites')}
+                      onClick={() => void handleIniciarFormacao()}
+                      disabled={ativando}
                       className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-bold text-sm text-white transition-all hover:-translate-y-0.5"
                       style={{
                         background: 'linear-gradient(135deg, #2f9c85 0%, #1e7a67 100%)',
                         boxShadow: '0 6px 20px rgba(47,156,133,0.35)',
                       }}
                     >
-                      Entendido, vamos convidar
+                      {ativando ? 'Preparando…' : 'Começar formação da clínica'}
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   </motion.div>
@@ -239,11 +249,11 @@ export function MigrarClinicaModal({
                       </div>
                     </div>
 
-                    {/* Progresso N/3 */}
+                    {/* Progresso N/2 */}
                     <div className="flex items-center gap-3 mb-6 p-4 rounded-2xl bg-surface-alt border border-border/60">
                       <div className="flex items-center gap-2 flex-1">
-                        {[1, 2, 3].map((n) => {
-                          const ativo = n <= dentistasAtivos;
+                        {[1, 2].map((n) => {
+                          const ativo = n <= participantesPrevistos;
                           return (
                             <div
                               key={n}
@@ -261,43 +271,12 @@ export function MigrarClinicaModal({
                         <div className="flex-1" />
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-bold text-text-primary">{dentistasAtivos}/3</p>
+                        <p className="text-sm font-bold text-text-primary">{participantesPrevistos}/2</p>
                         <p className="text-xs text-text-secondary">
-                          {podeAtivar ? 'Pronto!' : `Faltam ${faltam}`}
+                          {faltam === 0 ? 'Equipe prevista' : `Falta ${faltam} convite`}
                         </p>
                       </div>
                     </div>
-
-                    {/* Ativar plano — aparece quando 3+ ativos */}
-                    {podeAtivar && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="mb-5 p-4 rounded-2xl border border-teal/30 bg-teal/5"
-                      >
-                        <div className="flex items-center gap-2 mb-3">
-                          <Sparkles className="w-4 h-4 text-teal" />
-                          <p className="text-sm font-bold text-teal">3 dentistas confirmados!</p>
-                        </div>
-                        <p className="text-xs text-text-secondary mb-3">
-                          Sua clínica está pronta para ser ativada.
-                        </p>
-                        <button
-                          onClick={handleVerificarEAtivar}
-                          disabled={ativando}
-                          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm text-white transition-all hover:-translate-y-0.5 disabled:opacity-60"
-                          style={{
-                            background: 'linear-gradient(135deg, #2f9c85 0%, #1e7a67 100%)',
-                            boxShadow: '0 4px 16px rgba(47,156,133,0.35)',
-                          }}
-                        >
-                          {ativando
-                            ? <><Loader2 className="w-4 h-4 animate-spin" /> Ativando...</>
-                            : <><Sparkles className="w-4 h-4" /> Ativar Plano Clínica</>
-                          }
-                        </button>
-                      </motion.div>
-                    )}
 
                     {/* Input de convite */}
                     <div className="space-y-2 mb-4">
@@ -349,16 +328,25 @@ export function MigrarClinicaModal({
                     <div className="flex items-start gap-2 mb-5">
                       <Users className="w-3.5 h-3.5 text-text-secondary shrink-0 mt-0.5" />
                       <p className="text-[11px] text-text-secondary leading-relaxed">
-                        Convites válidos por 7 dias. Cada colega precisará criar a própria conta e assinar o plano Clínica individualmente.
+                        A formação vence em 48 horas. Cada colega escolhe mensal/anual e adiciona o próprio cartão.
                       </p>
                     </div>
+
+                    <button
+                      onClick={() => void handleAdicionarCartao()}
+                      disabled={ativando}
+                      className="mb-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-teal px-4 text-sm font-bold text-white disabled:opacity-50"
+                    >
+                      {ativando ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                      Adicionar meu cartão sem cobrar agora
+                    </button>
 
                     {/* Fechar / ir para equipe */}
                     <button
                       onClick={handleClose}
                       className="w-full py-3 rounded-2xl border border-border text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-alt transition-all"
                     >
-                      Ir para Configurações → Equipe
+                      Voltar para Clínica
                     </button>
                   </motion.div>
                 )}

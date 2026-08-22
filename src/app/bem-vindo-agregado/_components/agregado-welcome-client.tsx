@@ -1,16 +1,16 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import { motion } from 'motion/react';
-import { Stethoscope, Building2, Check, ArrowRight, Loader2, CreditCard } from 'lucide-react';
-import { createCheckoutAgregado } from '../actions';
+import { Stethoscope, Building2, Check, Loader2, CreditCard } from 'lucide-react';
+import { createCheckoutAgregado, createPortalAgregado } from '../actions';
 
 interface Props {
   clinicaNome: string;
   nomeDentista: string;
-  userId: string;
-  userEmail: string;
+  checkout?: 'sucesso' | 'cancelado';
+  statusAssinatura: string;
+  emFormacao: boolean;
 }
 
 /** Extrai o primeiro nome (sem "Dr." ou "Dra.") para usar no cumprimento. */
@@ -19,17 +19,17 @@ function primeiroNome(nome: string): string {
   return limpo.split(' ')[0] ?? limpo;
 }
 
-export function AgregadoWelcomeClient({ clinicaNome, nomeDentista, userEmail }: Props) {
-  const router = useRouter();
+export function AgregadoWelcomeClient({ clinicaNome, nomeDentista, checkout, statusAssinatura, emFormacao }: Props) {
   const [isPending, startTransition] = useTransition();
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [ciclo, setCiclo] = useState<'mensal' | 'anual'>('mensal');
 
   const handlePagar = () => {
     setErrorMsg(null);
     setIsRedirecting(true);
     startTransition(async () => {
-      const result = await createCheckoutAgregado({ userEmail });
+      const result = await createCheckoutAgregado(ciclo);
       if (result.error) {
         setErrorMsg(result.error);
         setIsRedirecting(false);
@@ -41,9 +41,21 @@ export function AgregadoWelcomeClient({ clinicaNome, nomeDentista, userEmail }: 
     });
   };
 
-  const handleEntrar = () => {
-    router.push('/dashboard');
+  const handleRegularizar = () => {
+    setErrorMsg(null);
+    setIsRedirecting(true);
+    startTransition(async () => {
+      const result = await createPortalAgregado();
+      if (result.error) {
+        setErrorMsg(result.error);
+        setIsRedirecting(false);
+        return;
+      }
+      if (result.url) window.location.href = result.url;
+    });
   };
+
+  const precisaRegularizar = statusAssinatura === 'past_due' || statusAssinatura === 'suspended' || statusAssinatura === 'unpaid';
 
   return (
     <motion.div
@@ -65,7 +77,7 @@ export function AgregadoWelcomeClient({ clinicaNome, nomeDentista, userEmail }: 
           Você agora faz parte da equipe de{' '}
           <strong className="text-text-primary">{clinicaNome}</strong>.
           <br />
-          Seus pacientes e fichas continuam exclusivamente seus.
+          Os pacientes e as fichas são compartilhados com a equipe; cada dentista mantém seu fluxo financeiro privado.
         </p>
       </div>
 
@@ -79,9 +91,9 @@ export function AgregadoWelcomeClient({ clinicaNome, nomeDentista, userEmail }: 
         </div>
         {[
           'Você usa a estrutura da clínica para atender',
-          'Seus pacientes e fichas são exclusivamente seus',
-          'Caso saia, leva seus pacientes automaticamente',
-          'Acesso completo ao Odonto.IA sem plano separado',
+          'Pacientes e fichas ficam acessíveis à equipe, com edição protegida pelo responsável',
+          'Sua agenda, seus orçamentos e seu financeiro permanecem no seu silo',
+          'O acesso é liberado após a confirmação segura do pagamento',
         ].map((item) => (
           <div key={item} className="flex items-start gap-2.5">
             <div className="w-4 h-4 rounded-full bg-teal/10 flex items-center justify-center shrink-0 mt-0.5">
@@ -94,19 +106,47 @@ export function AgregadoWelcomeClient({ clinicaNome, nomeDentista, userEmail }: 
 
       {/* Taxa */}
       <div className="rounded-2xl border border-teal/25 bg-teal/5 p-5">
+        <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-surface-alt p-1" role="radiogroup" aria-label="Ciclo de cobrança">
+          {(['mensal', 'anual'] as const).map((opcao) => (
+            <button
+              key={opcao}
+              type="button"
+              role="radio"
+              aria-checked={ciclo === opcao}
+              onClick={() => setCiclo(opcao)}
+              className={`min-h-11 rounded-lg px-3 text-sm font-semibold transition-colors ${
+                ciclo === opcao ? 'bg-surface text-teal shadow-sm' : 'text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              {opcao === 'mensal' ? 'Mensal' : 'Anual · 2 meses grátis'}
+            </button>
+          ))}
+        </div>
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-text-primary">Taxa de Dentista Agregado</p>
+            <p className="text-sm font-semibold text-text-primary">Plano Fundador</p>
             <p className="text-xs text-text-secondary mt-0.5">
-              Acesso completo ao sistema · Renovação mensal
+              {emFormacao ? 'Cartão salvo sem cobrança · 7 dias após formar a equipe' : '7 dias grátis começam após a confirmação'}
             </p>
           </div>
           <div className="text-right">
-            <span className="font-mono text-2xl font-semibold text-teal">R$147</span>
-            <span className="text-xs text-text-secondary">/mês</span>
+            <span className="font-mono text-2xl font-semibold text-teal">{ciclo === 'mensal' ? 'R$200' : 'R$2.000'}</span>
+            <span className="text-xs text-text-secondary">/{ciclo === 'mensal' ? 'mês' : 'ano'}</span>
           </div>
         </div>
       </div>
+
+      {checkout === 'sucesso' && (
+        <p className="text-sm text-teal bg-teal/10 rounded-xl px-4 py-2.5 text-center">
+          {emFormacao ? 'Cartão confirmado. A equipe será ativada quando o segundo dentista concluir.' : 'Checkout concluído. Estamos confirmando sua assinatura com segurança.'}
+        </p>
+      )}
+
+      {checkout === 'cancelado' && (
+        <p className="text-sm text-amber-700 bg-amber-500/10 rounded-xl px-4 py-2.5 text-center">
+          Checkout cancelado. Você pode retomar quando quiser.
+        </p>
+      )}
 
       {errorMsg && (
         <p className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 rounded-xl px-4 py-2.5 text-center">
@@ -117,7 +157,7 @@ export function AgregadoWelcomeClient({ clinicaNome, nomeDentista, userEmail }: 
       {/* CTAs */}
       <div className="space-y-3">
         <button
-          onClick={handlePagar}
+          onClick={precisaRegularizar ? handleRegularizar : handlePagar}
           disabled={isPending || isRedirecting}
           className="w-full py-3.5 px-4 rounded-xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
           style={{
@@ -127,20 +167,16 @@ export function AgregadoWelcomeClient({ clinicaNome, nomeDentista, userEmail }: 
         >
           {isPending || isRedirecting
             ? <><Loader2 className="w-4 h-4 animate-spin" /> Redirecionando…</>
-            : <><CreditCard className="w-4 h-4" /> Pagar taxa · R$147/mês</>
+            : precisaRegularizar
+              ? <><CreditCard className="w-4 h-4" /> Atualizar pagamento</>
+              : <><CreditCard className="w-4 h-4" /> Adicionar cartão · {ciclo === 'mensal' ? 'R$200/mês' : 'R$2.000/ano'}</>
           }
         </button>
 
-        <button
-          onClick={handleEntrar}
-          disabled={isPending || isRedirecting}
-          className="w-full py-3 px-4 rounded-xl text-sm font-medium text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
-        >
-          Entrar no sistema agora
-          <ArrowRight className="w-4 h-4" />
-        </button>
         <p className="text-center text-xs text-text-secondary">
-          Você pode pagar depois em Configurações → Assinatura
+          {emFormacao
+            ? 'Nada é cobrado agora. O teste começa somente quando 2 dentistas concluírem.'
+            : 'Seu teste de 7 dias começa após a confirmação da Stripe. A primeira cobrança ocorre ao final do período.'}
         </p>
       </div>
     </motion.div>

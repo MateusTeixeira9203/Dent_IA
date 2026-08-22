@@ -2,9 +2,10 @@
 
 import { requireClinicContext } from '@/server/auth/clinic';
 import { createServiceClient } from '@/lib/supabase/service';
-
-/** R-105a §4.3 — 14 dias, o único lugar onde esse número mora. */
-const TRIAL_DIAS = 14;
+import { TRIAL_DAYS } from '@/lib/billing/trial';
+import { isCicloCobranca } from '@/lib/billing/plan-catalog';
+import { criarCheckoutAssinaturaDentista } from '@/server/services/assinatura-dentista';
+import { iniciarFormacaoClinica } from '@/server/services/formacao-clinica';
 
 export type AtivarTrialResult =
   | { ok: true; trialEndsAt: string }
@@ -28,6 +29,9 @@ export type AtivarTrialResult =
  * corrige quem ficou pra trás em até 24h (I5).
  */
 export async function activateTrial(): Promise<AtivarTrialResult> {
+  if (process.env.STRIPE_BILLING_ENABLED === 'true') {
+    return { ok: false, error: 'O período de teste agora é iniciado pela Stripe após o cadastro do cartão.' };
+  }
   // requireClinicContext resolve clinicId via users.active_clinica_id + clinica_usuarios.
   // Nenhuma dependência de dentistas.maybeSingle().
   const { clinicId } = await requireClinicContext();
@@ -35,7 +39,7 @@ export async function activateTrial(): Promise<AtivarTrialResult> {
   const service = createServiceClient();
 
   const trialEndsAt = new Date();
-  trialEndsAt.setDate(trialEndsAt.getDate() + TRIAL_DIAS);
+  trialEndsAt.setDate(trialEndsAt.getDate() + TRIAL_DAYS);
 
   // `.select()` no update é o que distingue "gravei" de "não gravei": sem ele o Postgrest
   // devolve sucesso com 0 linhas afetadas e a gente não teria como saber que o WHERE barrou
@@ -86,68 +90,25 @@ export async function activateTrial(): Promise<AtivarTrialResult> {
   return { ok: false, error: 'Não foi possível ativar o trial. Tente novamente.' };
 }
 
-const PLANO_PRODUCT_IDS: Record<string, string> = {
-  SOLO:    process.env.ABACATE_PAY_PRODUCT_SOLO ?? '',
-  CLINICA: process.env.ABACATE_PAY_PRODUCT_CLINICA ?? '',
-};
-
 export async function createCheckout(
   planoId: 'SOLO' | 'CLINICA',
+  ciclo: string,
 ): Promise<{ url?: string; error?: string }> {
-  // clinicId é emitido no metadata para que o webhook resolva a clínica
-  // de forma determinística (payment-time reference), independente de qual
-  // clínica o usuário tenha ativa quando o webhook for processado.
-  const { user, clinicId } = await requireClinicContext();
-
-  const apiKey = process.env.ABACATE_PAY_API_KEY;
-  if (!apiKey) {
-    return { error: 'Configuração de pagamento indisponível. Contate o suporte.' };
-  }
-
-  const productId = PLANO_PRODUCT_IDS[planoId];
-  if (!productId) {
-    return { error: `Produto do plano ${planoId} não configurado.` };
-  }
-
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://dentia.app.br';
-
+  if (!isCicloCobranca(ciclo)) return { error: 'Ciclo de cobrança inválido.' };
   try {
-    const res = await fetch('https://api.abacatepay.com/v1/billing/create', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        frequency: 'MONTHLY',
-        methods: ['PIX', 'CREDIT_CARD'],
-        products: [{ externalId: productId, quantity: 1 }],
-        returnUrl:    `${appUrl}/dashboard?status=success`,
-        completionUrl: `${appUrl}/dashboard?status=success`,
-        customer: {
-          email:    user.email,
-          metadata: { userId: user.id, clinicId, plano: planoId },
-        },
-      }),
-    });
-
-    if (!res.ok) {
-      const body = await res.text();
-      console.error('[createCheckout] Abacate Pay erro HTTP:', res.status, body);
-      return { error: 'Erro ao criar link de pagamento. Tente novamente.' };
+    const { user, clinicId, dentistaId } = await requireClinicContext();
+    if (planoId === 'CLINICA') {
+      const formacao = await iniciarFormacaoClinica({ userId: user.id, clinicId, dentistaId, ciclo });
+      if (!formacao.ok) return { error: formacao.error };
     }
-
-    const json = (await res.json()) as { data?: { url?: string } };
-    const checkoutUrl = json.data?.url;
-
-    if (!checkoutUrl) {
-      console.error('[createCheckout] Resposta sem URL:', json);
-      return { error: 'Resposta inválida do gateway de pagamento.' };
-    }
-
-    return { url: checkoutUrl };
-  } catch (err) {
-    console.error('[createCheckout] Erro de conexão:', err);
-    return { error: 'Falha de conexão com o gateway de pagamento.' };
+    return criarCheckoutAssinaturaDentista(
+      user.id,
+      ciclo,
+      planoId === 'SOLO' ? 'CONSULTORIO' : 'CLINICA',
+      clinicId,
+    );
+  } catch (error) {
+    console.error('[planos] checkout não iniciado:', error);
+    return { error: 'Não foi possível preparar a cobrança. Tente novamente.' };
   }
 }
