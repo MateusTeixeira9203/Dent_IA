@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,7 +10,8 @@ import { motion } from 'motion/react';
 import { ArrowRight, Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import { OdontoIALogo } from '@/components/ui/dent-ia-logo';
+import { AuthEntryShell } from '@/components/auth/auth-entry-shell';
+import { authCallbackUrl, safeReturnPath } from '@/lib/auth/return-path';
 
 const cadastroSchema = z
   .object({
@@ -26,6 +28,13 @@ const cadastroSchema = z
 type CadastroFormData = z.infer<typeof cadastroSchema>;
 
 export function CadastroForm() {
+  const searchParams = useSearchParams();
+  const next = safeReturnPath(searchParams.get('next'), '/onboarding');
+  const invitedEmail = searchParams.get('email') ?? '';
+  const isInvite = next.startsWith('/convite/') && Boolean(invitedEmail);
+  // Cadastro comum sempre precisa concluir o perfil clínico antes de entrar no
+  // dashboard. Só o convite preserva seu destino porque cria o vínculo depois.
+  const postSignupPath = isInvite ? next : '/onboarding';
   const [isLoading, setIsLoading]               = useState(false);
   const [showPassword, setShowPassword]         = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -33,18 +42,23 @@ export function CadastroForm() {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<CadastroFormData>({
     resolver: zodResolver(cadastroSchema),
-    defaultValues: { nome: '', email: '', password: '', confirmPassword: '' },
+    defaultValues: { nome: '', email: invitedEmail, password: '', confirmPassword: '' },
   });
+
+  useEffect(() => {
+    if (invitedEmail) setValue('email', invitedEmail);
+  }, [invitedEmail, setValue]);
 
   const handleGoogleSignup = async (): Promise<void> => {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
+        redirectTo: authCallbackUrl(window.location.origin, postSignupPath),
       },
     });
     if (error) {
@@ -59,14 +73,21 @@ export function CadastroForm() {
       const { data: authData, error } = await supabase.auth.signUp({
         email:    data.email,
         password: data.password,
-        options:  { data: { nome: data.nome } },
+        options:  {
+          data: { nome: data.nome },
+          emailRedirectTo: authCallbackUrl(window.location.origin, postSignupPath),
+        },
       });
 
       if (error) {
         if (error.message.includes('User already registered') || error.message.includes('already been registered')) {
           toast.error('Este email já está cadastrado. Faça login ou use outro email.');
         } else {
-          toast.error('Erro ao criar conta. Tente novamente.');
+          toast.error(
+            process.env.NODE_ENV === 'development'
+              ? error.message
+              : 'Erro ao criar conta. Tente novamente.',
+          );
         }
         return;
       }
@@ -76,13 +97,13 @@ export function CadastroForm() {
         return;
       }
 
-      if (authData.session) {
-        toast.success('Conta criada com sucesso!');
-        window.location.href = '/onboarding';
-      } else {
-        // Confirmação de email pendente
-        window.location.href = `/verifique-email?email=${encodeURIComponent(data.email)}`;
+      if (!authData.session) {
+        window.location.href = `/verifique-email?email=${encodeURIComponent(data.email)}&next=${encodeURIComponent(postSignupPath)}`;
+        return;
       }
+
+      toast.success('Conta criada com sucesso!');
+      window.location.replace(postSignupPath);
     } catch {
       toast.error('Erro ao criar conta');
     } finally {
@@ -94,23 +115,17 @@ export function CadastroForm() {
     'bg-surface-alt border border-border rounded-xl pl-11 pr-4 py-3 text-sm text-text-primary w-full focus:ring-2 focus:ring-teal/20 outline-none transition-all placeholder:text-text-secondary';
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+    <AuthEntryShell
+      eyebrow="Primeiro acesso"
+      title={isInvite ? 'Crie sua conta para continuar.' : 'Crie sua conta.'}
+      description={isInvite ? 'Seu convite fica aguardando; depois de confirmar o email, você volta para aceitá-lo.' : 'Organize o atendimento sem perder tempo com papelada.'}
+    >
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md"
       >
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-teal text-white mb-4 shadow-lg">
-            <OdontoIALogo className="w-7 h-7" />
-          </div>
-          <h1 className="font-heading font-bold text-4xl text-text-primary mb-2">Crie sua conta</h1>
-          <p className="text-text-secondary text-sm font-medium">
-            Comece grátis · sem cartão de crédito
-          </p>
-        </div>
-
-        <div className="bg-surface p-8 rounded-3xl border border-border shadow-sm">
+        <div className="bg-surface/90 p-6 sm:p-8 rounded-2xl border border-border shadow-sm backdrop-blur-sm">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
 
             {/* Nome */}
@@ -141,6 +156,7 @@ export function CadastroForm() {
                 <input
                   type="email"
                   disabled={isLoading}
+                  readOnly={isInvite}
                   placeholder="seu@email.com"
                   className={inputClass}
                   {...register('email')}
@@ -235,13 +251,13 @@ export function CadastroForm() {
           <div className="mt-6 text-center">
             <p className="text-sm text-text-secondary">
               Já tem uma conta?{' '}
-              <Link href="/login" className="text-teal font-semibold hover:text-teal-dark transition-colors">
+              <Link href={`/login?next=${encodeURIComponent(next)}`} className="text-teal font-semibold hover:text-teal-dark transition-colors">
                 Fazer login
               </Link>
             </p>
           </div>
         </div>
       </motion.div>
-    </div>
+    </AuthEntryShell>
   );
 }

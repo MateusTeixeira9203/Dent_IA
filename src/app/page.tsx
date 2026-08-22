@@ -1,15 +1,17 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { PLANOS } from '@/lib/planos';
 import '@/components/landing/landing.css';
 import { DexMark } from '@/components/dex/dex-mark';
 import { BotaoGoogle } from '@/components/landing/botao-google';
+import { InstallPwaCard } from '@/components/landing/install-pwa-card';
 import { PassoFale } from '@/components/landing/passo-fale';
 import { PassoFicha } from '@/components/landing/passo-ficha';
 import { PonteForm } from '@/components/landing/ponte-form';
 import { Revelar } from '@/components/landing/revelar';
 import { TopoNav } from '@/components/landing/topo-nav';
+import { BrandBackground } from '@/components/layout/brand-background';
+import { HeroProductPreview } from '@/components/landing/hero-product-preview';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // LANDING — R-88 · eixo CONTINUIDADE · registro INSTRUMENTO
@@ -22,6 +24,7 @@ export const metadata: Metadata = {
   title: 'Odonto.IA — Você atende. A IA documenta.',
   description:
     'Termine o dia sem papelada pendente. Você conversa olhando pro paciente, o Odonto.IA estrutura a ficha — e o que ficou pra próxima sessão volta sozinho, na ficha certa.',
+  alternates: { canonical: '/' },
 };
 
 const PERGUNTAS = [
@@ -31,7 +34,7 @@ const PERGUNTAS = [
   },
   {
     q: 'Funciona no celular?',
-    a: 'Funciona no navegador do celular, sem instalar nada. Mas vamos ser diretos: a experiência é melhor no computador, e o uso no celular está sendo refinado agora. Aplicativo próprio ainda não existe.',
+    a: 'Sim. Você pode usar no navegador ou instalar o Odonto.IA na tela inicial do celular para abrir como aplicativo, com a mesma conta e os mesmos dados.',
   },
   {
     q: 'A IA inventa diagnóstico?',
@@ -63,49 +66,68 @@ const SELOS = [
 ];
 
 const MARCOS = [
-  { v: '6', l: 'dentistas usando todo dia' },
-  { v: '+300', l: 'pacientes por mês' },
+  { v: '5', l: 'dentistas usando todo dia' },
+  { v: '+450', l: 'atendimentos por mês' },
   { v: '3', l: 'meses em uso real' },
 ];
 
 export default function LandingPage() {
   return (
     <div className="lp">
-      {/* grade contínua da página — atravessa hero, blocos e rodapé sem emenda */}
-      <div className="grade" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-        <span />
-      </div>
+      <BrandBackground variant="marketing" tone="charcoal" position="fixed" />
 
       <TopoNav />
 
       {/* ══ HERO ══ */}
-      <header className="hero">
+      <header className="hero" id="inicio">
         <div className="env">
-          <span className="autoridade sobe" style={{ animationDelay: '.05s' }}>
-            <span className="ponto-vivo" />
-            Em uso diário na <b>ClinDent</b> — 5 dentistas, mais de 300 consultas por mês
-          </span>
-          <h1 className="sobe" style={{ animationDelay: '.13s' }}>
-            Você atende. <em>A IA documenta.</em>
-          </h1>
-          <p className="intro sobe" style={{ animationDelay: '.24s' }}>
-            Termine o dia sem papelada pendente. Você conversa olhando pro paciente, o Odonto.IA estrutura a ficha —
-            e o que ficou pra próxima sessão volta sozinho, na ficha certa.
-          </p>
-          <div className="acoes sobe" style={{ animationDelay: '.34s' }}>
-            <Link href="/cadastro" className="btn btn-p">
-              Testar 14 dias grátis <span className="s">→</span>
-            </Link>
-            <BotaoGoogle />
+          <div className="hero__grid">
+            <div>
+              <span className="autoridade sobe" style={{ animationDelay: '.05s' }}>
+                <span className="ponto-vivo" />
+                Em uso diário na <b>ClinDent</b> — clínica de alto fluxo
+              </span>
+              <h1 className="sobe" style={{ animationDelay: '.13s' }}>
+                Você atende. <em>A IA documenta.</em>
+              </h1>
+              <p className="intro sobe" style={{ animationDelay: '.24s' }}>
+                Fale do atendimento como você fala. O Odonto.IA organiza a ficha, registra o que foi feito e devolve a próxima sessão no lugar certo.
+              </p>
+              <div className="acoes sobe" style={{ animationDelay: '.34s' }}>
+                <BotaoGoogle label="Começar com Google" />
+                <Link href="/cadastro" className="btn btn-s">
+                  Criar conta com e-mail <span className="s">→</span>
+                </Link>
+              </div>
+              <p className="miudo sobe" style={{ animationDelay: '.42s' }}>
+                7 dias gratuitos. Sem fidelidade.
+              </p>
+            </div>
+            <div className="sobe hero__preview" style={{ animationDelay: '.2s' }}>
+              <HeroProductPreview />
+            </div>
           </div>
-          <p className="miudo sobe" style={{ animationDelay: '.42s' }}>
-            Cobrança só no 15º dia — e a gente avisa 7 dias antes. Cancele até lá e não paga nada.
-          </p>
         </div>
       </header>
+
+      <section className="hero-proof" aria-label="Uso clínico real e aplicativo">
+        <div className="env">
+          <div className="hero-proof__metrics">
+            <strong>ClinDent</strong>
+            <span>Uso clínico real, todos os dias</span>
+            <b><i>5</i> dentistas usando</b>
+            <b><i>+450</i> atendimentos por mês</b>
+          </div>
+          <div className="hero-proof__pwa">
+            <div>
+              <span>No computador e no celular</span>
+              <h2>Instale quando quiser. Continue de onde parou.</h2>
+              <p>A mesma conta e os mesmos dados, em tela cheia no celular.</p>
+            </div>
+            <a href="#aplicativo" className="btn btn-s">Ver como instalar</a>
+          </div>
+        </div>
+      </section>
 
       <main>
         {/* ══ I · PROBLEMA ══ */}
@@ -202,22 +224,10 @@ export default function LandingPage() {
             <span className="r">Quem usa</span>
           </div>
           <Revelar className="conteudo">
-            <h2>Uma clínica de alto fluxo abre o Odonto.IA todo dia.</h2>
-            <div className="duo">
-              <div>
-                <blockquote className="citacao">
-                  “Eu perdia sábado pondo ficha em dia. Agora acabo o atendimento e a ficha já está pronta.”
-                </blockquote>
-                <p className="assina">Dr. Renato Gonçalves Teixeira · ClinDent</p>
-              </div>
-              {/* TODO(R-88): entra a foto real da ClinDent. Até lá, o espaço fica declarado. */}
-              <div className="vaga" style={{ '--h': '320px' } as React.CSSProperties}>
-                <b>Foto — ClinDent</b>
-                Dentista atendendo com o sistema aberto.
-                <br />
-                Horizontal, luz natural.
-              </div>
-            </div>
+            <h2>Construído com dentistas que precisam ganhar tempo de verdade.</h2>
+            <p className="intro quem-intro">
+              O fluxo foi lapidado no atendimento real: falar, revisar, assinar e seguir para o próximo paciente sem deixar a ficha para depois.
+            </p>
             <div className="marcos">
               {MARCOS.map((m) => (
                 <div key={m.l} className="marco">
@@ -259,48 +269,47 @@ export default function LandingPage() {
             <span className="r">Preço</span>
           </div>
           <Revelar className="conteudo">
-            <h2>Você testa antes de pagar.</h2>
-            <div className="planos">
-              <div className="plano eleito">
-                <div className="nome">{PLANOS.SOLO.label}</div>
-                <div className="valor">R${PLANOS.SOLO.preco}</div>
-                <div className="base">por mês · 1 dentista + 1 secretária</div>
-                <ul>
-                  <li>Ficha clínica estruturada por voz</li>
-                  <li>Odontograma e campos por especialidade</li>
-                  <li>Plano apresentado na imagem do paciente</li>
-                  <li>Assinatura no procedimento e no orçamento</li>
-                  <li>Agenda e financeiro</li>
-                </ul>
-                {/* sem `?plano=` — o plano é escolhido no onboarding, depois do aha
-                    (ver o comentário em (auth)/cadastro/page.tsx). O parâmetro que a
-                    landing antiga mandava não era lido por ninguém. */}
-                <Link href="/cadastro" className="btn btn-p">
-                  Testar 14 dias
-                </Link>
-              </div>
-              <div className="plano">
-                <div className="nome">{PLANOS.CLINICA.label}</div>
-                <div className="valor">R${PLANOS.CLINICA.preco}</div>
-                <div className="base">por dentista/mês · a partir de 3</div>
-                <ul>
-                  <li>Tudo do {PLANOS.SOLO.label}</li>
-                  <li>Secretária com visão de todos</li>
-                  <li>Protético com acesso próprio</li>
-                  <li>WhatsApp com lembretes</li>
-                </ul>
-                <Link href="/cadastro" className="btn btn-s">
-                  Testar 14 dias
-                </Link>
-              </div>
+            <h2>Entre na primeira turma como Fundador.</h2>
+            <p className="intro fundador-intro">
+              A primeira turma entra com o valor fundador, mantido enquanto a assinatura estiver ativa.
+            </p>
+            <div className="fundador-planos">
+              <article className="fundador-plano">
+                <span className="fundador-selo">Plano fundador</span>
+                <h3>Consultório</h3>
+                <p className="fundador-subtitulo">Para quem atende sozinho.</p>
+                <strong className="fundador-valor">R$200 <small>/ mês</small></strong>
+                <p className="fundador-detalhe">1 dentista + 1 secretária. Valor mantido enquanto a assinatura estiver ativa.</p>
+                <BotaoGoogle label="Começar com Google" />
+              </article>
+              <article className="fundador-plano fundador-plano--destaque">
+                <span className="fundador-selo">Plano fundador</span>
+                <h3>Clínica</h3>
+                <p className="fundador-subtitulo">A partir de 2 dentistas.</p>
+                <strong className="fundador-valor">R$200 <small>/ dentista / mês</small></strong>
+                <p className="fundador-detalhe">Cada dentista tem sua própria assinatura e seu próprio financeiro, com a clínica compartilhada.</p>
+                <BotaoGoogle label="Começar com Google" />
+              </article>
             </div>
+            <p className="fundador-rodape">7 dias gratuitos antes da primeira cobrança. Condição limitada às próximas 10 vagas.</p>
           </Revelar>
         </section>
 
-        {/* ══ VI · PERGUNTAS ══ */}
-        <section className="bloco">
+        {/* R-116 — instalação PWA online-first, sem cache de dados clínicos. */}
+        <section className="bloco" id="aplicativo">
           <div className="marcador">
             <span className="n">VI</span>
+            <span className="r">Aplicativo</span>
+          </div>
+          <Revelar className="conteudo">
+            <InstallPwaCard />
+          </Revelar>
+        </section>
+
+        {/* ══ VII · PERGUNTAS ══ */}
+        <section className="bloco" id="duvidas">
+          <div className="marcador">
+            <span className="n">VII</span>
             <span className="r">Perguntas</span>
           </div>
           <Revelar className="conteudo">
@@ -323,14 +332,13 @@ export default function LandingPage() {
             <DexMark size={44} shape="squircle" className="dex-fecho" />
             <h2>Termine amanhã sem papelada pendente.</h2>
             <p>
-              Quatorze dias completos. Cobrança só no 15º dia, com aviso 7 dias antes — cancele até lá e não paga
-              nada.
+              Sete dias completos para conhecer o fluxo antes de decidir.
             </p>
             <div className="acoes">
-              <Link href="/cadastro" className="btn btn-p">
-                Testar 14 dias grátis <span className="s">→</span>
+              <BotaoGoogle label="Começar com Google" />
+              <Link href="/cadastro" className="btn btn-s">
+                Criar conta com e-mail <span className="s">→</span>
               </Link>
-              <BotaoGoogle />
             </div>
           </Revelar>
         </div>

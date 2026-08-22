@@ -18,6 +18,16 @@ export async function createClient() {
   }
 
   return createServerClient(supabaseUrl, supabaseAnonKey, {
+    // Uma conexão PostgREST interrompida não pode manter uma função da Vercel
+    // presa até o limite global de 300 s. Consultas normais ficam abaixo de 5 s.
+    db: { timeout: 20_000 },
+    global: {
+      fetch: (input, init) =>
+        fetch(input, {
+          ...init,
+          signal: init?.signal ?? AbortSignal.timeout(30_000),
+        }),
+    },
     cookies: {
       getAll() {
         return cookieStore.getAll();

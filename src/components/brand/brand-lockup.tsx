@@ -29,22 +29,3 @@ export function BrandLockup({
     </div>
   );
 }
-
-/**
- * Painel esquerdo padrão das páginas de auth com split-layout.
- * Fundo teal, logo + tagline centralizado.
- */
-export function AuthBrandPanel({ tagline = true }: { tagline?: boolean }) {
-  return (
-    <div className="hidden md:flex flex-col items-center justify-center w-1/2 min-h-screen bg-teal">
-      <div className="flex flex-col items-center gap-6 px-12">
-        <BrandLockup variant="dark" size="lg" />
-        {tagline && (
-          <p className="font-heading text-2xl text-white text-center italic">
-            Do atendimento ao orçamento, em segundos.
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}

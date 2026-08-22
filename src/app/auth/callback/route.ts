@@ -1,200 +1,73 @@
-import { createServerClient } from "@supabase/ssr";
-import { createServiceClient } from "@/lib/supabase/service";
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import type { EmailOtpType } from "@supabase/supabase-js";
-import type { CookieOptions } from "@supabase/ssr";
+import { createServerClient } from '@supabase/ssr';
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import type { CookieOptions } from '@supabase/ssr';
+import type { EmailOtpType } from '@supabase/supabase-js';
 
-/**
- * Auth callback — ponto único de entrada pós-autenticação.
- *
- * Responsabilidades:
- *  1. Trocar token por sessão (code ou token_hash)
- *  2. Identificar se o usuário tem convite pendente na tabela `convites`
- *  3. Criar/vincular dentista à clínica correta — status_convite sempre 'aceito'
- *  4. Redirecionar:
- *       - Qualquer convidado    → /dashboard?welcome=true (perfil via /dashboard/perfil)
- *       - Sem convite, tem clinica_id → /dashboard
- *       - Sem convite, sem clinica_id → /onboarding
- */
+import { safeReturnPath } from '@/lib/auth/return-path';
+
+/** Troca o token por sessão. Convites só são aceitos por gesto explícito na página do convite. */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams, origin } = new URL(request.url);
-  const code       = searchParams.get("code");
-  const token_hash = searchParams.get("token_hash");
-  const type       = searchParams.get("type") as EmailOtpType | null;
-  const next       = searchParams.get("next");
+  const code = searchParams.get('code');
+  const tokenHash = searchParams.get('token_hash');
+  const type = searchParams.get('type') as EmailOtpType | null;
+  const requestedNext = searchParams.get('next');
+  const next = safeReturnPath(requestedNext);
 
-  // Supabase manda ?error= quando o redirectTo não está na lista permitida
-  // ou quando o usuário cancela o consentimento OAuth
-  const oauthError = searchParams.get("error");
-  if (oauthError) {
-    const desc = searchParams.get("error_description") ?? oauthError;
-    console.error("[callback] erro OAuth recebido:", desc);
-    return NextResponse.redirect(`${origin}/login?error=oauth_failed`);
+  const authError = searchParams.get('error');
+  if (authError) {
+    console.error('[callback] erro OAuth recebido:', searchParams.get('error_description') ?? authError);
+    const login = new URL('/login', origin);
+    login.searchParams.set('error', 'oauth_failed');
+    if (requestedNext) login.searchParams.set('next', next);
+    return NextResponse.redirect(login);
   }
 
   const pendingCookies: Array<{ name: string; value: string; options: CookieOptions }> = [];
-
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() { return request.cookies.getAll(); },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach((c) => pendingCookies.push(c));
-        },
+        getAll: () => request.cookies.getAll(),
+        setAll: (cookies) => { pendingCookies.push(...cookies); },
       },
-    }
+    },
   );
 
-  // ── 1. TROCAR TOKEN POR SESSÃO ─────────────────────────────────────────────
-  if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (error) {
-      console.error("[callback] exchangeCodeForSession falhou:", error.message);
-      return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`);
-    }
-  } else if (token_hash && type) {
-    const { error } = await supabase.auth.verifyOtp({ token_hash, type });
-    if (error) {
-      console.error("[callback] verifyOtp falhou:", error.message);
-      return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`);
-    }
-  } else {
-    return NextResponse.redirect(`${origin}/login`);
+  const authResult = code
+    ? await supabase.auth.exchangeCodeForSession(code)
+    : tokenHash && type
+      ? await supabase.auth.verifyOtp({ token_hash: tokenHash, type })
+      : { error: new Error('Token de autenticação ausente.') };
+
+  if (authResult.error) {
+    console.error('[callback] autenticação falhou:', authResult.error.message);
+    const login = new URL('/login', origin);
+    login.searchParams.set('error', 'auth_callback_failed');
+    if (requestedNext) login.searchParams.set('next', next);
+    return NextResponse.redirect(login);
   }
 
-  // ── 2. OBTER USUÁRIO DA SESSÃO ─────────────────────────────────────────────
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.redirect(`${origin}/login`);
+  if (!user) return NextResponse.redirect(new URL('/login', origin));
 
-  const service = createServiceClient();
-
-  // ── 3. IDENTIFICAÇÃO DE CONVITE ────────────────────────────────────────────
-  // Busca na tabela convites pelo email — única fonte de verdade. R-35 item 3:
-  // role/clinica_id NUNCA vêm de user_metadata — é gravável pelo próprio usuário via
-  // auth.updateUser({ data }) com a chave anon, então seria porta pra se autoconceder
-  // vínculo em qualquer clínica. Sem convite pendente válido, cai pro fluxo de onboarding
-  // (passo 4/5 abaixo).
-  if (user.email) {
-    const { data: convite } = await service
-      .from("convites")
-      .select("id, role, clinica_id")
-      .eq("email", user.email)
-      .eq("status", "pendente")
-      .gt("expires_at", new Date().toISOString())
-      .order("created_at", { ascending: false })
+  const continuaFluxoDeAuth = next.startsWith('/convite/') || next === '/redefinir-senha';
+  let destination = next;
+  if (!continuaFluxoDeAuth) {
+    const { data: dentista } = await supabase
+      .from('dentistas')
+      .select('clinica_id')
+      .eq('user_id', user.id)
       .limit(1)
       .maybeSingle();
-
-    const role       = convite?.role as string | undefined;
-    const clinica_id = convite?.clinica_id as string | undefined;
-
-    if (role && clinica_id) {
-      // Todo convidado entra diretamente com status aceito
-      const status_convite = "aceito";
-
-      // ── Registro canônico em public.users + clínica ativa ──────────────────────
-      // Sem isso, requireClinicContext/getDentistaCached redirecionam para
-      // /onboarding (exigem users.active_clinica_id). Mesmo estado que aceitarConvite.
-      await service.from("users").upsert(
-        { id: user.id, email: user.email, active_clinica_id: clinica_id },
-        { onConflict: "id" },
-      );
-
-      // Cria o dentista apenas se ainda não existe NESTA clínica (proteção contra
-      // dupla execução e suporte multi-clínica — escopo igual ao getDentistaCached).
-      const { data: existing } = await service
-        .from("dentistas")
-        .select("id, clinica_id")
-        .eq("user_id", user.id)
-        .eq("clinica_id", clinica_id)
-        .maybeSingle();
-
-      if (!existing) {
-        const { error: insertError } = await service.from("dentistas").insert({
-          user_id:        user.id,
-          clinica_id,
-          nome:           (user.user_metadata?.nome as string | undefined)
-                          ?? user.email.split("@")[0],
-          email:          user.email,
-          role,
-          ativo:          true,
-          status_convite,
-        });
-
-        if (insertError) {
-          console.error("[callback] erro ao criar dentista:", insertError.message);
-          // Continua mesmo com erro — o layout fará fallback via service role
-        }
-      }
-
-      // ── Membership canônica em clinica_usuarios — fonte da verdade ─────────────
-      // Sem isso o convidado fica fora da clínica e é jogado para /onboarding.
-      const { data: jaMembro } = await service
-        .from("clinica_usuarios")
-        .select("id")
-        .eq("usuario_id", user.id)
-        .eq("clinica_id", clinica_id)
-        .eq("status", "ativo")
-        .maybeSingle();
-
-      if (!jaMembro) {
-        const { error: membroError } = await service.from("clinica_usuarios").insert({
-          usuario_id: user.id,
-          clinica_id,
-          role,
-          status:     "ativo",
-          joined_at:  new Date().toISOString(),
-        });
-
-        if (membroError) {
-          console.error("[callback] erro ao criar membership:", membroError.message);
-        }
-      }
-
-      // Marca convite como aceito — só depois do estado canônico criado
-      if (convite?.id) {
-        await service
-          .from("convites")
-          .update({ status: "aceito" })
-          .eq("id", convite.id);
-      }
-
-      // Todo convidado vai direto ao dashboard — perfil é editado em /dashboard/perfil
-      const response = NextResponse.redirect(`${origin}/dashboard?welcome=true`);
-      pendingCookies.forEach(({ name, value, options }) =>
-        response.cookies.set(name, value, options)
-      );
-      return response;
-    }
+    destination = dentista?.clinica_id
+      ? (requestedNext ? next : '/dashboard')
+      : '/onboarding';
   }
 
-  // ── 4. OUTROS FLUXOS (reset de senha, confirmação de email, etc.) ──────────
-  // Parâmetro `next` tem prioridade (ex: redefinir-senha)
-  if (next && next.startsWith("/") && !next.startsWith("//")) {
-    const response = NextResponse.redirect(`${origin}${next}`);
-    pendingCookies.forEach(({ name, value, options }) =>
-      response.cookies.set(name, value, options)
-    );
-    return response;
-  }
-
-  // Sem convite e sem next → verifica se o usuário já tem dentista
-  const { data: dentista } = await supabase
-    .from("dentistas")
-    .select("clinica_id")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  const redirectTo = dentista?.clinica_id
-    ? `${origin}/dashboard`
-    : `${origin}/onboarding`;
-
-  const response = NextResponse.redirect(redirectTo);
-  pendingCookies.forEach(({ name, value, options }) =>
-    response.cookies.set(name, value, options)
-  );
+  const response = NextResponse.redirect(new URL(destination, origin));
+  pendingCookies.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
   return response;
 }

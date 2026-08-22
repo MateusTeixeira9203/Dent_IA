@@ -1,5 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export type MiddlewareSession = {
   id: string;
@@ -9,6 +9,17 @@ export type MiddlewareSession = {
 export interface UpdateSessionResult {
   response: NextResponse;
   session: MiddlewareSession;
+}
+
+function isInvalidRefreshToken(message: string): boolean {
+  return (
+    message.includes("Invalid Refresh Token") ||
+    message.includes("Refresh Token Not Found")
+  );
+}
+
+function isSupabaseAuthCookie(name: string): boolean {
+  return name.startsWith("sb-") && name.includes("-auth-token");
 }
 
 export async function updateSession(
@@ -22,11 +33,10 @@ export async function updateSession(
   // pra /dashboard/protetico — loop infinito (derrubou o servidor de memória).
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-pathname", request.nextUrl.pathname);
+  const sessionRequest = new NextRequest(request, { headers: requestHeaders });
 
-  const response = NextResponse.next({
-    request: {
-      headers: requestHeaders,
-    },
+  let response = NextResponse.next({
+    request: sessionRequest,
   });
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -39,9 +49,20 @@ export async function updateSession(
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
       getAll() {
-        return request.cookies.getAll();
+        return sessionRequest.cookies.getAll();
       },
       setAll(cookiesToSet) {
+        // O Supabase pode renovar a sessão durante getUser(). Os Server Components
+        // da mesma navegação precisam enxergar os cookies novos no request, e o
+        // browser precisa recebê-los no response.
+        cookiesToSet.forEach(({ name, value }) =>
+          sessionRequest.cookies.set(name, value)
+        );
+
+        response = NextResponse.next({
+          request: sessionRequest,
+        });
+
         cookiesToSet.forEach(({ name, value, options }) =>
           response.cookies.set(name, value, options)
         );
@@ -51,7 +72,26 @@ export async function updateSession(
 
   const {
     data: { user },
+    error,
   } = await supabase.auth.getUser();
+
+  // Uma sessão revogada pode deixar cookies antigos no navegador. Sem removê-los,
+  // cada tentativa de login autentica corretamente e falha logo depois ao tentar
+  // renovar o refresh token anterior.
+  if (error && isInvalidRefreshToken(error.message)) {
+    sessionRequest.cookies
+      .getAll()
+      .filter(({ name }) => isSupabaseAuthCookie(name))
+      .forEach(({ name }) => {
+        sessionRequest.cookies.delete(name);
+        response.cookies.set(name, "", {
+          path: "/",
+          maxAge: 0,
+        });
+      });
+
+    return { response, session: null };
+  }
 
   const session: MiddlewareSession = user
     ? { id: user.id, email: user.email ?? undefined }

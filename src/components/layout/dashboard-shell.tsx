@@ -8,7 +8,7 @@ import { MobileDrawer } from "@/components/layout/mobile-drawer";
 import { DexWidget } from "@/components/layout/dex-widget";
 // FASE 1: guia desativado — ver roadmap-3-fases A2
 // import { DexGuide } from "@/components/onboarding/dex-guide";
-import ParticleNetwork from "@/components/ParticleNetwork";
+import { BrandBackground } from "@/components/layout/brand-background";
 import { CommandPalette } from "@/components/command-palette/command-palette";
 import { useSessionGuard } from "@/hooks/use-session-guard";
 import type { DentistaRole } from "@/types/database";
@@ -72,44 +72,7 @@ export function DashboardShell({ children, nome, clinicaNome, activeClinicId, ro
 
   return (
     <div className="relative min-h-screen overflow-x-hidden">
-      {/* Canvas de partículas — position: fixed, cobre o viewport inteiro uniformemente */}
-      <ParticleNetwork />
-
-      {/* Gradiente radial fixo — glow teal sutil ao centro */}
-      <div
-        className="fixed inset-0 pointer-events-none -z-10"
-        style={{ background: 'radial-gradient(ellipse at 50% 30%, rgba(47,156,133,0.12) 0%, transparent 65%)' }}
-      />
-
-      {/* Depth Layer — blobs com teal real para contraste visível (#9: estáticos, blur rasterizado 1x) */}
-      <div
-        style={{
-          position: 'absolute',
-          width: 600,
-          height: 600,
-          top: '-15%',
-          right: '-10%',
-          backgroundColor: 'rgba(47, 156, 133, 0.28)',
-          borderRadius: '40% 60% 70% 30% / 40% 50% 60% 50%',
-          filter: 'blur(120px)',
-          pointerEvents: 'none',
-          zIndex: -1,
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          width: 500,
-          height: 500,
-          bottom: '5%',
-          left: '-8%',
-          backgroundColor: 'rgba(47, 156, 133, 0.20)',
-          borderRadius: '40% 60% 70% 30% / 40% 50% 60% 50%',
-          filter: 'blur(120px)',
-          pointerEvents: 'none',
-          zIndex: -1,
-        }}
-      />
+      <BrandBackground variant="product" position="fixed" />
 
       <MobileHeader onOpenDrawer={() => setIsDrawerOpen(true)} />
 

@@ -7,11 +7,13 @@ import { motion } from "motion/react";
 import { Mail, CheckCircle2, Loader2, ArrowLeft, RefreshCw } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
-import { OdontoIALogo } from "@/components/ui/dent-ia-logo";
+import { AuthEntryShell } from "@/components/auth/auth-entry-shell";
+import { authCallbackUrl, safeReturnPath } from "@/lib/auth/return-path";
 
 function VerifiqueEmailContent(): React.JSX.Element {
   const searchParams = useSearchParams();
   const email = searchParams.get("email") ?? "";
+  const next = safeReturnPath(searchParams.get("next"), "/onboarding");
   const [isResending, setIsResending] = useState(false);
   const [reenviado, setReenviado] = useState(false);
 
@@ -27,6 +29,7 @@ function VerifiqueEmailContent(): React.JSX.Element {
       const { error } = await supabase.auth.resend({
         type: "signup",
         email,
+        options: { emailRedirectTo: authCallbackUrl(window.location.origin, next) },
       });
 
       if (error) {
@@ -44,25 +47,17 @@ function VerifiqueEmailContent(): React.JSX.Element {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+    <AuthEntryShell
+      eyebrow="Confirmação de email"
+      title="Verifique sua caixa de entrada."
+      description="O link confirma sua identidade e devolve você ao ponto certo do fluxo."
+    >
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md"
       >
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-teal text-white mb-4 shadow-lg">
-            <OdontoIALogo className="w-7 h-7" />
-          </div>
-          <h1 className="font-heading text-4xl text-text-primary mb-2">
-            Verifique seu email
-          </h1>
-          <p className="text-text-secondary text-sm font-medium">
-            Enviamos um link de ativação para a sua conta.
-          </p>
-        </div>
-
-        <div className="bg-surface p-8 rounded-3xl border border-border shadow-sm">
+        <div className="bg-surface/90 p-6 sm:p-8 rounded-2xl border border-border shadow-sm backdrop-blur-sm">
           {/* Ícone de email */}
           <div className="flex justify-center mb-6">
             <div className="w-20 h-20 rounded-full bg-teal-pale flex items-center justify-center">
@@ -98,7 +93,7 @@ function VerifiqueEmailContent(): React.JSX.Element {
             </p>
             <p className="text-sm text-text-secondary">
               <span className="font-semibold text-text-primary">3.</span>{" "}
-              Você será redirecionado para configurar sua clínica
+              Você volta para continuar de onde parou
             </p>
             <p className="text-xs text-text-secondary pt-1 border-t border-border">
               Não encontrou? Verifique a pasta de spam ou lixo eletrônico.
@@ -127,7 +122,7 @@ function VerifiqueEmailContent(): React.JSX.Element {
 
           <div className="mt-6 text-center">
             <Link
-              href="/login"
+              href={`/login?next=${encodeURIComponent(next)}`}
               className="inline-flex items-center gap-2 text-sm text-text-secondary font-semibold hover:text-text-primary transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -136,7 +131,7 @@ function VerifiqueEmailContent(): React.JSX.Element {
           </div>
         </div>
       </motion.div>
-    </div>
+    </AuthEntryShell>
   );
 }
 

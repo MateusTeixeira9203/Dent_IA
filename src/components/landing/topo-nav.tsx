@@ -5,10 +5,10 @@ import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 
 const SECOES = [
-  { href: '#problema', rotulo: 'O problema' },
   { href: '#como', rotulo: 'Como funciona' },
   { href: '#quem', rotulo: 'Quem usa' },
   { href: '#preco', rotulo: 'Preço' },
+  { href: '#duvidas', rotulo: 'Dúvidas' },
 ];
 
 /** Nav quase transparente no início; ao rolar, ganha opacidade e o fio inferior. */
@@ -40,7 +40,7 @@ export function TopoNav() {
             Entrar
           </Link>
           <Link href="/cadastro" className="btn btn-p btn-compacto">
-            Testar 14 dias
+            Começar
           </Link>
         </div>
       </div>

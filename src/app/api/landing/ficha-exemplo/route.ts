@@ -18,7 +18,7 @@ const schema = z.object({
   email: z.string().trim().toLowerCase().email(),
 });
 
-const DESTINO = process.env.LANDING_LEADS_TO ?? 'equipe@dentia.app.br';
+const DESTINO = process.env.LANDING_LEADS_TO ?? 'equipe@odontoia.app';
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const limitado = await withRateLimit(req, 'landing:ficha-exemplo', 3, 60 * 60 * 1000);
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     const { error } = await getResend().emails.send({
-      from: 'Odonto.IA <equipe@dentia.app.br>',
+      from: 'Odonto.IA <equipe@odontoia.app>',
       to: DESTINO,
       replyTo: email,
       subject: `Landing — pediram a ficha de exemplo: ${email}`,

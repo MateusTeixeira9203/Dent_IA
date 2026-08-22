@@ -9,7 +9,11 @@ import { GoogleIcone } from './icones';
  * Mesma chamada do cadastro-form: quem vem da landing está entrando pra testar,
  * então cai no onboarding, não no dashboard.
  */
-export function BotaoGoogle() {
+interface BotaoGoogleProps {
+  label?: string;
+}
+
+export function BotaoGoogle({ label = 'Entrar com Google' }: BotaoGoogleProps) {
   const [indo, setIndo] = useState(false);
 
   const entrar = async (): Promise<void> => {
@@ -28,7 +32,7 @@ export function BotaoGoogle() {
   return (
     <button type="button" className="btn btn-google" onClick={entrar} disabled={indo}>
       <GoogleIcone />
-      Entrar com Google
+      {label}
     </button>
   );
 }

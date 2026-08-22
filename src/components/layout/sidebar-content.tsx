@@ -73,7 +73,7 @@ export function SidebarContent({
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
-  const showConfig = role === 'admin';
+  const showConfig = role === 'admin' || role === 'dentista';
   const financeiroLocked = !temFeature(plano ?? 'CLINICA', 'financeiro');
 
   const handleLogout = async () => {

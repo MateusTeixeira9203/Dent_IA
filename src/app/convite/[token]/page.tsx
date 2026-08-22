@@ -1,9 +1,8 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { getConviteByToken } from '@/server/services/invites';
-import { OdontoIALogo } from '@/components/ui/dent-ia-logo';
-import { InviteAuthClient, AcceptButton } from './_components/invite-client';
-import { NeuralBackground } from '@/components/layout/NeuralBackground';
+import { InviteAuthClient, AcceptButton, WrongAccountButton } from './_components/invite-client';
+import { AuthEntryShell } from '@/components/auth/auth-entry-shell';
 import { Building2, Clock, UserCheck, XCircle } from 'lucide-react';
 
 interface Props {
@@ -28,31 +27,13 @@ export default async function ConvitePage({ params }: Props) {
   const isInvalid = !invite || invite.status !== 'pendente';
 
   return (
-    <div
-      className="relative min-h-screen bg-bg flex flex-col items-center justify-center p-4"
-      style={{
-        '--color-bg': '#f5f3ef',
-        '--color-surface': '#ffffff',
-        '--color-surface-alt': '#eceae4',
-        '--color-border': '#d4d1ca',
-        '--color-text-primary': '#0d0d0d',
-        '--color-text-secondary': '#8a8a8a',
-      } as React.CSSProperties}
+    <AuthEntryShell
+      eyebrow="Convite de clínica"
+      title={isInvalid ? 'Este convite não está disponível.' : 'Entre para fazer parte da equipe.'}
+      description={isInvalid ? 'Confira o estado do convite abaixo.' : 'Confirme a clínica, use o email convidado e aceite o vínculo explicitamente.'}
     >
-      <NeuralBackground />
-
-      <div className="relative z-10 w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-teal text-white mb-4 shadow-lg">
-            <OdontoIALogo className="w-7 h-7" />
-          </div>
-          <p className="text-text-secondary text-sm font-medium font-mono uppercase tracking-widest">
-            Odonto.IA
-          </p>
-        </div>
-
-        <div className="bg-surface rounded-3xl border border-border shadow-sm p-8">
+      <div className="w-full">
+        <div className="bg-surface/90 rounded-2xl border border-border shadow-sm p-6 sm:p-8 backdrop-blur-sm">
           {/* Convite inválido / expirado / cancelado */}
           {isInvalid && (
             <div className="text-center space-y-4">
@@ -130,9 +111,12 @@ export default async function ConvitePage({ params }: Props) {
 
               {/* Usuário autenticado com email errado */}
               {user && user.email?.toLowerCase() !== invite.email.toLowerCase() && (
-                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-sm text-amber-700">
-                  Você está logado como <strong>{user.email}</strong>, mas este convite é para{' '}
-                  <strong>{invite.email}</strong>. Faça logout e entre com o email correto.
+                <div className="space-y-3">
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-sm text-amber-700">
+                    Você está logado como <strong>{user.email}</strong>, mas este convite é para{' '}
+                    <strong>{invite.email}</strong>.
+                  </div>
+                  <WrongAccountButton />
                 </div>
               )}
 
@@ -144,6 +128,6 @@ export default async function ConvitePage({ params }: Props) {
           )}
         </div>
       </div>
-    </div>
+    </AuthEntryShell>
   );
 }

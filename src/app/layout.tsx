@@ -26,8 +26,19 @@ const dmMono = DM_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://odontoia.app'),
   title: 'Odonto.IA | Inteligência Odontológica',
   description: 'Micro-SaaS odontológico para dentistas.',
+  manifest: '/manifest.webmanifest',
+  icons: {
+    icon: '/icon.svg',
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+  },
+  appleWebApp: {
+    capable: true,
+    title: 'Odonto.IA',
+    statusBarStyle: 'black-translucent',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

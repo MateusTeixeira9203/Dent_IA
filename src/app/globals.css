@@ -334,11 +334,106 @@ body.has-dock { --dock-inset: 0px; }
   display: none;
 }
 
-/* ── Padrão neural (landing page / planos) ─────────────────── */
-@layer utilities {
-  .bg-neural-pattern {
-    background-image: radial-gradient(circle at 2px 2px, rgba(47, 156, 133, 0.50) 1px, transparent 0);
-    background-size: 32px 32px;
+/* ── R-124 — background arquitetônico global ──────────────── */
+@keyframes brand-background-enter {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.brand-background {
+  pointer-events: none;
+  overflow: hidden;
+  isolation: isolate;
+  --brand-grid-opacity: 0.025;
+  --brand-frame-opacity: 0.1;
+  --brand-glow-opacity: 0.6;
+}
+
+.brand-background--marketing {
+  --brand-grid-opacity: 0.04;
+  --brand-frame-opacity: 0.18;
+  --brand-glow-opacity: 1;
+}
+
+.brand-background__scene {
+  position: absolute;
+  inset: 0;
+  animation: brand-background-enter 700ms cubic-bezier(.2, .7, .3, 1) both;
+}
+
+.brand-background__grid,
+.brand-background__glow,
+.brand-background__frame {
+  position: absolute;
+}
+
+.brand-background__grid {
+  inset: 0;
+  color: var(--color-text-primary);
+  opacity: var(--brand-grid-opacity);
+  background-image:
+    linear-gradient(to right, currentColor 0.8px, transparent 0.8px),
+    linear-gradient(to bottom, currentColor 0.8px, transparent 0.8px);
+  background-size: 150px 150px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+}
+
+.brand-background__glow {
+  width: 520px;
+  height: 520px;
+  top: 18%;
+  left: 8%;
+  opacity: var(--brand-glow-opacity);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--color-teal) 18%, transparent),
+    transparent 66%
+  );
+}
+
+.brand-background__frame {
+  border: 0.8px solid var(--color-teal-lt);
+  opacity: var(--brand-frame-opacity);
+  transform: rotate(18deg);
+}
+
+.brand-background__frame--primary {
+  width: clamp(420px, 42vw, 680px);
+  height: clamp(420px, 42vw, 680px);
+  top: -34%;
+  right: -12%;
+}
+
+.brand-background__frame--secondary {
+  width: clamp(260px, 28vw, 420px);
+  height: clamp(260px, 28vw, 420px);
+  bottom: -20%;
+  left: -10%;
+}
+
+@media (max-width: 640px) {
+  .brand-background {
+    --brand-grid-opacity: 0.018;
+    --brand-frame-opacity: 0.1;
+    --brand-glow-opacity: 0.55;
+  }
+
+  .brand-background--marketing {
+    --brand-grid-opacity: 0.025;
+    --brand-frame-opacity: 0.14;
+    --brand-glow-opacity: 0.72;
+  }
+
+  .brand-background__grid { background-size: 96px 96px; }
+  .brand-background__glow { width: 360px; height: 360px; top: 8%; left: -30%; }
+  .brand-background__frame--primary { top: -20%; right: -65%; }
+  .brand-background__frame--secondary { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-background__scene {
+    animation: none;
   }
 }
 

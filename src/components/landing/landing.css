@@ -160,28 +160,56 @@ body:has(.lp) { background: #0d0d0d }
 .lp .hero::after { content: ""; position: absolute; inset: 0 0 auto; height: 660px; pointer-events: none; background: var(--brilho); z-index: 0 }
 .lp .hero .env { position: relative; z-index: 1 }
 
-/* ════════ GRADE DA PÁGINA ════════
-   Uma grade só, do topo ao rodapé, alinhada à MESMA calha dos blocos. Grade própria
-   do hero em 1/6 da largura era o que quebrava a transição — a página trocava de
-   sistema de linhas no meio do caminho. position:fixed funciona porque linha vertical
-   é invariante ao scroll: a mesma grade atravessa hero, blocos e rodapé sem emenda. */
-.lp .grade {
-  position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  max-width: var(--larg); margin: 0 auto; padding: 0 clamp(22px, 5vw, 54px);
-  display: grid; grid-template-columns: var(--calha) repeat(3, 1fr);
-}
-.lp .grade span { border-left: 1px solid var(--grade) }
-.lp .grade span:first-child { border-left: 0 }
 /* NÃO incluir `nav.topo` aqui: `nav.topo` (0,1,1) vence `.topo{position:sticky}` (0,1,0)
    e mata a nav grudada no topo. A nav já tem z-index próprio. */
 .lp .hero, .lp main, .lp .rodape { position: relative; z-index: 1 }
-@media (max-width: 880px) { .lp .grade { display: none } }
 .lp .autoridade { display: inline-flex; align-items: center; gap: 10px; font-size: 14px; color: var(--tx2); margin-bottom: 30px }
 .lp .ponto-vivo { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); flex-shrink: 0; animation: lp-pulsar 2.6s ease-in-out infinite }
 .lp .autoridade b { font-weight: 500; color: var(--ink) }
 .lp .hero .intro { margin: 28px 0 36px }
 .lp .acoes { display: flex; flex-wrap: wrap; gap: 13px; align-items: center }
 .lp .miudo { margin-top: 22px; font-size: 15.5px; color: var(--tx3) }
+
+/* ════════ hero produto + prova ════════ */
+.lp .hero__grid { display: grid; grid-template-columns: minmax(0, .96fr) minmax(380px, .84fr); gap: clamp(38px, 6vw, 82px); align-items: center }
+.lp .hero__preview { min-width: 0 }
+.lp .hero-product { overflow: hidden; border: 1px solid color-mix(in srgb, var(--teal) 36%, var(--fio)); border-radius: 16px; background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: var(--sombra-palco) }
+.lp .hero-product__window { display: flex; align-items: center; gap: 6px; padding: 13px 16px; border-bottom: 1px solid var(--fio); color: var(--tx3); font-family: var(--mono); font-size: 10px; letter-spacing: .08em }
+.lp .hero-product__window span { width: 7px; height: 7px; border-radius: 999px; background: var(--tx3); opacity: .35 }
+.lp .hero-product__window p { margin-left: 4px }
+.lp .hero-product__magic { padding: 16px; border-bottom: 1px solid var(--fio) }
+.lp .hero-product__magic-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 11px; color: var(--tx2) }
+.lp .hero-product__magic-head strong { color: var(--teal-ac); font-size: 11px; letter-spacing: .1em; text-transform: uppercase }
+.lp .hero-product__chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 11px 0 }
+.lp .hero-product__chips span { padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--teal) 30%, transparent); border-radius: 5px; color: var(--teal-ac); font-size: 10px }
+.lp .hero-product__text { min-height: 60px; color: var(--ink); font-size: 13px; line-height: 1.55 }
+.lp .hero-product__magic-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid var(--fio); color: var(--tx3); font-size: 10px }
+.lp .hero-product__magic-actions > div, .lp .hero-product__magic-actions > div > span { display: inline-flex; align-items: center; gap: 6px }
+.lp .hero-product__magic-actions > div { gap: 12px }
+.lp .hero-product__magic-actions svg { width: 11px; height: 11px }
+.lp .hero-product__organize { display: inline-flex; align-items: center; gap: 5px; padding: 7px 9px; border-radius: 7px; background: var(--teal); color: #fff; font-weight: 600 }
+.lp .hero-product__review-head { display: flex; justify-content: space-between; padding: 14px 16px 0; color: var(--tx3); font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase }
+.lp .hero-product__results { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; padding: 10px 16px 16px }
+.lp .hero-product__result { min-width: 0; padding: 12px; border: 1px solid var(--fio); border-radius: 9px; background: var(--surface-alt) }
+.lp .hero-product__result b { display: block; color: var(--ink); font-size: 12px; font-weight: 600; line-height: 1.35 }
+.lp .hero-product__result small { display: block; margin-top: 6px; color: var(--tx3); font-size: 10px; line-height: 1.45 }
+.lp .hero-product__status { display: inline-flex; margin-top: 10px; padding: 3px 6px; border: 1px solid color-mix(in srgb, var(--teal) 35%, transparent); border-radius: 5px; color: var(--teal-ac); font-size: 9px; text-transform: uppercase }
+.lp .hero-product__status--next { border-color: color-mix(in srgb, var(--warning) 44%, transparent); color: var(--warning) }
+.lp .hero-product footer { padding: 11px 16px; border-top: 1px solid var(--fio); color: var(--tx3); font-size: 10px }
+.lp .hero-proof { position: relative; z-index: 1; margin-top: clamp(42px, 6vw, 76px); border-top: 1px solid var(--fio); border-bottom: 1px solid var(--fio) }
+.lp .hero-proof .env { padding-top: 0; padding-bottom: 0 }
+.lp .hero-proof__metrics { display: grid; grid-template-columns: 1.2fr 1.7fr .9fr 1.1fr; align-items: center; min-height: 96px }
+.lp .hero-proof__metrics > * { padding: 0 clamp(12px, 2vw, 28px); border-left: 1px solid var(--fio) }
+.lp .hero-proof__metrics > :first-child { padding-left: 0; border-left: 0; font-family: var(--serif); font-size: 23px }
+.lp .hero-proof__metrics span { color: var(--tx3); font-size: 14px }
+.lp .hero-proof__metrics b { font-size: 14px; font-weight: 400; color: var(--tx2) }
+.lp .hero-proof__metrics i { margin-right: 6px; color: var(--teal-ac); font-family: var(--serif); font-size: 31px; font-style: normal }
+.lp .hero-proof__pwa { display: flex; align-items: center; justify-content: space-between; gap: 28px; padding: 25px 0; border-top: 1px solid var(--fio) }
+.lp .hero-proof__pwa span { color: var(--teal-ac); font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase }
+.lp .hero-proof__pwa h2 { margin-top: 7px; font-size: clamp(26px, 3vw, 36px); max-width: 30ch }
+.lp .hero-proof__pwa p { margin-top: 6px; color: var(--tx3); font-size: 15px }
+@media (max-width: 880px) { .lp .hero__grid { grid-template-columns: 1fr; gap: 34px } .lp .hero__preview { max-width: 620px } .lp .hero-proof__metrics { grid-template-columns: 1fr 1fr; padding: 12px 0 } .lp .hero-proof__metrics > * { padding: 14px 16px; border-left: 0 } }
+@media (max-width: 560px) { .lp .hero-product__results { grid-template-columns: 1fr } .lp .hero-proof__metrics { grid-template-columns: 1fr } .lp .hero-proof__metrics > * { padding-left: 0 } .lp .hero-proof__pwa { align-items: flex-start; flex-direction: column } .lp .hero-proof__pwa .btn { width: 100% } }
 
 /* ════════ RAIL DO MEU DIA — portado de meu-dia/_components/rail.tsx ════════ */
 .lp .rail {
@@ -430,6 +458,21 @@ body:has(.lp) { background: #0d0d0d }
 .lp .plano li { font-size: 15.5px; color: var(--tx2); padding: 9px 0; line-height: 1.48 }
 .lp .plano li + li { border-top: 1px solid var(--fio) }
 
+/* Fundador — dois modelos comerciais, mesma condição de lançamento. */
+.lp .fundador-intro { margin-top: 18px }
+.lp .fundador-planos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; max-width: 860px; margin-top: 32px }
+.lp .fundador-plano { display: flex; flex-direction: column; align-items: flex-start; padding: clamp(24px, 3vw, 34px); border: 1px solid var(--fio-forte); border-radius: 14px; background: var(--surface) }
+.lp .fundador-plano--destaque { border-color: color-mix(in srgb, var(--teal) 65%, var(--fio)); box-shadow: 0 24px 55px -38px color-mix(in srgb, var(--teal) 70%, transparent) }
+.lp .fundador-selo { display: inline-flex; padding: 5px 8px; border: 1px solid color-mix(in srgb, var(--teal) 38%, transparent); border-radius: 999px; color: var(--teal-ac); font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase }
+.lp .fundador-plano h3 { margin-top: 18px; font-size: 30px }
+.lp .fundador-subtitulo { min-height: 48px; margin-top: 8px; color: var(--tx2); font-size: 16px }
+.lp .fundador-valor { display: block; margin-top: 18px; font-family: var(--serif); font-size: clamp(37px, 4vw, 48px); font-weight: 400; line-height: 1; letter-spacing: -.03em }
+.lp .fundador-valor small { color: var(--tx2); font-family: var(--sans); font-size: 14px; font-weight: 400; letter-spacing: 0 }
+.lp .fundador-detalhe { flex: 1; margin: 20px 0 26px; color: var(--tx2); font-size: 15px; line-height: 1.55 }
+.lp .fundador-plano .btn { width: 100% }
+.lp .fundador-rodape { margin-top: 16px; color: var(--tx3); font-size: 14px }
+@media (max-width: 700px) { .lp .fundador-planos { grid-template-columns: 1fr } .lp .fundador-subtitulo { min-height: auto } }
+
 /* ════════ perguntas ════════ */
 .lp .perguntas { margin-top: clamp(28px, 3.4vw, 44px); max-width: 800px }
 .lp .perg { border-bottom: 1px solid var(--fio) }
@@ -441,6 +484,77 @@ body:has(.lp) { background: #0d0d0d }
 .lp .perg summary::-webkit-details-marker { display: none }
 .lp .perg summary:hover { color: var(--teal-ac) }
 .lp .perg summary::after { content: "+"; color: var(--teal-ac); font-size: 21px; font-weight: 200 }
+
+.lp .pwa-slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(24px, 5vw, 64px);
+  min-height: 220px;
+  padding: clamp(28px, 5vw, 56px);
+  border: 1px solid color-mix(in srgb, var(--teal) 34%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+.lp .pwa-slot__copy { max-width: 720px }
+.lp .pwa-slot__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 18px;
+  padding: 7px 11px;
+  border: 1px solid color-mix(in srgb, var(--teal) 42%, transparent);
+  border-radius: 999px;
+  color: var(--teal-ac);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.lp .pwa-slot__status svg { width: 15px; height: 15px }
+.lp .pwa-slot__action {
+  flex: 0 0 auto;
+  min-height: 48px;
+  white-space: nowrap;
+}
+.lp .pwa-slot__hint {
+  margin-top: 20px;
+  color: var(--tx2);
+  font-size: 15px;
+  line-height: 1.65;
+}
+.lp .pwa-slot__steps {
+  display: grid;
+  gap: 12px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--tx2);
+}
+.lp .pwa-slot__steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.5;
+}
+.lp .pwa-slot__steps svg {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  color: var(--teal-ac);
+}
+
+@media (max-width: 720px) {
+  .lp .pwa-slot {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .lp .pwa-slot__action {
+    width: 100%;
+    white-space: normal;
+  }
+}
 .lp .perg[open] summary::after { content: "–" }
 .lp .perg p { padding: 0 0 26px; color: var(--tx2); font-size: 16.5px; max-width: 62ch }
 

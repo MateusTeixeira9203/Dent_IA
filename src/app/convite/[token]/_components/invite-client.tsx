@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { Lock, Mail, User, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import { aceitarConviteAction } from '../actions';
+import { authCallbackUrl } from '@/lib/auth/return-path';
+import { GoogleIcone } from '@/components/landing/icones';
 
 interface Props {
   token: string;
@@ -49,7 +51,10 @@ export function InviteAuthClient({ token, inviteEmail }: Props) {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { nome } },
+        options: {
+          data: { nome },
+          emailRedirectTo: authCallbackUrl(window.location.origin, `/convite/${token}`),
+        },
       });
       if (error) {
         if (error.message.includes('already')) {
@@ -60,11 +65,27 @@ export function InviteAuthClient({ token, inviteEmail }: Props) {
         return;
       }
       if (!data.session) {
-        toast.info('Verifique seu email para confirmar a conta. Depois volte a este link.');
+        window.location.href = `/verifique-email?email=${encodeURIComponent(email)}&next=${encodeURIComponent(`/convite/${token}`)}`;
         return;
       }
       router.refresh();
     } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleGoogle(): Promise<void> {
+    setLoading(true);
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: authCallbackUrl(window.location.origin, `/convite/${token}`),
+      },
+    });
+
+    if (error) {
+      toast.error('Não foi possível entrar com Google. Tente novamente.');
       setLoading(false);
     }
   }
@@ -96,6 +117,18 @@ export function InviteAuthClient({ token, inviteEmail }: Props) {
           Criar conta
         </button>
       </div>
+
+      <button
+        type="button"
+        onClick={() => void handleGoogle()}
+        disabled={loading}
+        className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background py-3 text-sm font-semibold text-text-primary transition-colors hover:bg-surface disabled:opacity-60"
+      >
+        <span className="size-5 shrink-0 [&>svg]:size-full">
+          <GoogleIcone />
+        </span>
+        Continuar com Google
+      </button>
 
       {tab === 'login' ? (
         <form onSubmit={handleLogin} className="space-y-4">
@@ -141,7 +174,7 @@ export function InviteAuthClient({ token, inviteEmail }: Props) {
             disabled={loading}
             className="w-full bg-teal-ink text-surface rounded-xl font-bold py-3.5 hover:opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
           >
-            {loading ? 'Entrando...' : (<>Entrar e aceitar <ArrowRight className="w-4 h-4" /></>)}
+            {loading ? 'Entrando...' : (<>Entrar para continuar <ArrowRight className="w-4 h-4" /></>)}
           </button>
         </form>
       ) : (
@@ -204,7 +237,7 @@ export function InviteAuthClient({ token, inviteEmail }: Props) {
             disabled={loading}
             className="w-full bg-teal-ink text-surface rounded-xl font-bold py-3.5 hover:opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
           >
-            {loading ? 'Criando conta...' : (<>Criar conta e aceitar <ArrowRight className="w-4 h-4" /></>)}
+            {loading ? 'Criando conta...' : (<>Criar conta para continuar <ArrowRight className="w-4 h-4" /></>)}
           </button>
         </form>
       )}
@@ -251,5 +284,28 @@ export function AcceptButton({ token }: AcceptProps) {
         {loading ? 'Processando...' : (<>Aceitar convite <ArrowRight className="w-4 h-4" /></>)}
       </button>
     </div>
+  );
+}
+
+export function WrongAccountButton(): React.JSX.Element {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+
+  async function switchAccount(): Promise<void> {
+    setLoading(true);
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.refresh();
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={loading}
+      onClick={() => void switchAccount()}
+      className="w-full rounded-xl border border-border bg-surface py-3 text-sm font-semibold text-text-primary transition-colors hover:bg-surface-alt disabled:opacity-60"
+    >
+      {loading ? 'Saindo...' : 'Entrar com o email convidado'}
+    </button>
   );
 }

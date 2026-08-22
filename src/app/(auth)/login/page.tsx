@@ -11,7 +11,8 @@ import { ArrowRight, AlertCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getDentistaLoginInfo } from "@/lib/auth";
 import { toast } from "sonner";
-import { AuthBrandPanel } from "@/components/brand/brand-lockup";
+import { AuthEntryShell } from "@/components/auth/auth-entry-shell";
+import { authCallbackUrl, safeReturnPath } from "@/lib/auth/return-path";
 
 const AUTH_ERRORS: Record<string, string> = {
   "Invalid login credentials": "Email ou senha incorretos.",
@@ -25,6 +26,7 @@ function getAuthError(message: string): string {
   for (const [key, value] of Object.entries(AUTH_ERRORS)) {
     if (message.includes(key)) return value;
   }
+  if (process.env.NODE_ENV === "development") return message;
   return "Ocorreu um erro. Tente novamente.";
 }
 
@@ -38,7 +40,8 @@ type LoginFormData = z.infer<typeof loginSchema>;
 function LoginFormContent(): React.JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirectTo") ?? "/dashboard";
+  const requestedNext = searchParams.get("next") ?? searchParams.get("redirectTo");
+  const redirectTo = safeReturnPath(requestedNext);
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [emailNaoConfirmado, setEmailNaoConfirmado] = useState(false);
@@ -46,18 +49,20 @@ function LoginFormContent(): React.JSX.Element {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: "", password: "" },
   });
+  const emailDigitado = watch("email");
 
   const handleGoogleLogin = async (): Promise<void> => {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: authCallbackUrl(window.location.origin, redirectTo),
       },
     });
     if (error) {
@@ -83,16 +88,24 @@ function LoginFormContent(): React.JSX.Element {
         return;
       }
 
-      if (authData.session) {
-        const { existe, role } = await getDentistaLoginInfo(supabase);
-        toast.success("Login realizado com sucesso!");
-        // R-94 — protético não tem lugar em /dashboard (redirectTo default): manda reto
-        // pra própria agenda, senão ele paga a query pesada do dashboard normal só pra
-        // ser redirecionado de novo pelo gate em dashboard/layout.tsx.
-        const destino = !existe ? "/onboarding" : role === "protetico" ? "/dashboard/protetico" : redirectTo;
-        router.push(destino);
-        router.refresh();
+      if (!authData.session) {
+        setAuthError("Sessão não criada. Tente novamente.");
+        return;
       }
+
+      const { existe, role } = await getDentistaLoginInfo(supabase);
+      const continuaFluxoDeAuth = redirectTo.startsWith("/convite/")
+        || redirectTo === "/redefinir-senha";
+      const destination = !existe && !continuaFluxoDeAuth
+        ? "/onboarding"
+        : requestedNext
+          ? redirectTo
+          : role === "protetico"
+            ? "/dashboard/protetico"
+            : "/dashboard";
+      toast.success("Login realizado com sucesso!");
+      router.push(destination);
+      router.refresh();
     } catch {
       setAuthError("Erro ao fazer login. Tente novamente.");
     } finally {
@@ -101,18 +114,17 @@ function LoginFormContent(): React.JSX.Element {
   }
 
   return (
-    <div className="min-h-screen flex">
-      <AuthBrandPanel />
-      <div className="flex-1 flex flex-col items-center justify-center min-h-screen px-12">
+    <AuthEntryShell
+      eyebrow="Área do dentista"
+      title="Bem-vindo de volta."
+      description="Acesse sua conta e continue de onde parou."
+    >
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="w-full max-w-md"
         >
-          <h1 className="font-heading font-bold text-4xl text-text-primary mb-2">Bem-vindo de volta</h1>
-          <p className="text-text-secondary text-sm font-medium mb-8">Acesse sua conta para gerenciar sua clínica.</p>
-
-          <div className="bg-surface rounded-3xl border border-border shadow-sm p-8 w-full max-w-md">
+          <div className="bg-surface/90 rounded-2xl border border-border shadow-sm p-6 sm:p-8 w-full max-w-md backdrop-blur-sm">
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
               <div>
                 <label className="block font-mono text-xs text-text-secondary uppercase tracking-widest mb-1.5">
@@ -173,7 +185,7 @@ function LoginFormContent(): React.JSX.Element {
                   </div>
                   {emailNaoConfirmado && (
                     <Link
-                      href="/verifique-email"
+                      href={`/verifique-email?email=${encodeURIComponent(emailDigitado)}&next=${encodeURIComponent(redirectTo)}`}
                       className="text-xs text-teal font-semibold hover:text-teal-dark transition-colors ml-6"
                     >
                       Reenviar email de verificação →
@@ -209,15 +221,14 @@ function LoginFormContent(): React.JSX.Element {
             <div className="mt-6 text-center">
               <p className="text-sm text-text-secondary">
                 Não tem uma conta?{" "}
-                <Link href="/cadastro" className="text-teal font-semibold hover:text-teal-dark transition-colors">
+                <Link href={`/cadastro?next=${encodeURIComponent(redirectTo)}`} className="text-teal font-semibold hover:text-teal-dark transition-colors">
                   Cadastre-se
                 </Link>
               </p>
             </div>
           </div>
         </motion.div>
-      </div>
-    </div>
+    </AuthEntryShell>
   );
 }
 
