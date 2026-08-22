@@ -47,6 +47,10 @@ function memoryRateLimit(
 // Cache de instâncias Ratelimit (evita recriar por request)
 // ---------------------------------------------------------------------------
 const limiterCache = new Map<string, Ratelimit>();
+let redisDisabledUntil = 0;
+
+const REDIS_TIMEOUT_MS = 1_500;
+const REDIS_RETRY_AFTER_MS = 5 * 60_000;
 
 function getUpstashLimiter(limit: number, windowSecs: number): Ratelimit {
   const cacheKey = `${limit}:${windowSecs}`;
@@ -54,6 +58,8 @@ function getUpstashLimiter(limit: number, windowSecs: number): Ratelimit {
     const redis = new Redis({
       url: process.env.UPSTASH_REDIS_REST_URL!,
       token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+      retry: false,
+      signal: () => AbortSignal.timeout(REDIS_TIMEOUT_MS),
     });
     limiterCache.set(
       cacheKey,
@@ -84,13 +90,19 @@ export async function withRateLimit(
 
   let result: { success: boolean; remaining: number; reset: number };
 
-  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+  const redisConfigured =
+    process.env.UPSTASH_REDIS_REST_URL &&
+    process.env.UPSTASH_REDIS_REST_TOKEN &&
+    Date.now() >= redisDisabledUntil;
+
+  if (redisConfigured) {
     try {
       const windowSecs = Math.ceil(windowMs / 1000);
       const limiter = getUpstashLimiter(limit, windowSecs);
       const res = await limiter.limit(key);
       result = { success: res.success, remaining: res.remaining, reset: res.reset };
     } catch (err) {
+      redisDisabledUntil = Date.now() + REDIS_RETRY_AFTER_MS;
       console.error('[rate-limit] Erro no Redis, usando fallback em memória:', err);
       result = memoryRateLimit(key, limit, windowMs);
     }

@@ -13,6 +13,8 @@ function getRedis(): Redis | null {
     redisInstance = new Redis({
       url:   process.env.UPSTASH_REDIS_REST_URL,
       token: process.env.UPSTASH_REDIS_REST_TOKEN,
+      retry: false,
+      signal: () => AbortSignal.timeout(1_500),
     });
   }
   return redisInstance;
