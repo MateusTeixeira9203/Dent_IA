@@ -7,13 +7,21 @@
 //
 // Rode ANTES de mexer no enum do Gemini (baseline) e DEPOIS (R-06/R-07) e compare os números.
 // 'atual' = deve passar e não regredir. 'novo' = esperado 0 hoje (enum barra) -> alvo do R-06/R-07.
-const { request } = require('playwright');
+let request;
+try {
+  ({ request } = require('playwright'));
+} catch {
+  console.log('SEM_PLAYWRIGHT — instale/restaure a dependência de desenvolvimento Playwright antes de rodar o eval HTTP.');
+  process.exit(2);
+}
 const fs = require('fs');
 const path = require('path');
 
 const BASE = 'http://localhost:3000';
-const AUTH = 'C:/Users/mateu/AppData/Local/Temp/claude/C--Users-mateu-Desktop-Odonto-IA-main/e3f4b577-fd87-4960-b2bd-87a3f63afd9f/scratchpad/audit-auth.json';
-const OUT = 'C:/Users/mateu/AppData/Local/Temp/claude/C--Users-mateu-Desktop-Odonto-IA-main/e3f4b577-fd87-4960-b2bd-87a3f63afd9f/scratchpad';
+// Sessão e saída são locais e configuráveis. Nunca apontar para uma pasta temporária de uma
+// sessão anterior: ela some e faz o eval parecer quebrado em toda retomada de trabalho.
+const AUTH = process.env.EVAL_AUTH_FILE || path.join(__dirname, 'audit-auth.json');
+const OUT = process.env.EVAL_OUT_DIR || path.join(__dirname, 'results');
 const GOLDEN = path.join(__dirname, 'golden.json');
 const PACE_MS = 3000;       // espaçamento entre chamadas (rate limit da rota = 20/60s)
 // R-50 (05/08) — os 4 `_inferior` entram aqui, senão `camposPreenchidos` não consegue exigir
@@ -42,7 +50,11 @@ function casa(ev, spec) {
 function avaliar(caso, resp) {
   const eventos = Array.isArray(resp?.odontograma_eventos) ? resp.odontograma_eventos : [];
   const esp = caso.esperado || {};
-  const r = { id: caso.id, cat: caso.cat, esperados: 0, casados: 0, faltando: [], proibidosHit: [], extras: 0, ortoOk: null, ok: false };
+  const r = {
+    id: caso.id, cat: caso.cat, esperados: 0, casados: 0, faltando: [], proibidosHit: [], extras: 0, ortoOk: null, ok: false,
+    realizadoEsperados: 0, realizadoCasados: 0, realizadoEmitidos: eventos.filter((ev) => ev.status === 'realizado').length,
+    indicadoEsperados: 0, indicadoCasados: 0, ambiguoEsperado: 0, ambiguoCasado: 0,
+  };
 
   // eventos esperados
   const specs = Array.isArray(esp.eventos) ? esp.eventos : null;
@@ -51,7 +63,15 @@ function avaliar(caso, resp) {
     const usados = new Set();
     for (const spec of specs) {
       const idx = eventos.findIndex((ev, i) => !usados.has(i) && casa(ev, spec));
-      if (idx >= 0) { usados.add(idx); r.casados++; } else { r.faltando.push(spec); }
+      if (spec.status === 'realizado') r.realizadoEsperados++;
+      if (spec.status === 'indicado') r.indicadoEsperados++;
+      if (spec.evidencia_status === 'ambiguo') r.ambiguoEsperado++;
+      if (idx >= 0) {
+        usados.add(idx); r.casados++;
+        if (spec.status === 'realizado') r.realizadoCasados++;
+        if (spec.status === 'indicado') r.indicadoCasados++;
+        if (spec.evidencia_status === 'ambiguo') r.ambiguoCasado++;
+      } else { r.faltando.push(spec); }
     }
     // extras = eventos produzidos que não casaram com nenhum spec (só conta quando há expectativa explícita)
     r.extras = eventos.length - usados.size;
@@ -94,7 +114,11 @@ function avaliar(caso, resp) {
 }
 
 (async () => {
-  if (!fs.existsSync(AUTH)) { console.log('SEM_SESSAO — refazer login headed (capture-audit-3.cjs sem --headless)'); process.exit(2); }
+  if (!fs.existsSync(AUTH)) {
+    console.log(`SEM_SESSAO — salve uma sessão Playwright em ${AUTH} ou informe EVAL_AUTH_FILE.`);
+    process.exit(2);
+  }
+  fs.mkdirSync(OUT, { recursive: true });
   const golden = JSON.parse(fs.readFileSync(GOLDEN, 'utf8'));
   const casos = golden.casos;
   const ctx = await request.newContext({ baseURL: BASE, storageState: AUTH });
@@ -131,16 +155,32 @@ function avaliar(caso, resp) {
   const evEsperados = atual.reduce((s, r) => s + (r.esperados || 0), 0);
   const evCasados = atual.reduce((s, r) => s + (r.casados || 0), 0);
   const evExtras = atual.reduce((s, r) => s + (r.extras || 0), 0);
+  const todos = resultados.filter((r) => !r.erro);
+  const realizadosCorretos = todos.reduce((s, r) => s + r.realizadoCasados, 0);
+  const realizadosEmitidos = todos.reduce((s, r) => s + r.realizadoEmitidos, 0);
+  const esperadosIndicados = todos.reduce((s, r) => s + r.indicadoEsperados, 0);
+  const indicadosCorretos = todos.reduce((s, r) => s + r.indicadoCasados, 0);
+  const negacaoViolations = todos.reduce((s, r) => s + r.proibidosHit.length, 0);
+  const ambiguosEsperados = todos.reduce((s, r) => s + r.ambiguoEsperado, 0);
+  const ambiguosCorretos = todos.reduce((s, r) => s + r.ambiguoCasado, 0);
+  const statusMetrics = {
+    realizadoPrecision: realizadosEmitidos === 0 ? null : realizadosCorretos / realizadosEmitidos,
+    realizadoFalsePositives: Math.max(0, realizadosEmitidos - realizadosCorretos),
+    indicadoRecall: esperadosIndicados === 0 ? null : indicadosCorretos / esperadosIndicados,
+    negacaoViolations,
+    ambiguousReviewRecall: ambiguosEsperados === 0 ? null : ambiguosCorretos / ambiguosEsperados,
+  };
 
   console.log('\n============================================');
   console.log(`ATUAL (não pode regredir): ${atualOk}/${atual.length} casos OK`);
   console.log(`  eventos: ${evCasados}/${evEsperados} casados · ${evExtras} inventados (falso-positivo)`);
   console.log(`NOVO (alvo R-06/R-07, esperado 0 hoje): ${novoOk}/${novo.length} presentes`);
+  console.log(`R-106: negação ${statusMetrics.negacaoViolations} violações · ambíguos ${ambiguosCorretos}/${ambiguosEsperados} com revisão`);
   console.log('============================================');
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const outFile = `${OUT}/eval-extracao-${stamp}.json`;
-  fs.writeFileSync(outFile, JSON.stringify({ stamp, resumo: { atualOk, atualTotal: atual.length, evCasados, evEsperados, evExtras, novoOk, novoTotal: novo.length }, resultados }, null, 2));
+  fs.writeFileSync(outFile, JSON.stringify({ stamp, resumo: { atualOk, atualTotal: atual.length, evCasados, evEsperados, evExtras, novoOk, novoTotal: novo.length, statusMetrics }, resultados }, null, 2));
   console.log(`\nresultado completo: ${outFile}`);
   process.exit(0);
 })().catch((e) => { console.error('FALHOU', e); process.exit(1); });

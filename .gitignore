@@ -49,3 +49,6 @@ next-env.d.ts
 
 # Audit visual — screenshots regeneráveis pelo harness (pesados, não versionar)
 plans/auditorias/screens/
+
+# Eval clínico: resultados locais podem referenciar uma sessão autenticada e são regeneráveis.
+evals/extracao-clinica/results/

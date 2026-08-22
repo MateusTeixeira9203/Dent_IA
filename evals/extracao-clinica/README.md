@@ -7,9 +7,10 @@ o eval. Bate no endpoint HTTP real com a sessão logada — não duplica o promp
 ## Rodar
 
 1. Dev server no ar em `localhost:3000` (`preview_start "dev"` ou `npm run dev`).
-2. Sessão salva válida (a mesma do audit visual — `capture-audit-3.cjs`). Se expirou, refaça o
-   login headed uma vez e a sessão é regravada.
-3. `NODE_PATH="<repo>/node_modules" node evals/extracao-clinica/run.cjs`
+2. Sessão salva válida em `evals/extracao-clinica/audit-auth.json` (arquivo ignorado pelo Git),
+   ou informe `EVAL_AUTH_FILE` com o caminho dela. Se expirou, refaça o login headed uma vez.
+3. `NODE_PATH="<repo>/node_modules" node evals/extracao-clinica/run.cjs`. O resultado vai para
+   `evals/extracao-clinica/results/` (também ignorado pelo Git); `EVAL_OUT_DIR` troca o destino.
 
 ## Como ler
 
