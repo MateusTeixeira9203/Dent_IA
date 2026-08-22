@@ -21,6 +21,7 @@ interface Documento {
   url: string;
   tipo: string;  // MIME type
   date?: string; // data formatada para exibição
+  locked?: boolean;
 }
 
 interface GaleriaImagensProps {
@@ -140,7 +141,7 @@ export function GaleriaImagens({
                           <ZoomIn className="w-4 h-4" />
                         </div>
                       )}
-                      {onDelete && (
+                      {onDelete && !doc.locked && (
                         <button
                           onClick={(e) => { e.stopPropagation(); onDelete(doc.id, e); }}
                           className="w-8 h-8 rounded-full bg-red-500/80 backdrop-blur-md flex items-center justify-center text-white hover:bg-red-600 transition-colors"
