@@ -18,6 +18,7 @@ import {
   AlertCircle,
   FileText,
   FilePlus,
+  FileSignature,
   Loader2,
   Activity,
   Bell,
@@ -97,6 +98,7 @@ import { excluirPaciente } from '@/server/patients/excluir-paciente';
 import { MarcarRetornoModal, type MarcarRetornoForm } from '@/components/pacientes/marcar-retorno-modal';
 import { formatHora as formatHoraRetorno } from '@/lib/agenda/disponibilidade';
 import { EmitirDocumentoModal } from '@/components/pacientes/EmitirDocumentoModal';
+import { EmitirAceiteModal } from '@/components/pacientes/EmitirAceiteModal';
 import { NovoOrcamentoModal } from './modals/novo-orcamento-modal';
 import { useOrcamentoModal } from './use-orcamento-modal';
 import { ApresentarPaciente } from '@/components/pacientes/ApresentarPaciente';
@@ -301,6 +303,7 @@ export function PacienteDetailClient({
   // Marcar retorno
   const [isMarcarRetornoOpen, setIsMarcarRetornoOpen] = useState(false);
   const [isEmitirOpen, setIsEmitirOpen] = useState(false);
+  const [isEmitirAceiteOpen, setIsEmitirAceiteOpen] = useState(false);
   const [retornoForm, setRetornoForm] = useState<MarcarRetornoForm>({
     data: null,
     minutoDoDia: null,
@@ -1139,6 +1142,15 @@ export function PacienteDetailClient({
             </button>
             {canWriteClinical && (
               <button
+                onClick={() => setIsEmitirAceiteOpen(true)}
+                className="h-11 w-11 rounded-xl border border-border/60 text-text-secondary hover:text-teal hover:border-teal/40 bg-surface transition-colors flex items-center justify-center"
+                title="Gerar TCLE do paciente"
+              >
+                <FileSignature className="w-4 h-4" />
+              </button>
+            )}
+            {canWriteClinical && (
+              <button
                 onClick={() => setIsEmitirOpen(true)}
                 className="h-11 w-11 rounded-xl border border-border/60 text-text-secondary hover:text-teal hover:border-teal/40 bg-surface transition-colors flex items-center justify-center"
                 title="Emitir documento (receita, atestado, pedido de exame)"
@@ -1855,6 +1867,13 @@ export function PacienteDetailClient({
       <EmitirDocumentoModal
         open={isEmitirOpen}
         onClose={() => setIsEmitirOpen(false)}
+        patientId={paciente.id}
+        patientName={displayNome}
+      />
+
+      <EmitirAceiteModal
+        open={isEmitirAceiteOpen}
+        onClose={() => setIsEmitirAceiteOpen(false)}
         patientId={paciente.id}
         patientName={displayNome}
       />
