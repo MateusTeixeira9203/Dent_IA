@@ -7,14 +7,14 @@ import { Camera, Trash2, Loader2, User } from 'lucide-react';
 import { OdontoIALogo } from '@/components/ui/dent-ia-logo';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
-import { salvarAvatarUrl, removerAvatar, salvarPerfil, salvarNomeClinica } from '../actions';
+import { salvarAvatarUrl, removerAvatar, salvarPerfil } from '../actions';
 import type { DentistaRole } from '@/types/database';
 import type { Especialidade } from '@/lib/especialidades';
 import { EspecialidadeChips } from '@/components/ui/especialidade-chips';
 import Image from 'next/image';
 
 const ROLE_LABELS: Record<DentistaRole, string> = {
-  admin: 'Criador',
+  admin: 'Dentista',
   dentista: 'Dentista',
   secretaria: 'Secretária',
   protetico: 'Protético',
@@ -46,10 +46,8 @@ export function PerfilClient({ nome, email, role, clinica, avatarUrl: initialAva
   const [formEspecialidade, setFormEspecialidade] = useState<Especialidade[]>(especialidade);
   const [formCpf, setFormCpf]                     = useState(cpf ?? '');
   const [formChavePix, setFormChavePix]           = useState(chavePix ?? '');
-  const [formClinica, setFormClinica]             = useState(clinica);
 
   const iniciais = nome.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
-  const isAdmin        = role === 'admin';
   const showProfissional = role === 'admin' || role === 'dentista';
 
   const inputClass =
@@ -116,23 +114,16 @@ export function PerfilClient({ nome, email, role, clinica, avatarUrl: initialAva
     }
     setSaving(true);
     try {
-      const [perfilResult, clinicaResult] = await Promise.all([
-        salvarPerfil({
-          nome:          formNome.trim(),
-          telefone:      formTelefone.trim(),
-          cro:           formCro.trim(),
-          especialidade: formEspecialidade,
-          cpf:           formCpf.trim(),
-          chavePix:      formChavePix.trim(),
-        }),
-        // Atualiza nome da clínica só se admin e se mudou
-        isAdmin && formClinica.trim() !== clinica
-          ? salvarNomeClinica(formClinica.trim())
-          : Promise.resolve({}),
-      ]);
+      const perfilResult = await salvarPerfil({
+        nome:          formNome.trim(),
+        telefone:      formTelefone.trim(),
+        cro:           formCro.trim(),
+        especialidade: formEspecialidade,
+        cpf:           formCpf.trim(),
+        chavePix:      formChavePix.trim(),
+      });
 
       if (perfilResult.error) throw new Error(perfilResult.error);
-      if ('error' in clinicaResult && clinicaResult.error) throw new Error(clinicaResult.error as string);
 
       toast.success('Perfil salvo com sucesso!');
     } catch (err) {
@@ -224,15 +215,13 @@ export function PerfilClient({ nome, email, role, clinica, avatarUrl: initialAva
                 <p className="text-sm font-medium text-text-primary">{ROLE_LABELS[role]}</p>
               </div>
 
-              {!isAdmin && (
-                <div>
-                  <p className="text-[10px] font-mono text-text-secondary uppercase tracking-widest mb-1">Clínica</p>
-                  <div className="flex items-center gap-2">
-                    <OdontoIALogo className="w-3.5 h-3.5 text-teal shrink-0" />
-                    <p className="text-sm font-medium text-text-primary">{clinica}</p>
-                  </div>
+              <div>
+                <p className="text-[10px] font-mono text-text-secondary uppercase tracking-widest mb-1">Clínica</p>
+                <div className="flex items-center gap-2">
+                  <OdontoIALogo className="w-3.5 h-3.5 text-teal shrink-0" />
+                  <p className="text-sm font-medium text-text-primary">{clinica}</p>
                 </div>
-              )}
+              </div>
             </div>
           </div>
 
@@ -327,30 +316,6 @@ export function PerfilClient({ nome, email, role, clinica, avatarUrl: initialAva
                     <p className="text-[10px] text-text-secondary font-mono">
                       Sua chave PIX pessoal para receber pagamentos via bot e orçamentos.
                     </p>
-                  </div>
-                </>
-              )}
-
-              {/* Nome da clínica — editável só para admin */}
-              {isAdmin && (
-                <>
-                  <div className="pt-2 pb-1 border-t border-border">
-                    <p className="text-[11px] font-bold text-text-secondary uppercase tracking-widest">Clínica</p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-widest">
-                      Nome da clínica
-                    </label>
-                    <div className="relative">
-                      <OdontoIALogo className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-teal pointer-events-none" />
-                      <input
-                        value={formClinica}
-                        onChange={(e) => setFormClinica(e.target.value)}
-                        placeholder="Nome da clínica"
-                        disabled={saving}
-                        className={`${inputClass} pl-8`}
-                      />
-                    </div>
                   </div>
                 </>
               )}

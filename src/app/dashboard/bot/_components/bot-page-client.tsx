@@ -259,7 +259,7 @@ export function BotPageClient({
   const [testeNumero,   setTesteNumero]   = useState('');
   const [testeLoading,  setTesteLoading]  = useState(false);
 
-  const canManage = role === 'admin' || role === 'secretaria';
+  const canManage = role === 'admin' || role === 'dentista' || role === 'secretaria';
 
   useEffect(() => {
     if (status !== 'connecting') return;
