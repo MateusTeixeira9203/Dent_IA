@@ -9,6 +9,7 @@ import { registrarLog } from "@/lib/activity-log";
 import { deriveEstadoOrcamento, orcamentoAceitaPagamento, type EstadoOrcamento } from "@/lib/orcamentos/estado";
 import { hojeBRT } from "@/lib/hora-brt";
 import { ERRO_ORCAMENTO_SEM_APROVACAO } from "@/server/orcamentos/pagamento-guards";
+import { criarDocumentoAceiteOrcamento } from '@/server/legal/documentos-aceite';
 
 export type FormaPagamento =
   | "dinheiro"
@@ -1313,12 +1314,13 @@ export type AceitarOrcamentoInput = z.infer<typeof aceitarOrcamentoSchema>;
  */
 export async function aceitarOrcamento(
   params: AceitarOrcamentoInput,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; warning?: string; documentoUrl?: string }> {
   const parsed = aceitarOrcamentoSchema.safeParse(params);
   if (!parsed.success) return { ok: false, error: 'Dados inválidos.' };
   const { orcamentoId, assinadoPor, assinaturaDataUrl } = parsed.data;
 
-  const { supabase, clinicId } = await requireClinicContext();
+  const context = await requireClinicContext();
+  const { supabase, clinicId } = context;
 
   // Resolve paciente_id só pro path do storage — a RPC valida tudo de novo por dentro
   // (este read não é a autorização, é só pra montar o nome do arquivo).
@@ -1373,5 +1375,13 @@ export async function aceitarOrcamento(
 
   revalidatePath(`/dashboard/pacientes/${orcRef.paciente_id}`);
   revalidatePath('/dashboard/orcamentos');
-  return { ok: true };
+  try {
+    const documento = await criarDocumentoAceiteOrcamento({ context, orcamentoId });
+    if (documento.ok) return { ok: true, documentoUrl: documento.signedUrl };
+    console.error('[aceitarOrcamento] documento final:', documento.error);
+    return { ok: true, warning: 'Aceite registrado, mas o PDF final precisa ser gerado novamente pela equipe.' };
+  } catch (documentoError) {
+    console.error('[aceitarOrcamento] documento final:', documentoError);
+    return { ok: true, warning: 'Aceite registrado, mas o PDF final precisa ser gerado novamente pela equipe.' };
+  }
 }

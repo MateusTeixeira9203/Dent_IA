@@ -31,7 +31,7 @@ import {
   QUAD_SUP_DIREITO, QUAD_SUP_ESQUERDO, QUAD_INF_DIREITO, QUAD_INF_ESQUERDO,
 } from '@/lib/arcadas';
 import { TIPO_LABEL } from '@/types/odontograma';
-import { derivarResponsaveis, eventosVisiveis, FILTRO_MEUS, type FiltroResponsavel } from '@/lib/fichas/filtro-responsavel';
+import { eventosVisiveis, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
 import type { NovoOrcamentoModalProps } from './modals/novo-orcamento-modal';
 import type {
   FichaParaOrc, EventoOdontogramaParaOrc, ProcedimentoClinica, NovoOrcItem, OrcamentoComItens,
@@ -101,10 +101,6 @@ export function useOrcamentoModal({
   const [registeringProcIdx, setRegisteringProcIdx] = useState<number | null>(null);
   const [orcSaving, setOrcSaving] = useState(false);
   const [orcError, setOrcError] = useState<string | null>(null);
-  // R-53 — filtro de exibição do orçamento agregado (X1: mesma lib da ficha, config própria —
-  // default Todos, porque o dinheiro é da clínica, não do dentista). Nunca decide o que é
-  // gravado (I4) — só quais itens de `fichasParaOrc` viram `novoOrcItens`.
-  const [filtroResponsavelOrc, setFiltroResponsavelOrc] = useState<FiltroResponsavel>(null);
   const [etapaNovoOrc, setEtapaNovoOrc] = useState<'selecionar' | 'itens'>('itens');
   const [novoOrcValorFinal, setNovoOrcValorFinal] = useState<number | null>(null);
   const [novoOrcDentistaAlvoId, setNovoOrcDentistaAlvoId] = useState('');
@@ -266,31 +262,22 @@ export function useOrcamentoModal({
   });
 
   // R-53 — flatten de N fichas (o agregado) pro filtro de responsável + eventosParaItens.
-  const itensDoAgregado = (fichas: FichaParaOrc[], filtro: FiltroResponsavel): NovoOrcItem[] => {
+  const itensDoAgregado = (fichas: FichaParaOrc[], alvoDentistaId: string): NovoOrcItem[] => {
     const itens = fichas.flatMap((f) => {
       const eventosComResponsavel = (f.odontograma_eventos ?? []).map((ev) => ({ ...ev, ...paraResponsavel(ev) }));
-      const visiveis = eventosVisiveis(eventosComResponsavel, f.dentista_id, filtro, meuDentistaId);
+      const visiveis = eventosVisiveis(eventosComResponsavel, f.dentista_id, FILTRO_MEUS, alvoDentistaId);
       return eventosParaItens(visiveis);
     });
     return itens.length > 0 ? itens : [ITEM_VAZIO];
   };
 
-  // R-53 — responsáveis distintos no agregado atual, pros chips do modal (§4.3).
-  const responsaveisOrc = useMemo(
-    () => derivarResponsaveis(
-      fichasParaOrc.map((f) => ({
-        autorId: f.dentista_id,
-        autorNome: f.dentista?.nome ?? 'Equipe',
-        eventos: (f.odontograma_eventos ?? []).map(paraResponsavel),
-      })),
-    ),
-    [fichasParaOrc],
-  );
-
-  // R-53 — troca de chip: reprocessa o agregado já carregado, nunca refaz a query.
-  const handleFiltroResponsavelOrc = (v: FiltroResponsavel) => {
-    setFiltroResponsavelOrc(v);
-    setNovoOrcItens(itensDoAgregado(fichasParaOrc, v));
+  const handleDentistaAlvoChange = (id: string) => {
+    setNovoOrcDentistaAlvoId(id);
+    // Só o fluxo agregado da ficha usa `itensDoAgregado`. O Meu dia e o fallback de uma
+    // ficha preservam seus itens próprios — trocar o select nunca pode reinterpretá-los.
+    if (isSecretaria && fichaOrcId === null && etapaNovoOrc === 'itens') {
+      setNovoOrcItens(itensDoAgregado(fichasParaOrc, id));
+    }
   };
 
   // R-53 — busca única do agregado (todos os indicados abertos do paciente), reusada pelos
@@ -318,13 +305,14 @@ export function useOrcamentoModal({
       const agregado = await carregarFichasAgregado();
 
       if (agregado.length > 0) {
-        // fichaOrcId fica null — o orçamento não pertence mais a 1 ficha só (I6). Default
-        // "Meus": cada dentista responde pelo próprio orçamento, procedimento de colega não
-        // entra sem ação explícita. Chip "Todos" continua disponível.
+        // fichaOrcId fica null — o orçamento não pertence mais a 1 ficha só (I6). O alvo é o
+        // próprio dentista ou, para secretária, o dentista selecionado no campo obrigatório.
+        const alvoId = isSecretaria
+          ? (novoOrcDentistaAlvoId || dentistasClinica[0]?.id || '')
+          : meuDentistaId;
         setFichasParaOrc(agregado);
         setFichaOrcId(null);
-        setFiltroResponsavelOrc(FILTRO_MEUS);
-        setNovoOrcItens(itensDoAgregado(agregado, FILTRO_MEUS));
+        setNovoOrcItens(itensDoAgregado(agregado, alvoId));
         setEtapaNovoOrc('itens');
       } else {
         // G4 — fallback INTACTO: nenhum indicado aberto em ficha nenhuma. Mesmo comportamento
@@ -381,7 +369,6 @@ export function useOrcamentoModal({
 
       if (eventosRascunho.length > 0) {
         const itens = eventosParaItens(eventosRascunho);
-        setFiltroResponsavelOrc(FILTRO_MEUS);
         setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
         setEtapaNovoOrc('itens');
       } else {
@@ -585,7 +572,6 @@ export function useOrcamentoModal({
       if (!open) {
         setEtapaNovoOrc('itens'); setFichasParaOrc([]); setOrcError(null); setNovoOrcValorFinal(null);
         setNovoOrcPlanoForma(null); setNovoOrcNumParcelas('3'); setNovoOrcPrimeiroVencimento(''); setNovoOrcParcelasForma('');
-        setFiltroResponsavelOrc(null);
       }
     },
     etapaNovoOrc,
@@ -600,10 +586,6 @@ export function useOrcamentoModal({
     // cobre o picker com exatamente 1 ficha (G6b) sem reabrir o caminho por-ficha (que nunca tem mais
     // de 1 ficha no array, então o primeiro termo nunca o alcança).
     podeTrocarFicha: fichasParaOrc.length > 1 || (fichaOrcId == null && fichasParaOrc.length > 0),
-    responsaveisOrc,
-    meuDentistaId,
-    filtroResponsavelOrc,
-    onFiltroResponsavelOrcChange: handleFiltroResponsavelOrc,
     orcError,
     novoOrcItens,
     setNovoOrcItens,
@@ -620,7 +602,7 @@ export function useOrcamentoModal({
     isSecretaria,
     dentistasClinica,
     dentistaAlvoId: novoOrcDentistaAlvoId,
-    onDentistaAlvoChange: setNovoOrcDentistaAlvoId,
+    onDentistaAlvoChange: handleDentistaAlvoChange,
     planoForma: novoOrcPlanoForma,
     setPlanoForma: setNovoOrcPlanoForma,
     planoNumParcelas: novoOrcNumParcelas,
