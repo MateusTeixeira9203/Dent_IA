@@ -10,8 +10,11 @@ export default async function OnboardingPage({
   const dentista = await getDentistaCached();
 
   // Resume no passo 'plano' (volta da demo) só se já existe dentista — senão começa do início.
-  const initialStep: OnboardingStep =
-    params.step === 'plano' && dentista ? 'plano' : 'identidade';
+  const initialStep: OnboardingStep = params.step === 'plano' && dentista
+    ? 'plano'
+    : dentista
+      ? 'dex'
+      : 'identidade';
 
   return (
     <OnboardingClient

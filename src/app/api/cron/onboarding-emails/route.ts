@@ -1,13 +1,9 @@
 /**
  * GET /api/cron/onboarding-emails
  *
- * R-105b §4.2 — a varredura diária do onboarding: régua de e-mail D1/D3/D7/D14 + a rede de
- * segurança do trial (§4.3). Espelha `api/whatsapp/run-reminders`, que é o cron que já roda
- * neste projeto — mesmo guard de `CRON_SECRET`, mesmo runtime, mesma forma de resposta.
- *
- * Agendado em `vercel.json` para 12:00 UTC (09:00 BRT). Roda **1×/dia**, e isso é contrato:
- * a anti-duplicata da régua é a janela de um dia exato, não uma tabela de log. Rodar duas vezes
- * no mesmo dia manda os mesmos e-mails de novo.
+ * R-105b §4.3 — régua D1/D3/D5/D6/D7 da assinatura individual Stripe.
+ * Cada marco é reclamado atomicamente em `onboarding_comunicacoes`; executar o cron duas
+ * vezes não duplica e uma falha temporária pode ser retomada depois do lease.
  *
  *   GET /api/cron/onboarding-emails
  *   Authorization: Bearer <CRON_SECRET>

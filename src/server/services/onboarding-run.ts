@@ -1,186 +1,139 @@
-// R-105b §4.2 e §4.3 — a varredura diária do onboarding.
-//
-// POR QUE ISTO EXISTE: `onboarding-emails.ts` tem 5 funções com template pronto e assunto
-// escrito, e até 15/08 **só o D0 tinha chamador**. D1, D3 e D7 não eram chamados de lugar
-// nenhum do projeto e não havia cron. Este arquivo é o chamador que faltava.
-//
-// ANTI-DUPLICATA SEM MIGRATION (§4.2): a janela é um dia EXATO (`idade === 1`, `=== 3`, …) e o
-// cron roda 1×/dia, então cada e-mail cai exatamente uma vez sem precisar de tabela de log.
-// Trade-off assumido por escrito na spec: se o cron falhar num dia, aquele e-mail se perde.
-// E-mail perdido incomoda menos que e-mail duplicado, e evita uma coluna só pra registrar envio.
-//
-// IDADE EM DIAS DE CALENDÁRIO, não em múltiplos de 24h: quem se cadastrou 23h55 de ontem e quem
-// se cadastrou 00h05 de hoje têm idades muito diferentes em horas e a mesma em dias. É a
-// contagem que o dentista percebe ("me cadastrei ontem"), e é a única que casa com um cron
-// diário — por horas, a janela escorregaria e o e-mail pularia um dia.
-
+import { randomUUID } from 'node:crypto';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
+  enviarEmailConversao,
   enviarEmailD1,
   enviarEmailD3,
-  enviarEmailD7,
-  enviarEmailD14,
+  enviarEmailTrialFinal,
+  enviarEmailTrialReminder,
 } from './onboarding-emails';
 
-/** Fuso da clínica, não do servidor — a Vercel roda em UTC. Mesmo princípio de `hora-brt.ts`. */
 const TZ = 'America/Sao_Paulo';
 
-function diaBRT(iso: string | Date): string {
-  return new Date(iso).toLocaleDateString('en-CA', { timeZone: TZ });
+function diaBRT(data: string | Date): string {
+  return new Date(data).toLocaleDateString('en-CA', { timeZone: TZ });
 }
 
-/** Diferença em dias de calendário (BRT) entre `desde` e hoje. */
-function idadeEmDias(desde: string, hojeStr: string): number {
-  const a = Date.parse(`${diaBRT(desde)}T00:00:00Z`);
-  const b = Date.parse(`${hojeStr}T00:00:00Z`);
-  return Math.round((b - a) / 86_400_000);
+function diferencaDias(desde: string | Date, ate: string | Date): number {
+  const inicio = Date.parse(`${diaBRT(desde)}T00:00:00Z`);
+  const fim = Date.parse(`${diaBRT(ate)}T00:00:00Z`);
+  return Math.round((fim - inicio) / 86_400_000);
+}
+
+interface AssinaturaOnboardingRow {
+  usuario_id: string;
+  dentista_id: string;
+  status: string;
+  trial_ends_at: string | null;
+  created_at: string;
+}
+
+interface DentistaEmailRow {
+  id: string;
+  nome: string;
+  email: string | null;
+  role: string;
+  ativo: boolean;
 }
 
 export interface OnboardingRunResultado {
   varridos: number;
-  enviados: { d1: number; d3: number; d7: number; d14: number };
-  trialsCorrigidos: number;
+  enviados: number;
+  pulados: number;
+  falhas: number;
 }
 
-interface DentistaRow {
-  id: string;
-  nome: string;
-  email: string | null;
-  created_at: string;
-  clinica_id: string;
+async function executarUmaVez(input: {
+  usuarioId: string;
+  marco: string;
+  enviar: () => Promise<void>;
+}): Promise<'enviado' | 'pulado' | 'falhou'> {
+  const db = createServiceClient();
+  const token = randomUUID();
+  const { data: claim, error: claimError } = await db.rpc('claim_onboarding_comunicacao', {
+    p_usuario_id: input.usuarioId,
+    p_marco: input.marco,
+    p_processing_token: token,
+  });
+  if (claimError || claim !== true) return 'pulado';
+
+  try {
+    await input.enviar();
+    const { error } = await db.from('onboarding_comunicacoes').update({
+      enviado_em: new Date().toISOString(),
+      processing_token: null,
+      processing_lease_until: null,
+      last_error: null,
+    }).eq('usuario_id', input.usuarioId).eq('marco', input.marco).eq('processing_token', token);
+    if (error) throw error;
+    return 'enviado';
+  } catch (error) {
+    const mensagem = error instanceof Error ? error.message : String(error);
+    await db.from('onboarding_comunicacoes').update({
+      processing_token: null,
+      processing_lease_until: null,
+      last_error: mensagem.slice(0, 500),
+    }).eq('usuario_id', input.usuarioId).eq('marco', input.marco).eq('processing_token', token);
+    return 'falhou';
+  }
 }
 
 export async function rodarOnboardingDiario(agora = new Date()): Promise<OnboardingRunResultado> {
-  const service = createServiceClient();
-  const hojeStr = diaBRT(agora);
-  const resultado: OnboardingRunResultado = {
-    varridos: 0,
-    enviados: { d1: 0, d3: 0, d7: 0, d14: 0 },
-    trialsCorrigidos: 0,
-  };
+  const db = createServiceClient();
+  const resultado: OnboardingRunResultado = { varridos: 0, enviados: 0, pulados: 0, falhas: 0 };
+  const noveDiasAtras = new Date(agora);
+  noveDiasAtras.setDate(noveDiasAtras.getDate() - 9);
 
-  // ── §4.3 — a rede de segurança do trial ─────────────────────────────────────
-  // Sustenta o I5 do R-105a ("nenhuma clínica com ≥1 ficha fica com trial_ends_at NULL por mais
-  // de 24h") quando a chamada imediata do Meu dia falhou por rede. Roda ANTES dos e-mails: o D7
-  // e o D14 leem `trial_ends_at`, então a correção precisa já ter acontecido.
-  //
-  // A JANELA DE 30 DIAS NÃO É FOLGA, É TRAVA. Sem ela, a primeira execução em produção daria
-  // partida no relógio de **Clindent (136 fichas), Império (34) e Vip (6)** — três clínicas
-  // reais que estão em trial perpétuo desde sempre. Elas bateriam no fim do trial em 14 dias,
-  // e hoje **não existe checkout funcionando** (R-92 pausado): seriam dentistas de verdade
-  // trancados fora de um sistema que usam todo dia, por causa de um cron de onboarding.
-  //
-  // A rede existe pra cobrir uma falha de rede de HORAS atrás, não pra migrar base antiga. O
-  // que fazer com as clínicas legadas é decisão de cobrança, e o dono dela é o R-92.
-  const trintaDiasAtras = new Date(agora);
-  trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
+  // A régua lê somente a assinatura individual Stripe. Ela nunca inicia ou corrige
+  // trial de clínica legada, nem inclui secretária/protético.
+  const { data: assinaturas, error } = await db.from('assinaturas_dentista')
+    .select('usuario_id, dentista_id, status, trial_ends_at, created_at')
+    .in('status', ['trialing', 'active', 'past_due'])
+    .gte('created_at', noveDiasAtras.toISOString());
+  if (error) throw error;
 
-  const { data: semRelogio } = await service
-    .from('clinicas')
-    .select('id')
-    .is('trial_ends_at', null)
-    .neq('status_assinatura', 'ativo')
-    .gte('created_at', trintaDiasAtras.toISOString());
+  for (const assinatura of (assinaturas ?? []) as AssinaturaOnboardingRow[]) {
+    const { data: dentista } = await db.from('dentistas')
+      .select('id, nome, email, role, ativo')
+      .eq('id', assinatura.dentista_id)
+      .maybeSingle<DentistaEmailRow>();
+    if (!dentista?.ativo || !['admin', 'dentista'].includes(dentista.role) || !dentista.email) continue;
 
-  for (const clinica of semRelogio ?? []) {
-    const { count } = await service
-      .from('fichas')
-      .select('id', { count: 'exact', head: true })
-      .eq('clinica_id', clinica.id);
-    if (!count) continue; // clínica sem ficha nenhuma ainda não começou — não é atraso
+    const idade = diferencaDias(assinatura.created_at, agora);
+    const diasRestantes = assinatura.trial_ends_at
+      ? diferencaDias(agora, assinatura.trial_ends_at)
+      : null;
+    const { count } = await db.from('fichas').select('id', { count: 'exact', head: true })
+      .eq('dentista_id', dentista.id);
+    const fichas = count ?? 0;
+    const nome = dentista.nome.replace(/^(dr\.?|dra\.?)\s*/i, '').trim().split(/\s+/)[0] ?? dentista.nome;
 
-    const fim = new Date(agora);
-    fim.setDate(fim.getDate() + 14);
-    const { data: gravou } = await service
-      .from('clinicas')
-      .update({ status_assinatura: 'trial', trial_ends_at: fim.toISOString() })
-      .eq('id', clinica.id)
-      .is('trial_ends_at', null) // idempotência no WHERE, igual `activateTrial`
-      .select('id');
-    if (gravou?.length) {
-      resultado.trialsCorrigidos += 1;
-      console.log(`[onboarding-run] trial corrigido — clinica_id=${clinica.id}`);
-    }
-  }
-
-  // ── §4.2 — a régua de e-mail ────────────────────────────────────────────────
-  // Só dentistas que decidem (admin/dentista): secretária e protético não recebem régua de
-  // ativação, porque nenhum dos gestos que ela cobra é deles (G8).
-  const quinzeDiasAtras = new Date(agora);
-  quinzeDiasAtras.setDate(quinzeDiasAtras.getDate() - 15);
-
-  const { data: dentistas, error } = await service
-    .from('dentistas')
-    .select('id, nome, email, created_at, clinica_id')
-    .in('role', ['admin', 'dentista'])
-    .eq('ativo', true)
-    .gte('created_at', quinzeDiasAtras.toISOString());
-
-  if (error) {
-    console.error('[onboarding-run] falha ao varrer dentistas:', error.message);
-    return resultado;
-  }
-
-  for (const d of (dentistas ?? []) as DentistaRow[]) {
-    const idade = idadeEmDias(d.created_at, hojeStr);
-    if (![1, 3, 7, 14].includes(idade)) continue;
-    if (!d.email) {
-      // Acontece de verdade: o cadastro aceita e-mail com typo (auto-confirm ligado, nada
-      // bounça) e o perfil pode nascer sem e-mail. Não dá pra avisar quem não tem endereço.
-      console.warn(`[onboarding-run] dentista ${d.id} sem e-mail — pulado (idade ${idade}d)`);
-      continue;
-    }
-    resultado.varridos += 1;
-
-    const { count: fichasCriadas } = await service
-      .from('fichas')
-      .select('id', { count: 'exact', head: true })
-      .eq('dentista_id', d.id);
-    const fichas = fichasCriadas ?? 0;
-    const primeiroNome = d.nome.trim().split(/\s+/).filter((p) => !/^(dr|dra)\.?$/i.test(p))[0] ?? d.nome;
-
+    let marco: string | null = null;
+    let enviar: (() => Promise<void>) | null = null;
     if (idade === 1) {
-      await enviarEmailD1({ email: d.email, nomeDentista: primeiroNome, fezPrimeiraConsulta: fichas > 0 });
-      resultado.enviados.d1 += 1;
-      continue;
-    }
-
-    if (idade === 3) {
-      // Quem já tem 2+ fichas pegou o hábito — o D3 é sobre não ter voltado (spec §4.2).
-      if (fichas >= 2) continue;
-      await enviarEmailD3({ email: d.email, nomeDentista: primeiroNome });
-      resultado.enviados.d3 += 1;
-      continue;
-    }
-
-    // D7 e D14 falam de cobrança, então precisam do relógio da clínica.
-    const { data: clinica } = await service
-      .from('clinicas')
-      .select('trial_ends_at, status_assinatura')
-      .eq('id', d.clinica_id)
-      .maybeSingle();
-
-    // Quem já paga não recebe aviso de fim de teste.
-    if (clinica?.status_assinatura === 'ativo') continue;
-
-    if (idade === 7) {
-      if (!clinica?.trial_ends_at) continue; // sem relógio não há data pra prometer
-      await enviarEmailD7({
-        email: d.email,
-        nomeDentista: primeiroNome,
-        fichasCriadas: fichas,
-        dataExpiracao: new Date(clinica.trial_ends_at).toLocaleDateString('pt-BR', {
-          timeZone: TZ, day: '2-digit', month: 'long',
-        }),
+      marco = 'd1';
+      enviar = () => enviarEmailD1({ email: dentista.email!, nomeDentista: nome, fezPrimeiraConsulta: fichas > 0 });
+    } else if (idade === 3 && fichas < 3) {
+      marco = 'd3';
+      enviar = () => enviarEmailD3({ email: dentista.email!, nomeDentista: nome });
+    } else if (diasRestantes === 2 && assinatura.status === 'trialing') {
+      marco = 'd5';
+      enviar = () => enviarEmailTrialReminder({
+        email: dentista.email!, nomeDentista: nome, fichasCriadas: fichas,
+        dataExpiracao: new Date(assinatura.trial_ends_at!).toLocaleDateString('pt-BR', { timeZone: TZ }),
       });
-      resultado.enviados.d7 += 1;
-      continue;
+    } else if (diasRestantes === 1 && assinatura.status === 'trialing') {
+      marco = 'd6';
+      enviar = () => enviarEmailTrialFinal({ email: dentista.email!, nomeDentista: nome, fichasCriadas: fichas });
+    } else if (idade >= 7 && assinatura.status === 'active') {
+      marco = 'd7';
+      enviar = () => enviarEmailConversao({ email: dentista.email!, nomeDentista: nome, fichasCriadas: fichas });
     }
+    if (!marco || !enviar) continue;
 
-    // idade === 14
-    await enviarEmailD14({ email: d.email, nomeDentista: primeiroNome, fichasCriadas: fichas });
-    resultado.enviados.d14 += 1;
+    resultado.varridos += 1;
+    const estado = await executarUmaVez({ usuarioId: assinatura.usuario_id, marco, enviar });
+    resultado[estado === 'enviado' ? 'enviados' : estado === 'pulado' ? 'pulados' : 'falhas'] += 1;
   }
-
   return resultado;
 }

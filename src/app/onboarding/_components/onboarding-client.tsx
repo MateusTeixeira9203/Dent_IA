@@ -8,17 +8,18 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useRouter } from 'next/navigation';
 import {
   Calendar, Users, Settings, CheckCircle2, Loader2, ChevronRight,
-  Stethoscope, Building2, Check, Clock, TrendingUp,
+  Stethoscope, Building2, Check,
 } from 'lucide-react';
 import {
   iniciarOnboarding, definirPlano, marcarOnboardingCompleto,
   definirProcedimentosPendente, type PlanoClinica,
 } from '../actions';
-import { PERSONAS, PERSONA_IDS, getPersona, type FocoPrincipal } from '@/lib/persona';
+import { getPersona, type FocoPrincipal } from '@/lib/persona';
 import { PLANOS } from '@/lib/planos';
 import { especialidadesSchema } from '@/lib/especialidades';
 import { EspecialidadeChips } from '@/components/ui/especialidade-chips';
 import { toast } from 'sonner';
+import { DexApresentacao } from './dex-apresentacao';
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -56,11 +57,6 @@ const PLANOS_CONFIG = [
   },
 ] as const;
 
-const PERSONA_ICONS: Record<FocoPrincipal, typeof Clock> = {
-  economizar_tempo: Clock,
-  crescer: TrendingUp,
-};
-
 // ── Schema ────────────────────────────────────────────────────────────────────
 
 const schema = z.object({
@@ -97,7 +93,7 @@ const PROXIMOS_PASSOS = [
 
 // ── Tipos ───────────────────────────────────────────────────────────────────────
 
-export type OnboardingStep = 'identidade' | 'aha' | 'plano' | 'procedimentos' | 'sucesso';
+export type OnboardingStep = 'identidade' | 'dex' | 'aha' | 'plano' | 'procedimentos' | 'sucesso';
 
 interface OnboardingClientProps {
   /** Passo inicial — 'plano' quando volta da demo (?step=plano); senão 'identidade'. */
@@ -113,7 +109,7 @@ interface OnboardingClientProps {
 export function OnboardingClient({ initialStep, focoInicial, nomeInicial }: OnboardingClientProps) {
   const router = useRouter();
   const [step, setStep]               = useState<OnboardingStep>(initialStep);
-  const [foco, setFoco]               = useState<FocoPrincipal | null>(focoInicial);
+  const foco: FocoPrincipal           = focoInicial ?? 'economizar_tempo';
   const [planoSelecionado, setPlano]  = useState<PlanoClinica>('SOLO');
   const [nomeConfirmado, setNome]     = useState(nomeInicial);
   const [isLoading, setIsLoading]     = useState(false);
@@ -139,10 +135,6 @@ export function OnboardingClient({ initialStep, focoInicial, nomeInicial }: Onbo
 
   // ── identidade → cria clínica+dentista (trial/SOLO) + persona, vai pro aha ──
   async function onSubmitIdentidade(data: FormData): Promise<void> {
-    if (!foco) {
-      toast.error('Escolha o que mais te ajudaria agora.');
-      return;
-    }
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
     setIsLoading(true);
@@ -162,12 +154,7 @@ export function OnboardingClient({ initialStep, focoInicial, nomeInicial }: Onbo
       if (result.success) {
         // FASE 1: teatro do onboarding (aha/plano/procedimentos) desativado — ver roadmap-3-fases A1
         setNome(data.nome.trim().split(' ')[0]);
-        await marcarOnboardingCompleto();
-        // R-105a §4.1 — destino é o Meu dia, não o dashboard. O dashboard de um dentista
-        // recém-criado tem as 3 métricas em 0, hero nulo e painel de atenção vazio: a primeira
-        // tela do produto provava que ele estava vazio. O trabalho mora no Meu dia, e é lá que
-        // a primeira fase guiada acontece.
-        router.replace('/dashboard/meu-dia');
+        setStep('dex');
       } else {
         toast.error(result.error ?? 'Erro ao salvar. Tente novamente.');
       }
@@ -175,6 +162,22 @@ export function OnboardingClient({ initialStep, focoInicial, nomeInicial }: Onbo
       toast.error('Erro inesperado. Tente novamente.');
     } finally {
       isSubmittingRef.current = false;
+      setIsLoading(false);
+    }
+  }
+
+  async function entrarNoMeuDia(): Promise<void> {
+    if (isLoading) return;
+    setIsLoading(true);
+    try {
+      const { error } = await marcarOnboardingCompleto();
+      if (error) {
+        toast.error('Não foi possível concluir o cadastro. Tente novamente.');
+        return;
+      }
+      router.replace('/dashboard/meu-dia');
+      router.refresh();
+    } finally {
       setIsLoading(false);
     }
   }
@@ -216,10 +219,10 @@ export function OnboardingClient({ initialStep, focoInicial, nomeInicial }: Onbo
   const personaCopy = getPersona(foco);
 
   return (
-    <div className="w-full max-w-lg">
+    <div className={step === 'dex' ? 'w-full max-w-5xl' : 'w-full max-w-lg'}>
       <AnimatePresence mode="wait">
 
-        {/* ── ETAPA 0 — Identidade + persona ── */}
+        {/* ── ETAPA 0 — Identidade profissional ── */}
         {step === 'identidade' && (
           <motion.div
             key="identidade"
@@ -303,52 +306,6 @@ export function OnboardingClient({ initialStep, focoInicial, nomeInicial }: Onbo
                   {errors.nomeConsultorio && <p className="text-xs text-coral">{errors.nomeConsultorio.message}</p>}
                 </div>
 
-                {/* Pergunta de persona */}
-                <div className="space-y-2.5 pt-1">
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">
-                    O que mais te ajudaria agora?
-                  </label>
-                  <div className="grid grid-cols-1 gap-2.5">
-                    {PERSONA_IDS.map((id) => {
-                      const p        = PERSONAS[id];
-                      const Icon     = PERSONA_ICONS[id];
-                      const selected = foco === id;
-                      return (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => setFoco(id)}
-                          className={[
-                            'flex items-start gap-3 p-3.5 rounded-2xl border text-left transition-all duration-200',
-                            selected
-                              ? 'border-teal/40 bg-teal/5 ring-1 ring-teal/20'
-                              : 'border-border bg-surface-alt hover:border-teal/20',
-                          ].join(' ')}
-                        >
-                          <div
-                            className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                            style={{ background: 'color-mix(in srgb, var(--color-teal) 12%, transparent)' }}
-                          >
-                            <Icon className="w-4 h-4" style={{ color: 'var(--color-teal)' }} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-text-primary">{p.label}</p>
-                            <p className="text-[11px] text-text-secondary leading-snug">{p.sublabel}</p>
-                          </div>
-                          {selected && (
-                            <div
-                              className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5"
-                              style={{ background: 'var(--color-teal)' }}
-                            >
-                              <Check className="w-3 h-3 text-white stroke-[3]" />
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
                 <button
                   type="submit"
                   disabled={isLoading}
@@ -362,6 +319,15 @@ export function OnboardingClient({ initialStep, focoInicial, nomeInicial }: Onbo
               </form>
             </div>
           </motion.div>
+        )}
+
+        {step === 'dex' && (
+          <DexApresentacao
+            key="dex"
+            pendente={isLoading}
+            onContinuar={() => { void entrarNoMeuDia(); }}
+            onPular={() => { void entrarNoMeuDia(); }}
+          />
         )}
 
         {/* ── ETAPA 1 (aha/demo) removida no R-72 — já estava inalcançável desde a Fase 1
@@ -389,7 +355,7 @@ export function OnboardingClient({ initialStep, focoInicial, nomeInicial }: Onbo
                 Escolha seu plano
               </h1>
               <p className="text-text-secondary text-sm">
-                14 dias grátis. Sem cartão agora — você pode mudar depois.
+                7 dias grátis. Sem cartão agora — você pode mudar depois.
               </p>
             </div>
 

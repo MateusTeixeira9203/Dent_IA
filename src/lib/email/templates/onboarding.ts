@@ -1,6 +1,6 @@
 import { PLANOS } from '@/lib/planos';
 
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://dentia.app.br';
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://odontoia.app';
 
 /**
  * R-105b (15/08) — os links destes e-mails estavam mortos e ninguém tinha notado, porque 3 dos
@@ -148,9 +148,9 @@ export function onboardingD3Html({ nomeDentista }: { nomeDentista: string }): st
     </tr>`);
 }
 
-// ── D7 — Conversão (7 dias antes do fim do trial) ────────────────────────────
+// ── Aviso comercial — dois dias antes do fim do trial ────────────────────────
 
-export function onboardingD7Html({
+export function onboardingTrialReminderHtml({
   nomeDentista,
   fichasCriadas,
   dataExpiracao,
@@ -178,12 +178,9 @@ export function onboardingD7Html({
     </tr>`);
 }
 
-// ── D14 — Vespera da cobranca ────────────────────────────────────────────────
-// R-105b §4.2 — o Playbook pede a regua ate D14 (PLG p.10) e este nao existia. Unico dos
-// cinco que nao tenta convencer de nada: o dentista ja passou 14 dias usando, e o que ele
-// precisa aqui e nao ser pego de surpresa.
+// ── Último dia do período de teste ───────────────────────────────────────────
 
-export function onboardingD14Html({
+export function onboardingTrialFinalHtml({
   nomeDentista,
   fichasCriadas,
 }: {
@@ -192,12 +189,12 @@ export function onboardingD14Html({
 }): string {
   const link = `${BASE_URL}${ABA_PLANO}`;
   const linha = fichasCriadas > 0
-    ? `Nesses 14 dias você registrou <strong style="color:#0d0d0d;">${fichasCriadas} ficha${fichasCriadas !== 1 ? 's' : ''}</strong> falando, sem digitar.`
+    ? `Nesses 7 dias você registrou <strong style="color:#0d0d0d;">${fichasCriadas} ficha${fichasCriadas !== 1 ? 's' : ''}</strong> falando, sem digitar.`
     : `Seu período de teste terminou sem nenhuma ficha registrada — e isso é informação nossa, não sua: significa que a gente não conseguiu te mostrar o valor a tempo.`;
   return wrapper(`
     <tr>
       <td style="padding:40px 40px 32px;">
-        <p style="margin:0 0 8px;font-size:20px;font-weight:600;color:#0d0d0d;">${nomeDentista}, seu teste termina amanhã.</p>
+        <p style="margin:0 0 8px;font-size:20px;font-weight:600;color:#0d0d0d;">${nomeDentista}, falta 1 dia para o fim do seu teste.</p>
         <p style="margin:0 0 24px;font-size:15px;color:#555555;line-height:1.6;">${linha}</p>
         <p style="margin:0 0 24px;font-size:15px;color:#555555;line-height:1.6;">
           Suas fichas e seu histórico continuam seus de qualquer forma. Se quiser seguir usando, é por aqui.
@@ -206,6 +203,26 @@ export function onboardingD14Html({
         <p style="margin:0;font-size:13px;color:#888888;line-height:1.6;">
           Se decidir não continuar, responda este e-mail contando por quê. Serve mais pra gente do que você imagina.
         </p>
+      </td>
+    </tr>`);
+}
+
+export function onboardingConversaoHtml({
+  nomeDentista,
+  fichasCriadas,
+}: {
+  nomeDentista: string;
+  fichasCriadas: number;
+}): string {
+  const link = `${BASE_URL}${MEU_DIA}`;
+  return wrapper(`
+    <tr>
+      <td style="padding:40px 40px 32px;">
+        <p style="margin:0 0 8px;font-size:20px;font-weight:600;color:#0d0d0d;">Sua assinatura está confirmada, ${nomeDentista}.</p>
+        <p style="margin:0 0 24px;font-size:15px;color:#555555;line-height:1.6;">
+          Você já registrou <strong style="color:#0d0d0d;">${fichasCriadas} ficha${fichasCriadas !== 1 ? 's' : ''}</strong> no Odonto.IA. Seu acesso continua normalmente.
+        </p>
+        ${ctaButton(link, '→ Abrir o Meu dia')}
       </td>
     </tr>`);
 }

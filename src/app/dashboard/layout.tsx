@@ -4,6 +4,9 @@ import { requireClinicContext } from "@/server/auth/clinic";
 import { getDentistaCached } from "@/lib/get-dentista";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { WelcomeModal } from "./_components/welcome-modal";
+import { createServiceClient } from '@/lib/supabase/service';
+import { clinicaIsentaDeCobranca } from '@/lib/billing/exemptions';
+import { obterAcessoFormacaoClinica } from '@/server/services/formacao-clinica';
 
 const ROTA_PROTETICO = "/dashboard/protetico";
 
@@ -13,6 +16,7 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { clinicId, user, supabase } = await requireClinicContext();
+  const pathname = (await headers()).get('x-pathname') ?? '/dashboard';
 
   const dentista = await getDentistaCached();
 
@@ -20,12 +24,67 @@ export default async function DashboardLayout({
     redirect("/onboarding");
   }
 
+  if (process.env.LEGAL_ACCEPTS_ENABLED === 'true') {
+    const { data: aceiteTermos } = await supabase
+      .from('aceites_termos')
+      .select('id')
+      .eq('usuario_id', user.id)
+      .eq('versao', '1.0-draft')
+      .maybeSingle();
+    if (!aceiteTermos) redirect(`/termos-de-uso?next=${encodeURIComponent(pathname)}`);
+  }
+
+  if (process.env.STRIPE_BILLING_ENABLED === 'true') {
+    const billingDb = createServiceClient();
+    const [{ data: clinicaBilling }, { data: assinaturaIndividual }, acessoFormacao] = await Promise.all([
+      billingDb.from('clinicas')
+        .select('status_elegibilidade').eq('id', clinicId)
+        .maybeSingle<{ status_elegibilidade: string }>(),
+      (dentista.role === 'admin' || dentista.role === 'dentista')
+        ? billingDb.from('assinaturas_dentista').select('status')
+          .eq('usuario_id', user.id).eq('clinica_id', clinicId)
+          .maybeSingle<{ status: string }>()
+        : Promise.resolve({ data: null }),
+      (dentista.role === 'admin' || dentista.role === 'dentista')
+        ? obterAcessoFormacaoClinica({ userId: user.id, clinicId })
+        : Promise.resolve({ liberado: false, expiresAt: null }),
+    ]);
+
+    if (dentista.role === 'admin' || dentista.role === 'dentista') {
+      const statusIndividual = assinaturaIndividual?.status;
+      const assinaturaLiberada = clinicaIsentaDeCobranca(clinicId)
+        || Boolean(statusIndividual && ['trialing', 'active', 'past_due'].includes(statusIndividual))
+        || acessoFormacao.liberado;
+
+      if (!assinaturaLiberada) {
+        const aguardandoCheckout = statusIndividual
+          && ['aguardando_formacao', 'checkout_pendente', 'cartao_pronto'].includes(statusIndividual);
+        redirect(aguardandoCheckout ? '/bem-vindo-agregado' : '/planos?billing=required');
+      }
+    }
+
+    if (clinicaBilling && ['decisao_pendente', 'bloqueada'].includes(clinicaBilling.status_elegibilidade)) {
+      const configuracoes = '/dashboard/configuracoes';
+      const arquivoClinico = '/dashboard/arquivo-clinico';
+      if (dentista.role === 'admin' || dentista.role === 'dentista') {
+        const rotaPermitida = pathname === configuracoes
+          || pathname.startsWith(`${configuracoes}/`)
+          || pathname === arquivoClinico
+          || pathname.startsWith(`${arquivoClinico}/`);
+        if (!rotaPermitida) {
+          redirect(`${configuracoes}?aba=clinica`);
+        }
+      } else {
+        redirect('/planos?blocked=clinic');
+      }
+    }
+  }
+
   // R-94 — gate de ponto único: protético só acessa a própria agenda. A permissão do
   // projeto é deny-list sem exhaustive check (63 arquivos com gate negativo, nenhum
   // pego pelo compilador) — em vez de auditar todos, um choke point aqui garante que
   // qualquer rota (existente ou futura) fica bloqueada por padrão pra esse role.
   if (dentista.role === "protetico") {
-    const pathname = (await headers()).get("x-pathname") ?? "";
     if (pathname !== ROTA_PROTETICO && !pathname.startsWith(`${ROTA_PROTETICO}/`)) {
       redirect(ROTA_PROTETICO);
     }
@@ -42,6 +101,7 @@ export default async function DashboardLayout({
   }
 
   if (
+    process.env.STRIPE_BILLING_ENABLED !== 'true' &&
     dentista.status_assinatura === "trial" &&
     dentista.trial_ends_at &&
     new Date(dentista.trial_ends_at) < new Date()
