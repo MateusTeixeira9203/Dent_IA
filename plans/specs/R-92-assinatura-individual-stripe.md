@@ -1,6 +1,6 @@
 # R-92 — Assinatura individual Stripe
 
-> **SPEC** · **R-92** · ⏳ aprovada para execução  
+> **SPEC** · **R-92** · ⏳ aprovada para execução
 > **Aberto:** 2026-08-18 · **Replanejado:** 2026-08-20 · **Implementação Stripe:** autorizada
 
 ## 1. Problema

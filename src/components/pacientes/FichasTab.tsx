@@ -1,5 +1,4 @@
 "use client";
-
 import * as React from "react";
 import {
   Plus,
@@ -1965,9 +1964,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                   })
                 )}
               </article>
-
               <div className="border-t border-border/60" />
-
               {/* R-122 — secundários não disputam a primeira leitura da ficha. Os campos e a
                   persistência são os mesmos; só entram progressivamente quando o dentista
                   precisa deles ou quando já há conteúdo. */}

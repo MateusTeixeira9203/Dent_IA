@@ -1,6 +1,6 @@
 # R-97 — Gestão colaborativa da clínica
 
-> **SPEC** · **R-97** · 🔵 aprovada para execução  
+> **SPEC** · **R-97** · 🔵 aprovada para execução
 > **Aberto:** 2026-08-18 · **Replanejado:** 2026-08-20 · **Billing R-92:** execução conjunta
 
 ## 1. Problema

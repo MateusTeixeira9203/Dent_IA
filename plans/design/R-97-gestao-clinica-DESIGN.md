@@ -1,6 +1,6 @@
 # Design brief — R-97 Gestão da clínica
 
-> **Status:** proposta para artefato · **Rota:** `/dashboard/configuracoes?aba=clinica`  
+> **Status:** proposta para artefato · **Rota:** `/dashboard/configuracoes?aba=clinica`
 > **Tipo:** tela de produto B2B clínica · **Referências:** Dashboard, Tratamento e tokens atuais
 
 ## Direção
