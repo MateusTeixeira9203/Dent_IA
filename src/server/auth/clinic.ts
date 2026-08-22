@@ -49,10 +49,9 @@ export const requireClinicContext = cache(async (): Promise<ClinicContext> => {
   const [{ data: membership }, { data: dentista }] = await Promise.all([
     supabase
       .from("clinica_usuarios")
-      .select("role")
+      .select("role, status")
       .eq("usuario_id", user.id)
       .eq("clinica_id", clinicId)
-      .eq("status", "ativo")
       .maybeSingle(),
     supabase
       .from("dentistas")
@@ -63,6 +62,12 @@ export const requireClinicContext = cache(async (): Promise<ClinicContext> => {
   ]);
 
   if (!membership) redirect("/onboarding");
+  if (membership.status !== 'ativo') {
+    if (membership.role === 'dentista' && (membership.status === 'pendente' || membership.status === 'suspenso')) {
+      redirect('/bem-vindo-agregado');
+    }
+    redirect('/onboarding');
+  }
   if (!dentista) redirect("/onboarding");
 
   return {

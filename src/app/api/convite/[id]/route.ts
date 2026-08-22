@@ -5,7 +5,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { cancelarConvite, renovarConvite } from '@/server/services/invites';
 
 // Resolução canônica: users.active_clinica_id → clinica_usuarios (não dentistas)
-async function resolveAdminCtx(user: { id: string }) {
+async function resolveDentistaCtx(user: { id: string }) {
   const supabase = await createClient();
 
   const { data: userRecord } = await supabase
@@ -26,7 +26,7 @@ async function resolveAdminCtx(user: { id: string }) {
     .eq('status', 'ativo')
     .maybeSingle();
 
-  if (!membership || membership.role !== 'admin') return null;
+  if (!membership || (membership.role !== 'admin' && membership.role !== 'dentista')) return null;
 
   return {
     userId:   user.id,
@@ -46,7 +46,7 @@ export async function DELETE(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
 
-  const ctx = await resolveAdminCtx(user);
+  const ctx = await resolveDentistaCtx(user);
   if (!ctx) return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
 
   const result = await cancelarConvite(ctx, id);
@@ -66,7 +66,7 @@ export async function PATCH(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
 
-  const ctx = await resolveAdminCtx(user);
+  const ctx = await resolveDentistaCtx(user);
   if (!ctx) return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
 
   const result = await renovarConvite(ctx, id);

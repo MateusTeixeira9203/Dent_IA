@@ -27,8 +27,8 @@ const PERMISSIONS: Record<Module, readonly ClinicRole[]> = {
   whatsapp_config:  ['admin', 'secretaria'],
   financeiro:       ['admin', 'dentista', 'secretaria'],
   configuracoes:    ['admin', 'dentista'],
-  equipe:           ['admin'],
-  convites:         ['admin'],
+  equipe:           ['admin', 'dentista'],
+  convites:         ['admin', 'dentista'],
 };
 
 export function canAccess(role: ClinicRole, module: Module): boolean {

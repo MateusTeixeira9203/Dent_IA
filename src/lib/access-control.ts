@@ -11,7 +11,7 @@ import type { PlanoId } from '@/lib/planos';
  *
  * Regras:
  * - Plano SOLO: o admin/dentista gerencia tudo sozinho → pode ver.
- * - Plano CLINICA: a secretária é responsável pelo bot → só ela vê.
+ * - Plano CLINICA: secretária e dentistas gerem a configuração compartilhada.
  */
 export function canViewWhatsApp(
   role: DentistaRole,
@@ -20,6 +20,6 @@ export function canViewWhatsApp(
   if (!plan || plan === 'SOLO' || (plan as string) === 'BASICO') {
     return role === 'admin' || role === 'dentista';
   }
-  // CLINICA: apenas secretária
-  return role === 'secretaria';
+  // CLINICA: operação compartilhada entre dentistas e secretária.
+  return role === 'dentista' || role === 'admin' || role === 'secretaria';
 }

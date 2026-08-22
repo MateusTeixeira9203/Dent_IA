@@ -1,4 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/service';
+import { getStripeClient } from '@/lib/stripe';
+import { avaliarMinimoClinica } from './elegibilidade-clinica';
 
 function gerarSenhaTemporaria(): string {
   const chars = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#';
@@ -42,8 +44,8 @@ async function provisionarMembroEquipe(
   ctx: { userId: string; clinicId: string; role: string },
   input: CriarSecretariaInput,
 ): Promise<CriarSecretariaResult> {
-  if (ctx.role !== 'admin') {
-    return { ok: false, error: `Apenas administradores podem criar ${ROLE_LABEL_ERRO[role]}.` };
+  if (ctx.role !== 'admin' && ctx.role !== 'dentista') {
+    return { ok: false, error: `Apenas dentistas podem criar ${ROLE_LABEL_ERRO[role]}.` };
   }
 
   const { nome, email, senha, telefone } = input;
@@ -158,7 +160,7 @@ export async function criarProtetico(
 
 /**
  * Permite que o próprio usuário saia de uma clínica.
- * Protege o último admin — não permite auto-remoção nesse caso.
+ * Não apaga nenhum registro clínico: apenas desativa o vínculo e o perfil ativo.
  * Retorna hasOtherClinic para o caller redirecionar corretamente.
  */
 export async function sairDaClinica(
@@ -166,26 +168,45 @@ export async function sairDaClinica(
 ): Promise<{ ok: boolean; error?: string; hasOtherClinic?: boolean }> {
   const db = createServiceClient();
 
-  // Admin: verificar se há pelo menos outro admin ativo
-  if (ctx.role === 'admin') {
-    const { count } = await db
-      .from('clinica_usuarios')
-      .select('id', { count: 'exact', head: true })
-      .eq('clinica_id', ctx.clinicId)
-      .eq('role', 'admin')
-      .eq('status', 'ativo');
+  const now = new Date().toISOString();
+  let assinaturaId: string | null = null;
+  let assinaturaPlano: string | null = null;
 
-    if ((count ?? 0) <= 1) {
-      return {
-        ok: false,
-        error: 'Você é o único administrador. Transfira o papel de admin a outro membro antes de sair.',
-      };
+  if (process.env.STRIPE_BILLING_ENABLED === 'true' && (ctx.role === 'admin' || ctx.role === 'dentista')) {
+    const { data: assinatura } = await db.from('assinaturas_dentista')
+      .select('id, stripe_subscription_id, plano').eq('usuario_id', ctx.userId)
+      .eq('clinica_id', ctx.clinicId)
+      .not('status', 'in', '(canceled,suspended)')
+      .maybeSingle<{ id: string; stripe_subscription_id: string | null; plano: string }>();
+    assinaturaId = assinatura?.id ?? null;
+    assinaturaPlano = assinatura?.plano ?? null;
+    if (assinatura?.stripe_subscription_id) {
+      try {
+        await getStripeClient().subscriptions.cancel(assinatura.stripe_subscription_id, {
+          invoice_now: false,
+          prorate: false,
+        });
+      } catch (error) {
+        console.error('[sairDaClinica] Stripe não cancelou assinatura:', error);
+        return { ok: false, error: 'Não foi possível cancelar sua assinatura. Tente novamente antes de sair.' };
+      }
     }
   }
 
-  const now = new Date().toISOString();
+  // Uma pessoa que saiu durante a formação não pode continuar contando como
+  // cartão pronto nem receber uma assinatura quando a segunda pessoa concluir.
+  if (assinaturaId) {
+    const { data: cancelada, error: assinaturaError } = await db.from('assinaturas_dentista')
+      .update({ status: 'canceled', billing_paused_at: null })
+      .eq('id', assinaturaId).eq('usuario_id', ctx.userId)
+      .select('id');
+    if (assinaturaError || (cancelada?.length ?? 0) !== 1) {
+      return { ok: false, error: 'Não foi possível encerrar sua assinatura com segurança.' };
+    }
+    if (assinaturaPlano === 'CLINICA') await avaliarMinimoClinica(ctx.clinicId);
+  }
 
-  await Promise.all([
+  const resultados = await Promise.all([
     db.from('clinica_usuarios')
       .update({ status: 'removido', removed_at: now })
       .eq('usuario_id', ctx.userId)
@@ -195,6 +216,8 @@ export async function sairDaClinica(
       .eq('user_id', ctx.userId)
       .eq('clinica_id', ctx.clinicId),
   ]);
+  const falha = resultados.find((item) => item.error)?.error;
+  if (falha) return { ok: false, error: 'Não foi possível encerrar seu vínculo com segurança.' };
 
   // Verifica se o usuário tem outra clínica ativa para redirecionar
   const { data: outraClinica } = await db
@@ -228,12 +251,12 @@ export async function removerMembro(
   ctx: { userId: string; clinicId: string; role: string },
   membroUserId: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  if (ctx.role !== 'admin') {
-    return { ok: false, error: 'Apenas administradores podem remover membros.' };
+  if (ctx.role !== 'admin' && ctx.role !== 'dentista') {
+    return { ok: false, error: 'Apenas dentistas podem remover membros da equipe.' };
   }
 
   if (membroUserId === ctx.userId) {
-    return { ok: false, error: 'Você não pode se remover da clínica.' };
+    return { ok: false, error: 'Para sair da clínica, use a opção Sair da clínica.' };
   }
 
   const db = createServiceClient();
@@ -258,17 +281,8 @@ export async function removerMembro(
 
     if (!dentista) return { ok: false, error: 'Membro não encontrado nesta clínica.' };
 
-    if (dentista.role === 'admin') {
-      const { count } = await db
-        .from('dentistas')
-        .select('id', { count: 'exact', head: true })
-        .eq('clinica_id', ctx.clinicId)
-        .eq('role', 'admin')
-        .eq('ativo', true);
-
-      if ((count ?? 0) <= 1) {
-        return { ok: false, error: 'Não é possível remover o último administrador da clínica.' };
-      }
+    if (dentista.role === 'admin' || dentista.role === 'dentista') {
+      return { ok: false, error: 'Dentistas só podem sair da clínica por conta própria.' };
     }
 
     await db
@@ -295,18 +309,8 @@ export async function removerMembro(
     return { ok: true };
   }
 
-  // Proteção: último admin
-  if (membership.role === 'admin') {
-    const { count } = await db
-      .from('clinica_usuarios')
-      .select('id', { count: 'exact', head: true })
-      .eq('clinica_id', ctx.clinicId)
-      .eq('role', 'admin')
-      .eq('status', 'ativo');
-
-    if ((count ?? 0) <= 1) {
-      return { ok: false, error: 'Não é possível remover o último administrador da clínica.' };
-    }
+  if (membership.role === 'admin' || membership.role === 'dentista') {
+    return { ok: false, error: 'Dentistas só podem sair da clínica por conta própria.' };
   }
 
   const now = new Date().toISOString();
@@ -353,7 +357,7 @@ export async function resetarSenhaSecretaria(
   ctx: { userId: string; clinicId: string; role: string },
   secretariaUserId: string,
 ): Promise<{ ok: boolean; error?: string; senhaTemporaria?: string }> {
-  if (ctx.role !== 'admin') {
+  if (ctx.role !== 'admin' && ctx.role !== 'dentista') {
     return { ok: false, error: 'Sem permissão.' };
   }
 

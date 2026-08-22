@@ -13,14 +13,27 @@ export async function criarConvite(
   ctx: { userId: string; clinicId: string; role: string },
   input: CriarConviteInput,
 ): Promise<CriarConviteResult> {
-  if (ctx.role !== 'admin') {
-    return { ok: false, error: 'Apenas administradores podem convidar dentistas.' };
+  if (ctx.role !== 'admin' && ctx.role !== 'dentista') {
+    return { ok: false, error: 'Apenas dentistas da clínica podem convidar dentistas.' };
   }
 
   // Normaliza o e-mail — evita tratar usuário existente como "sem conta" por
   // diferença de maiúsculas/espaços. O aceite compara case-insensitive.
   const email = input.email.trim().toLowerCase();
   const db = createServiceClient();
+
+  if (process.env.STRIPE_BILLING_ENABLED === 'true') {
+    const [{ data: clinicaPlano }, { data: formacao }] = await Promise.all([
+      db.from('clinicas').select('plano').eq('id', ctx.clinicId)
+        .maybeSingle<{ plano: string }>(),
+      db.from('formacoes_clinica').select('id').eq('clinica_id', ctx.clinicId)
+        .in('status', ['aguardando_equipe', 'coletando_pagamento', 'ativando'])
+        .gt('expires_at', new Date().toISOString()).maybeSingle<{ id: string }>(),
+    ]);
+    if (clinicaPlano?.plano !== 'CLINICA' && !formacao) {
+      return { ok: false, error: 'Inicie a formação da Clínica antes de enviar convites.' };
+    }
+  }
 
   // Convite pendente ativo?
   const { data: existing } = await db
@@ -37,18 +50,21 @@ export async function criarConvite(
   }
 
   // Limite de dentistas
-  const [{ data: clinica }, { count: activeDentistas }] = await Promise.all([
+  const [{ data: clinica }, { count: linkedDentistas }, { count: pendingInvites }] = await Promise.all([
     db.from('clinicas').select('limite_dentistas').eq('id', ctx.clinicId).single(),
     db
       .from('clinica_usuarios')
       .select('id', { count: 'exact', head: true })
       .eq('clinica_id', ctx.clinicId)
       .in('role', ['admin', 'dentista'])
-      .eq('status', 'ativo'),
+      .in('status', ['ativo', 'pendente', 'suspenso']),
+    db.from('convites').select('id', { count: 'exact', head: true })
+      .eq('clinica_id', ctx.clinicId).eq('role', 'dentista').eq('status', 'pendente')
+      .gt('expires_at', new Date().toISOString()),
   ]);
 
   const limite = (clinica as { limite_dentistas: number } | null)?.limite_dentistas ?? 5;
-  if ((activeDentistas ?? 0) >= limite) {
+  if ((linkedDentistas ?? 0) + (pendingInvites ?? 0) >= limite) {
     return { ok: false, error: `Limite de ${limite} dentistas atingido.` };
   }
 
@@ -110,7 +126,7 @@ export async function criarConvite(
     // O SDK do Resend NÃO lança em erro de API — retorna { data, error }.
     // Precisamos checar `error` explicitamente, senão marcamos "enviado" à toa.
     const { error: sendError } = await getResend().emails.send({
-      from: 'Odonto.IA <equipe@dentia.app.br>',
+      from: process.env.EMAIL_FROM ?? 'Odonto.IA <equipe@odontoia.app>',
       to: email,
       subject: `Convite para ${clinicaForEmail?.nome ?? 'clínica'} — Odonto.IA`,
       html: conviteEmailHtml({
@@ -171,7 +187,7 @@ export async function cancelarConvite(
   ctx: { userId: string; clinicId: string; role: string },
   inviteId: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  if (ctx.role !== 'admin') {
+  if (ctx.role !== 'admin' && ctx.role !== 'dentista') {
     return { ok: false, error: 'Sem permissão.' };
   }
 
@@ -191,7 +207,7 @@ export async function renovarConvite(
   ctx: { userId: string; clinicId: string; role: string },
   inviteId: string,
 ): Promise<{ ok: boolean; error?: string; link?: string }> {
-  if (ctx.role !== 'admin') {
+  if (ctx.role !== 'admin' && ctx.role !== 'dentista') {
     return { ok: false, error: 'Sem permissão.' };
   }
 
@@ -246,7 +262,7 @@ export async function renovarConvite(
       .maybeSingle<{ nome: string }>();
 
     await getResend().emails.send({
-      from: 'Odonto.IA <equipe@dentia.app.br>',
+      from: 'Odonto.IA <equipe@odontoia.app>',
       to: convite.email as string,
       subject: `Convite renovado para ${clinicaForEmail?.nome ?? 'clínica'} — Odonto.IA`,
       html: conviteEmailHtml({
@@ -335,18 +351,34 @@ export async function aceitarConvite(
 
   const clinicId = convite.clinica_id as string;
   const role = convite.role as string;
+  const isDentistaConvidado = role === 'dentista';
+  // Billing ainda não está ativado localmente/nem em produção. Enquanto a flag estiver
+  // desligada, convite segue o fluxo clínico normal e não toca a tabela nova do R-92.
+  const billingEnabled = process.env.STRIPE_BILLING_ENABLED === 'true';
+
+  if (billingEnabled && isDentistaConvidado) {
+    const [{ data: clinicaPlano }, { data: formacao }] = await Promise.all([
+      db.from('clinicas').select('plano').eq('id', clinicId)
+        .maybeSingle<{ plano: string }>(),
+      db.from('formacoes_clinica').select('id').eq('clinica_id', clinicId)
+        .in('status', ['aguardando_equipe', 'coletando_pagamento', 'ativando'])
+        .gt('expires_at', new Date().toISOString()).maybeSingle<{ id: string }>(),
+    ]);
+    if (clinicaPlano?.plano !== 'CLINICA' && !formacao) {
+      return { ok: false, error: 'A formação desta clínica expirou. Peça um novo convite.' };
+    }
+  }
 
   // 3. Verificar membership nesta clínica específica
   // Multi-clínica é suportado: pertencer a outras clínicas não bloqueia este convite.
-  const { data: jaEMembro } = await db
+  const { data: membershipExistente } = await db
     .from('clinica_usuarios')
-    .select('id')
+    .select('id, status')
     .eq('usuario_id', userId)
     .eq('clinica_id', clinicId)
-    .eq('status', 'ativo')
     .maybeSingle();
 
-  if (jaEMembro) {
+  if (membershipExistente?.status === 'ativo') {
     return { ok: false, error: 'Você já faz parte desta clínica.' };
   }
 
@@ -357,20 +389,36 @@ export async function aceitarConvite(
     authUser?.user?.email ??
     userEmail;
 
-  // 5. Garantir registro em public.users e definir nova clínica como ativa.
-  //    Upsert: cria se não existir, atualiza active_clinica_id se já existir.
-  //    Paralelo com dentistas — ambos independentes entre si.
-  const [, dentistaUpsert] = await Promise.all([
+  const { data: userAntes } = await db.from('users')
+    .select('active_clinica_id').eq('id', userId)
+    .maybeSingle<{ active_clinica_id: string | null }>();
+
+  // 5. A clínica convidante vira o contexto ativo, mas o vínculo pendente não
+  // concede acesso: requireClinicContext redireciona ao Checkout até o webhook.
+  const [userUpsert, dentistaUpsert] = await Promise.all([
     db.from('users').upsert(
-      { id: userId, email: userEmail, active_clinica_id: clinicId },
+      {
+        id: userId,
+        email: userEmail,
+        // O convite pago só vira contexto ativo depois do webhook. Assim, cancelar
+        // o Checkout não prende um dentista que já trabalhava em outra clínica.
+        active_clinica_id: billingEnabled && isDentistaConvidado
+          ? userAntes?.active_clinica_id ?? null
+          : clinicId,
+      },
       { onConflict: 'id' },
     ),
     // Perfil clínico legado — cria ou reativa linha para esta clínica+usuário
     db.from('dentistas').upsert(
-      { clinica_id: clinicId, user_id: userId, nome, email: userEmail, role, ativo: true },
+      { clinica_id: clinicId, user_id: userId, nome, email: userEmail, role, ativo: !billingEnabled || !isDentistaConvidado },
       { onConflict: 'clinica_id,user_id' },
     ).select('id').single(),
   ]);
+
+  if (userUpsert.error || dentistaUpsert.error || !dentistaUpsert.data?.id) {
+    console.error('[aceitarConvite] falha ao preparar perfil:', userUpsert.error?.message ?? dentistaUpsert.error?.message);
+    return { ok: false, error: 'Erro ao preparar seu acesso. Tente novamente.' };
+  }
 
   // 5b. Dentista novo ganha a própria cópia do catálogo padrão — catálogo é
   // privado por dentista (não herda de ninguém da clínica). Best-effort:
@@ -402,14 +450,17 @@ export async function aceitarConvite(
     }
   }
 
-  // 6. Membership canônica — depende de public.users existir (FK)
-  const { error: memberError } = await db.from('clinica_usuarios').insert({
+  // 6. Membership canônica — com billing ativo, dentista fica pendente até o webhook.
+  const memberData = {
     usuario_id: userId,
     clinica_id: clinicId,
     role,
-    status: 'ativo',
+    status: billingEnabled && isDentistaConvidado ? 'pendente' : 'ativo',
     joined_at: new Date().toISOString(),
-  });
+  };
+  const { error: memberError } = membershipExistente
+    ? await db.from('clinica_usuarios').update(memberData).eq('id', membershipExistente.id as string)
+    : await db.from('clinica_usuarios').insert(memberData);
 
   if (memberError) {
     // Não revertemos users (pode já existir em outra clínica), mas impedimos
@@ -417,6 +468,10 @@ export async function aceitarConvite(
     console.error('[aceitarConvite] falha ao criar membership:', memberError.message);
     return { ok: false, error: 'Erro ao processar o convite. Tente novamente.' };
   }
+
+  // A assinatura só nasce depois que o próprio dentista escolhe mensal/anual.
+  // Isso evita gravar um Price implícito e, na formação Clínica, evita qualquer
+  // subscription antes de dois cartões confirmados.
 
   // 7. Marcar convite como aceito — só após membership criada com sucesso
   const { error: updateError } = await db

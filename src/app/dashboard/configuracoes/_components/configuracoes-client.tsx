@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Building2, Clock, Stethoscope, Check, Plus, Loader2, Pencil, X, Users, UserCircle, LogOut, AlertTriangle, ImageIcon, FileUp, CreditCard, Gift, Copy, ArrowUpRight, Sparkles } from 'lucide-react';
+import { Building2, Clock, Stethoscope, Check, Plus, Loader2, Pencil, X, UserCircle, LogOut, AlertTriangle, ImageIcon, FileUp, CreditCard, Gift, Copy, ArrowUpRight, Sparkles, MessageCircle } from 'lucide-react';
 import Link from 'next/link';
 import { ImportarProcedimentosModal } from './importar-procedimentos-modal';
 import { MigrarClinicaModal } from './migrar-clinica-modal';
@@ -26,6 +26,11 @@ import {
   sairDaClinicaAction,
   type HorarioDia,
 } from '../actions';
+import {
+  abrirPortalCobrancaAction,
+  continuarClinicaBloqueadaAction,
+  migrarParaConsultorioAction,
+} from '../plano-actions';
 
 type UsuarioRow = { id: string; nome: string; email: string | null; role: DentistaRole; ativo: boolean; created_at: string };
 type ConvitePendente = { id: string; email: string; role: DentistaRole; expires_at: string; created_at: string };
@@ -41,8 +46,7 @@ const DIAS_SEMANA = [
   { label: 'Sábado', value: 6 },
 ];
 
-const ABAS_IDS = ['perfil', 'clinica', 'horarios', 'procedimentos', 'equipe', 'plano'] as const;
-type Aba = (typeof ABAS_IDS)[number];
+type Aba = 'perfil' | 'clinica' | 'horarios' | 'procedimentos' | 'plano';
 
 interface Props {
   plano?: PlanoId;
@@ -60,32 +64,34 @@ interface Props {
     convitesRestantes: number;
   };
   assinatura?: {
-    status: 'trial' | 'ativo' | 'inativo';
+    status: 'trial' | 'ativo' | 'inativo' | 'past_due' | 'suspenso';
     trialEndsAt: string | null;
+    graceEndsAt: string | null;
   };
+  formacao?: { status: string; expiresAt: string | null; cartoesProntos: number };
+  elegibilidade?: { status: string; prazoEquipe: string | null };
+  abrirFormacaoInicial?: boolean;
   procedimentosPendente?: boolean;
   clinicId?: string;
   appUrl?: string;
 }
 
-export function ConfiguracoesClient({ plano, dentista, config, horarios, procedimentos: procedimentosIniciais, abaInicial, equipe, assinatura, procedimentosPendente = false, clinicId, appUrl }: Props) {
+export function ConfiguracoesClient({ plano, dentista, config, horarios, procedimentos: procedimentosIniciais, abaInicial, equipe, assinatura, formacao, elegibilidade, abrirFormacaoInicial = false, procedimentosPendente = false, clinicId, appUrl }: Props) {
   const labelContexto = getLabelContexto(plano); // "Consultório" (SOLO) ou "Clínica" (CLINICA)
   const isSolo = !plano || plano === 'SOLO' || (plano as string) === 'BASICO';
   const planoConfig = getPlano(plano);
 
-  // "Clínica" (dados gerais/pagamento) e "Equipe" (convites/roster) continuam exclusivas
-  // do admin — dentista vê perfil, horários, procedimentos e plano (pediu acesso a essas 4).
   const ABAS_TODAS = [
     { id: 'perfil'        as const, label: 'Meu Perfil',      icon: UserCircle  },
     { id: 'clinica'       as const, label: labelContexto,      icon: isSolo ? Stethoscope : Building2 },
     { id: 'horarios'      as const, label: 'Horários',         icon: Clock       },
     { id: 'procedimentos' as const, label: 'Procedimentos',    icon: Stethoscope },
-    { id: 'equipe'        as const, label: 'Equipe',           icon: Users       },
     { id: 'plano'         as const, label: 'Plano',            icon: CreditCard  },
   ];
-  const ABAS = dentista.role === 'admin'
+  const podeGerirClinica = dentista.role === 'admin' || dentista.role === 'dentista';
+  const ABAS = podeGerirClinica
     ? ABAS_TODAS
-    : ABAS_TODAS.filter(a => a.id !== 'clinica' && a.id !== 'equipe');
+    : ABAS_TODAS.filter((aba) => aba.id !== 'clinica');
   const abaPadrao: Aba = ABAS[0]?.id ?? 'perfil';
   const router = useRouter();
   const [abaAtiva, setAbaAtiva] = useState<Aba>((ABAS.some(a => a.id === abaInicial) ? abaInicial : abaPadrao) as Aba);
@@ -94,11 +100,11 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // --- Plano e Indicação ---
-  const [migrarOpen, setMigrarOpen]   = useState(false);
-  const dentistasAtivos = (equipe?.usuarios ?? []).filter((u) => u.role !== 'secretaria' && u.ativo).length;
+  const [migrarOpen, setMigrarOpen]   = useState(abrirFormacaoInicial);
+  const dentistasAtivos = (equipe?.usuarios ?? []).filter((u) => ['admin', 'dentista'].includes(u.role) && u.ativo).length;
   const [copiouLink, setCopiouLink]   = useState(false);
   const codigoIndicacao = (clinicId ?? '').replace(/-/g, '').slice(0, 8).toUpperCase();
-  const baseUrl = appUrl ?? 'https://dentia.app.br';
+  const baseUrl = appUrl ?? 'https://odontoia.app';
   const linkIndicacao = `${baseUrl}/cadastro?ref=${codigoIndicacao}`;
 
   function copiarLink() {
@@ -110,6 +116,30 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
   function formatarDataTrial(iso: string): string {
     return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
   }
+
+  const resolverElegibilidade = (acao: 'solo' | 'bloqueada') => {
+    setSuccessMsg(null);
+    setErrorMsg(null);
+    startTransition(async () => {
+      const result = acao === 'solo'
+        ? await migrarParaConsultorioAction()
+        : await continuarClinicaBloqueadaAction();
+      if (!result.ok) setErrorMsg(result.error);
+      else {
+        setSuccessMsg(acao === 'solo' ? 'Plano alterado para Consultório.' : 'Clínica mantida sem cobrança até recompor a equipe.');
+        router.refresh();
+      }
+    });
+  };
+
+  const abrirPortalCobranca = () => {
+    setErrorMsg(null);
+    startTransition(async () => {
+      const result = await abrirPortalCobrancaAction();
+      if (!result.ok) setErrorMsg(result.error);
+      else window.location.assign(result.url);
+    });
+  };
 
   // --- Sair da clínica ---
   const [showSairDialog, setShowSairDialog] = useState(false);
@@ -371,7 +401,6 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
         >
           <div id="dex-tour-procedimentos" className="bg-surface rounded-3xl border border-border shadow-sm p-2 space-y-1">
             {ABAS.map(({ id, label, icon: Icon }) => {
-              if (id === 'equipe' && !equipe) return null;
               const showBadge = (id === 'perfil' && !dentista.cro) || (id === 'procedimentos' && procedimentosPendente);
               const isActive = abaAtiva === id;
               return (
@@ -480,27 +509,6 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                 </button>
               </div>
 
-              {/* Zona de risco */}
-              <div className="border-t border-border pt-6">
-                <p className="text-xs font-bold uppercase tracking-widest text-text-secondary mb-3">
-                  Zona de risco
-                </p>
-                <div className="flex items-center justify-between gap-4 p-4 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/50 dark:bg-red-900/10">
-                  <div>
-                    <p className="text-sm font-semibold text-text-primary">Sair deste {labelContexto.toLowerCase()}</p>
-                    <p className="text-sm text-text-secondary mt-0.5">
-                      Você perderá acesso imediatamente. Seus dados clínicos serão preservados.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => { setSairError(null); setShowSairDialog(true); }}
-                    className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-red-600 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    Sair
-                  </button>
-                </div>
-              </div>
             </div>
 
           )}
@@ -508,7 +516,102 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
           {/* === ABA: CLÍNICA / CONSULTÓRIO === */}
           {abaAtiva === 'clinica' && (
             <div className="bg-surface p-6 rounded-3xl border border-border shadow-sm space-y-6">
-              <h2 className="font-heading font-bold text-2xl text-text-primary">Dados do {labelContexto}</h2>
+              <div className="flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-12 items-center justify-center rounded-2xl border border-teal/20 bg-teal/10">
+                    <Building2 className="size-5 text-teal" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-teal">Gestão compartilhada</p>
+                    <h2 className="font-heading text-2xl font-bold text-text-primary">{clinicaForm.nome_clinica || labelContexto}</h2>
+                    <p className="text-sm text-text-secondary">Dados, equipe e convites em um só lugar.</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <span className="rounded-xl border border-border bg-surface-alt px-3 py-2 text-xs font-semibold text-text-secondary">
+                    {dentistasAtivos}/8 dentistas
+                  </span>
+                  <span className="rounded-xl border border-teal/20 bg-teal/10 px-3 py-2 text-xs font-semibold text-teal">
+                    {formacao ? `${formacao.cartoesProntos}/2 cartões` : 'Clínica ativa'}
+                  </span>
+                </div>
+              </div>
+
+              {elegibilidade && elegibilidade.status !== 'regular' && (
+                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-500" />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold text-text-primary">
+                        {elegibilidade.status === 'recompondo_equipe'
+                          ? 'A clínica precisa voltar ao mínimo de 2 dentistas'
+                          : 'Escolha como continuar'}
+                      </h3>
+                      <p className="mt-1 text-sm text-text-secondary">
+                        {elegibilidade.status === 'recompondo_equipe'
+                          ? `Convide outro dentista até ${elegibilidade.prazoEquipe ? new Date(elegibilidade.prazoEquipe).toLocaleString('pt-BR') : 'o fim do prazo'}. Durante esse período, o acesso continua normal.`
+                          : 'Você pode migrar sua assinatura para Consultório sem cobrança imediata, ou manter a clínica bloqueada e sem acumular cobrança até recompor a equipe.'}
+                      </p>
+                      {elegibilidade.status !== 'recompondo_equipe' && (
+                        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                          <button
+                            type="button"
+                            disabled={isPending}
+                            onClick={() => resolverElegibilidade('solo')}
+                            className="min-h-11 rounded-xl bg-teal px-4 text-sm font-bold text-white transition-opacity disabled:opacity-50"
+                          >
+                            Migrar para Consultório
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isPending}
+                            onClick={() => resolverElegibilidade('bloqueada')}
+                            className="min-h-11 rounded-xl border border-border bg-surface px-4 text-sm font-semibold text-text-primary transition-colors hover:bg-surface-alt disabled:opacity-50"
+                          >
+                            Manter clínica bloqueada
+                          </button>
+                          <Link
+                            href="/dashboard/arquivo-clinico"
+                            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-border bg-surface px-4 text-sm font-semibold text-text-primary transition-colors hover:bg-surface-alt"
+                          >
+                            Ler ou exportar prontuários
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {formacao && formacao.status !== 'ativa' && (
+                <div className="flex flex-col gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-text-primary">Formação da clínica em andamento</p>
+                    <p className="mt-1 text-xs text-text-secondary">{formacao.cartoesProntos}/2 cartões confirmados. O teste só começa quando os dois estiverem prontos.</p>
+                  </div>
+                  {formacao.expiresAt && <span className="shrink-0 rounded-xl bg-surface px-3 py-2 text-xs font-semibold text-amber-600">Até {new Date(formacao.expiresAt).toLocaleString('pt-BR')}</span>}
+                </div>
+              )}
+
+              {equipe && (
+                <section aria-labelledby="equipe-clinica" className="rounded-2xl border border-border bg-surface-alt/30 p-5">
+                  <UsuariosClient
+                    usuarios={equipe.usuarios}
+                    convitesPendentes={equipe.convitesPendentes}
+                    meuId={equipe.meuId}
+                    meuRole={equipe.meuRole}
+                    limiteDentistas={8}
+                    convitesRestantes={Math.max(0, 8 - dentistasAtivos - equipe.convitesPendentes.filter((c) => ['admin', 'dentista'].includes(c.role)).length)}
+                    plano={plano}
+                    asTab
+                  />
+                </section>
+              )}
+
+              <div className="border-t border-border pt-6">
+                <h3 className="font-heading text-xl font-bold text-text-primary">Dados da clínica</h3>
+                <p className="mt-1 text-sm text-text-secondary">Informações compartilhadas por toda a equipe.</p>
+              </div>
 
               {/* Logo da clínica */}
               <div className="space-y-3">
@@ -651,6 +754,20 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                   {isPending ? 'Salvando...' : 'Salvar Alterações'}
                 </button>
               </div>
+
+              <div className="grid gap-4 border-t border-border pt-6 lg:grid-cols-2">
+                <div className="flex items-start gap-3 rounded-2xl border border-border bg-surface-alt/40 p-5">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-teal/10"><MessageCircle className="size-4 text-teal" /></div>
+                  <div>
+                    <div className="flex items-center gap-2"><h3 className="font-semibold text-text-primary">WhatsApp da clínica</h3><span className="rounded-full bg-surface px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-text-secondary">Em breve</span></div>
+                    <p className="mt-1 text-sm text-text-secondary">Confirmações e mensagens compartilhadas chegarão na próxima atualização.</p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-4 rounded-2xl border border-red-500/20 bg-red-500/5 p-5">
+                  <div><p className="text-sm font-semibold text-text-primary">Sair desta clínica</p><p className="mt-1 text-xs text-text-secondary">Seu vínculo é encerrado; prontuários e autoria são preservados.</p></div>
+                  <button onClick={() => { setSairError(null); setShowSairDialog(true); }} className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border border-red-500/30 px-3 text-sm font-semibold text-red-600 hover:bg-red-500/10"><LogOut className="size-4" />Sair</button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -742,22 +859,6 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                   {isPending ? 'Salvando...' : 'Salvar Horários'}
                 </button>
               </div>
-            </div>
-          )}
-
-          {/* === ABA: EQUIPE === */}
-          {abaAtiva === 'equipe' && equipe && (
-            <div className="bg-surface p-6 rounded-3xl border border-border shadow-sm">
-              <UsuariosClient
-                usuarios={equipe.usuarios}
-                convitesPendentes={equipe.convitesPendentes}
-                meuId={equipe.meuId}
-                meuRole={equipe.meuRole}
-                limiteDentistas={equipe.limiteDentistas}
-                convitesRestantes={equipe.convitesRestantes}
-                plano={plano}
-                asTab
-              />
             </div>
           )}
 
@@ -999,15 +1100,20 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                   <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold shrink-0 ${
                     assinatura?.status === 'ativo'  ? 'bg-teal/10 text-teal' :
                     assinatura?.status === 'trial'  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' :
+                    assinatura?.status === 'past_due' ? 'bg-red-500/10 text-red-500' :
+                    assinatura?.status === 'suspenso' ? 'bg-red-500/10 text-red-500' :
                                                       'bg-surface-alt text-text-secondary'
                   }`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${
                       assinatura?.status === 'ativo'  ? 'bg-teal' :
                       assinatura?.status === 'trial'  ? 'bg-amber-500 animate-pulse' :
+                      assinatura?.status === 'past_due' || assinatura?.status === 'suspenso' ? 'bg-red-500' :
                                                         'bg-text-secondary'
                     }`} />
                     {assinatura?.status === 'ativo'  ? 'Ativo' :
-                     assinatura?.status === 'trial'  ? 'Trial' : 'Inativo'}
+                     assinatura?.status === 'trial'  ? 'Teste de 7 dias' :
+                     assinatura?.status === 'past_due' ? 'Pagamento pendente' :
+                     assinatura?.status === 'suspenso' ? 'Suspenso' : 'Inativo'}
                   </span>
                 </div>
 
@@ -1026,7 +1132,7 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                       R${planoConfig.preco}{isSolo ? '/mês' : '/dentista/mês'}
                     </p>
                   </div>
-                  {isSolo && (
+                  {isSolo && assinatura?.status === 'inativo' && (
                     <button
                       onClick={() => setMigrarOpen(true)}
                       className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-teal bg-teal/10 border border-teal/20 hover:bg-teal/20 transition-colors shrink-0"
@@ -1048,6 +1154,15 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                   </div>
                 )}
 
+                {assinatura?.status === 'past_due' && (
+                  <div className="mt-4 rounded-xl border border-red-500/25 bg-red-500/5 p-4">
+                    <p className="text-sm font-semibold text-red-500">Não conseguimos confirmar a última cobrança.</p>
+                    <p className="mt-1 text-sm text-text-secondary">
+                      Atualize o cartão no portal Stripe{assinatura.graceEndsAt ? ` até ${new Date(assinatura.graceEndsAt).toLocaleString('pt-BR')}` : ''} para evitar a suspensão do acesso.
+                    </p>
+                  </div>
+                )}
+
                 {assinatura?.status === 'inativo' && (
                   <div className="mt-4">
                     <Link
@@ -1065,89 +1180,53 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                 )}
               </div>
 
-              {/* Card: Método de Pagamento */}
+              {/* A Stripe hospeda cartão, faturas e cancelamento; o sistema não recebe dados do cartão. */}
               <div className="bg-surface p-6 rounded-3xl border border-border shadow-sm">
-                <div className="flex items-start justify-between gap-4 mb-5">
-                  <div>
-                    <h2 className="font-heading font-bold text-xl text-text-primary">Método de Pagamento</h2>
-                    <p className="text-sm text-text-secondary mt-1">
-                      Cartão utilizado para cobranças mensais da assinatura.
-                    </p>
-                  </div>
-                  <div className="w-10 h-10 rounded-xl bg-surface-alt flex items-center justify-center shrink-0">
-                    <CreditCard className="w-5 h-5 text-text-secondary" />
-                  </div>
-                </div>
-
-                {/* Empty state — nenhum cartão cadastrado */}
-                <div className="flex items-center gap-4 p-5 rounded-2xl border-2 border-dashed border-border/60 bg-surface-alt/40">
-                  <div
-                    className="w-14 h-10 rounded-lg shrink-0 flex items-center justify-center"
-                    style={{ background: 'linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%)', border: '1px solid rgba(0,0,0,0.06)' }}
-                  >
-                    <CreditCard className="w-5 h-5" style={{ color: '#94a3b8' }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-text-primary">Nenhum cartão cadastrado</p>
-                    <p className="text-sm text-text-secondary mt-0.5">
-                      Adicione um cartão para ativar ou renovar sua assinatura.
-                    </p>
-                  </div>
-                  <button className="shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-teal bg-teal/10 border border-teal/20 hover:bg-teal/20 transition-colors">
-                    <Plus className="w-3.5 h-3.5" />
-                    Adicionar
-                  </button>
-                </div>
-
-                <p className="text-xs text-text-secondary/60 mt-3 text-center">
-                  Pagamentos processados com segurança via Abacate Pay
-                </p>
-              </div>
-
-              {/* Card: Progresso de Migração (Solo com convites enviados) */}
-              {isSolo && dentistasAtivos > 1 && (
-                <div className="bg-surface p-6 rounded-3xl border border-amber-400/25 shadow-sm">
-                  <div className="flex items-start justify-between gap-4 mb-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-surface-alt">
+                      <CreditCard className="size-5 text-text-secondary" />
+                    </div>
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-500 font-mono mb-1">Em progresso</p>
-                      <h3 className="font-heading text-lg text-text-primary">Migração para Clínica</h3>
-                      <p className="text-sm text-text-secondary mt-1">
-                        Confirme mais {Math.max(0, 3 - dentistasAtivos)} dentista{3 - dentistasAtivos !== 1 ? 's' : ''} para ativar o plano.
+                      <h2 className="font-heading text-xl font-bold text-text-primary">Cobrança segura pela Stripe</h2>
+                      <p className="mt-1 text-sm text-text-secondary">
+                        Atualize cartão, consulte faturas e gerencie sua assinatura no portal protegido da Stripe.
                       </p>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {[1, 2, 3].map((n) => {
-                        const ativo = n <= dentistasAtivos;
-                        return (
-                          <div
-                            key={n}
-                            className={[
-                              'w-9 h-9 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all',
-                              ativo ? 'border-teal bg-teal/10 text-teal' : 'border-border bg-surface-alt text-text-secondary',
-                            ].join(' ')}
-                          >
-                            {ativo ? <Check className="w-4 h-4 stroke-[3]" /> : n}
-                          </div>
-                        );
-                      })}
-                    </div>
                   </div>
-                  {dentistasAtivos >= 3 ? (
+                  {assinatura?.status !== 'inativo' ? (
                     <button
-                      onClick={() => setMigrarOpen(true)}
-                      className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white transition-all hover:-translate-y-0.5"
-                      style={{ background: 'linear-gradient(135deg, #2f9c85, #1e7a67)', boxShadow: '0 4px 16px rgba(47,156,133,0.35)' }}
+                      type="button"
+                      disabled={isPending}
+                      onClick={abrirPortalCobranca}
+                      className="min-h-11 shrink-0 rounded-xl border border-teal/25 bg-teal/10 px-4 text-sm font-bold text-teal transition-colors hover:bg-teal/15 disabled:opacity-50"
                     >
-                      <Sparkles className="w-4 h-4" /> Ativar Plano Clínica agora
+                      Abrir portal de cobrança
                     </button>
                   ) : (
-                    <button
-                      onClick={() => setMigrarOpen(true)}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-teal bg-teal/10 border border-teal/20 hover:bg-teal/20 transition-colors"
+                    <Link
+                      href="/planos"
+                      className="flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-teal px-4 text-sm font-bold text-white"
                     >
-                      Convidar mais colegas <ArrowUpRight className="w-3.5 h-3.5" />
-                    </button>
+                      Escolher plano
+                    </Link>
                   )}
+                </div>
+                <p className="mt-4 text-xs text-text-secondary">O Odonto.IA não armazena o número completo do seu cartão.</p>
+              </div>
+
+              {formacao && formacao.status !== 'ativa' && (
+                <div className="rounded-3xl border border-amber-500/25 bg-amber-500/5 p-6">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-500">Formação em andamento</p>
+                  <h3 className="mt-1 font-heading text-lg text-text-primary">Plano Clínica: {formacao.cartoesProntos}/2 cartões confirmados</h3>
+                  <p className="mt-2 text-sm text-text-secondary">Nenhuma assinatura começa e nenhuma cobrança é feita antes de dois dentistas confirmarem seus cartões.</p>
+                  <button
+                    type="button"
+                    onClick={() => setMigrarOpen(true)}
+                    className="mt-4 min-h-11 rounded-xl border border-amber-500/30 bg-surface px-4 text-sm font-bold text-text-primary"
+                  >
+                    Continuar configuração
+                  </button>
                 </div>
               )}
 
@@ -1297,7 +1376,6 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
       open={migrarOpen}
       onClose={() => setMigrarOpen(false)}
       dentistasAtivos={dentistasAtivos}
-      onPlanoAtivado={() => router.refresh()}
     />
     </>
   );

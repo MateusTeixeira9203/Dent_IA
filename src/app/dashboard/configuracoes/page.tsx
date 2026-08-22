@@ -3,6 +3,7 @@ import { ConfiguracoesClient } from './_components/configuracoes-client';
 import type { ConfiguracaoClinica, HorarioDisponivel, Procedimento, DentistaRole } from '@/types/database';
 import { PageTransition } from '@/components/layout/page-transition';
 import type { PlanoId } from '@/lib/planos';
+import { createServiceClient } from '@/lib/supabase/service';
 
 export default async function ConfiguracoesPage({
   searchParams,
@@ -37,18 +38,67 @@ export default async function ConfiguracoesPage({
     supabase.from('clinicas').select('limite_dentistas, plano, status_assinatura, trial_ends_at, procedimentos_pendente').eq('id', clinicId).single(),
   ]);
 
-  const clinicaData = clinicaRaw as { limite_dentistas: number; plano?: string; status_assinatura?: string; trial_ends_at?: string | null; procedimentos_pendente?: boolean } | null;
+  const clinicaData = clinicaRaw as {
+    limite_dentistas: number;
+    plano?: string;
+    status_assinatura?: string;
+    trial_ends_at?: string | null;
+    procedimentos_pendente?: boolean;
+  } | null;
   const procedimentosPendente = clinicaData?.procedimentos_pendente ?? false;
   const limiteDentistas = clinicaData?.limite_dentistas ?? 5;
   const planoClinica = (clinicaData?.plano ?? 'SOLO') as PlanoId;
-  const statusAssinatura = (clinicaData?.status_assinatura ?? 'inativo') as 'trial' | 'ativo' | 'inativo';
-  const trialEndsAt = clinicaData?.trial_ends_at ?? null;
+  let statusAssinatura = (clinicaData?.status_assinatura ?? 'inativo') as 'trial' | 'ativo' | 'inativo' | 'past_due' | 'suspenso';
+  let trialEndsAt = clinicaData?.trial_ends_at ?? null;
+  let graceEndsAt: string | null = null;
+
+  let formacao: { status: string; expiresAt: string | null; cartoesProntos: number } | undefined;
+  let elegibilidade = { status: 'regular', prazoEquipe: null as string | null };
+  if (process.env.STRIPE_BILLING_ENABLED === 'true') {
+    const service = createServiceClient();
+    const { data: assinaturaRaw } = await service.from('assinaturas_dentista')
+      .select('status, trial_ends_at, grace_ends_at').eq('usuario_id', user.id).eq('clinica_id', clinicId)
+      .maybeSingle<{ status: string; trial_ends_at: string | null; grace_ends_at: string | null }>();
+    if (assinaturaRaw) {
+      statusAssinatura = assinaturaRaw.status === 'trialing'
+        ? 'trial'
+        : assinaturaRaw.status === 'active'
+          ? 'ativo'
+          : assinaturaRaw.status === 'past_due'
+            ? 'past_due'
+            : ['suspended', 'unpaid'].includes(assinaturaRaw.status)
+              ? 'suspenso'
+              : 'inativo';
+      trialEndsAt = assinaturaRaw.trial_ends_at;
+      graceEndsAt = assinaturaRaw.grace_ends_at;
+    }
+    const { data: elegibilidadeRaw } = await service.from('clinicas')
+      .select('status_elegibilidade, equipe_minima_ends_at').eq('id', clinicId)
+      .maybeSingle<{ status_elegibilidade: string; equipe_minima_ends_at: string | null }>();
+    if (elegibilidadeRaw) {
+      elegibilidade = {
+        status: elegibilidadeRaw.status_elegibilidade,
+        prazoEquipe: elegibilidadeRaw.equipe_minima_ends_at,
+      };
+    }
+    const { data: formacaoRaw } = await service.from('formacoes_clinica')
+      .select('id, status, expires_at').eq('clinica_id', clinicId)
+      .in('status', ['aguardando_equipe', 'coletando_pagamento', 'ativando', 'ativa'])
+      .order('created_at', { ascending: false }).limit(1)
+      .maybeSingle<{ id: string; status: string; expires_at: string | null }>();
+    if (formacaoRaw) {
+      const { count } = await service.from('assinaturas_dentista')
+        .select('id', { count: 'exact', head: true })
+        .eq('formacao_id', formacaoRaw.id).in('status', ['cartao_pronto', 'trialing', 'active']);
+      formacao = { status: formacaoRaw.status, expiresAt: formacaoRaw.expires_at, cartoesProntos: count ?? 0 };
+    }
+  }
 
   const dentistasAtivos = ((usuariosRaw ?? []) as Array<{ role: string; ativo: boolean }>).filter(
-    (u) => u.role !== 'secretaria' && u.ativo
+    (u) => (u.role === 'admin' || u.role === 'dentista') && u.ativo
   ).length;
   const convitesDentistasPendentes = ((convitesRaw ?? []) as Array<{ role: string }>).filter(
-    (c) => c.role !== 'secretaria'
+    (c) => c.role === 'admin' || c.role === 'dentista'
   ).length;
   const convitesRestantes = Math.max(0, limiteDentistas - dentistasAtivos - convitesDentistasPendentes);
 
@@ -68,10 +118,13 @@ export default async function ConfiguracoesPage({
     <PageTransition>
       <ConfiguracoesClient
         plano={planoClinica}
-        assinatura={{ status: statusAssinatura, trialEndsAt }}
+        assinatura={{ status: statusAssinatura, trialEndsAt, graceEndsAt }}
+        formacao={formacao}
+        elegibilidade={elegibilidade}
+        abrirFormacaoInicial={params.criar === 'clinica'}
         procedimentosPendente={procedimentosPendente}
         clinicId={clinicId}
-        appUrl={process.env.NEXT_PUBLIC_APP_URL ?? 'https://dentia.app.br'}
+        appUrl={process.env.NEXT_PUBLIC_APP_URL ?? 'https://odontoia.app'}
         dentista={{
           id: dentistaPerfil?.id ?? '',
           nome: (dentistaPerfil?.nome as string) ?? '',
@@ -83,9 +136,8 @@ export default async function ConfiguracoesPage({
         horarios={(horariosRaw as HorarioDisponivel[]) ?? []}
         procedimentos={(procedimentosRaw as Procedimento[]) ?? []}
         abaInicial={abaInicial}
-        // Roster de equipe + convites pendentes (e-mails) só vai pro client se for admin —
-        // dentista não precisa ver essa lista, e o prop ausente já esconde a aba Equipe.
-        equipe={meuRole === 'admin' ? {
+        // Gestão colaborativa: todo dentista ativo vê a equipe; secretária e protético não.
+        equipe={meuRole === 'admin' || meuRole === 'dentista' ? {
           usuarios: (usuariosRaw as Array<{ id: string; nome: string; email: string | null; role: DentistaRole; ativo: boolean; created_at: string }>) ?? [],
           convitesPendentes: (convitesRaw as Array<{ id: string; email: string; role: DentistaRole; expires_at: string; created_at: string }>) ?? [],
           meuId: dentistaPerfil?.id ?? '',

@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { criarConvite } from '@/server/services/invites';
 
-// POST — admin convida dentista
+// POST — dentista ativo convida dentista
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -35,8 +35,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     .eq('status', 'ativo')
     .maybeSingle();
 
-  if (!membership || membership.role !== 'admin') {
-    return NextResponse.json({ error: 'Apenas administradores podem convidar dentistas' }, { status: 403 });
+  if (!membership || (membership.role !== 'admin' && membership.role !== 'dentista')) {
+    return NextResponse.json({ error: 'Apenas dentistas podem convidar dentistas' }, { status: 403 });
   }
 
   let body: { email: string };

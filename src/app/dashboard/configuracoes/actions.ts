@@ -38,9 +38,7 @@ export interface ClinicaFormData {
 export async function salvarClinica(
   data: ClinicaFormData
 ): Promise<{ error?: string }> {
-  // Dados gerais da clínica (nome, contato, pagamento) continuam exclusivos do admin,
-  // mesmo com 'configuracoes' agora aberto pra dentista (procedimentos/horários/plano/perfil).
-  const { supabase, clinicId } = await requireRole(['admin']);
+  const { supabase, clinicId } = await requireRole(['admin', 'dentista']);
 
   const { error } = await supabase
     .from("configuracoes_clinica")
@@ -221,7 +219,7 @@ export async function criarProcedimento(
 // logo_url guarda o caminho no storage (bucket privado desde a migration 117), não mais
 // a URL pública — a leitura gera URL assinada em configuracoes/page.tsx.
 export async function salvarLogoUrl(logoPath: string): Promise<{ error?: string }> {
-  const { supabase, clinicId } = await requireRole(['admin']);
+  const { supabase, clinicId } = await requireRole(['admin', 'dentista']);
 
   const { error } = await supabase
     .from('configuracoes_clinica')

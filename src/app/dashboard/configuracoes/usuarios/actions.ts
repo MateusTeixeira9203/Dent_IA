@@ -23,28 +23,28 @@ function ctx(clinicId: string, userId: string, role: string) {
 export async function enviarConvite(
   email: string,
 ): Promise<{ ok: boolean; error?: string; link?: string }> {
-  const { clinicId, user, role } = await requireRole(['admin']);
+  const { clinicId, user, role } = await requireRole(['admin', 'dentista']);
   const result = await criarConvite(ctx(clinicId, user.id, role), { email });
   if (!result.ok) return result;
-  revalidatePath('/dashboard/configuracoes/usuarios');
+  revalidatePath('/dashboard/configuracoes');
   return { ok: true, link: result.link };
 }
 
 export async function cancelarConviteAction(
   conviteId: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const { clinicId, user, role } = await requireRole(['admin']);
+  const { clinicId, user, role } = await requireRole(['admin', 'dentista']);
   const result = await cancelarConvite(ctx(clinicId, user.id, role), conviteId);
-  if (result.ok) revalidatePath('/dashboard/configuracoes/usuarios');
+  if (result.ok) revalidatePath('/dashboard/configuracoes');
   return result;
 }
 
 export async function renovarConviteAction(
   conviteId: string,
 ): Promise<{ ok: boolean; error?: string; link?: string }> {
-  const { clinicId, user, role } = await requireRole(['admin']);
+  const { clinicId, user, role } = await requireRole(['admin', 'dentista']);
   const result = await renovarConvite(ctx(clinicId, user.id, role), conviteId);
-  if (result.ok) revalidatePath('/dashboard/configuracoes/usuarios');
+  if (result.ok) revalidatePath('/dashboard/configuracoes');
   return result;
 }
 
@@ -56,9 +56,9 @@ export async function criarSecretariaAction(
   senha: string,
   telefone?: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const { clinicId, user, role } = await requireRole(['admin']);
+  const { clinicId, user, role } = await requireRole(['admin', 'dentista']);
   const result = await criarSecretaria(ctx(clinicId, user.id, role), { nome, email, senha, telefone });
-  if (result.ok) revalidatePath('/dashboard/configuracoes/usuarios');
+  if (result.ok) revalidatePath('/dashboard/configuracoes');
   return result;
 }
 
@@ -70,16 +70,16 @@ export async function criarProteticoAction(
   senha: string,
   telefone?: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const { clinicId, user, role } = await requireRole(['admin']);
+  const { clinicId, user, role } = await requireRole(['admin', 'dentista']);
   const result = await criarProtetico(ctx(clinicId, user.id, role), { nome, email, senha, telefone });
-  if (result.ok) revalidatePath('/dashboard/configuracoes/usuarios');
+  if (result.ok) revalidatePath('/dashboard/configuracoes');
   return result;
 }
 
 export async function resetarSenhaSecretariaAction(
   secretariaUserId: string,
 ): Promise<{ ok: boolean; error?: string; senhaTemporaria?: string }> {
-  const { clinicId, user, role } = await requireRole(['admin']);
+  const { clinicId, user, role } = await requireRole(['admin', 'dentista']);
   return resetarSenhaSecretaria(ctx(clinicId, user.id, role), secretariaUserId);
 }
 
@@ -88,9 +88,9 @@ export async function resetarSenhaSecretariaAction(
 export async function removerMembroAction(
   membroUserId: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const { clinicId, user, role } = await requireRole(['admin']);
+  const { clinicId, user, role } = await requireRole(['admin', 'dentista']);
   const result = await removerMembro(ctx(clinicId, user.id, role), membroUserId);
-  if (result.ok) revalidatePath('/dashboard/configuracoes/usuarios');
+  if (result.ok) revalidatePath('/dashboard/configuracoes');
   return result;
 }
 
@@ -101,9 +101,7 @@ export async function removerMembroAction(
 export async function deletarUsuario(
   dentistaId: string,
 ): Promise<{ success: true }> {
-  const { clinicId, user, role, supabase } = await requireRole(['admin']);
-
-  if (role !== 'admin') throw new Error('Apenas administradores podem remover usuários.');
+  const { clinicId, user, role, supabase } = await requireRole(['admin', 'dentista']);
 
   const { data: dentista } = await supabase
     .from('dentistas')
@@ -123,6 +121,6 @@ export async function deletarUsuario(
 
   if (!result.ok) throw new Error(result.error ?? 'Erro ao remover membro.');
 
-  revalidatePath('/dashboard/configuracoes/usuarios');
+  revalidatePath('/dashboard/configuracoes');
   return { success: true };
 }

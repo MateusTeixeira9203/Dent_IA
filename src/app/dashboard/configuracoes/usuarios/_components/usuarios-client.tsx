@@ -24,14 +24,30 @@ import { Badge } from '@/components/ui/badge';
 import type { DentistaRole } from '@/types/database';
 import type { PlanoId } from '@/lib/planos';
 import { getLabelContexto } from '@/lib/planos';
-import type { UsuarioRow, ConvitePendente } from '../page';
 import { deletarUsuario, criarSecretariaAction, criarProteticoAction } from '../actions';
+
+type UsuarioRow = {
+  id: string;
+  nome: string;
+  email: string | null;
+  role: DentistaRole;
+  ativo: boolean;
+  created_at: string;
+};
+
+type ConvitePendente = {
+  id: string;
+  email: string;
+  role: DentistaRole;
+  expires_at: string;
+  created_at: string;
+};
 
 // ── Constantes de role ────────────────────────────────────────────────────────
 
 const ROLE_LABELS: Record<DentistaRole, string> = {
-  admin:     'Criador',
-  dentista:  'Dentista Agregado',
+  admin:     'Dentista',
+  dentista:  'Dentista',
   secretaria:'Secretária',
   protetico: 'Protético',
 };
@@ -292,7 +308,7 @@ export function UsuariosClient({
           </p>
         </div>
 
-        {meuRole === 'admin' && (
+        {(meuRole === 'admin' || meuRole === 'dentista') && (
           <Button
             onClick={() => { resetDialog(); setShowDialog(true); }}
             className="bg-gradient-to-r from-teal to-teal-lt text-white gap-2 shrink-0 rounded-xl shadow-[0_6px_20px_rgba(47,156,133,0.35)] hover:-translate-y-0.5 transition-all"
@@ -356,8 +372,8 @@ export function UsuariosClient({
                   }
                 </div>
 
-                {/* Remover — só admin */}
-                {meuRole === 'admin' && !isSelf && (
+                {/* Apenas equipe de apoio pode ser removida; dentista sai por conta própria. */}
+                {(meuRole === 'admin' || meuRole === 'dentista') && !isSelf && (u.role === 'secretaria' || u.role === 'protetico') && (
                   <button
                     onClick={() => setConfirmDelete(u)}
                     className="p-1.5 rounded-lg text-text-secondary hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
@@ -402,7 +418,7 @@ export function UsuariosClient({
                 <Badge variant="outline" className="text-xs capitalize shrink-0">
                   {ROLE_LABELS[c.role]}
                 </Badge>
-                {meuRole === 'admin' && (
+                {(meuRole === 'admin' || meuRole === 'dentista') && (
                   <button
                     onClick={() => void handleCancelarConvite(c.id)}
                     disabled={deletingId === c.id}
