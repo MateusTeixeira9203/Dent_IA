@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/suspender-assinaturas-stripe",
-      "schedule": "0 * * * *"
+      "schedule": "0 6 * * *"
     }
   ]
 }
