@@ -1,6 +1,6 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · atualizado **2026-08-21** · ordenado por **importância pro dentista**
+> **ROADMAP** · atualizado **2026-08-22** · ordenado por **importância pro dentista**
 > **Último push:** 13/08 (`323e095`) — R-108 e R-108b no ar: a ficha virou documento de
 > tratamento e a visita passou a rotear. **Histórico de push mora nos [handoffs](handoffs/)** —
 > não aqui.
@@ -55,7 +55,9 @@ prioridade, por melhor que seja.
 |---|---|---|---|
 | ✅ [**R-122**](_arquivo/specs/R-122-ficha-clinica-fluida.md) | **Ficha clínica fluida** — Meu Dia vira a bancada rápida de captura, revisão e destino; ficha completa reutiliza os mesmos cards como histórico organizado | aprovado pelo usuário em localhost em 19/08; spec e 2 artefatos arquivados. Perfil do paciente e `RegistroCard` preservados | G |
 | **R-123** | **Meu Dia: bancada compacta orientada a teclado** — Campo Mágico, cards, odontograma amplo e ações finais ficam na mesma área de trabalho | ⏳ implementação aprovada no localhost em 20/08; pronta para a fila de commit/deploy, ainda não verificada em produção | G |
-| [**R-109**](specs/R-109-registro-na-ficha.md) | **Registro na ficha** — lote multidente + Modo multidente portados do Meu dia, chips locais ligados, trilho duplo morre na escrita | ⏳ pedaço 3 já entregue; sobram pedaço 2 (campo mágico) e pedaço 1 (trilho único), travado em 2 decisões no §4.3 | M |
+| 🟡 [**R-125a**](_arquivo/specs/R-125a-captura-clinica-contextual.md) | **Captura clínica contextual, manual e sem atrito** — MultiDent padrão, status explícito, revisão compacta e encaminhamento no mesmo save | migration 150 aplicada; validado no localhost com duas contas em 22/08; aguarda verificação em produção | G |
+| 🟡 [**R-125b**](specs/R-125b-orcamento-fonte-deterministica.md) | **Orçamento por fonte determinística** — evento entra uma vez no orçamento; elimina reaparição e seleção parcial inconsistente | migration 151 aplicada; criação atômica e não-reaparição validadas no localhost em 22/08; aguarda verificação em produção | G |
+| [**R-109**](specs/R-109-registro-na-ficha.md) | **Registro na ficha** — lote multidente + Modo multidente portados do Meu dia | ⏳ partes locais entregues são preservadas; campo mágico e trilho único remanescentes foram absorvidos pelo R-125a | M |
 | [**R-111**](specs/R-111-responsividade-mobile.md) | **Responsividade no celular e no tablet** — as 8 telas que o dentista abre no celular | ⏳ validado localmente em 17/08; falta commit/deploy e veredito visual em produção. Não é item no ar ainda | G |
 | [**R-110**](specs/R-110-horario-do-dentista-na-agenda.md) | **O horário do dentista vale na agenda** — `criarAgendamento` nunca olha `horarios_disponiveis`; marcar 22h de domingo passa sem piscar | ⏳ [spec](specs/R-110-horario-do-dentista-na-agenda.md) fase `plano` 14/08. **Virou "avisar com override", não bloquear** — o levantamento achou 13,8% dos agendamentos já fora do expediente e **11 de 14 dentistas sem grade cadastrada** (inclusive os 2 mais movimentados da Clindent). Bloqueio travaria a agenda real no deploy. **§9 tem 2 decisões dele** | P |
 | [**R-118**](specs/R-118-retorno-secretaria-dentista.md) | 🐛 **Retorno da secretária na agenda do dentista** — escolhe o profissional e vê a grade correta | ⏳ spec em contrato 18/08; fecha também autorização server-side de agenda entre profissionais | P |

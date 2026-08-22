@@ -1,6 +1,6 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-08-21
+> **ESTADO** · atualizado 2026-08-22
 
 ## Agora
 
@@ -15,6 +15,8 @@ dentistas e formação em até 48 horas.
 - Endpoint de produção definido em `https://odontoia.app/api/webhooks/stripe`.
 - Migrations R-92, R-97, R-105 e R-120 aplicadas; R-97 conferida diretamente no schema.
 - R-105, R-113, R-121, R-122 e R-123 validados localmente nos fluxos discutidos.
+- R-125a e R-125b validados no localhost; migrations 150 e 151 aplicadas. Falta conferir o
+  fluxo publicado antes de promovê-los a concluídos.
 - TypeScript, testes unitários de billing/especialidades e build de produção passaram antes do push.
 
 ### Falta
