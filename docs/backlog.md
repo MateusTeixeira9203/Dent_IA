@@ -41,7 +41,7 @@ Documento vivo de organização do que precisa ser feito, refinado ou corrigido.
 
 ### Agendamentos
 - [ ] **Notificação de lembrete** — `agendamentos.whatsapp_reminder_sent` existe. Falta o job que dispara o lembrete.
-- [ ] **Google Calendar** — OAuth2 implementado (`google-provider.ts`), sync bidirecional parcial. Testar fluxo completo. Adicionar `https://dentia.app.br/api/calendar/auth/callback` nas redirect URIs do Google Console se usar no domínio de prod.
+- **Google Calendar** — integração fora do lançamento atual; credenciais e callback não fazem parte do ambiente ativo.
 
 ### WhatsApp / Bot
 - [ ] **Integração Evolution API** — tabelas `conversas_bot` e `mensagens_bot` existem. Webhook `/api/whatsapp/webhook` planejado mas não implementado.
@@ -88,7 +88,7 @@ Documento vivo de organização do que precisa ser feito, refinado ou corrigido.
 ### Documentos Clínicos + Correções (Jun/2026)
 - **Emitir documentos clínicos** — registry de modelos (receita, atestado, pedido de exame), gerador PDF com 2 vias, server action `emitirDocumento`, `EmitirDocumentoModal`, botão no header do paciente, filtro "Emitidos" na aba Arquivos, link pós-consulta. Migration 078 aplicada. Em produção.
 - **Fluxo de convite ponta a ponta** — 6 bugs corrigidos: notificação in-app (PK + role corretos), callback `/auth/callback` cria estado canônico completo, tela de sucesso honesta, cancelamento persistente, `emailEnviado` falso-positivo, anti-spam (texto puro + remetente único). Domínio Resend verificado. Em produção.
-- **Infra de produção** — domínio `dentia.app.br` na Vercel, env vars, Supabase redirect URLs, git remote `Odonto.IA`.
+- **Infra de produção** — domínio canônico `odontoia.app` na Vercel, env vars, Supabase redirect URLs, git remote `Odonto.IA`.
 
 ### Modo Consulta + Transcrição (Jun/2026)
 - **Groq Whisper** — migração de Gemini → `whisper-large-v3-turbo` para transcrição. Latência 1–2s vs 6–10s anterior. Prompt odontológico configurado.

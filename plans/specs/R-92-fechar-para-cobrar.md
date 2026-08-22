@@ -1,5 +1,19 @@
 # R-92 — Fechar para cobrar
 
+> **Atualização de produto — 2026-08-18 (prevalece sobre o plano histórico abaixo):**
+> - assinatura individual por dentista convidado, via Stripe Checkout;
+> - preço fundador: R$ 200/mês vitalício enquanto a assinatura permanecer ativa;
+> - Checkout coleta cartão agora e usa trial de **7 dias**; primeira cobrança no 8º dia;
+> - se a cobrança recorrente falhar, o dentista recebe aviso e tem **3 dias** para regularizar;
+>   depois disso o acesso fica bloqueado integralmente, sem apagar dados; pagamento confirmado
+>   restaura o acesso;
+> - ClinDent e VIP Odontologia ficam fora do billing: seus membros ativos existentes não entram
+>   em Checkout nem recebem gate de cobrança. São clínicas fechadas, sem novos dentistas;
+> - AbacatePay e o fluxo “Dentista Agregado R$147” não são contrato válido para a execução.
+>
+> **Fase atual:** debate. As seções abaixo preservam o histórico de agosto e serão substituídas
+> pelo contrato Stripe individual depois das decisões abertas serem fechadas.
+
 > **SPEC** · modelo: Opus · criada 2026-08-09 · **🔵 ativo** · semana de **10 a 16/08**
 > Decisão dele: "fechar pra cobrar" — em vez de fechar a lista inteira e lançar em ~2 meses.
 
