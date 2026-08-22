@@ -4,11 +4,12 @@ import { useRef, useState } from 'react';
 import type SignaturePadLib from 'signature_pad';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'motion/react';
-import { PenLine, RotateCcw, CheckCircle2, Loader2, AlertCircle, X } from 'lucide-react';
+import { PenLine, RotateCcw, CheckCircle2, Loader2, AlertCircle, ExternalLink, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import { aceitarOrcamento } from '@/app/dashboard/orcamentos/actions';
 
 const SignaturePad = dynamic(
@@ -47,11 +48,13 @@ export function AceiteOrcamentoModal({
   const [step, setStep] = useState<Step>('assinar');
   const [assinadoPor, setAssinadoPor] = useState('');
   const [erro, setErro] = useState<string | null>(null);
+  const [documentoUrl, setDocumentoUrl] = useState<string | null>(null);
 
   function resetAndClose() {
     setStep('assinar');
     setAssinadoPor('');
     setErro(null);
+    setDocumentoUrl(null);
     onOpenChange(false);
   }
 
@@ -76,9 +79,10 @@ export function AceiteOrcamentoModal({
       return;
     }
 
+    if (result.warning) toast.warning(result.warning);
+    setDocumentoUrl(result.documentoUrl ?? null);
     setStep('sucesso');
     onAccepted();
-    setTimeout(resetAndClose, 1600);
   }
 
   return (
@@ -188,6 +192,22 @@ export function AceiteOrcamentoModal({
                 <CheckCircle2 className="w-8 h-8 text-teal-ink" />
               </motion.div>
               <p className="font-semibold text-text-primary">Aceite registrado.</p>
+              {documentoUrl ? (
+                <a
+                  href={documentoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center gap-1.5 h-auto px-5 py-2.5 rounded-xl bg-teal text-white hover:bg-teal-lt font-semibold text-sm transition-colors"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Abrir PDF assinado
+                </a>
+              ) : (
+                <p className="text-xs text-text-secondary">O aceite ficou registrado. O PDF final será disponibilizado em Documentos.</p>
+              )}
+              <Button variant="outline" onClick={resetAndClose} className="h-auto px-5 py-2.5 rounded-xl border-border text-text-primary hover:bg-surface-alt">
+                Fechar
+              </Button>
             </motion.div>
           )}
 

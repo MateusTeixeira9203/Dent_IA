@@ -9,6 +9,8 @@ export interface DocumentoPDFData {
   clinica: { nome: string; endereco?: string; telefone?: string; cnpj?: string };
   dentista: { nome: string; cro: string };
   assinaturaDataUrl?: string;
+  assinaturaPacienteDataUrl?: string;
+  assinaturaPacienteNome?: string;
   data: string; // ISO
 }
 
@@ -53,6 +55,14 @@ function Via({ data, label }: { data: DocumentoPDFData; label?: string }) {
       `Paciente: ${data.paciente.nome}${data.paciente.cpf ? `  •  CPF: ${data.paciente.cpf}` : ""}`),
     createElement(Text, { style: styles.corpo }, data.corpo),
     createElement(Text, { style: styles.dataLinha }, `Data: ${formatDate(data.data)}`),
+    data.assinaturaPacienteDataUrl
+      ? createElement(
+          View, { style: styles.assinatura },
+          createElement(Image, { src: data.assinaturaPacienteDataUrl, style: styles.assinaturaImagem }),
+          createElement(View, { style: styles.assinaturaLinha }),
+          createElement(Text, { style: styles.assinaturaTexto }, data.assinaturaPacienteNome ?? 'Paciente ou responsável'),
+        )
+      : null,
     createElement(
       View, { style: styles.assinatura },
       data.assinaturaDataUrl

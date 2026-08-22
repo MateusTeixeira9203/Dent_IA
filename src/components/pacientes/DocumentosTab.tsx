@@ -29,6 +29,7 @@ interface Document {
   category: 'Radiografias' | 'Fotografias' | 'Documentos' | 'Outros';
   date: string;
   source: string;
+  locked: boolean;
   url: string;
   storagePath: string;
 }
@@ -159,6 +160,7 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
             year: 'numeric',
           }),
           source: (doc.origem as string | undefined) ?? 'Upload Direto',
+          locked: doc.origem === 'aceite_assinado',
           url: signedMap.get(storagePath) ?? storagePath,
           storagePath,
         };
@@ -257,6 +259,7 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
             year: 'numeric',
           }),
           source: 'Upload Direto',
+          locked: false,
           url: displayUrl,
           storagePath,
         });
@@ -359,6 +362,7 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
           category: 'Fotografias',
           date: new Date(row.created_at as string).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }),
           source: 'Upload Direto',
+          locked: false,
           url: signedData?.signedUrl ?? '',
           storagePath,
         });
@@ -381,6 +385,10 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
   const handleDeleteDoc = async (docId: string, e: React.MouseEvent): Promise<void> => {
     e.stopPropagation();
     const doc = documents.find(d => d.id === docId);
+    if (doc?.locked) {
+      toast.error('Documento assinado é imutável e não pode ser apagado por aqui.');
+      return;
+    }
     if (!doc || !window.confirm(`Excluir "${doc.name}"?`)) return;
 
     try {
@@ -418,7 +426,7 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
   const filteredDocs = documents.filter(doc => {
     if (filterMonth && !doc.date.includes(filterMonth)) return false;
     if (filterYear && !doc.date.includes(filterYear)) return false;
-    if (soEmitidos && doc.source !== 'emitido') return false;
+    if (soEmitidos && doc.source !== 'emitido' && doc.source !== 'aceite_assinado') return false;
     if (debouncedSearch && !doc.name.toLowerCase().includes(debouncedSearch.toLowerCase())) return false;
     return true;
   });
@@ -613,6 +621,7 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
                   url: d.url,
                   tipo: d.tipo,
                   date: d.date,
+                  locked: d.locked,
                 }))}
                 selecionados={selecionados}
                 onSelecionar={setSelecionados}

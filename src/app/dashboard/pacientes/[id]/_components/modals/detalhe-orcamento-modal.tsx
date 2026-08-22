@@ -462,6 +462,7 @@ export function DetalheOrcamentoModal({
                           {' '}em {format(parseISO(detalheOrc.aceite.assinadoEm), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                           {detalheOrc.aceite.croNoAto && <> · CRO {detalheOrc.aceite.croNoAto}</>}
                         </p>
+                        <p className="text-xs text-text-muted">Documento final disponível em Documentos.</p>
                       </div>
                     ) : (
                       <button
