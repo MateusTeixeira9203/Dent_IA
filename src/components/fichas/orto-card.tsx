@@ -34,12 +34,37 @@ function Linha({ rotulo, valor, mono }: { rotulo: string; valor: string | null; 
 const temInferior = (v: OrtoManutencaoDetalhe): boolean =>
   v.arcada === 'ambas' && (v.fio_inferior != null || v.ativacao_inferior != null || v.elastico_corrente_inferior != null || v.elastico_intermaxilar_inferior != null);
 
+const temRegistroLivre = (v: OrtoManutencaoDetalhe): boolean =>
+  v.registro_superior != null || v.registro_inferior != null;
+
 export function OrtoCard({ valor }: PluginCardProps<OrtoManutencaoDetalhe>) {
+  const mostrarLegado = !temRegistroLivre(valor) || valor.fio != null || valor.ativacao != null ||
+    valor.elastico_corrente != null || valor.elastico_intermaxilar != null || temInferior(valor);
+
   return (
     <div className="flex flex-col gap-4">
-      <div>
+      {valor.registro_superior && (
+        <div>
+          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-teal-ink">Arcada superior</p>
+          <p className="whitespace-pre-wrap text-sm leading-6 text-text-primary">{valor.registro_superior}</p>
+        </div>
+      )}
+      {valor.registro_inferior && (
+        <div>
+          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-teal-ink">Arcada inferior</p>
+          <p className="whitespace-pre-wrap text-sm leading-6 text-text-primary">{valor.registro_inferior}</p>
+        </div>
+      )}
+      {valor.observacao_geral && (
+        <div className="border-t border-border pt-3">
+          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-secondary">Observações</p>
+          <p className="whitespace-pre-wrap text-sm leading-6 text-text-primary">{valor.observacao_geral}</p>
+        </div>
+      )}
+      {mostrarLegado && (
+      <div className={temRegistroLivre(valor) ? 'border-t border-border pt-3' : ''}>
         <p className="text-[10px] font-bold uppercase tracking-wider text-teal-ink mb-3">
-          Manutenção · {ARCADA_LABEL[valor.arcada]}{temInferior(valor) ? ' · superior' : ''}
+          {temRegistroLivre(valor) ? 'Dados extraídos' : `Manutenção · ${ARCADA_LABEL[valor.arcada]}${temInferior(valor) ? ' · superior' : ''}`}
         </p>
         <div className="flex flex-col gap-2">
           <Linha rotulo="Arco" valor={valor.fio} mono />
@@ -48,6 +73,7 @@ export function OrtoCard({ valor }: PluginCardProps<OrtoManutencaoDetalhe>) {
           <Linha rotulo="Intermaxilar" valor={valor.elastico_intermaxilar} mono />
         </div>
       </div>
+      )}
       {temInferior(valor) && (
         <div className="border-t border-border pt-3">
           <p className="text-[10px] font-bold uppercase tracking-wider text-teal-ink mb-3">

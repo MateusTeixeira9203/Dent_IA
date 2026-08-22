@@ -12,15 +12,12 @@
 import type { PluginFormProps } from '@/lib/especialidades/plugin';
 import type { OrtoManutencaoDetalhe } from '@/lib/especialidades/orto';
 
-const ARCADAS: ReadonlyArray<{ v: OrtoManutencaoDetalhe['arcada']; label: string }> = [
-  { v: 'superior', label: 'Superior' },
-  { v: 'inferior', label: 'Inferior' },
-  { v: 'ambas', label: 'Ambas' },
-];
-
 /** Estado inicial de uma manutenção — fonte única (voz e entrada manual R-05 reusam). */
 export const ORTO_VAZIO: OrtoManutencaoDetalhe = {
   arcada: 'superior',
+  registro_superior: null,
+  registro_inferior: null,
+  observacao_geral: null,
   fio: null,
   ativacao: null,
   elastico_corrente: null,
@@ -35,36 +32,26 @@ const inputCls =
   'outline-none focus:border-teal disabled:opacity-60';
 const labelCls = 'block text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5';
 
-/** 1 conjunto de 4 campos (fio/ativação/elásticos) — reusado 1× (arcada única) ou 2× (ambas). */
-function GrupoCampos({
-  prefixo, valores, onChange, readOnly,
-}: {
-  prefixo: string;
-  valores: { fio: string | null; ativacao: string | null; elasticoCorrente: string | null; elasticoIntermaxilar: string | null };
-  onChange: (patch: { fio?: string | null; ativacao?: string | null; elasticoCorrente?: string | null; elasticoIntermaxilar?: string | null }) => void;
-  readOnly?: boolean;
-}) {
+const temDadosExtraidos = (v: OrtoManutencaoDetalhe): boolean => [
+  v.fio, v.ativacao, v.elastico_corrente, v.elastico_intermaxilar,
+  v.fio_inferior, v.ativacao_inferior, v.elastico_corrente_inferior, v.elastico_intermaxilar_inferior,
+].some((campo) => campo != null);
+
+function DadosExtraidos({ valor }: { valor: OrtoManutencaoDetalhe }) {
+  const linhas = [
+    ['Arco / fio', valor.fio],
+    ['Ativação', valor.ativacao],
+    ['Elástico corrente', valor.elastico_corrente],
+    ['Intermaxilar', valor.elastico_intermaxilar],
+  ].filter(([, dado]) => dado != null);
+
+  if (!temDadosExtraidos(valor)) return null;
+
   return (
-    <div className="flex flex-col gap-3">
-      <div>
-        <label className={labelCls} htmlFor={`${prefixo}-fio`}>Arco / fio</label>
-        <input id={`${prefixo}-fio`} className={inputCls} placeholder="ex: 0.018 aço" disabled={readOnly}
-          value={valores.fio ?? ''} onChange={(e) => onChange({ fio: limpar(e.target.value) })} />
-      </div>
-      <div>
-        <label className={labelCls} htmlFor={`${prefixo}-ativacao`}>Ativação</label>
-        <input id={`${prefixo}-ativacao`} className={inputCls} placeholder="ex: ativado + troca de ligaduras" disabled={readOnly}
-          value={valores.ativacao ?? ''} onChange={(e) => onChange({ ativacao: limpar(e.target.value) })} />
-      </div>
-      <div>
-        <label className={labelCls} htmlFor={`${prefixo}-corrente`}>Elástico corrente</label>
-        <input id={`${prefixo}-corrente`} className={inputCls} placeholder="ex: 13 → 23" disabled={readOnly}
-          value={valores.elasticoCorrente ?? ''} onChange={(e) => onChange({ elasticoCorrente: limpar(e.target.value) })} />
-      </div>
-      <div>
-        <label className={labelCls} htmlFor={`${prefixo}-intermaxilar`}>Elástico intermaxilar</label>
-        <input id={`${prefixo}-intermaxilar`} className={inputCls} placeholder="ex: 3/16 Classe II, 13 → 46" disabled={readOnly}
-          value={valores.elasticoIntermaxilar ?? ''} onChange={(e) => onChange({ elasticoIntermaxilar: limpar(e.target.value) })} />
+    <div className="rounded-lg border border-border bg-surface-alt/60 px-3 py-2.5">
+      <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-secondary">Dados extraídos</p>
+      <div className="flex flex-col gap-1 text-xs text-text-secondary">
+        {linhas.map(([rotulo, dado]) => <p key={rotulo}><span className="font-semibold">{rotulo}:</span> {dado}</p>)}
       </div>
     </div>
   );
@@ -76,76 +63,24 @@ export function OrtoForm({ valor, onChange, readOnly }: PluginFormProps<OrtoManu
 
   return (
     <div className="flex flex-col gap-3">
-      <div>
-        <label className={labelCls}>Arcada</label>
-        <div className="flex flex-wrap gap-1.5">
-          {ARCADAS.map((a) => (
-            <button
-              key={a.v}
-              type="button"
-              disabled={readOnly}
-              onClick={() => set({ arcada: a.v })}
-              className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors disabled:opacity-60 ${
-                v.arcada === a.v
-                  ? 'border-teal bg-teal/10 text-teal'
-                  : 'border-border bg-surface-alt text-text-secondary hover:border-teal/40'
-              }`}
-            >
-              {a.label}
-            </button>
-          ))}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div>
+          <label className={labelCls} htmlFor="orto-superior">Arcada superior</label>
+          <textarea id="orto-superior" rows={4} className={inputCls} placeholder="Ex.: troca de fio 0.018 aço, ativação leve" disabled={readOnly}
+            value={v.registro_superior ?? ''} onChange={(e) => set({ registro_superior: limpar(e.target.value) })} />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="orto-inferior">Arcada inferior</label>
+          <textarea id="orto-inferior" rows={4} className={inputCls} placeholder="Ex.: troca de ligaduras; elástico Classe II" disabled={readOnly}
+            value={v.registro_inferior ?? ''} onChange={(e) => set({ registro_inferior: limpar(e.target.value) })} />
         </div>
       </div>
-
-      {v.arcada === 'ambas' ? (
-        <div className="flex flex-col gap-4">
-          <div>
-            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-teal-ink">Superior</p>
-            <GrupoCampos
-              prefixo="orto-sup"
-              readOnly={readOnly}
-              valores={{ fio: v.fio, ativacao: v.ativacao, elasticoCorrente: v.elastico_corrente, elasticoIntermaxilar: v.elastico_intermaxilar }}
-              onChange={(patch) => set({
-                fio: patch.fio !== undefined ? patch.fio : v.fio,
-                ativacao: patch.ativacao !== undefined ? patch.ativacao : v.ativacao,
-                elastico_corrente: patch.elasticoCorrente !== undefined ? patch.elasticoCorrente : v.elastico_corrente,
-                elastico_intermaxilar: patch.elasticoIntermaxilar !== undefined ? patch.elasticoIntermaxilar : v.elastico_intermaxilar,
-              })}
-            />
-          </div>
-          <div className="border-t border-border pt-4">
-            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-teal-ink">Inferior</p>
-            <GrupoCampos
-              prefixo="orto-inf"
-              readOnly={readOnly}
-              valores={{
-                fio: v.fio_inferior ?? null,
-                ativacao: v.ativacao_inferior ?? null,
-                elasticoCorrente: v.elastico_corrente_inferior ?? null,
-                elasticoIntermaxilar: v.elastico_intermaxilar_inferior ?? null,
-              }}
-              onChange={(patch) => set({
-                fio_inferior: patch.fio !== undefined ? patch.fio : v.fio_inferior,
-                ativacao_inferior: patch.ativacao !== undefined ? patch.ativacao : v.ativacao_inferior,
-                elastico_corrente_inferior: patch.elasticoCorrente !== undefined ? patch.elasticoCorrente : v.elastico_corrente_inferior,
-                elastico_intermaxilar_inferior: patch.elasticoIntermaxilar !== undefined ? patch.elasticoIntermaxilar : v.elastico_intermaxilar_inferior,
-              })}
-            />
-          </div>
-        </div>
-      ) : (
-        <GrupoCampos
-          prefixo="orto"
-          readOnly={readOnly}
-          valores={{ fio: v.fio, ativacao: v.ativacao, elasticoCorrente: v.elastico_corrente, elasticoIntermaxilar: v.elastico_intermaxilar }}
-          onChange={(patch) => set({
-            fio: patch.fio !== undefined ? patch.fio : v.fio,
-            ativacao: patch.ativacao !== undefined ? patch.ativacao : v.ativacao,
-            elastico_corrente: patch.elasticoCorrente !== undefined ? patch.elasticoCorrente : v.elastico_corrente,
-            elastico_intermaxilar: patch.elasticoIntermaxilar !== undefined ? patch.elasticoIntermaxilar : v.elastico_intermaxilar,
-          })}
-        />
-      )}
+      <div>
+        <label className={labelCls} htmlFor="orto-observacao">Observações gerais <span className="normal-case font-medium tracking-normal">(opcional)</span></label>
+        <textarea id="orto-observacao" rows={2} className={inputCls} placeholder="Ex.: paciente orientado sobre higiene e uso do elástico" disabled={readOnly}
+          value={v.observacao_geral ?? ''} onChange={(e) => set({ observacao_geral: limpar(e.target.value) })} />
+      </div>
+      <DadosExtraidos valor={v} />
     </div>
   );
 }

@@ -12,13 +12,15 @@
 // preenchido. A I2 ("nunca descarta em silêncio") continua valendo por construção: ou o orto
 // vira estado editável, ou a rota devolveu null (arcada não dita, F2) e não há o que descartar.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bot, ChevronUp } from 'lucide-react';
 import { CapturaLivreCard } from '@/components/fichas/captura-livre-card';
 import { DicaZona } from './dica-zona';
 import { mesclarEventosSemPerda } from '@/lib/odontograma/dedup-eventos-draft';
 import { hojeBRT } from '@/lib/hora-brt';
 import { extrairEndoDeterministico } from '@/lib/especialidades/extrair-endo-deterministico';
+import { mesclarDetalheEndo } from '@/lib/especialidades/mesclar-endo-extracao';
+import type { EndoDetalhe } from '@/lib/especialidades/endo';
 import type { OdontogramaEventoDraft, OrtoManutencaoInfo } from '@/types/odontograma';
 import type { EvolucaoFormatada } from '@/app/api/dex/formatar-evolucao/route';
 import type { SugestaoLocal } from '@/lib/odontograma/casar-procedimento-local';
@@ -53,27 +55,81 @@ export interface CampoMagicoMeuDiaProps {
    *  O "já abriu" mora aqui porque é aqui que `aberto` mora; some pra sempre no 1º clique,
    *  não volta se ele recolher. */
   dica?: boolean;
+  /** R-123 — Meu Dia deixa a captura pronta para digitar, sem mudar a ficha completa. */
+  compacto?: boolean;
 }
 
 export function CampoMagicoMeuDia({
   pacienteNome, eventosDraft, onEventosDraftChange, textoVisita, onTextoVisitaChange,
   onAlertaNovoChange, onOrtoDetectado, onEndoDetectado, anexarTexto, catalogoProcedimentos, onAplicarSugestao,
-  realce, dica,
+  realce, dica, compacto = false,
 }: CampoMagicoMeuDiaProps) {
-  const [aberto, setAberto] = useState(false);
+  const [aberto, setAberto] = useState(compacto);
   const [jaAbriu, setJaAbriu] = useState(false);
+  // O complemento IA responde depois do pass 1. Esta ref garante que ele mescla contra a
+  // edição mais recente do dentista, nunca contra o snapshot que iniciou a requisição.
+  const eventosRef = useRef(eventosDraft);
+  useEffect(() => { eventosRef.current = eventosDraft; }, [eventosDraft]);
+
+  async function complementarEndoComIA(relato: string, dentes: number[]) {
+    if (dentes.length === 0) return;
+    try {
+      const resposta = await fetch('/api/dex/extrair-especialidade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ especialidade: 'endodontia', texto: relato, contexto: { dentes } }),
+      });
+      const data = await resposta.json() as {
+        ok: boolean;
+        itens?: Array<{ dente: number; detalhe: EndoDetalhe }>;
+      };
+      if (!resposta.ok || !data.ok || !data.itens?.length) return;
+
+      const porDente = new Map(data.itens.map((item) => [item.dente, item.detalhe]));
+      const atuais = eventosRef.current;
+      const atualizados = atuais.map((evento) => {
+        if (evento.tipo !== 'endodontia' || evento.ancora.dente == null) return evento;
+        const recebido = porDente.get(evento.ancora.dente);
+        if (!recebido) return evento;
+        const mesclado = mesclarDetalheEndo(
+          (evento.detalhe ?? null) as EndoDetalhe | null,
+          recebido,
+          evento.endo_revisao,
+          'ia',
+        );
+        return { ...evento, detalhe: mesclado.detalhe, endo_revisao: mesclado.revisao };
+      });
+      eventosRef.current = atualizados;
+      onEventosDraftChange(atualizados);
+
+      const primeiro = atualizados.find((evento) => evento.tipo === 'endodontia' && evento.ancora.dente != null && porDente.has(evento.ancora.dente));
+      if (primeiro?.ancora.dente != null) onEndoDetectado(primeiro.ancora.dente, primeiro.id);
+    } catch (error) {
+      // Passo 2 é enriquecimento: falha não desfaz pass 1 nem bloqueia o form manual.
+      console.warn('[campo-magico] complemento endodôntico indisponível:', error);
+    }
+  }
 
   function aplicar(data: EvolucaoFormatada, relato: string) {
     const mesclados = mesclarEventosSemPerda(eventosDraft, data.odontograma_eventos, hojeBRT());
     const dentesEndo = mesclados
       .filter((evento) => evento.tipo === 'endodontia' && evento.ancora.dente != null)
       .map((evento) => evento.ancora.dente as number);
-    const detalhes = extrairEndoDeterministico(relato, dentesEndo);
+    const extracaoEndo = extrairEndoDeterministico(relato, dentesEndo);
+    const detalhesPorDente = new Map(
+      extracaoEndo.ok ? extracaoEndo.extracoes.map((extracao) => [extracao.dente, extracao]) : [],
+    );
     const comDetalhe = mesclados.map((evento) => {
       const dente = evento.tipo === 'endodontia' ? evento.ancora.dente : undefined;
-      const detalhe = dente == null ? undefined : detalhes.get(dente);
-      return detalhe && evento.detalhe == null ? { ...evento, detalhe } : evento;
+      const extracao = dente == null ? undefined : detalhesPorDente.get(dente);
+      if (!extracao || evento.detalhe != null) return evento;
+      return {
+        ...evento,
+        detalhe: extracao.detalhe,
+        endo_revisao: { origemPorCampo: extracao.origemPorCampo, duvidas: extracao.duvidas },
+      };
     });
+    eventosRef.current = comDetalhe;
     onEventosDraftChange(comDetalhe);
 
     const primeiroComDetalhe = comDetalhe.find((evento) => evento.tipo === 'endodontia' && evento.ancora.dente != null && evento.detalhe != null);
@@ -90,6 +146,7 @@ export function CampoMagicoMeuDia({
 
     if (data.alerta_novo) onAlertaNovoChange(data.alerta_novo); // I3
     if (data.orto_manutencao) onOrtoDetectado(data.orto_manutencao); // R-50 — vira estado, não texto
+    void complementarEndoComIA(relato, dentesEndo);
   }
 
   if (!aberto) {
@@ -119,19 +176,21 @@ export function CampoMagicoMeuDia({
 
   return (
     <div className="flex flex-col gap-2">
-      <button
+      {!compacto && <button
         type="button"
         onClick={() => setAberto(false)}
         className="flex w-fit items-center gap-1 text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
       >
         <ChevronUp className="h-3 w-3" />
         Recolher
-      </button>
+      </button>}
       {/* 04/08 (achado ao vivo) — min-h-[520px] era do container "tela cheia" original (R-46c,
           revisar texto extraído longo); aqui o campo mágico é inline no painel Registrar, e a
           altura fixa deixava um vão vazio enorme entre os controles do CapturaLivreCard (que
           tem ~200px de conteúdo real) e o resto do painel. Tamanho segue o conteúdo. */}
-      <div className="mx-auto w-full max-w-[90ch]">
+      {/* R-123 — na bancada o Campo Mágico ocupa a faixa clínica inteira, como no
+          artefato aprovado. Fora dela mantém a medida de leitura confortável. */}
+      <div className={compacto ? 'w-full' : 'mx-auto w-full max-w-[90ch]'}>
         <CapturaLivreCard
           pacienteNome={pacienteNome}
           formDirty={eventosDraft.length > 0 || textoVisita.trim() !== ''}
@@ -139,6 +198,8 @@ export function CampoMagicoMeuDia({
           anexarTexto={anexarTexto}
           catalogoProcedimentos={catalogoProcedimentos}
           onAplicarSugestao={onAplicarSugestao}
+          compact={compacto}
+          autoFocus={compacto}
         />
       </div>
     </div>

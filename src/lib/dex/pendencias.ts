@@ -144,6 +144,16 @@ function marcosDeOnboarding(onb: DexContextData['onboarding']): DexPendencia[] {
   const marcos: DexPendencia[] = [];
   const base = { severidade: 'baixa' as const, valorParado: null, chips: [] };
 
+  if (onb.fichas === 1) {
+    marcos.push({
+      ...base,
+      id: 'onb_segunda_ficha',
+      titulo: 'Repita em mais um atendimento',
+      descricao: 'A segunda ficha fixa o fluxo: paciente, relato, revisão e salvar.',
+      cta: { label: 'Abrir o Meu dia', href: '/dashboard/meu-dia' },
+    });
+  }
+
   // Marco 2 — o orçamento sai do que acabou de ser registrado.
   if (onb.fichas >= 1 && !onb.temOrcamento) {
     marcos.push({
@@ -190,5 +200,5 @@ function marcosDeOnboarding(onb: DexContextData['onboarding']): DexPendencia[] {
     });
   }
 
-  return marcos;
+  return marcos.slice(0, 3);
 }

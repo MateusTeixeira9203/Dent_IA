@@ -8,6 +8,7 @@
 import { endoDetalheSchema, type EndoDetalhe } from '@/lib/especialidades/endo';
 import { EndoCard } from '@/components/fichas/endo-card';
 import { EndoForm } from '@/components/fichas/endo-form';
+import type { DuvidaEndo } from '@/lib/especialidades/extrair-endo-deterministico';
 import { implanteDetalheSchema, type ImplanteDetalhe } from '@/lib/especialidades/implante';
 import { ImplanteCard } from '@/components/fichas/implante-card';
 import { ImplanteForm } from '@/components/fichas/implante-form';
@@ -45,10 +46,10 @@ export function corpoEspecialidade(tipo: TipoRegistroOdontograma, detalhe: unkno
  * não se aplica aqui, o card só aparece quando o chamador já sabe que há tabela pra este tipo.
  */
 export function corpoEspecialidadeEditavel(
-  tipo: TipoRegistroOdontograma, detalhe: unknown, onChange: (v: unknown) => void,
+  tipo: TipoRegistroOdontograma, detalhe: unknown, onChange: (v: unknown) => void, duvidas?: DuvidaEndo[],
 ): React.ReactNode {
   if (tipo === 'endodontia') {
-    return <EndoForm valor={(detalhe ?? null) as EndoDetalhe | null} onChange={onChange} />;
+    return <EndoForm valor={(detalhe ?? null) as EndoDetalhe | null} onChange={onChange} duvidas={duvidas} />;
   }
   if (tipo === 'implante') {
     return <ImplanteForm valor={(detalhe ?? null) as ImplanteDetalhe | null} onChange={onChange} />;

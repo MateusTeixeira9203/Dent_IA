@@ -28,7 +28,7 @@ import { TIPO_LABEL, type FaceDental, type OdontogramaEventoDraft, type TipoRegi
  * sinal de "terminei de selecionar"); quem desenha o botão continua sendo cada tela.
  */
 export interface FaixaLoteProps {
-  /** Dentes selecionados. A faixa só renderiza com 2+ (invariante do R-107d §4). */
+  /** Dentes selecionados. A faixa aparece com 1+; com vários, aplica em lote. */
   dentes: number[];
   eventosDraft: OdontogramaEventoDraft[];
   onEventosDraftChange: (eventos: OdontogramaEventoDraft[]) => void;
@@ -37,13 +37,16 @@ export interface FaixaLoteProps {
   dataPadrao: string;
   onLimpar: () => void;
   onModoMultidenteChange: (v: boolean) => void;
+  /** Com um único dente, abre o painel completo apenas por gesto explícito. */
+  onAbrirDetalheDental?: (dente: number) => void;
 }
 
 export function FaixaLote({
   dentes, eventosDraft, onEventosDraftChange, catalogoProcedimentos, dataPadrao,
-  onLimpar, onModoMultidenteChange,
+  onLimpar, onModoMultidenteChange, onAbrirDetalheDental,
 }: FaixaLoteProps) {
   const [facePendente, setFacePendente] = useState(false);
+  const [facesSelecionadas, setFacesSelecionadas] = useState<FaceDental[]>([]);
   const [busca, setBusca] = useState('');
   const [catalogoPendente, setCatalogoPendente] = useState<MeuDiaCatalogoProcedimento | null>(null);
   const [avulso, setAvulso] = useState<string | null>(null);
@@ -60,7 +63,7 @@ export function FaixaLote({
    *  pro seletor de face. */
   const sugestoesUteis = sugestoes.filter((s) => s.catalogo || (s.tipo && CHIPS_LOTE.includes(s.tipo)));
 
-  if (dentes.length < 2) return null;
+  if (dentes.length === 0) return null;
 
   function aplicar(tipo: TipoRegistroOdontograma) {
     const novos = eventosDoLote(tipo, dentes, eventosDraft, dataPadrao);
@@ -68,8 +71,19 @@ export function FaixaLote({
     onModoMultidenteChange(false);
   }
 
-  function aplicarRestauracao(face: FaceDental) {
-    onEventosDraftChange([...eventosDraft, ...eventosDoLoteRestauracao(face, dentes, dataPadrao)]);
+  function alternarFaceRestauracao(face: FaceDental) {
+    setFacesSelecionadas((atuais) => (
+      atuais.includes(face) ? atuais.filter((item) => item !== face) : [...atuais, face]
+    ));
+  }
+
+  function aplicarRestauracao() {
+    if (facesSelecionadas.length === 0) return;
+    const novos = facesSelecionadas.flatMap((face) => (
+      eventosDoLoteRestauracao(face, dentes, dataPadrao)
+    ));
+    onEventosDraftChange([...eventosDraft, ...novos]);
+    setFacesSelecionadas([]);
     setFacePendente(false);
     onModoMultidenteChange(false);
   }
@@ -126,6 +140,7 @@ export function FaixaLote({
     setBusca('');
     setCatalogoPendente(null);
     setFacePendente(false);
+    setFacesSelecionadas([]);
     setAvulso(null);
     setPrecoCatalogo(null);
     onLimpar();
@@ -135,35 +150,61 @@ export function FaixaLote({
     <div className="rounded-lg border border-teal/30 bg-teal/5 px-3 py-2 flex flex-col gap-1.5">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px] font-semibold text-text-primary">
-          {dentes.length} dentes selecionados: {dentes.join(', ')}
+          {dentes.length === 1 ? `Dente ${dentes[0]} selecionado` : `${dentes.length} dentes selecionados: ${dentes.join(', ')}`}
         </p>
-        <button
-          type="button"
-          onClick={limpar}
-          className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary hover:text-coral"
-        >
-          <X className="h-3 w-3" /> limpar
-        </button>
+        <div className="flex items-center gap-2">
+          {dentes.length === 1 && onAbrirDetalheDental && (
+            <button
+              type="button"
+              onClick={() => onAbrirDetalheDental(dentes[0])}
+              className="text-[11px] font-semibold text-teal-ink hover:text-teal"
+            >
+              Abrir detalhe dental
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={limpar}
+            aria-label="Limpar seleção"
+            title="Limpar seleção"
+            className="rounded p-0.5 text-text-secondary transition-colors hover:bg-coral/10 hover:text-coral focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        </div>
       </div>
 
       {facePendente ? (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
-            Restauração — face
+            Restauração — selecione uma ou mais faces
           </span>
           {FACES_LOTE.map((face) => (
             <button
               key={face}
               type="button"
-              onClick={() => aplicarRestauracao(face)}
-              className="rounded-full border border-teal/30 bg-surface px-2.5 py-1 text-[11px] font-bold text-teal-ink hover:bg-teal/10"
+              aria-pressed={facesSelecionadas.includes(face)}
+              onClick={() => alternarFaceRestauracao(face)}
+              className={`rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                facesSelecionadas.includes(face)
+                  ? 'border-teal bg-teal text-white'
+                  : 'border-teal/30 bg-surface text-teal-ink hover:bg-teal/10'
+              }`}
             >
               {face}
             </button>
           ))}
           <button
             type="button"
-            onClick={() => setFacePendente(false)}
+            disabled={facesSelecionadas.length === 0}
+            onClick={aplicarRestauracao}
+            className="rounded-md bg-teal px-2.5 py-1 text-[11px] font-bold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Aplicar {facesSelecionadas.length === 1 ? 'face' : `${facesSelecionadas.length} faces`}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setFacesSelecionadas([]); setFacePendente(false); }}
             className="text-[11px] font-semibold text-text-secondary hover:text-coral"
           >
             Cancelar

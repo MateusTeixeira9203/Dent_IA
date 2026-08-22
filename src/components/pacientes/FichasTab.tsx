@@ -34,10 +34,7 @@ import { Odontograma, computeToothState, type ToothStatus } from "@/components/o
 import { ToothDetailPanel } from "@/components/odontograma/ToothDetailPanel";
 import { OdontogramaComPainel } from "@/components/odontograma/OdontogramaComPainel";
 import { FaixaLote } from "@/components/odontograma/faixa-lote";
-import {
-  ARCH_SUPERIOR, ARCH_INFERIOR, ARCH_COMPLETA, ARCH_LABELS,
-  QUAD_SUP_DIREITO, QUAD_SUP_ESQUERDO, QUAD_INF_DIREITO, QUAD_INF_ESQUERDO,
-} from "@/lib/arcadas";
+import { ARCH_LABELS } from "@/lib/arcadas";
 import dynamic from 'next/dynamic';
 import type SignaturePadLib from 'signature_pad';
 import { formatarDataFicha } from '@/lib/format-data-ficha';
@@ -45,6 +42,7 @@ import { CapturaLivreCard } from '@/components/fichas/captura-livre-card';
 import { ColarDoWordDialog } from '@/components/pacientes/colar-do-word-dialog';
 import { OrtoCard } from '@/components/fichas/orto-card';
 import { OrtoForm, ORTO_VAZIO } from '@/components/fichas/orto-form';
+import { normalizarOrtoManutencao } from '@/lib/especialidades/orto';
 import { RegistroCard, type RegistroCardData } from '@/components/fichas/registro-card';
 import { DenteGrupoHeader } from '@/components/fichas/dente-grupo-header';
 import { corpoEspecialidade, corpoEspecialidadeEditavel } from '@/components/fichas/corpo-especialidade';
@@ -70,6 +68,9 @@ import { agruparPorDente, type SecaoRegistros } from '@/lib/odontograma/agrupar-
 import { derivarV2DosEventos } from '@/lib/odontograma/derivar-campos-legado';
 import { agregarGruposAbertos } from '@/lib/odontograma/grupos-abertos';
 import { dedupEventosDraft, mesclarEventosSemPerda } from '@/lib/odontograma/dedup-eventos-draft';
+import { extrairEndoDeterministico } from '@/lib/especialidades/extrair-endo-deterministico';
+import { mesclarDetalheEndo } from '@/lib/especialidades/mesclar-endo-extracao';
+import type { EndoDetalhe } from '@/lib/especialidades/endo';
 import type { EvolucaoFormatada } from '@/app/api/dex/formatar-evolucao/route';
 const SignaturePad = dynamic(
   () => import('@/components/fichas/SignaturePad').then(m => m.SignaturePad),
@@ -94,7 +95,7 @@ type ProcStatus = ToothStatus;
 type SigningTarget =
   | { kind: 'legado'; fichaId: string }
   | { kind: 'todos'; fichaId: string; pacienteId: string }
-  | { kind: 'subset'; eventoIds: string[]; pacienteId: string };
+  | { kind: 'subset'; fichaId: string; eventoIds: string[]; pacienteId: string };
 
 // #16 D3 — ciclo de status (clique avança) e metadados visuais (cinza → âmbar → teal).
 const STATUS_CYCLE: Record<ProcStatus, ProcStatus> = {
@@ -321,6 +322,7 @@ function draftsParaCards(
         autorCro,
         assinada: false,
         encaminhadoPara: null, // rascunho nunca foi encaminhado
+        revisarStatus: primeiro.revisar_status,
       },
     };
   });
@@ -538,11 +540,11 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   const [editingId, setEditingId] = React.useState<string | null>(null);  const [selectedTeeth, setSelectedTeeth] = React.useState<number[]>([]);
   const [sharedTeeth, setSharedTeeth] = React.useState<number[]>([]);  const [sharedNotes, setSharedNotes] = React.useState<string[]>(['']);  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState<string | null>(null);
   /**
-   * R-109 — seleção do LOTE multidente, estado próprio e separado do `selectedTeeth`.
+   * R-122 — seleção de ações rápidas, estado próprio e separado do `selectedTeeth`.
    *
    * Não reusa `selectedTeeth` de propósito, e isso é o oposto do que eu tinha suposto antes de
    * ler o código. Três motivos, cada um verificado aqui:
-   * 1. `selectedTeeth` carrega **sentinela de região** (91–99, via `toggleArch`). Passar isso pro
+   * 1. `selectedTeeth` pode carregar **sentinela de região** (91–99, de fichas legadas). Passar isso pro
    *    lote criaria evento ancorado no "dente 97" — que o odontograma não desenha e o
    *    `derivarV2DosEventos` não emite.
    * 2. Editar ficha legada **pré-carrega** `selectedTeeth` com os dentes da ficha antiga. A faixa
@@ -551,10 +553,9 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
    * 3. `selectedTeeth` é fonte de escrita de `dentes_afetados`. Reusar juntaria de novo os dois
    *    trilhos exatamente onde o R-109 quer separá-los.
    *
-   * Mesmo modelo do Meu dia (`onde` + `modoMultidente`) — a MESMA mecânica, não uma cópia dela.
+   * Mesmo modelo do Meu dia: tocar seleciona; a faixa de ações decide o que criar.
    */
   const [dentesLote, setDentesLote] = React.useState<number[]>([]);
-  const [modoMultidente, setModoMultidente] = React.useState(false);
 
   // R-35 item 2 — conta orçamentos/pagamentos que a ficha leva junto (ON DELETE CASCADE)
   // antes de deixar confirmar, em vez de apagar em silêncio.
@@ -562,6 +563,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   const [vinculosLoading, setVinculosLoading] = React.useState(false);
   const [signingTarget, setSigningTarget] = React.useState<SigningTarget | null>(null);
   const [assinadoPorInput, setAssinadoPorInput] = React.useState('');
+  const [orientacoesAssinatura, setOrientacoesAssinatura] = React.useState('');
   const [isSavingSignature, setIsSavingSignature] = React.useState(false);
   const signaturePadRef = React.useRef<SignaturePadLib | null>(null);
 
@@ -726,29 +728,17 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     });
   }, [destacarCard]);
 
-  const abrirDenteEDestacarRegistro = React.useCallback((dente: number | null) => {
-    if (dente == null) { setDenteAberto(null); return; }
-    // R-109 — com o Modo multidente ligado, o clique ACUMULA no lote em vez de abrir o perfil
-    // do dente. Vem antes do ramo do fantasma de propósito: no modo, clicar um dente já
-    // selecionado significa "tira do lote", nunca "apaga a nota antiga dele".
-    // Pula o `setDenteAberto` pelo mesmo motivo do R-107d: era isso que fazia o painel abrir e
-    // fechar a cada clique enquanto se montava a seleção.
-    if (modoMultidente) {
-      setDentesLote((prev) => (prev.includes(dente) ? prev.filter((d) => d !== dente) : [...prev, dente]));
-      return;
-    }
-    // R-30 Parte 7 (contrato 4) — clicar num dente "selecionado" sem evento real por trás
-    // (fantasma do texto/dentes_observacoes, eventosDraft vazio) desmarca em vez de abrir
-    // um painel sem nada pra mostrar. Com evento real, comportamento inalterado: abre.
-    if (eventosDraft.length === 0 && selectedTeeth.includes(dente)) {
-      setSelectedTeeth((prev) => prev.filter((t) => t !== dente));
-      setFormData((f) => ({ ...f, teethNotes: f.teethNotes.filter((tn) => tn.tooth !== dente) }));
-      return;
-    }
+  /** R-122 — tocar no mapa só seleciona/desseleciona para as ações rápidas. Nunca abre
+   * histórico ou perfil sozinho e nunca altera a seleção legada da ficha. */
+  const selecionarDenteParaAcoes = React.useCallback((dente: number) => {
+    setDentesLote((prev) => (prev.includes(dente) ? prev.filter((item) => item !== dente) : [...prev, dente]));
+  }, []);
+
+  /** Único gesto explícito que abre o perfil dental na criação. */
+  const abrirDetalheDental = React.useCallback((dente: number) => {
     setDenteAberto(dente);
-    // R-21 Fase 3: abre a seção do dente na lista e rola até ela (antes só destacava o card).
     destacarDente(dente, 'A', setDentesAbertosA, cardsDraft);
-  }, [cardsDraft, destacarDente, eventosDraft, modoMultidente, selectedTeeth]);
+  }, [cardsDraft, destacarDente]);
 
   /** Observação por procedimento (§03 do definitivo) — aplica a todo o grupo. */
   const atualizarObsGrupo = (idxs: number[], obs: string) => {
@@ -818,7 +808,12 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
           onToggleMomento={() => toggleMomentoDraft(idxs)}
         >
           {temDetalhe
-            ? corpoEspecialidadeEditavel(data.tipo, data.detalhe, (v) => atualizarDetalheDraft(idxs[0], v))
+            ? corpoEspecialidadeEditavel(
+                data.tipo,
+                data.detalhe,
+                (v) => atualizarDetalheDraft(idxs[0], v),
+                eventosDraft[idxs[0]]?.endo_revisao?.duvidas,
+              )
             : undefined}
         </RegistroCard>
       </div>
@@ -1087,26 +1082,10 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     [selectedTeeth, dentesLote],
   );
 
-  /** "✕ limpar" da faixa — esvazia a seleção e desliga o modo. Nunca desfaz o que já foi
-   *  lançado no rascunho (mesma regra do Meu dia, R-107d §3). */
+  /** "✕ limpar" da faixa — esvazia somente a seleção, nunca o rascunho já criado. */
   const limparLote = React.useCallback(() => {
     setDentesLote([]);
-    setModoMultidente(false);
   }, []);
-
-  const toggleArch = (archNum: number) => {
-    setSelectedTeeth((prev) => {
-      const isSelected = prev.includes(archNum);
-      if (isSelected) {
-        setFormData((f) => ({ ...f, teethNotes: f.teethNotes.filter((tn) => tn.tooth !== archNum) }));
-        return prev.filter((t) => t !== archNum);
-      } else {
-        setFormData((f) => ({ ...f, teethNotes: [...f.teethNotes, { tooth: archNum, notes: [''] }] }));
-        return [...prev, archNum];
-      }
-    });
-  };
-
 
   // Job A Fatia B (§5) — form já preenchido pede confirmação antes do "Organizar"
   // sobrescrever (o CapturaLivreCard checa isto ANTES de disparar formatar-evolucao).
@@ -1118,7 +1097,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     formData.conduta.trim() ||
     // R-05b: sem isto, o form aberto pelo atalho é considerado limpo e o guard de saída
     // o descarta em silêncio — o bloco orto herdado É conteúdo.
-    formData.ortoManutencao != null ||
+    normalizarOrtoManutencao(formData.ortoManutencao) != null ||
     // R-47 (achado 2, 31/07) — lançamento manual no odontograma (clique no dente, chip de
     // rotina) não passava por nenhum campo acima: o Organizar sobrescrevia sem confirmar.
     eventosDraft.length > 0
@@ -1128,7 +1107,38 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   // form É a tela de revisão (invariante #8), nada entra na ficha sem passar por ele.
   // Dentes preenchidos = dentes SELECIONADOS; o dentista remove o que não confirma
   // (mesmo princípio da auto-confirmação do consulta, invertido pro idioma do form).
-  const aplicarEvolucaoDoOrganizar = (data: EvolucaoFormatada) => {
+  const complementarEndoNaFicha = async (relato: string, dentes: number[]) => {
+    if (dentes.length === 0) return;
+    try {
+      const resposta = await fetch('/api/dex/extrair-especialidade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ especialidade: 'endodontia', texto: relato, contexto: { dentes } }),
+      });
+      const data = await resposta.json() as { ok: boolean; itens?: Array<{ dente: number; detalhe: EndoDetalhe }> };
+      if (!resposta.ok || !data.ok || !data.itens?.length) return;
+
+      const porDente = new Map(data.itens.map((item) => [item.dente, item.detalhe]));
+      setEventosDraft((prev) => prev.map((evento) => {
+        if (evento.tipo !== 'endodontia' || evento.ancora.dente == null) return evento;
+        const recebido = porDente.get(evento.ancora.dente);
+        if (!recebido) return evento;
+        const mesclado = mesclarDetalheEndo(
+          (evento.detalhe ?? null) as EndoDetalhe | null,
+          recebido,
+          evento.endo_revisao,
+          'ia',
+        );
+        return { ...evento, detalhe: mesclado.detalhe, endo_revisao: mesclado.revisao };
+      }));
+      const primeiroDente = data.itens[0]?.dente;
+      if (primeiroDente != null) setDenteAberto(primeiroDente);
+    } catch (error) {
+      console.warn('[ficha] complemento endodôntico indisponível:', error);
+    }
+  };
+
+  const aplicarEvolucaoDoOrganizar = (data: EvolucaoFormatada, relato: string) => {
     setFormData((f) => ({
       ...f,
       type: data.queixa_principal || f.type,
@@ -1158,14 +1168,28 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     // Trade-off aceito e documentado: se o Dex extrai o MESMO procedimento com status
     // diferente (ex.: indicado → realizado), a chave muda (status entra na chave) e os dois
     // convivem como cards visíveis — duplicata visível antes de salvar, não perda silenciosa.
-    setEventosDraft((prev) =>
-      mesclarEventosSemPerda(prev, data.odontograma_eventos ?? [], formData.dataAtendimento),
-    );
+    const eventosBase = mesclarEventosSemPerda(eventosDraft, data.odontograma_eventos ?? [], formData.dataAtendimento);
+    const dentesEndo = eventosBase
+      .filter((evento) => evento.tipo === 'endodontia' && evento.ancora.dente != null)
+      .map((evento) => evento.ancora.dente as number);
+    const extracaoEndo = extrairEndoDeterministico(relato, dentesEndo);
+    const porDente = new Map(extracaoEndo.ok ? extracaoEndo.extracoes.map((extracao) => [extracao.dente, extracao]) : []);
+    const comDetalhe = eventosBase.map((evento) => {
+      if (evento.tipo !== 'endodontia' || evento.ancora.dente == null || evento.detalhe != null) return evento;
+      const extracao = porDente.get(evento.ancora.dente);
+      return extracao
+        ? { ...evento, detalhe: extracao.detalhe, endo_revisao: { origemPorCampo: extracao.origemPorCampo, duvidas: extracao.duvidas } }
+        : evento;
+    });
+    setEventosDraft(comDetalhe);
+    const primeiroComDetalhe = comDetalhe.find((evento) => evento.tipo === 'endodontia' && evento.ancora.dente != null && evento.detalhe != null);
+    if (primeiroComDetalhe?.ancora.dente != null) setDenteAberto(primeiroComDetalhe.ancora.dente);
     // Mesmo critério do handleEdit (linha 666): sentinela de arcada entre os dentes
     // afetados põe o modo em 'arch' — mantém os botões de seleção coerentes com o
     // que a IA de fato preencheu.    setSharedTeeth([]);
     setSharedNotes(['']);
     setSelectedTeeth(data.dentes_afetados);
+    void complementarEndoNaFicha(relato, dentesEndo);
   };
 
   /**
@@ -1273,9 +1297,12 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     if (!fichaEmModo) return;
     const ids = idsSelecionados.flatMap((c) => c.ids);
     if (ids.length === 0) return;
+    const orientacoes = fichaEmModo.conduta?.trim() || fichaEmModo.observation.trim();
+    const fichaId = fichaEmModo.id;
     sairModoSelecao();
     setAssinadoPorInput(patientName ?? '');
-    setSigningTarget({ kind: 'subset', eventoIds: ids, pacienteId: patientId });
+    setOrientacoesAssinatura(orientacoes);
+    setSigningTarget({ kind: 'subset', fichaId, eventoIds: ids, pacienteId: patientId });
   };
   /** Abre/fecha a consulta. Colapsar a que está em modo seleção sai do modo (a barra
    *  não pode ficar órfã sem os cards na tela). */
@@ -1406,7 +1433,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
         // R-47 (achado 6) — só manda a chave se o Organizar detectou algo NESTA sessão;
         // omitir preserva o que já estava salvo (fix espelhado em salvar-ficha.ts).
         ...(alertaNovoDetectado !== null && { alertaNovo: alertaNovoDetectado }),
-        ortoManutencao:     formData.ortoManutencao,
+        ortoManutencao:     normalizarOrtoManutencao(formData.ortoManutencao),
         odontogramaEventos: eventosParaSalvar,
       });
 
@@ -1447,6 +1474,10 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     }
     if (signingTarget.kind !== 'legado' && assinadoPorInput.trim().length < 2) {
       toast.error('Informe o nome de quem está assinando.');
+      return;
+    }
+    if (signingTarget.kind !== 'legado' && orientacoesAssinatura.trim().length < 3) {
+      toast.error('Registre as orientações entregues ao paciente.');
       return;
     }
 
@@ -1506,11 +1537,13 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
             pacienteId: signingTarget.pacienteId,
             assinadoPor: assinadoPorInput.trim(),
             assinaturaDataUrl: dataUrl,
+            conclusao: { orientacoes: orientacoesAssinatura.trim() },
           })
         : await assinarProcedimentos({
             eventoIds: signingTarget.eventoIds,
             assinadoPor: assinadoPorInput.trim(),
             assinaturaDataUrl: dataUrl,
+            conclusao: { orientacoes: orientacoesAssinatura.trim() },
           });
 
       if (!res.ok) {
@@ -1520,7 +1553,12 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
 
       await fetchFichas();
       setSigningTarget(null);
-      toast.success('Assinatura salva com sucesso.');
+      setOrientacoesAssinatura('');
+      if (res.documentWarning) {
+        toast.warning(`Assinatura salva. Documento pendente: ${res.documentWarning}`);
+      } else {
+        toast.success('Assinatura e documento salvos em Arquivos.');
+      }
     } catch (err) {
       console.error('[assinatura] Erro ao salvar:', err);
       toast.error('Erro ao salvar assinatura. Tente novamente.');
@@ -1617,16 +1655,9 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  /**
-   * R-05b — abre ficha NOVA com o bloco orto já montado e pré-preenchido. Não é edição:
-   * `editingId` fica null, então o save cria (não atualiza a ficha de origem).
-   * D1: herda os 4 campos que descrevem o ESTADO do aparelho (verdade enquanto não trocar) e
-   * NUNCA `ativacao`, que descreve o ATO daquele dia — copiar o ato gravaria procedimento que
-   * pode não ter acontecido, num documento legal.
-   */
+  /** R-60 — manutenção nova abre limpa: copiar dados da consulta anterior cria ato clínico falso. */
   const abrirNovaComOrto = () => {
     if (!ultimaOrto) return;
-    const { arcada, fio, elastico_corrente, elastico_intermaxilar } = ultimaOrto.valor;
     setEditingId(null);
     setSharedTeeth([]);
     setSharedNotes(['']);
@@ -1641,9 +1672,9 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       teethNotes: [],
       procedimentos: [],
       conduta: '',
-      ortoManutencao: { arcada, fio, elastico_corrente, elastico_intermaxilar, ativacao: null },
+      ortoManutencao: { ...ORTO_VAZIO },
     });
-    setOrtoHerdadaDe({ data: ultimaOrto.data, autorNome: ultimaOrto.autorNome });
+    setOrtoHerdadaDe(null);
     setIsPanelOpen(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -1757,6 +1788,20 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                 Divisores sutis separam as zonas; nada de cards soltos competindo. */}
             <div className="bg-surface border border-border rounded-2xl p-4 md:p-6 flex flex-col gap-5">
 
+              {/* R-122 — contexto do rascunho visível antes da captura. Não altera
+                  tipo/data/autoria; só dá início claro à ficha. */}
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 pb-4">
+                <div>
+                  <h3 className="font-heading text-xl text-text-primary">Nova ficha clínica</h3>
+                  <p className="mt-0.5 text-xs text-text-secondary">
+                    {formData.type} · {dataBR(formData.dataAtendimento)} · {autorNomeDraft}
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-teal/30 bg-teal/5 px-2.5 py-1 text-[11px] font-bold text-teal-ink">
+                  <span className="h-1.5 w-1.5 rounded-full bg-teal" /> Rascunho
+                </span>
+              </div>
+
               {/* Campo mágico (Job A Fatia B) — não renderiza no perfil demo (§8: sem clínica real). */}
               {patientId !== 'demo' && (
                 <CapturaLivreCard
@@ -1801,6 +1846,21 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
 
               <div className="border-t border-border/60" />
 
+              {/* R-122 — odontograma é uma bancada clínica própria: mapa, região e ações vivem
+                  no mesmo contorno, em vez de parecerem campos soltos do formulário. */}
+              <article className="overflow-hidden rounded-2xl border border-border bg-surface-alt/30">
+                <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 px-4 py-3">
+                  <div>
+                    <h3 className="font-heading text-lg text-text-primary">Odontograma e região</h3>
+                    <p className="mt-0.5 text-[11px] text-text-secondary">Clique para selecionar; as ações acompanham a seleção.</p>
+                  </div>
+                  {dentesLote.length > 0 && (
+                    <span className="rounded-full bg-teal/10 px-2.5 py-1 text-[11px] font-bold text-teal-ink">
+                      {dentesLote.length} selecionado{dentesLote.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </header>
+                <div className="p-4">
               {/* R-20: odontograma + perfil do dente lado-a-lado — encolhe ao abrir um dente */}
               <OdontogramaComPainel
                 odontograma={
@@ -1815,60 +1875,15 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                         filtro de responsável ativo na lista.
                       </p>
                     )}
-                    {/* R-109 — mesmo botão do Meu dia, mesma posição relativa: colado no
-                        odontograma. O toggle muda o que o CLIQUE no dente faz, então tem que
-                        estar no campo de visão de onde o clique acontece (R-107d, adendo). */}
-                    <div className="flex items-center justify-end">
-                      <button
-                        type="button"
-                        onClick={() => setModoMultidente((v) => !v)}
-                        aria-pressed={modoMultidente}
-                        className="rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
-                        style={{
-                          background: modoMultidente ? 'var(--color-teal)' : 'var(--color-surface-alt)',
-                          color: modoMultidente ? 'white' : 'var(--color-text-secondary)',
-                          borderColor: modoMultidente ? 'var(--color-teal)' : 'var(--color-border)',
-                        }}
-                      >
-                        {modoMultidente ? '✓ Modo multidente' : 'Modo multidente'}
-                      </button>
-                    </div>
                     <Odontograma
                       eventos={eventosDraft.length > 0 ? eventosDraft : undefined}
                       selectedTeeth={dentesPintados}
                       sharedTeeth={sharedTeeth}
                       historicalTeeth={editingId ? historicalTeeth : new Set<number>()}
-                      onToothToggle={abrirDenteEDestacarRegistro}
+                      onToothToggle={selecionarDenteParaAcoes}
                       hideFilters
                     />
                   </>
-                }
-                chips={
-                  <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-border/40">
-                    <span className="text-[9.5px] font-bold uppercase tracking-widest text-text-secondary mr-1">Região</span>
-                    {[
-                      { id: ARCH_SUPERIOR, label: 'Arcada sup.' },
-                      { id: ARCH_INFERIOR, label: 'Arcada inf.' },
-                      { id: ARCH_COMPLETA, label: 'Boca toda' },
-                      { id: QUAD_SUP_DIREITO, label: 'Q1' },
-                      { id: QUAD_SUP_ESQUERDO, label: 'Q2' },
-                      { id: QUAD_INF_ESQUERDO, label: 'Q3' },
-                      { id: QUAD_INF_DIREITO, label: 'Q4' },
-                    ].map(({ id, label }) => (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => toggleArch(id)}
-                        className={`text-[10.5px] font-bold rounded-full px-2.5 py-1 border transition-colors ${
-                          selectedTeeth.includes(id)
-                            ? 'bg-teal border-teal text-white'
-                            : 'bg-surface border-border text-text-secondary hover:border-teal hover:text-teal-ink'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
                 }
                 painel={
                   denteAberto != null ? (
@@ -1894,9 +1909,8 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                 }
               />
 
-              {/* R-109 — a MESMA faixa do Meu dia (componente compartilhado, spec §2). Devolve
-                  null com menos de 2 dentes, então a regra de visibilidade do R-107d já vive
-                  dentro dela: nada a condicionar aqui. */}
+              {/* R-122 — a mesma faixa do Meu Dia: seleção vale para 1+ dentes; detalhe dental
+                  só abre pelo gesto explícito dentro dela. */}
               <FaixaLote
                 dentes={dentesLote}
                 eventosDraft={eventosDraft}
@@ -1904,8 +1918,11 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                 catalogoProcedimentos={catalogoProcedimentos ?? []}
                 dataPadrao={formData.dataAtendimento}
                 onLimpar={limparLote}
-                onModoMultidenteChange={setModoMultidente}
+                onModoMultidenteChange={() => {}}
+                onAbrirDetalheDental={abrirDetalheDental}
               />
+                </div>
+              </article>
               {/* R-21 Fase 2: a tabela de especialidade (endo/implante) NÃO abre mais aqui — agora
                   monta DENTRO da seção do dente na lista (tabelaContainer via renderSecoesPorDente).
                   Fallback do ToothDetailPanel (tabelaContainer null) = inline no painel. */}
@@ -1914,9 +1931,9 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
 
               {/* Registros — R-02 Fase 1: mesmo componente-fonte da ficha salva (RegistroCard,
                   I1). agruparRegistros (I2) já entrega abertos-primeiro (Fase 2). */}
-              <div className="flex flex-col gap-3">
+              <article className="flex flex-col gap-3 rounded-2xl border border-border bg-surface-alt/30 p-4">
                 <div className="flex items-baseline justify-between px-1">
-                  <h3 className="font-heading text-lg text-text-primary">Registros da consulta</h3>
+                  <h3 className="font-heading text-lg text-text-primary">Registros desta consulta</h3>
                   <span className="text-[11px] font-semibold text-text-secondary">
                     {cardsDraft.length > 0 ? `${cardsDraft.length} registro${cardsDraft.length > 1 ? 's' : ''}` : 'nenhum ainda'}
                   </span>
@@ -1947,12 +1964,31 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                     denteDestacado,
                   })
                 )}
-              </div>
+              </article>
 
               <div className="border-t border-border/60" />
 
+              {/* R-122 — secundários não disputam a primeira leitura da ficha. Os campos e a
+                  persistência são os mesmos; só entram progressivamente quando o dentista
+                  precisa deles ou quando já há conteúdo. */}
+              <section className="flex flex-col gap-3">
+                <div className="px-1">
+                  <h3 className="font-heading text-lg text-text-primary">Complementos da ficha</h3>
+                  <p className="mt-0.5 text-[11px] text-text-secondary">Só abra o que precisar nesta consulta.</p>
+                </div>
+              <details
+                className="group rounded-2xl border border-border bg-surface"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left marker:content-none">
+                  <span>
+                    <span className="block font-semibold text-sm text-text-primary">Anotações, rotina e ortodontia</span>
+                    <span className="block text-[11px] text-text-secondary">Abra para complementar o registro clínico.</span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-text-secondary transition-transform group-open:rotate-90" />
+                </summary>
+                <div className="flex flex-col gap-4 border-t border-border/60 p-4">
               {/* Anotações gerais + conduta + ações (zona 5 do definitivo, sem o bloco Procedimentos) */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-[0.15em] mb-1.5">
                     Anotações gerais
@@ -2083,6 +2119,9 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                   </div>
                 )}
               </div>
+                </div>
+              </details>
+              </section>
 
               {/* R-59 Parte 4 — mesmo padrão do banner de falha ao CARREGAR (acima, fora do
                   painel): a ficha salvou, mas o odontograma não. Painel fica aberto de
@@ -2099,6 +2138,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/60">
                 <button
+                  type="button"
                   onClick={closePanel}
                   className="px-5 py-2.5 rounded-xl font-semibold text-sm text-text-secondary hover:text-text-primary hover:bg-surface-alt transition-colors"
                 >
@@ -2552,6 +2592,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                                 <button
                                   onClick={() => {
                                     setAssinadoPorInput(patientName ?? '');
+                                    setOrientacoesAssinatura(evo.conduta?.trim() || evo.observation.trim());
                                     setSigningTarget(
                                       legado
                                         ? { kind: 'legado', fichaId: evo.id }
@@ -2658,8 +2699,8 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       </AnimatePresence>
 
       {/* Dialog: Assinatura do Paciente */}
-      <Dialog open={!!signingTarget} onOpenChange={(open) => { if (!open) setSigningTarget(null); }}>
-        <DialogContent className="max-w-md rounded-2xl bg-surface border-border">
+      <Dialog open={!!signingTarget} onOpenChange={(open) => { if (!open) { setSigningTarget(null); setOrientacoesAssinatura(''); } }}>
+        <DialogContent className="max-h-[90vh] max-w-md overflow-y-auto rounded-2xl border-border bg-surface">
           <DialogHeader>
             <DialogTitle className="font-heading text-xl text-text-primary flex items-center gap-2">
               <PenLine className="w-5 h-5 text-teal" />
@@ -2671,17 +2712,33 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
           </DialogHeader>
 
           {signingTarget?.kind !== 'legado' && (
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-[0.15em]">
-                Nome de quem assina
-              </label>
-              <input
-                type="text"
-                value={assinadoPorInput}
-                onChange={(e) => setAssinadoPorInput(e.target.value)}
-                placeholder="Nome do paciente ou responsável"
-                className="w-full bg-surface-alt border border-border rounded-xl px-3.5 py-2 text-sm font-medium text-text-primary outline-none focus:border-teal transition-colors"
-              />
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label htmlFor="assinatura-nome" className="block text-[10px] font-bold text-text-secondary uppercase tracking-[0.15em]">
+                  Nome de quem assina
+                </label>
+                <input
+                  id="assinatura-nome"
+                  type="text"
+                  value={assinadoPorInput}
+                  onChange={(e) => setAssinadoPorInput(e.target.value)}
+                  placeholder="Nome do paciente ou responsável"
+                  className="w-full bg-surface-alt border border-border rounded-xl px-3.5 py-2 text-sm font-medium text-text-primary outline-none focus:border-teal transition-colors"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="assinatura-orientacoes" className="block text-[10px] font-bold text-text-secondary uppercase tracking-[0.15em]">
+                  Orientações entregues
+                </label>
+                <textarea
+                  id="assinatura-orientacoes"
+                  value={orientacoesAssinatura}
+                  onChange={(e) => setOrientacoesAssinatura(e.target.value)}
+                  rows={3}
+                  placeholder="Cuidados pós-procedimento e orientação de retorno"
+                  className="w-full resize-none bg-surface-alt border border-border rounded-xl px-3.5 py-2 text-sm font-medium text-text-primary outline-none focus:border-teal transition-colors"
+                />
+              </div>
             </div>
           )}
 
@@ -2690,7 +2747,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
           <DialogFooter className="gap-2 pt-2">
             <Button
               variant="outline"
-              onClick={() => setSigningTarget(null)}
+              onClick={() => { setSigningTarget(null); setOrientacoesAssinatura(''); }}
               disabled={isSavingSignature}
               className="rounded-xl border-border text-text-primary hover:bg-surface-alt"
             >

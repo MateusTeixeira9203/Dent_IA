@@ -15,6 +15,7 @@ import { FileText } from 'lucide-react';
 import { RegistroCard } from '@/components/fichas/registro-card';
 import { TextoExpansivel } from '@/components/fichas/texto-expansivel';
 import { corpoEspecialidade } from '@/components/fichas/corpo-especialidade';
+import { OrtoCard } from '@/components/fichas/orto-card';
 import { eventosParaCards, type EventoParaCard } from '@/lib/odontograma/eventos-para-cards';
 import type { MeuDiaVisita, MeuDiaEventoVisita } from '@/server/dashboard/get-meu-dia';
 import { fmtData } from './meu-dia-format';
@@ -129,6 +130,12 @@ function VisitaEntry({
         className="whitespace-pre-line text-sm text-text-primary"
         onAbrirGrande={() => onLerGrande(v)}
       />
+
+      {v.ortoManutencao && (
+        <div className="rounded-xl border border-border bg-surface-alt/40 px-3 py-2.5">
+          <OrtoCard valor={v.ortoManutencao} />
+        </div>
+      )}
 
       {/* 3. Feito nesta consulta — realizados desta ficha + fechados aqui, indicados alhures */}
       {cardsFeito.length > 0 && (

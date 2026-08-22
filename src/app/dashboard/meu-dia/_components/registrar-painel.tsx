@@ -53,7 +53,7 @@
 // linha ficava sem fundo, "flutuando"). `ToothDetailPanel` sem esse prop já renderiza a
 // tabela de especialidade inline, dentro do próprio card do perfil (555px).
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { Check, AlertTriangle, Loader2, X } from 'lucide-react';
@@ -75,11 +75,11 @@ import {
   type AncoraClinica,
   type TipoRegistroOdontograma,
 } from '@/types/odontograma';
-import type { OrtoManutencaoDetalhe } from '@/lib/especialidades/orto';
+import { normalizarOrtoManutencao, type OrtoManutencaoDetalhe } from '@/lib/especialidades/orto';
 import { type SugestaoLocal } from '@/lib/odontograma/casar-procedimento-local';
 import { ditadoDevolveMapa, type SlotCentral } from '@/lib/odontograma/ditado-devolve-mapa';
 import { eventoRotina, cycleRotina } from '@/lib/odontograma/rotina-boca';
-import type { MeuDiaPendencia, MeuDiaCatalogoProcedimento, MeuDiaOrto } from '@/server/dashboard/get-meu-dia';
+import type { MeuDiaPendencia, MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
 
 // R-109 — a faixa de lote inteira (lógica, estado interno e markup) saiu daqui pro componente
 // compartilhado; a ficha monta a MESMA em vez de uma cópia (spec §2). Aqui ficou só o `onde`,
@@ -136,10 +136,6 @@ interface RegistrarPainelProps {
   /** R-46d D8 — "usar este documento de base" (anexar-documentos-bloco.tsx), repassado pro
    *  campo mágico. */
   anexarTexto?: { texto: string; nonce: number; origem: 'audio' | 'documento' };
-  /** 04/08 — última manutenção ortodôntica do paciente (mesmo dado que MAPA §2.2 já calcula
-   *  no servidor). Pré-preenche o chip de orto (mesmo padrão de herança do R-05b) em vez de
-   *  nascer vazio toda visita — é o que torna o chip rápido de usar, não só possível de usar. */
-  orto: MeuDiaOrto | null;
   /** R-61 — estado persistido da boca (leitura), pinta o odontograma junto com
    *  `eventosDraft`. Passado direto pro `<Odontograma eventosPersistidos>`. */
   boca: OdontogramaEventoDraft[];
@@ -151,6 +147,8 @@ interface RegistrarPainelProps {
    *  uma. Independente do estado de "Salvar" — nunca herda `disabled`/`semRascunho`, é ação
    *  separada (não precisa ter rascunho pra gerar orçamento de uma ficha antiga). */
   onAbrirPickerOrcamento: () => void;
+  /** R-122 — detalhe é sempre um gesto explícito da faixa de ações rápidas. */
+  onAbrirDetalheDental: (dente: number) => void;
   /** R-49 F1 — o campo mágico extraiu detalhe de endo; abre o editor já expandido. */
   onAbrirDetalheEndo: (dente: number, eventoId: string) => void;
   /** R-105a §4.2 — repassado direto pro campo mágico. Derivado em `meu-dia-client.tsx`
@@ -192,8 +190,10 @@ function ancorasDoOnde(v: OndeValor): AncoraClinica[] {
 }
 
 export interface RegistrarPainelSlots {
-  /** Card full-width, topo do fluxo: campo mágico + chips (rotina/orto) + observação. */
+  /** Entrada livre full-width no topo do fluxo. */
   campoMagico: ReactNode;
+  /** Controles manuais que acompanham o odontograma (rotina, lote e observação). */
+  controlesOdontograma: ReactNode;
   /** Ocupante default da coluna direita (~555px): mapa espelho ou OrtoForm — nunca os
    *  dois. Quando `denteAberto` está setado, o pai (`meu-dia-client`) mostra o
    *  `ToothDetailPanel` no lugar deste slot inteiro (mesma prioridade de sempre: orto
@@ -214,10 +214,10 @@ export function useRegistrarPainel({
   destinoNovos,
   onSalvo,
   anexarTexto,
-  orto,
   boca,
   detalheEspecialidadeAberto,
   onAbrirPickerOrcamento,
+  onAbrirDetalheDental,
   onAbrirDetalheEndo,
   realceCampoMagico,
   dicaCampoMagico,
@@ -227,14 +227,6 @@ export function useRegistrarPainel({
   const [alertaNovo, setAlertaNovo] = useState<string | null>(null);
 
   const [onde, setOnde] = useState<OndeValor>(null);
-  /** R-107d (adendo) — "clica, fecha, clica, fecha" era o atrito real: cada clique num dente
-   *  já acumulava em `onde.dentes` (nunca mudou), mas TAMBÉM abria o histórico daquele dente
-   *  (`setDenteAberto`), substituindo o espelho — pra selecionar o 2º dente era preciso
-   *  "voltar à boca" antes. Com o modo ligado, `onToothToggle` pula esse `setDenteAberto`: o
-   *  espelho nunca sai de vista, clique em sequência funciona direto. Desliga sozinho ao
-   *  aplicar qualquer ação de lote ou ao "✕ limpar" — nunca fica aceso sem o dentista saber
-   *  (o oposto do chip de orto, que ele apontou como o padrão errado de copiar). */
-  const [modoMultidente, setModoMultidente] = useState(false);
   // R-62 — carrega `dentes` junto (não só o item): quando a sugestão veio do texto do campo
   // mágico com número ("resina Z350 no 24"), o dente tem que sobreviver até o clique em
   // "qual tipo clínico?" — sem isso o passo seguinte caía de volta no `onde` (possivelmente
@@ -246,11 +238,9 @@ export function useRegistrarPainel({
   // R-107d/R-109 — a faixa de lote virou <FaixaLote>, e o estado interno dela (busca,
   // face pendente, catálogo, preço) mora lá dentro. Aqui sobrou só o `onde`, que é a
   // SELEÇÃO — essa continua sendo desta tela, porque cada tela seleciona do seu jeito.
-  /** 04/08 — chip "Manutenção ortodôntica". Pré-preenche com a última manutenção real do
-   *  paciente quando existe (herança R-05b); nasce vazio (OrtoForm cai em ORTO_VAZIO) quando
-   *  não há histórico ainda. */
+  /** R-60 — preenchimento manual sempre começa limpo. Só a voz pode abrir o painel já preenchido. */
   const [ortoChipAberto, setOrtoChipAberto] = useState(false);
-  const [ortoValor, setOrtoValor] = useState<OrtoManutencaoDetalhe | null>(() => orto?.valor ?? null);
+  const [ortoValor, setOrtoValor] = useState<OrtoManutencaoDetalhe | null>(null);
 
   // R-63 §4.1 — 1 ocupante por vez no slot central. Troca CONDICIONAL: só cede o mapa pra
   // conteúdo que precisa do espaço e não usa o mapa pra nada (orto, tabela de
@@ -290,11 +280,10 @@ export function useRegistrarPainel({
     setTextoAberto(false);
     setAlertaNovo(null);
     setOnde(null);
-    setModoMultidente(false);
     setCatalogoPendente(null);
     setTipoPendente(null);
     setOrtoChipAberto(false);
-    setOrtoValor(orto?.valor ?? null);
+    setOrtoValor(null);
     setIsSaving(false);
     setSavedFichaId(null);
     setEventosPendentes(null);
@@ -338,7 +327,8 @@ export function useRegistrarPainel({
   // espera o `router.refresh()` do pai, fecha a janela de corrida de um duplo clique rápido
   // pós-save. Trava 2 (slot já registrado hoje) é o MESMO estado vazio, só muda o rótulo.
   // 04/08 — visita só-de-orto (sem evento, sem texto) também é rascunho de verdade.
-  const semRascunho = eventosDraft.length === 0 && textoVisita.trim() === '' && ortoValor == null;
+  const ortoParaSalvar = normalizarOrtoManutencao(ortoValor);
+  const semRascunho = eventosDraft.length === 0 && textoVisita.trim() === '' && ortoParaSalvar == null;
 
   /** R-50 — orto veio da IA: vira estado editável E abre o chip. Abrir é o guarda-corpo (mesma
    *  razão do `criarDenteTipo` abrir a tabela de endo sozinha): dado extraído nunca entra
@@ -435,20 +425,13 @@ export function useRegistrarPainel({
   // C5 (contrato §5.5) — toque no odontograma escreve no MESMO "onde" que o resto do painel lê
   // (fonte única, nenhum estado novo).
   //
-  // 04/08 (pedido dele, ao vivo) — 1 clique já abre o balão do dente (antes precisava de 2:
-  // 1º selecionava, 2º abria). Continua acumulando em `onde.dentes` pro caso de um tipo ficar
-  // pendente aguardando onde (tipoPendente) — clicar um 2º dente diferente aplica o mesmo tipo
-  // aos dois. Clicar um dente JÁ selecionado remove ele do lote (multi-seleção só sobrevive
-  // pra esse caso — G12 do C6: não é o clique que muda, é o que ele decide fazer).
-  //
-  // R-107d (adendo) — com `modoMultidente` ligado, pula o `setDenteAberto`: é exatamente o
-  // que fazia o espelho sumir a cada clique (achado testando o R-107d, "clica, fecha, clica,
-  // fecha"). Fora do modo, comportamento 100% igual a antes.
+  // R-122 — clicar no mapa só compõe a seleção. Histórico, faces e tabelas são abertos somente
+  // por "Abrir detalhe dental" na faixa; assim vários dentes podem ser marcados em sequência
+  // sem trocar o contexto visual a cada clique.
   function onToothToggle(dente: number) {
     const sel = onde?.dentes ?? [];
     if (!sel.includes(dente)) {
       handleOndeChange({ dentes: [...sel, dente] });
-      if (!modoMultidente) setDenteAberto(dente);
       return;
     }
     const resto = sel.filter((d) => d !== dente);
@@ -473,11 +456,9 @@ export function useRegistrarPainel({
     if (s.tipo) registrar(s.tipo, '', s.dentes);
   }
 
-  /** "✕ limpar" — só esvazia a seleção, nunca desfaz o que já foi registrado (spec §3).
-   *  R-107d (adendo) — também desliga o modo multidente: fim do lote, fim do modo. */
+  /** "✕ limpar" — só esvazia a seleção, nunca desfaz o que já foi registrado. */
   function limparLote() {
     setOnde(null);
-    setModoMultidente(false);
   }
 
   // I1 — 1 clique = 1 ficha: `salvarFicha` não é idempotente por agendamentoId, o `disabled`
@@ -496,7 +477,7 @@ export function useRegistrarPainel({
         // uma 2ª: mesmos eventos por id (upsert), sem duplicar o que o orçamento já gravou.
         // finalizarAtendimento omitido (default true) — É este clique que fecha o atendimento.
         fichaId: fichaRascunhoId ?? undefined,
-        pacienteId, agendamentoId, textoVisita, eventosDraft, alertaNovo, ortoManutencao: ortoValor,
+        pacienteId, agendamentoId, textoVisita, eventosDraft, alertaNovo, ortoManutencao: ortoParaSalvar,
         // R-108b — só governa o que NASCEU nesta sessão. A pendência concluída volta pra ficha
         // onde foi planejada sozinha, decidida no servidor pelo `ficha_id` que ela já tem.
         destinoNovos: { fichaId: destinoNovos },
@@ -538,34 +519,30 @@ export function useRegistrarPainel({
     }
   }
 
-  // R-78 F0 — campo mágico + faixa de chips/observação, card full-width no topo do novo
-  // fluxo (era o topo do card "Registrar"; o card em si é responsabilidade de quem chama,
-  // ver `campoMagico` abaixo).
+  // R-122 — Campo Mágico é só a entrada livre. Controles manuais deixam de disputar o topo
+  // da tela e acompanham o odontograma no slot contextual abaixo.
   const campoMagico = (
-    <>
-      {/* D1 — campo mágico: entrada única. R-62: os chips locais (zero IA) vivem dentro
-          dele agora — é o que mata a disclosure "Registrar sem IA" que existia aqui.
-          key={agendamentoId} — o texto/áudio/anexo do CapturaLivreCard é estado interno
-          (useCapturaLivre), fora do alcance do reset por comparação de id acima (esse só
-          cobre o state desta hook). Sem a key, o campo mágico continuava preenchido com o
-          relato do paciente anterior ao trocar pelo rail (achado 12/08). */}
-      <CampoMagicoMeuDia
-        key={agendamentoId}
-        pacienteNome={pacienteNome}
-        eventosDraft={eventosDraft}
-        onEventosDraftChange={setEventosDraft}
-        textoVisita={textoVisita}
-        onTextoVisitaChange={setTextoVisita}
-        onAlertaNovoChange={setAlertaNovo}
-        onOrtoDetectado={handleOrtoDetectado}
-        onEndoDetectado={onAbrirDetalheEndo}
-        anexarTexto={anexarTexto}
-        catalogoProcedimentos={catalogoProcedimentos}
-        onAplicarSugestao={aplicarSugestaoLocal}
-        realce={realceCampoMagico}
-        dica={dicaCampoMagico}
-      />
+    <CampoMagicoMeuDia
+      key={agendamentoId}
+      pacienteNome={pacienteNome}
+      eventosDraft={eventosDraft}
+      onEventosDraftChange={setEventosDraft}
+      textoVisita={textoVisita}
+      onTextoVisitaChange={setTextoVisita}
+      onAlertaNovoChange={setAlertaNovo}
+      onOrtoDetectado={handleOrtoDetectado}
+      onEndoDetectado={onAbrirDetalheEndo}
+      anexarTexto={anexarTexto}
+      catalogoProcedimentos={catalogoProcedimentos}
+      onAplicarSugestao={aplicarSugestaoLocal}
+      realce={realceCampoMagico}
+      dica={dicaCampoMagico}
+      compacto
+    />
+  );
 
+  const controlesOdontograma = (
+    <>
       {/* R-62 — o que sobra do antigo painel "sem IA": catálogo-pendente/orto/rotina sempre
        * foram controles à parte, então vira faixa sempre visível, sem toggle. R-107a tirou
        * Status e Observação globais (redundantes com os pills/textareas por-evento que já
@@ -648,9 +625,7 @@ export function useRegistrarPainel({
           </button>
         </div>
 
-        {/* R-109 — a faixa saiu daqui pro componente compartilhado; a ficha monta a
-            MESMA. `FaixaLote` devolve null com menos de 2 dentes, então a condição de
-            visibilidade do R-107d vive dentro dela agora. */}
+        {/* R-122 — seleção única e múltipla usam a mesma faixa. */}
         {onde && (
           <FaixaLote
             dentes={onde.dentes}
@@ -659,7 +634,8 @@ export function useRegistrarPainel({
             catalogoProcedimentos={catalogoProcedimentos}
             dataPadrao={dataPadrao}
             onLimpar={limparLote}
-            onModoMultidenteChange={setModoMultidente}
+            onModoMultidenteChange={() => {}}
+            onAbrirDetalheDental={onAbrirDetalheDental}
           />
         )}
 
@@ -718,33 +694,13 @@ export function useRegistrarPainel({
             </div>
           ) : (
             <div className="flex flex-col gap-1.5">
-              {/* R-107d (adendo, pedido dele ao vivo) — fica colado no odontograma, não na
-                  faixa do campo mágico: o toggle muda o que o CLIQUE no dente faz, então
-                  precisa estar no mesmo campo de visão de onde o clique acontece. Longe dali
-                  recria o problema que ele apontou no chip de orto (liga aqui, efeito lá,
-                  ninguém lembra que ligou). */}
-              <div className="flex items-center justify-end">
-                <button
-                  type="button"
-                  onClick={() => setModoMultidente((v) => !v)}
-                  aria-pressed={modoMultidente}
-                  className="rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
-                  style={{
-                    background: modoMultidente ? 'var(--color-teal)' : 'var(--color-surface-alt)',
-                    color: modoMultidente ? 'white' : 'var(--color-text-secondary)',
-                    borderColor: modoMultidente ? 'var(--color-teal)' : 'var(--color-border)',
-                  }}
-                >
-                  {modoMultidente ? '✓ Modo multidente' : 'Modo multidente'}
-                </button>
-              </div>
               <Odontograma
                 eventos={eventosDraft}
                 eventosPersistidos={boca}
                 selectedTeeth={onde?.dentes ?? []}
                 onToothToggle={onToothToggle}
                 compact
-                zoom={0.68}
+                zoom={0.74}
                 hideFilters
               />
             </div>
@@ -832,5 +788,17 @@ export function useRegistrarPainel({
     </>
   );
 
-  return { campoMagico, slotCentral, rodape };
+  // R-123 — atalhos só reaproveitam as ações existentes: Ctrl+Enter é tratado pela captura;
+  // Ctrl+S chama o mesmo salvar que o botão do rodapé. Nenhum atalho cria rota paralela.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return;
+      event.preventDefault();
+      if (!isSaving && eventosPendentes == null && !semRascunho) void handleSalvar();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [eventosPendentes, handleSalvar, isSaving, semRascunho]);
+
+  return { campoMagico, controlesOdontograma, slotCentral, rodape };
 }

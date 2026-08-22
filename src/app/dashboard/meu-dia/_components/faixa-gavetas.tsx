@@ -13,7 +13,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'motion/react';
-import { History, Hourglass, Paperclip, ArrowRight } from 'lucide-react';
+import { History, Hourglass, Paperclip, ArrowRight, Stethoscope } from 'lucide-react';
 
 export type GavetaId = 'historico' | 'afazer' | 'anexos';
 
@@ -26,11 +26,15 @@ export interface FaixaGavetasProps {
   historicoBody: ReactNode;
   aFazerBody: ReactNode;
   anexosBody: ReactNode;
+  /** R-123 — as mesmas gavetas entram como abas do painel clínico lateral. */
+  contextual?: boolean;
+  onOdontograma?: () => void;
 }
 
 export function FaixaGavetas({
   aberta, onAbertaChange, historicoCount, aFazerCount, pacienteId,
   historicoBody, aFazerBody, anexosBody,
+  contextual = false, onOdontograma,
 }: FaixaGavetasProps) {
   function toggle(gaveta: GavetaId) {
     onAbertaChange(aberta === gaveta ? null : gaveta);
@@ -43,13 +47,32 @@ export function FaixaGavetas({
   ];
 
   return (
-    <motion.div layout="position" transition={{ duration: 0.2, ease: 'easeOut' }} className="rounded-2xl border border-border bg-surface">
+    <motion.div
+      layout="position"
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+      className={contextual ? '' : 'rounded-2xl border border-border bg-surface'}
+    >
       {/* R-111 — `flex-wrap`: os 3 botões + o "Ficha completa" somavam 396px numa faixa de
           342px no celular, e os 54px de sobra sumiam cortados. Rolagem aqui seria pior que
           quebrar linha, porque o "Ficha completa" nasceria fora da tela e ele é ação, não
           enfeite. No desktop nada muda: cabendo tudo numa linha, o espaçador continua
           empurrando o link pra direita. */}
-      <div className="flex flex-wrap items-center gap-1 px-2 py-1.5">
+      <div className={`flex flex-wrap items-center gap-1 ${contextual ? 'border-b border-border px-0 pb-2' : 'px-2 py-1.5'}`}>
+        {contextual && (
+          <button
+            type="button"
+            onClick={onOdontograma}
+            aria-pressed={aberta === null}
+            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-bold transition-colors ${
+              aberta === null
+                ? 'bg-teal/10 text-teal-ink'
+                : 'text-text-secondary hover:bg-surface-alt hover:text-text-primary'
+            }`}
+          >
+            <Stethoscope className="h-3.5 w-3.5" />
+            Odontograma
+          </button>
+        )}
         {gavetas.map(({ id, label, icon: Icon, count }) => (
           <button
             key={id}
@@ -72,12 +95,14 @@ export function FaixaGavetas({
           </button>
         ))}
         <div className="flex-1" />
-        <Link
-          href={`/dashboard/pacientes/${pacienteId}`}
-          className="ml-auto flex items-center gap-1 px-2 text-[11px] font-semibold text-text-secondary transition-colors hover:text-teal-ink"
-        >
-          Ficha completa <ArrowRight className="h-3 w-3" />
-        </Link>
+        {!contextual && (
+          <Link
+            href={`/dashboard/pacientes/${pacienteId}`}
+            className="ml-auto flex items-center gap-1 px-2 text-[11px] font-semibold text-text-secondary transition-colors hover:text-teal-ink"
+          >
+            Ficha completa <ArrowRight className="h-3 w-3" />
+          </Link>
+        )}
       </div>
 
       {/* `layout` (não height manual) — o Motion anima a mudança de altura via transform
@@ -96,7 +121,7 @@ export function FaixaGavetas({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
           >
-            <div className="border-t border-border px-3 py-3">
+            <div className={contextual ? 'pt-3' : 'border-t border-border px-3 py-3'}>
               {aberta === 'historico' && historicoBody}
               {aberta === 'afazer' && aFazerBody}
               {aberta === 'anexos' && anexosBody}

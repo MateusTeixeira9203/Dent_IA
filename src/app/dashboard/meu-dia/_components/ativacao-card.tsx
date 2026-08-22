@@ -8,7 +8,7 @@
 //
 //   1. O RELÓGIO já partiu sozinho antes deste card montar (`activateTrial`, chamado em
 //      `meu-dia-client.tsx`). Este componente só INFORMA a data. Não existe botão "começar
-//      meus 14 dias" de propósito: quem clicasse em "agora não" voltaria ao trial infinito de
+//      meus 7 dias" de propósito: quem clicasse em "agora não" voltaria ao trial infinito de
 //      hoje (`trial_ends_at` NULL) e o bug que este item conserta sobreviveria com outra roupa.
 //
 //   2. O PLANO é a única pergunta, e ela é operacional ("atendo sozinho" / "somos vários"),
@@ -37,7 +37,7 @@ const OPCOES: { id: PlanoClinica; pergunta: string; periodo: string }[] = [
   { id: 'CLINICA', pergunta: 'Somos vários dentistas', periodo: '/dentista/mês' },
 ];
 
-/** "29 de agosto" — mesmo fuso que o resto do Meu dia usa. Sem o ano: o trial é de 14 dias,
+/** "29 de agosto" — mesmo fuso que o resto do Meu dia usa. Sem o ano: o trial é de 7 dias,
  *  o ano nunca acrescenta informação e só alonga a frase (Krug, corte metade do texto). */
 function dataCurtaBRT(iso: string): string {
   return new Date(iso).toLocaleDateString('pt-BR', {
@@ -79,8 +79,8 @@ export function AtivacaoCard({ trialEndsAt, planoAtual }: AtivacaoCardProps) {
       </p>
 
       <p className="mt-1.5 border-b border-border pb-4 text-[12.5px] leading-relaxed text-text-secondary">
-        Seus <span className="font-bold text-teal-ink">14 dias de teste começaram agora</span> —
-        terminam em {dataCurtaBRT(trialEndsAt)}. Você vai receber um aviso 7 dias antes.
+        Seus <span className="font-bold text-teal-ink">7 dias de teste começaram agora</span> —
+        terminam em {dataCurtaBRT(trialEndsAt)}. Você vai receber um aviso 2 dias antes.
       </p>
 
       <p className="mb-2.5 mt-4 text-[11.5px] font-bold text-text-primary">

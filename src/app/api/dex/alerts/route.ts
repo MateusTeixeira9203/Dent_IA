@@ -148,7 +148,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         type:        'warning',
         title:       'Complete seu perfil',
         description: 'Seu CRO não está cadastrado. Ele aparece em documentos e orçamentos enviados aos pacientes.',
-        href:        dentista.role === 'admin' ? '/dashboard/configuracoes?aba=perfil' : '/dashboard/perfil',
+        href:        (dentista.role === 'admin' || dentista.role === 'dentista') ? '/dashboard/configuracoes?aba=perfil' : '/dashboard/perfil',
       });
     }
 

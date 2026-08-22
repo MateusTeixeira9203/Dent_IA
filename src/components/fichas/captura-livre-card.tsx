@@ -40,10 +40,15 @@ export interface CapturaLivreCardProps {
   /** R-62 — clique num chip de sugestão LOCAL (zero rede, zero IA — §1.2/§3.1). Ausente =
    *  os chips locais nem são calculados (I5: `FichasTab` não passa, fica idêntico a hoje). */
   onAplicarSugestao?: (sugestao: SugestaoLocal) => void;
+  /** R-123 — variante densa do Meu Dia; não altera o fluxo nem os consumidores da ficha. */
+  compact?: boolean;
+  /** R-123 — devolve o foco ao relato no atendimento rápido. */
+  autoFocus?: boolean;
 }
 
 export function CapturaLivreCard({
   pacienteNome, formDirty, onOrganizado, anexarTexto, catalogoProcedimentos, onAplicarSugestao,
+  compact = false, autoFocus = false,
 }: CapturaLivreCardProps) {
   const {
     texto,
@@ -154,8 +159,8 @@ export function CapturaLivreCard({
   };
 
   return (
-    <div className="rounded-2xl border border-teal/30 bg-surface-alt/40 overflow-hidden">
-      <div className="flex items-center gap-2 px-4 pt-3.5 pb-2">
+    <div className="overflow-hidden rounded-2xl border border-teal/30 bg-surface-alt/40">
+      <div className={`flex items-center gap-2 ${compact ? 'px-3 pb-1.5 pt-2.5' : 'px-4 pb-2 pt-3.5'}`}>
         <DexAvatar size={18} animated={isDetecting || isOrganizando} />
         <span className="text-[11px] font-bold uppercase tracking-widest text-teal-ink">Campo mágico</span>
         <span className="text-xs text-text-secondary ml-1">Fale, cole ou anexe — o Dex monta a ficha</span>
@@ -218,8 +223,15 @@ export function CapturaLivreCard({
       <textarea
         value={texto}
         onChange={(e) => setTexto(e.target.value)}
+        onKeyDown={(event) => {
+          if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+            event.preventDefault();
+            void handleOrganizar();
+          }
+        }}
+        autoFocus={autoFocus}
         placeholder="Ex: Paciente relatou dor no dente 36, fiz restauração com resina composta. Orientei sobre cuidados pós-procedimento."
-        className="w-full px-4 py-3 text-sm leading-relaxed resize-none outline-none bg-transparent text-text-primary placeholder:text-text-secondary/50 min-h-[100px]"
+        className={`w-full resize-none bg-transparent text-sm leading-relaxed text-text-primary outline-none placeholder:text-text-secondary/50 ${compact ? 'min-h-[66px] px-3 py-2' : 'min-h-[100px] px-4 py-3'}`}
       />
 
       {processandoArquivo && (
@@ -229,7 +241,7 @@ export function CapturaLivreCard({
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-border/50">
+      <div className={`flex items-center justify-between gap-2 border-t border-border/50 ${compact ? 'px-3 py-2' : 'px-4 py-3'}`}>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -273,8 +285,8 @@ export function CapturaLivreCard({
           disabled={!texto.trim() || isOrganizando}
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-ink hover:opacity-90 text-surface text-sm font-bold transition-all disabled:opacity-50 shadow-[0_0_15px_rgba(47,156,133,0.3)]"
         >
-          {isOrganizando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bot className="w-4 h-4" />}
-          {isOrganizando ? organizarLabel : 'Organizar com Dex'}
+          {isOrganizando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
+          {isOrganizando ? organizarLabel : <>Organizar com Dex{compact && <span className="hidden text-[10px] opacity-70 sm:inline">Ctrl ↵</span>}</>}
         </button>
       </div>
 

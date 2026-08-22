@@ -1220,6 +1220,7 @@ export function ToothDetailPanel({
                         valor={(ev.detalhe ?? null) as EndoDetalhe | null}
                         onChange={(v) => atualizarDetalhe(ev, v)}
                         readOnly={readOnly}
+                        duvidas={ev.endo_revisao?.duvidas}
                       />
                     )}
                     {ev.tipo === 'implante' && (

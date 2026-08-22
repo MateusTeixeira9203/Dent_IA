@@ -16,6 +16,9 @@ import { OrtoForm } from '@/components/fichas/orto-form';
 /** Espelha OrtoManutencaoInfo (src/types/odontograma.ts §1.5). Contrato de forma na escrita e no form manual. */
 export const ortoManutencaoSchema = z.object({
   arcada: z.enum(['superior', 'inferior', 'ambas']),
+  registro_superior: z.string().trim().min(1).nullable().optional(),
+  registro_inferior: z.string().trim().min(1).nullable().optional(),
+  observacao_geral: z.string().trim().min(1).nullable().optional(),
   fio: z.string().trim().min(1).nullable(),
   ativacao: z.string().trim().min(1).nullable(),
   elastico_corrente: z.string().trim().min(1).nullable(),
@@ -27,6 +30,53 @@ export const ortoManutencaoSchema = z.object({
   elastico_intermaxilar_inferior: z.string().trim().min(1).nullable().optional(),
 });
 export type OrtoManutencaoDetalhe = z.infer<typeof ortoManutencaoSchema>;
+
+const textoOuNull = (valor: string | null | undefined): string | null => {
+  const texto = valor?.trim() ?? '';
+  return texto === '' ? null : texto;
+};
+
+/**
+ * R-60 — evita uma manutenção vazia quando o dentista só abre o painel.
+ * Também é a única regra que deriva a arcada no preenchimento livre.
+ * O formato estruturado de voz/registros antigos segue válido e é preservado.
+ */
+export function normalizarOrtoManutencao(
+  valor: OrtoManutencaoDetalhe | null,
+): OrtoManutencaoDetalhe | null {
+  if (!valor) return null;
+
+  const registroSuperior = textoOuNull(valor.registro_superior);
+  const registroInferior = textoOuNull(valor.registro_inferior);
+  const observacaoGeral = textoOuNull(valor.observacao_geral);
+  const temRegistroLivre = registroSuperior != null || registroInferior != null;
+  const temRegistroLegado = [
+    valor.fio,
+    valor.ativacao,
+    valor.elastico_corrente,
+    valor.elastico_intermaxilar,
+    valor.fio_inferior,
+    valor.ativacao_inferior,
+    valor.elastico_corrente_inferior,
+    valor.elastico_intermaxilar_inferior,
+  ].some((campo) => textoOuNull(campo) != null);
+
+  if (!temRegistroLivre && !temRegistroLegado) return null;
+
+  return {
+    ...valor,
+    ...(temRegistroLivre && {
+      arcada: registroSuperior && registroInferior
+        ? 'ambas'
+        : registroSuperior
+          ? 'superior'
+          : 'inferior',
+    }),
+    registro_superior: registroSuperior,
+    registro_inferior: registroInferior,
+    observacao_geral: observacaoGeral,
+  };
+}
 
 export const ortoPlugin: EspecialidadePlugin<OrtoManutencaoDetalhe> = {
   id: 'ortodontia',

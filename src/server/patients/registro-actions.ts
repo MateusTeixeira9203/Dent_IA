@@ -9,6 +9,7 @@ import { buscarGruposAbertos, type GrupoAberto } from '@/server/patients/get-gru
 import type { OdontogramaEventoDraft } from '@/types/odontograma';
 import { endoDetalheSchema } from '@/lib/especialidades/endo';
 import { implanteDetalheSchema } from '@/lib/especialidades/implante';
+import { criarDocumentoConclusaoAssinatura } from '@/server/legal/documentos-aceite';
 
 /**
  * Monta as linhas de `odontograma_eventos` a partir dos drafts revisados pelo dentista.
@@ -605,12 +606,22 @@ export async function getGruposAbertos(patientId: string): Promise<GrupoAberto[]
   return buscarGruposAbertos({ patientId, clinicId });
 }
 
+const conclusaoAssinadaSchema = z.object({
+  orientacoes: z.string().trim().min(3).max(8_000),
+  intercorrencia: z.string().trim().max(8_000).optional(),
+  retorno: z.string().trim().max(8_000).optional(),
+});
+
 const assinarProcedimentosSchema = z.object({
   eventoIds: z.array(z.string().uuid()).min(1),
   assinadoPor: z.string().trim().min(2).max(120),
   assinaturaDataUrl: z.string().startsWith('data:image/png;base64,'),
+  conclusao: conclusaoAssinadaSchema.optional(),
 });
 export type AssinarProcedimentosInput = z.infer<typeof assinarProcedimentosSchema>;
+export type AssinarProcedimentosResult =
+  | { ok: true; signedUrl?: string; documentWarning?: string }
+  | { ok: false; error: string };
 
 /**
  * R-03a — assinatura por procedimento (lote). Wrapper fino da RPC assinar_procedimentos
@@ -621,12 +632,13 @@ export type AssinarProcedimentosInput = z.infer<typeof assinarProcedimentosSchem
  */
 export async function assinarProcedimentos(
   params: AssinarProcedimentosInput,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<AssinarProcedimentosResult> {
   const parsed = assinarProcedimentosSchema.safeParse(params);
   if (!parsed.success) return { ok: false, error: 'Dados inválidos.' };
-  const { eventoIds, assinadoPor, assinaturaDataUrl } = parsed.data;
+  const { eventoIds, assinadoPor, assinaturaDataUrl, conclusao } = parsed.data;
 
-  const { supabase, clinicId } = await requireClinicContext();
+  const context = await requireClinicContext();
+  const { supabase, clinicId } = context;
 
   // Resolve paciente_id/ficha_id só pro path do storage — a RPC valida tudo de novo por
   // dentro (este read não é a autorização, é só pra montar o nome do arquivo).
@@ -653,7 +665,7 @@ export async function assinarProcedimentos(
     return { ok: false, error: 'Erro ao salvar a assinatura.' };
   }
 
-  const { error } = await supabase.rpc('assinar_procedimentos', {
+  const { data: assinaturaId, error } = await supabase.rpc('assinar_procedimentos', {
     p_evento_ids: eventoIds,
     p_assinado_por: assinadoPor,
     p_assinatura_ref: storagePath,
@@ -676,7 +688,15 @@ export async function assinarProcedimentos(
   }
 
   revalidatePath(`/dashboard/pacientes/${eventoRef.paciente_id}`);
-  return { ok: true };
+  if (!conclusao) return { ok: true };
+  if (typeof assinaturaId !== 'string') {
+    return { ok: true, documentWarning: 'A assinatura foi salva, mas o identificador do documento não foi retornado.' };
+  }
+
+  const documento = await criarDocumentoConclusaoAssinatura({ context, assinaturaId, campos: conclusao });
+  return documento.ok
+    ? { ok: true, signedUrl: documento.signedUrl }
+    : { ok: true, documentWarning: documento.error };
 }
 
 /**
@@ -690,7 +710,8 @@ export async function assinarTodosRealizadosDaFicha(params: {
   pacienteId: string;
   assinadoPor: string;
   assinaturaDataUrl: string;
-}): Promise<{ ok: boolean; error?: string }> {
+  conclusao?: z.infer<typeof conclusaoAssinadaSchema>;
+}): Promise<AssinarProcedimentosResult> {
   const { supabase, clinicId } = await requireClinicContext();
 
   const { data: eventos } = await supabase
@@ -711,5 +732,6 @@ export async function assinarTodosRealizadosDaFicha(params: {
     eventoIds,
     assinadoPor: params.assinadoPor,
     assinaturaDataUrl: params.assinaturaDataUrl,
+    conclusao: params.conclusao,
   });
 }

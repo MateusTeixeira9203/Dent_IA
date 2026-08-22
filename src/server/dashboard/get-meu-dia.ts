@@ -146,6 +146,8 @@ export interface MeuDiaVisita {
   /** R-58 — texto completo de `fichas.anotacoes`, sem truncar (I7). `nota` continua sendo
    *  a 1ª linha, pro resumo fechado do bloco. */
   texto: string | null;
+  /** R-60 — manutenção de aparelho é conteúdo clínico da visita, não só contexto do form. */
+  ortoManutencao: OrtoManutencaoInfo | null;
   /** R-46c — true quando `fichas.origem === 'importado'` (histórico transcrito do Word,
    *  D7: zero parsing). `historico-bloco.tsx` rotula como transcrito, nunca como
    *  atendimento (I3) — e o `resumo` usa a 1ª linha do texto colado em vez de cair em
@@ -667,7 +669,8 @@ export async function getMeuDiaData({
       dentistaId: f.dentista_id,
       resumo: importado
         ? (notaDaFicha(f.anotacoes) ?? 'Histórico importado')
-        : (f.queixa_principal || (f.procedimentos ?? []).slice(0, 2).join(', ') || 'Evolução'),
+        : (f.queixa_principal || (f.procedimentos ?? []).slice(0, 2).join(', ') ||
+          (f.orto_manutencao ? 'Manutenção ortodôntica' : 'Evolução')),
       nota: importado ? null : notaDaFicha(f.anotacoes),
       importado,
       eventos,
@@ -676,6 +679,7 @@ export async function getMeuDiaData({
       semPendencia: eventos.every((e) => e.status === 'realizado'),
       feitosAqui,
       texto: f.anotacoes || null,
+      ortoManutencao: f.orto_manutencao,
       };
     });
 

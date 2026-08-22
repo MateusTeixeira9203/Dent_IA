@@ -17,6 +17,7 @@
 import { Plus, X } from 'lucide-react';
 import type { PluginFormProps } from '@/lib/especialidades/plugin';
 import type { CanalDetalhe, EndoDetalhe } from '@/lib/especialidades/endo';
+import type { DuvidaEndo } from '@/lib/especialidades/extrair-endo-deterministico';
 
 const CANAL_VAZIO: CanalDetalhe = {
   nome: '', referencia: null, comprimentoRaiz: null, limaInicial: null, limaFinal: null,
@@ -39,7 +40,7 @@ function linhaTemDado(c: CanalDetalhe): boolean {
   return c.referencia != null || c.comprimentoRaiz != null || c.limaInicial != null || c.limaFinal != null;
 }
 
-export function EndoForm({ valor, onChange, readOnly }: PluginFormProps<EndoDetalhe>) {
+export function EndoForm({ valor, onChange, readOnly, duvidas = [] }: PluginFormProps<EndoDetalhe> & { duvidas?: DuvidaEndo[] }) {
   const v = valor ?? VAZIO;
 
   const setCanal = (i: number, patch: Partial<CanalDetalhe>) => {
@@ -71,6 +72,13 @@ export function EndoForm({ valor, onChange, readOnly }: PluginFormProps<EndoDeta
         <span className="w-1.5 h-1.5 rounded-full bg-teal" aria-hidden="true" />
         Ficha endodôntica
       </p>
+
+      {duvidas.length > 0 && (
+        <div className="rounded-md border border-dashed border-coral/70 bg-coral/5 px-2.5 py-2 text-[10px] text-coral-ink">
+          <span className="font-bold">Confira antes de salvar:</span>{' '}
+          {duvidas.map((duvida) => `“${duvida.trecho}”`).join(' · ')}
+        </div>
+      )}
 
       <datalist id="nomes-canal">
         {NOMES_CANAL.map((n) => <option key={n} value={n} />)}

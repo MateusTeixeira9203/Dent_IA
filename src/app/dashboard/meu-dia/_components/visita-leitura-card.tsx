@@ -5,6 +5,7 @@
 // leitura, não edição (o texto da visita não tem caminho de escrita a partir do Meu dia).
 
 import type { MeuDiaVisita } from '@/server/dashboard/get-meu-dia';
+import { OrtoCard } from '@/components/fichas/orto-card';
 import { fmtData } from './meu-dia-format';
 
 export interface VisitaLeituraCardProps {
@@ -33,6 +34,11 @@ export function VisitaLeituraCard({ visita, onFechar }: VisitaLeituraCardProps) 
       </div>
 
       <p className="whitespace-pre-line text-sm text-text-primary">{texto}</p>
+      {visita.ortoManutencao && (
+        <div className="rounded-xl border border-border bg-surface-alt/40 px-3 py-2.5">
+          <OrtoCard valor={visita.ortoManutencao} />
+        </div>
+      )}
     </div>
   );
 }

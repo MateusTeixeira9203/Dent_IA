@@ -12,8 +12,9 @@ import type {
  * isso o módulo carregaria os setters de uma tela só e não serviria pra outra — que é
  * exatamente o problema que ele existe pra resolver.
  *
- * Comportamento **byte-equivalente** ao que estava inline (invariante do R-109 §7): mesmos
- * guards de duplicata, mesmos defaults, mesma âncora. O que mudou de lugar não mudou de regra.
+ * Procedimentos clínicos em lote nascem como `indicado`: selecionar vários dentes descreve a
+ * intenção clínica, mas não pode afirmar que todos foram realizados sem a confirmação explícita
+ * do dentista em “Nesta sessão”. Ausência continua sendo o único lote preexistente.
  */
 
 /** R-107d — chips oferecidos em lote (subconjunto de `TIPO_LABEL`, spec §3). Ponte fica de
@@ -40,9 +41,9 @@ export function eventosDoLote(
   return dentes
     .filter((d) => !eventosDraft.some((e) => e.tipo === tipo && e.origem === 'clinica' && e.ancora.dente === d))
     .map((d): OdontogramaEventoDraft => ({
-      id: crypto.randomUUID(), tipo, status: 'realizado', origem: 'clinica',
+      id: crypto.randomUUID(), tipo, status: 'indicado', origem: 'clinica',
       momento_planejado: 'sessao_atual', ancora: { nivel: 'dente', dente: d },
-      grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: dataPadrao,
+      grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: null,
     }));
 }
 
@@ -61,9 +62,9 @@ export function eventosDoLoteRestauracao(
   dataPadrao: string,
 ): OdontogramaEventoDraft[] {
   return dentes.map((d) => ({
-    id: crypto.randomUUID(), tipo: 'carie_restauracao', status: 'realizado', origem: 'clinica',
+    id: crypto.randomUUID(), tipo: 'carie_restauracao', status: 'indicado', origem: 'clinica',
     momento_planejado: 'sessao_atual', ancora: { nivel: 'face', dente: d, faces: [face] },
-    grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: dataPadrao,
+    grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: null,
   }));
 }
 
@@ -97,8 +98,8 @@ export function eventosDoLoteAvulso(
   dataPadrao: string,
 ): OdontogramaEventoDraft[] {
   return dentes.map((d) => ({
-    id: crypto.randomUUID(), tipo: 'outro', status: 'realizado', origem: 'clinica',
+    id: crypto.randomUUID(), tipo: 'outro', status: 'indicado', origem: 'clinica',
     momento_planejado: 'sessao_atual', ancora: { nivel: 'dente', dente: d },
-    grupo_id: null, papel_no_grupo: null, observacao: texto, realizado_em: dataPadrao,
+    grupo_id: null, papel_no_grupo: null, observacao: texto, realizado_em: null,
   }));
 }

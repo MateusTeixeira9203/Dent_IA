@@ -46,7 +46,7 @@
 // DENTRO do card do perfil) — `ToothDetailPanel` sem esse prop já renderiza a seção inline,
 // dentro do próprio card (555px é bem mais que os 312px que motivaram o portal originalmente).
 // Faltam F3 (gavetas, provavelmente já cobertas) e F5 (rótulo do rodapé).
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -90,17 +90,16 @@ import { VisitaLeituraCard } from './visita-leitura-card';
 import { ToothDetailPanel } from '@/components/odontograma/ToothDetailPanel';
 import { useOrcamentoModal } from '@/app/dashboard/pacientes/[id]/_components/use-orcamento-modal';
 import { NovoOrcamentoModal } from '@/app/dashboard/pacientes/[id]/_components/modals/novo-orcamento-modal';
-import { AtivacaoCard } from './ativacao-card';
 import { DicaZona } from './dica-zona';
-import { DexBoasVindas } from './dex-boas-vindas';
-import { activateTrial } from '@/app/planos/actions';
-import type { PlanoClinica } from '@/app/onboarding/actions';
+import { DexOnboardingController } from './dex-onboarding-controller';
 import { hojeBRT } from '@/lib/hora-brt';
 import { responsavelPassaFiltro, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
 import type { MeuDiaData, MeuDiaPendencia, MeuDiaVisita } from '@/server/dashboard/get-meu-dia';
 import { TIPO_LABEL, type OdontogramaEventoDraft } from '@/types/odontograma';
 import type { EventoOdontogramaParaOrc } from '@/app/dashboard/pacientes/[id]/_components/types';
 import type { GrupoAberto } from '@/lib/odontograma/grupos-abertos';
+import type { ProgressoOnboarding } from '@/types/onboarding';
+import { escolherPrimeiroAtendimento, registrarMarcoOnboarding } from '../onboarding-actions';
 
 /** Contador — sempre pill neutro, mesmo em 0 (o artefato não distingue "tem novidade"). */
 function Contador({ n }: { n: number }) {
@@ -136,16 +135,14 @@ interface MeuDiaClientProps extends MeuDiaData {
   /** R-46h — o hook de orçamento compartilhado (pacientes/[id]/_components) precisa disto
    *  pra escopar a query; MeuDiaData não carrega (é parâmetro do fetch, não parte do retorno). */
   clinicaId: string;
-  /** R-105a §4.3 — tudo que o card de ativação precisa já vive no `DentistaCache`; a página
-   *  repassa em vez de buscar de novo. `podeAtivarTrial` é a regra de I4 + idempotência
-   *  resolvida no servidor: admin, sem assinatura ativa e com o relógio ainda parado. */
-  podeAtivarTrial: boolean;
-  planoAtual: PlanoClinica;
+  progressoOnboarding: ProgressoOnboarding | null;
+  emFormacaoClinica: boolean;
 }
 
 export function MeuDiaClient({
   slots, contextoPorPaciente, agendamentoInicialId, catalogoProcedimentos, meuDentistaId,
-  destinosEncaminhar, clinicaId, primeiraSessao, podeAtivarTrial, planoAtual,
+  destinosEncaminhar, clinicaId, primeiraSessao,
+  progressoOnboarding, emFormacaoClinica,
 }: MeuDiaClientProps) {
   const router = useRouter();
 
@@ -259,10 +256,6 @@ export function MeuDiaClient({
   /** R-52 — pendência recebida sendo concluída agora (trava o botão durante a escrita). */
   const [concluindoId, setConcluindoId] = useState<string | null>(null);
 
-  /** R-105a §4.3 — data real devolvida por `activateTrial` depois do primeiro save. `null` =
-   *  o card não aparece. Estado local de propósito: o card é o último beat da PRIMEIRA fase,
-   *  não um aviso persistente — recarregar a página não deve trazê-lo de volta. */
-  const [ativacao, setAtivacao] = useState<{ trialEndsAt: string } | null>(null);
 
   const slotSelecionado = selecionadoId ? (slots.find((s) => s.agendamentoId === selecionadoId) ?? null) : null;
   const contexto = slotSelecionado ? contextoPorPaciente[slotSelecionado.pacienteId] : null;
@@ -293,8 +286,21 @@ export function MeuDiaClient({
   // do caso 'encaixe' sozinho (ele já recebe `primeiraSessao`); aqui só falta o campo mágico,
   // que acende enquanto o rascunho está vazio — assim que o 1º procedimento entra, o realce
   // apaga e quem passa a ensinar é o "Salvar e passar" perdendo o disabled.
+  const onboardingClinicoAtivo = Boolean(
+    primeiraSessao
+    && progressoOnboarding
+    && progressoOnboarding.etapa !== 'concluido'
+    && progressoOnboarding.etapa !== 'pulado',
+  );
   const realceCampoMagico =
-    primeiraSessao && slotSelecionado != null && eventosDraft.length === 0;
+    onboardingClinicoAtivo && slotSelecionado != null && eventosDraft.length === 0;
+
+  const marcoCampoMagicoEnviado = useRef(false);
+  useEffect(() => {
+    if (!onboardingClinicoAtivo || eventosDraft.length === 0 || marcoCampoMagicoEnviado.current) return;
+    marcoCampoMagicoEnviado.current = true;
+    void registrarMarcoOnboarding('campo_magico');
+  }, [eventosDraft.length, onboardingClinicoAtivo]);
 
   // R-105a §4.2.1 — as dicas de zona. Cada uma some quando A SUA zona é usada, não no fim de
   // tudo: é o que impede as 5 de virarem mobília. Todas derivadas aqui (I2), exceto a do campo
@@ -303,11 +309,11 @@ export function MeuDiaClient({
   const [jaTocouDente, setJaTocouDente] = useState(false);
   const semRascunhoAqui = eventosDraft.length === 0 && textoVisita.trim() === '';
   const dicas = {
-    rail:       primeiraSessao && slots.length === 0,
-    campo:      primeiraSessao,
-    nestaFicha: primeiraSessao && eventosDraft.length === 0,
-    odontograma: primeiraSessao && !jaTocouDente,
-    rodape:     primeiraSessao && semRascunhoAqui,
+    rail:       onboardingClinicoAtivo && slots.length === 0,
+    campo:      onboardingClinicoAtivo,
+    nestaFicha: onboardingClinicoAtivo && eventosDraft.length === 0,
+    odontograma: onboardingClinicoAtivo && !jaTocouDente,
+    rodape:     onboardingClinicoAtivo && semRascunhoAqui,
   };
 
   // R-46h — picker de orçamento (Histórico por-visita + rodapé do Registrar). Meu dia é
@@ -349,7 +355,6 @@ export function MeuDiaClient({
     destinoNovos,
     onSalvo: handleSalvo,
     anexarTexto,
-    orto: contexto?.orto ?? null,
     boca: contexto?.boca ?? [],
     detalheEspecialidadeAberto,
     // R-84 §5.1 — só o que é indicação NOVA desta ficha vai pro orçamento; o que é pendência
@@ -396,6 +401,7 @@ export function MeuDiaClient({
       })();
     },
     onAbrirDetalheEndo: abrirDenteGrande,
+    onAbrirDetalheDental: abrirDetalheDental,
   });
 
   // C6 — o Sheet precisa da mesma lista que o painel do dente sempre recebeu; migrado de
@@ -426,6 +432,7 @@ export function MeuDiaClient({
   // servidor. Fecha a janela de corrida de um duplo clique rápido logo após salvar (o
   // `router.refresh()` sozinho não seria rápido o bastante pra proteger o 2º clique).
   function handleSalvo() {
+    if (onboardingClinicoAtivo) void registrarMarcoOnboarding('primeira_ficha');
     setEventosDraft([]);
     setFichaRascunhoId(null);
     setDenteAberto(null);
@@ -434,27 +441,8 @@ export function MeuDiaClient({
     setDetalheAlvoId(null);
     setLeituraGrande(null);
     setTextoVisita('');
-    // R-105a §4.3 — a primeira ficha deste dentista acabou de existir: dá partida no relógio
-    // do trial. `primeiraSessao` vem do servidor deste render, então ainda descreve o estado
-    // ANTES deste save — é exatamente a janela em que a partida deve acontecer.
-    if (primeiraSessao) void darPartidaNoTrial();
     avancarProximo();
     router.refresh();
-  }
-
-  /** R-105a §4.3 — best-effort por contrato (I6): erro aqui **nunca** pode voltar pro
-   *  dentista como falha de salvamento — a ficha já está gravada, e trial é assunto de
-   *  cobrança, não de prontuário. Quem ficar pra trás é corrigido pelo cron do R-105b em
-   *  até 24h (I5). Por isso: sem toast de erro, só log. */
-  async function darPartidaNoTrial() {
-    if (!podeAtivarTrial) return;
-    try {
-      const res = await activateTrial();
-      if (res.ok) setAtivacao({ trialEndsAt: res.trialEndsAt });
-      else console.error('[R-105a] partida do trial não aconteceu:', res.error);
-    } catch (err) {
-      console.error('[R-105a] partida do trial falhou:', err);
-    }
   }
 
   // R-57 F1 — o modal já fechou sozinho (onOpenChange(false) antes de chamar onCriado).
@@ -511,6 +499,30 @@ export function MeuDiaClient({
     setRegistrandoDenteAberto(true);
     setDetalheAlvoId(eventoId);
   }
+
+  /** R-122 — seleção no mapa não abre nada. Este é o gesto explícito que leva às faces,
+   * histórico e tabelas do dente escolhido. */
+  function abrirDetalheDental(dente: number) {
+    handleDenteAbertoChange(dente);
+    setRegistrandoDenteAberto(true);
+    setDetalheAlvoId(null);
+  }
+
+  // R-123 — o painel de faces só existe por gesto explícito. Esc acompanha o ✕ e
+  // devolve para o odontograma; campos internos que já usam Esc (ex.: busca livre)
+  // chamam preventDefault e preservam seu próprio comportamento.
+  useEffect(() => {
+    if (denteAberto == null || !registrandoDenteAberto) return;
+
+    function voltarAoOdontograma(event: KeyboardEvent) {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      handleDenteAbertoChange(null);
+    }
+
+    window.addEventListener('keydown', voltarAoOdontograma);
+    return () => window.removeEventListener('keydown', voltarAoOdontograma);
+  }, [denteAberto, handleDenteAbertoChange, registrandoDenteAberto]);
 
   // R-52 — pendência encaminhada A MIM tem caminho de escrita PRÓPRIO, e isso não é
   // preferência de UX: o evento pertence a outro dentista, então o upsert do rascunho
@@ -610,10 +622,18 @@ export function MeuDiaClient({
   );
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       {/* §4.2.2 — antes do primeiro atendimento quem explica é o Dex, num card inteiro (há
           espaço e não há ninguém na cadeira). Depois disso, só as dicas de zona. */}
-      {dicas.rail && <DexBoasVindas />}
+      {primeiraSessao && progressoOnboarding && (
+        <DexOnboardingController
+          progresso={progressoOnboarding}
+          primeiraSessao={primeiraSessao}
+          podeUsarDemo
+          emFormacaoClinica={emFormacaoClinica}
+          onAtenderReal={() => setEncaixeAberto(true)}
+        />
+      )}
       <Rail
         slots={slots}
         selecionadoId={selecionadoId}
@@ -623,9 +643,11 @@ export function MeuDiaClient({
         primeiraSessao={primeiraSessao}
       />
       <AtenderAgoraModal
+        clinicaId={clinicaId}
         open={encaixeAberto}
         onOpenChange={setEncaixeAberto}
         onCriado={handleEncaixeCriado}
+        onCaminhoEscolhido={(caminho) => { void escolherPrimeiroAtendimento(caminho); }}
       />
       <NovoOrcamentoModal {...orcamentoModal.modalProps} />
       {slotSelecionado && contexto ? (
@@ -634,7 +656,7 @@ export function MeuDiaClient({
               cadastro (alergia etc.) não têm mais um bloco próprio nesta fatia (o phead
               completo — avatar, idade, badges de orto/endo — fica pra fatia posterior),
               mas não podiam simplesmente sumir da tela. */}
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3">
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-bold text-text-primary">{slotSelecionado.pacienteNome}</h2>
               {contexto.alertas.map((alerta, i) => (
@@ -665,31 +687,25 @@ export function MeuDiaClient({
 
           {/* R-78 F0 — campo mágico, full-width, topo do fluxo (era o topo do card
               "Registrar" antigo — o card em si morreu, campo mágico ganha o próprio). */}
-          <div className="rounded-2xl border border-border bg-surface p-5">
+          <div className="rounded-2xl border border-teal/30 bg-surface p-2.5 sm:p-3">
             {registrarPainel.campoMagico}
           </div>
 
-          {/* Miolo: lista "Nesta ficha" + espelho/perfil do dente — §4.2 da spec, proporção
-              1,50:1 (832,8px │ 555,2px). `minmax(0,1fr)` porque a coluna da lista precisa
-              encolher (textos longos), a do espelho é fixa. `items-stretch` (pedido dele
-              08/08): os 2 cards sempre com a mesma altura — antes "Nesta ficha" vazio
-              ficava baixinho do lado do espelho, que é sempre alto (arcada inteira). O
-              espelho ainda manda na altura na prática (`NestaSessaoBloco` já tem
-              `max-h-[420px]` interno pra quando a lista crescer mais que ele). */}
-          {/* R-111 §5 — empilha abaixo de `lg`. A coluna do espelho é FIXA em 555px, então o
-              `minmax(0,1fr)` da lista absorve todo o aperto: em 375px isso cortava 224px, e em
-              753px "cabia" com a lista em **138px** — passa no teste de overflow e é inutilizável,
-              o mesmo falso-passa do Financeiro. Volta a lado a lado só em `lg`, onde a lista fica
-              com ~393px. */}
-          <div className="grid items-stretch gap-3 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_555px]">
-            <div className="rounded-2xl border border-border bg-surface p-4">
+          {/* R-123 — mesma bancada do artefato aprovado: registros crescem pelo conteúdo;
+              contexto clínico é a coluna de trabalho, não uma gaveta distante no fim da página. */}
+          <div className="grid grid-cols-1 items-stretch gap-3 xl:grid-cols-[minmax(0,1.18fr)_minmax(460px,0.96fr)]">
+            <motion.div
+              layout="size"
+              transition={{ layout: { duration: 0.18, ease: 'easeOut' } }}
+              className="h-full rounded-2xl border border-border bg-surface p-4"
+            >
               {dicas.nestaFicha && (
-                <DicaZona titulo="Nesta ficha">
+                <DicaZona titulo="Revisão da consulta">
                   Tudo que o Dex entendeu cai aqui. Dá pra corrigir antes de salvar.
                 </DicaZona>
               )}
               <div className="mb-2 flex items-center gap-1.5">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Nesta ficha</p>
+                <p className="font-heading text-lg text-text-primary">Revisão da consulta</p>
                 <Contador n={eventosDraft.length} />
               </div>
               {/* F0+F1: "Hoje" + "Novos" fundidos numa lista só (todo `eventosDraft`, os 2
@@ -758,25 +774,64 @@ export function MeuDiaClient({
                   </button>
                 </div>
               )}
-            </div>
+            </motion.div>
 
-            {/* Ocupante único da direita (§3.2), 3 níveis (F2, 08/08): sem dente → o que
-                `registrarPainel.slotCentral` decidir (espelho ou orto, orto vence, mesma
-                prioridade de sempre); dente tocado → HISTÓRICO do dente (leitura antes de
-                escrita — achado do Mateus: F0 abria o editor direto, errado); "+ registrar
-                neste dente" (ou "continuar aqui" do grupo aberto) → editor de faces/chips
-                (`ToothDetailPanel`, reusado tal qual, closes de volta pro histórico — não
-                pro espelho).
-
-                R-107c (13/08) — `min-h-[308px]`: sem piso, trocar pro `DenteHistoricoCard` de
-                um dente sem registro colapsava o card (medido: 139px) contra o editor vazio
-                (medido: 307px) — o soluço visual que ele sentiu a cada clique num dente vazio.
-                308px = editor vazio arredondado pra cima, não a tabela de especialidade aberta
-                (570px+, que continua livre pra crescer — `min-h`, nunca `h` fixo, não corta
-                dado). `items-stretch` (grid acima) propaga o piso pro card "Nesta ficha"
-                sozinho — não precisa duplicar lá. */}
-            <div className="min-h-[308px] rounded-2xl border border-border bg-surface p-4">
-              <AnimatePresence mode="wait" initial={false}>
+            {/* R-123 — contexto clínico lateral: a aba ativa é o rótulo do conteúdo, então o
+                mapa ganha espaço. Seleção no mapa continua não abrindo editor nem histórico. */}
+            <motion.div
+              layout="size"
+              transition={{ layout: { duration: 0.18, ease: 'easeOut' } }}
+              className="h-full rounded-2xl border border-border bg-surface p-4 xl:sticky xl:top-4"
+            >
+              <FaixaGavetas
+                aberta={gavetaAberta}
+                onAbertaChange={setGavetaAberta}
+                historicoCount={contexto.visitas.length}
+                aFazerCount={minhasPendencias.length}
+                pacienteId={slotSelecionado.pacienteId}
+                contextual
+                onOdontograma={() => setGavetaAberta(null)}
+                historicoBody={
+                  <HistoricoBloco
+                    visitas={contexto.visitas}
+                    pacienteId={slotSelecionado.pacienteId}
+                    pacienteNome={slotSelecionado.pacienteNome}
+                    onImportado={() => router.refresh()}
+                    onGerarOrcamento={(fichaId) => void orcamentoModal.abrirOrcamentoParaFicha(fichaId)}
+                    meuDentistaId={meuDentistaId}
+                    onLerGrande={abrirLeituraGrande}
+                  />
+                }
+                aFazerBody={
+                  <AFazerBloco
+                    pendencias={minhasPendencias}
+                    eventosDraft={eventosDraft}
+                    onFazerHoje={fazerHoje}
+                    onConcluirRecebida={(p) => void concluirRecebida(p)}
+                    concluindoId={concluindoId}
+                    meuDentistaId={meuDentistaId}
+                    modoEncaminhar={modoEncaminhar}
+                    selecionados={selecionadosEncaminhar}
+                    onToggleModoEncaminhar={toggleModoEncaminhar}
+                    onToggleSelecao={toggleSelecaoEncaminhar}
+                  />
+                }
+                anexosBody={
+                  <AnexarDocumentosBloco
+                    documentoNome={documentoNome}
+                    documentoTexto={documentoTexto}
+                    onAnexado={handleAnexado}
+                    onUsarComoBase={handleUsarComoBase}
+                  />
+                }
+              />
+              {gavetaAberta === null && !denteAberto && !leituraGrande && (
+                <div className="mb-3 mt-3 flex items-center justify-between gap-3">
+                  <span className="text-[11px] text-text-secondary">Selecione sem abrir o histórico</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Registrar</span>
+                </div>
+              )}
+              {gavetaAberta === null && <AnimatePresence mode="wait" initial={false}>
                 {denteAberto != null && registrandoDenteAberto ? (
                   <motion.div
                     key="editor-dente"
@@ -789,7 +844,9 @@ export function MeuDiaClient({
                       dente={denteAberto}
                       eventos={eventosDraft}
                       onChange={setEventosDraft}
-                      onClose={() => setRegistrandoDenteAberto(false)}
+                      // R-123 — fechar o editor de faces volta ao mapa; o histórico
+                      // continua acessível pelo gesto explícito "Ver histórico".
+                      onClose={() => handleDenteAbertoChange(null)}
                       dataPadrao={hojeBRT()}
                       gruposAbertos={gruposAbertos}
                       onDetalheAbertoChange={setDetalheEspecialidadeAberto}
@@ -844,57 +901,19 @@ export function MeuDiaClient({
                     {registrarPainel.slotCentral}
                   </motion.div>
                 )}
-              </AnimatePresence>
-            </div>
+              </AnimatePresence>}
+              {gavetaAberta === null && !denteAberto && !leituraGrande && (
+                <div className="mt-3 border-t border-border pt-3">
+                  {registrarPainel.controlesOdontograma}
+                </div>
+              )}
+            </motion.div>
           </div>
-
-          {/* R-78 F0 — gaveta única substitui as 2 barras de abas. Corpos são os MESMOS
-              blocos de sempre, só trocam de continente. */}
-          <FaixaGavetas
-            aberta={gavetaAberta}
-            onAbertaChange={setGavetaAberta}
-            historicoCount={contexto.visitas.length}
-            aFazerCount={minhasPendencias.length}
-            pacienteId={slotSelecionado.pacienteId}
-            historicoBody={
-              <HistoricoBloco
-                visitas={contexto.visitas}
-                pacienteId={slotSelecionado.pacienteId}
-                pacienteNome={slotSelecionado.pacienteNome}
-                onImportado={() => router.refresh()}
-                onGerarOrcamento={(fichaId) => void orcamentoModal.abrirOrcamentoParaFicha(fichaId)}
-                meuDentistaId={meuDentistaId}
-                onLerGrande={abrirLeituraGrande}
-              />
-            }
-            aFazerBody={
-              <AFazerBloco
-                pendencias={minhasPendencias}
-                eventosDraft={eventosDraft}
-                onFazerHoje={fazerHoje}
-                onConcluirRecebida={(p) => void concluirRecebida(p)}
-                concluindoId={concluindoId}
-                meuDentistaId={meuDentistaId}
-                modoEncaminhar={modoEncaminhar}
-                selecionados={selecionadosEncaminhar}
-                onToggleModoEncaminhar={toggleModoEncaminhar}
-                onToggleSelecao={toggleSelecaoEncaminhar}
-              />
-            }
-            anexosBody={
-              <AnexarDocumentosBloco
-                documentoNome={documentoNome}
-                documentoTexto={documentoTexto}
-                onAnexado={handleAnexado}
-                onUsarComoBase={handleUsarComoBase}
-              />
-            }
-          />
 
           {/* R-78 F0 — rodapé (Marcar retorno / Gerar orçamento / Salvar), era o fundo do
               card "Registrar" antigo. Sem card próprio no artefato — mas mantém 1 aqui
               (consistência com campo-mágico/miolo) até a auditoria visual dizer o contrário. */}
-          <div className="rounded-2xl border border-border bg-surface p-5">
+          <div className="rounded-2xl border border-border bg-surface p-3 sm:p-4 xl:sticky xl:bottom-3 xl:z-20">
             {dicas.rodape && (
               <DicaZona titulo="O que sai daqui">
                 Da ficha salva saem o orçamento e o retorno, sem redigitar nada.
@@ -921,11 +940,6 @@ export function MeuDiaClient({
             )}
           </AnimatePresence>
         </>
-      ) : ativacao ? (
-        // R-105a §4.3 — estado 7 do artefato: o card ocupa o lugar do bloco de fim de dia,
-        // uma vez só. Se ainda houver paciente na fila o cockpit continua montado e o card
-        // espera o fim do dia — atendimento em curso não é hora de perguntar de cobrança.
-        <AtivacaoCard trialEndsAt={ativacao.trialEndsAt} planoAtual={planoAtual} />
       ) : slots.length > 0 ? (
         <div className="rounded-2xl border border-border bg-surface px-5 py-10 text-center">
           <p className="text-sm font-semibold text-text-primary">Todos os atendimentos de hoje foram registrados.</p>

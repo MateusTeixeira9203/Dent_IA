@@ -11,6 +11,10 @@ import { getMeuDiaData } from '@/server/dashboard/get-meu-dia';
 import { dataExtensaBRT } from '@/lib/hora-brt';
 import { PageContainer } from '@/components/layout/page-container';
 import { MeuDiaClient } from './_components/meu-dia-client';
+import { createClient } from '@/lib/supabase/server';
+import { obterOuCriarProgressoOnboarding } from '@/server/services/onboarding-primeiro-valor';
+import type { ProgressoOnboarding } from '@/types/onboarding';
+import { obterAcessoFormacaoClinica } from '@/server/services/formacao-clinica';
 
 interface MeuDiaPageProps {
   searchParams: Promise<{ ag?: string }>;
@@ -25,6 +29,8 @@ export default async function MeuDiaPage({ searchParams }: MeuDiaPageProps) {
 
   const { ag } = await searchParams;
   const now = new Date();
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
   const { slots, contextoPorPaciente, catalogoProcedimentos, destinosEncaminhar, meuDentistaId, primeiraSessao } =
     await getMeuDiaData({
       clinicId: dentista.clinica_id,
@@ -32,18 +38,21 @@ export default async function MeuDiaPage({ searchParams }: MeuDiaPageProps) {
       now,
     });
 
-  const agendamentoInicialId = ag && slots.some((s) => s.agendamentoId === ag) ? ag : undefined;
+  const [progressoPersistido, acessoFormacao] = user
+    ? await Promise.all([
+        obterOuCriarProgressoOnboarding(user.id),
+        obterAcessoFormacaoClinica({ userId: user.id, clinicId: dentista.clinica_id }),
+      ])
+    : [null, { liberado: false, expiresAt: null }];
+  // A migration pode ainda não ter sido aplicada no ambiente. Nesse intervalo, o produto
+  // continua utilizável e a orientação degrada para um estado efêmero, sem bloquear o dentista.
+  const progressoOnboarding: ProgressoOnboarding | null = primeiraSessao
+    ? (progressoPersistido ?? {
+        etapa: 'intro', caminho: null, primeiraFichaEm: null, podeRetomar: true,
+      })
+    : progressoPersistido;
 
-  // R-105a §4.3 — quem pode dar partida no relógio e ver o card de plano. Os três termos vêm
-  // do `DentistaCache` que a página já carregou; nenhuma query nova.
-  //   · admin (I4) — convidado não vê preço, e é o dono que responde "sozinho ou vários"
-  //   · sem assinatura ativa — quem já paga não tem trial pra começar
-  //   · `trial_ends_at` nulo — o relógio ainda não partiu (idempotência, reforçada no WHERE
-  //     da própria action; aqui é só pra não fazer a chamada à toa)
-  const podeAtivarTrial =
-    dentista.role === 'admin' &&
-    dentista.status_assinatura !== 'ativo' &&
-    dentista.trial_ends_at == null;
+  const agendamentoInicialId = ag && slots.some((s) => s.agendamentoId === ag) ? ag : undefined;
 
   return (
     <PageContainer variant="wide">
@@ -65,8 +74,8 @@ export default async function MeuDiaPage({ searchParams }: MeuDiaPageProps) {
         meuDentistaId={meuDentistaId}
         clinicaId={dentista.clinica_id}
         primeiraSessao={primeiraSessao}
-        podeAtivarTrial={podeAtivarTrial}
-        planoAtual={dentista.plano === 'CLINICA' ? 'CLINICA' : 'SOLO'}
+        progressoOnboarding={progressoOnboarding}
+        emFormacaoClinica={acessoFormacao.liberado}
       />
     </PageContainer>
   );

@@ -227,6 +227,12 @@ export interface OdontogramaEstadoAtual {
 
 export interface OrtoManutencaoInfo {
   arcada: 'superior' | 'inferior' | 'ambas';
+  /** R-60 — evolução livre digitada pelo dentista, organizada por arcada. */
+  registro_superior?: string | null;
+  /** R-60 — evolução livre digitada pelo dentista, organizada por arcada. */
+  registro_inferior?: string | null;
+  /** R-60 — contexto da manutenção que não pertence a uma arcada específica. */
+  observacao_geral?: string | null;
   /** Quando `arcada` é só 1, descreve ela. Quando `arcada === 'ambas'`, descreve a SUPERIOR —
    *  os campos `_inferior` abaixo descrevem a inferior (04/08: são procedimentos diferentes
    *  por arcada, 1 campo só não bastava). */
@@ -285,4 +291,14 @@ export interface OdontogramaEventoDraft extends OdontogramaEventoInput {
    * não é enviado no payload de salvar (o servidor não aceita mudança de assinatura por aqui).
    */
   assinaturaId?: string | null;
+  /** R-49 — proveniência e dúvidas são só da revisão deste rascunho; montarRowsEventos não
+   * as envia ao banco. O detalhe clínico continua sendo o único dado persistido. */
+  endo_revisao?: {
+    origemPorCampo: Record<string, 'deterministico' | 'ia' | 'manual'>;
+    duvidas: Array<{
+      campo: string;
+      trecho: string;
+      motivo: 'sem_canal' | 'fora_da_faixa' | 'resolucao_invalida' | 'conflito';
+    }>;
+  };
 }

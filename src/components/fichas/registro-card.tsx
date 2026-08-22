@@ -124,6 +124,13 @@ function dataBRT(ts: string): string {
   return new Date(ts).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 }
 
+/** Mantém a anotação clínica legível durante a digitação sem criar um editor paralelo. */
+function ajustarAlturaObservacao(textarea: HTMLTextAreaElement, expandirVazio = false) {
+  textarea.style.height = 'auto';
+  const alturaMinima = expandirVazio ? 72 : 0;
+  textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, alturaMinima), 160)}px`;
+}
+
 /**
  * Letras das faces unidas de todas as âncoras (M·O·D → "MOD"); '' se não houver.
  * União porque um card pode representar N eventos de face MESCLADOS do mesmo dente
@@ -196,7 +203,7 @@ export function RegistroCard({
         // div (não <button>): no modo seleção o checkbox interativo fica aninhado aqui,
         // e o × do badge (fora do modo) também — elemento interativo dentro de <button>
         // é HTML inválido. Por isso role/tabIndex/teclado manuais.
-        className={`w-full flex items-center gap-3 px-4 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-teal ${containerInterativo ? 'cursor-pointer' : 'cursor-default'}`}
+        className={`min-h-[104px] w-full flex items-center gap-3 px-5 py-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-teal ${containerInterativo ? 'cursor-pointer' : 'cursor-default'}`}
       >
         {emSelecao && (
           <span
@@ -215,14 +222,19 @@ export function RegistroCard({
             <p className="mt-0.5 text-xs font-semibold text-warning-ink">Confira o status</p>
           )}
           {editavel ? (
-            <input
-              type="text"
+            <textarea
+              rows={1}
               value={data.observacao ?? ''}
               onChange={(e) => onObservacaoChange?.(e.target.value)}
               onClick={(e) => e.stopPropagation()}
+              onFocus={(e) => { e.stopPropagation(); ajustarAlturaObservacao(e.currentTarget, true); }}
+              onInput={(e) => ajustarAlturaObservacao(e.currentTarget)}
+              onBlur={(e) => {
+                if (!e.currentTarget.value.trim()) e.currentTarget.style.height = '';
+              }}
               onKeyDown={(e) => e.stopPropagation()}
               placeholder="material, técnica, intercorrência…"
-              className="mt-0.5 w-full bg-transparent border-b border-dashed border-border text-xs italic text-text-primary outline-none focus:border-teal transition-colors placeholder:text-text-secondary/60"
+              className="mt-0.5 min-h-6 max-h-40 w-full resize-y overflow-y-auto bg-transparent border-b border-dashed border-border text-xs italic leading-relaxed text-text-primary outline-none focus:border-teal transition-colors placeholder:text-text-secondary/60"
             />
           ) : data.observacao && (
             <TextoExpansivel
