@@ -16,15 +16,19 @@ import { createClient } from '@/lib/supabase/client';
 import { criarEncaixe } from '@/app/dashboard/agendamentos/actions';
 import { criarPacienteRapido } from '@/app/dashboard/pacientes/[id]/actions';
 import { buildClinicDatetime } from './date-helpers';
+import type { CaminhoPrimeiroAtendimento } from '@/types/onboarding';
 
 interface AtenderAgoraModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  clinicaId: string;
   /** R-57 F1 — o que fazer depois de criar o encaixe. Default vai pro Meu dia com o slot
    *  pré-selecionado (`?ag=`); o Meu dia passa o próprio callback (fica na rota, seleciona
    *  o slot novo no rail) — R-72 aposentou `/consulta` de vez, os 2 caminhos convergem
    *  no mesmo lugar hoje. */
   onCriado?: (agendamentoId: string) => void;
+  /** R-105 — informa o caminho real escolhido sem acoplar o modal ao progresso global. */
+  onCaminhoEscolhido?: (caminho: Exclude<CaminhoPrimeiroAtendimento, 'demonstracao'>) => void;
 }
 
 /**
@@ -32,7 +36,7 @@ interface AtenderAgoraModalProps {
  * histórico) ou cria rápido com nome+telefone. Cria um encaixe no horário atual e
  * entra direto no Meu dia. O encaixe usa o dentista da sessão (criarEncaixe).
  */
-export function AtenderAgoraModal({ open, onOpenChange, onCriado }: AtenderAgoraModalProps) {
+export function AtenderAgoraModal({ clinicaId, open, onOpenChange, onCriado, onCaminhoEscolhido }: AtenderAgoraModalProps) {
   const router = useRouter();
   const [busca, setBusca] = useState('');
   const [sugestoes, setSugestoes] = useState<{ id: string; nome: string }[]>([]);
@@ -59,6 +63,7 @@ export function AtenderAgoraModal({ open, onOpenChange, onCriado }: AtenderAgora
       const { data } = await supabase
         .from('pacientes')
         .select('id, nome')
+        .eq('clinica_id', clinicaId)
         .ilike('nome', `%${nome.trim()}%`)
         .limit(6)
         .abortSignal(controller.signal);
@@ -67,7 +72,7 @@ export function AtenderAgoraModal({ open, onOpenChange, onCriado }: AtenderAgora
         setBuscando(false);
       }
     }, 300);
-  }, []);
+  }, [clinicaId]);
 
   const reset = () => {
     setBusca('');
@@ -77,7 +82,10 @@ export function AtenderAgoraModal({ open, onOpenChange, onCriado }: AtenderAgora
     setBuscando(false);
   };
 
-  const iniciarConsulta = async (pacienteId: string) => {
+  const iniciarConsulta = async (
+    pacienteId: string,
+    caminho: Exclude<CaminhoPrimeiroAtendimento, 'demonstracao'>,
+  ) => {
     setErro(null);
     setIniciando(true);
     const agora = new Date();
@@ -97,6 +105,7 @@ export function AtenderAgoraModal({ open, onOpenChange, onCriado }: AtenderAgora
     }
     onOpenChange(false);
     reset();
+    onCaminhoEscolhido?.(caminho);
     if (onCriado) onCriado(result.id);
     else router.push(`/dashboard/meu-dia?ag=${result.id}`);
   };
@@ -115,7 +124,7 @@ export function AtenderAgoraModal({ open, onOpenChange, onCriado }: AtenderAgora
       setIniciando(false);
       return;
     }
-    await iniciarConsulta(res.id);
+    await iniciarConsulta(res.id, 'novo');
   };
 
   const nomeTrim = busca.trim();
@@ -152,7 +161,7 @@ export function AtenderAgoraModal({ open, onOpenChange, onCriado }: AtenderAgora
             {sugestoes.map((p) => (
               <button
                 key={p.id}
-                onClick={() => void iniciarConsulta(p.id)}
+                onClick={() => void iniciarConsulta(p.id, 'existente')}
                 disabled={iniciando}
                 className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border border-border bg-surface-alt hover:border-teal/40 hover:bg-teal/5 transition-all text-left disabled:opacity-50 group"
               >

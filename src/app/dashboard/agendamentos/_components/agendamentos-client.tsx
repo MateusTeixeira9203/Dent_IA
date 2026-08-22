@@ -1773,7 +1773,11 @@ export function AgendamentosClient({
       </Dialog>
 
       {/* ── Atender agora (walk-in do dentista) ───────────────────── */}
-      <AtenderAgoraModal open={isAtenderAgoraOpen} onOpenChange={setIsAtenderAgoraOpen} />
+      <AtenderAgoraModal
+        clinicaId={_clinicaId}
+        open={isAtenderAgoraOpen}
+        onOpenChange={setIsAtenderAgoraOpen}
+      />
 
       {/* ── Encaixe / Walk-in drawer ──────────────────────────────── */}
       <Sheet open={isEncaixeOpen} onOpenChange={(open) => { if (!open) { setIsEncaixeOpen(false); setEncaixeConflito(false); setEncaixeError(null); }}}>
