@@ -58,8 +58,6 @@ export function CapturaLivreCard({
     isTranscribing,
     liveTranscript,
     elapsedSeconds,
-    detectedProcs,
-    isDetecting,
   } = useCapturaLivre({ pacienteNome });
 
   // R-62 — puro e síncrono: roda a cada tecla, sem debounce, sem rede (I1/I6). Ausência de
@@ -161,7 +159,7 @@ export function CapturaLivreCard({
   return (
     <div className="overflow-hidden rounded-2xl border border-teal/30 bg-surface-alt/40">
       <div className={`flex items-center gap-2 ${compact ? 'px-3 pb-1.5 pt-2.5' : 'px-4 pb-2 pt-3.5'}`}>
-        <DexAvatar size={18} animated={isDetecting || isOrganizando} />
+        <DexAvatar size={18} animated={isOrganizando} />
         <span className="text-[11px] font-bold uppercase tracking-widest text-teal-ink">Campo mágico</span>
         <span className="text-xs text-text-secondary ml-1">Fale, cole ou anexe — o Dex monta a ficha</span>
       </div>
@@ -189,32 +187,6 @@ export function CapturaLivreCard({
                   {s.trecho}
                 </button>
               ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Detecção ao vivo (IA) — informativo, não clicável. */}
-      <AnimatePresence>
-        {texto.length > 20 && (detectedProcs.length > 0 || isDetecting) && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="flex flex-wrap gap-1.5 px-4 pb-2">
-              {detectedProcs.map((p, i) => (
-                <span
-                  key={i}
-                  className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium border bg-teal/10 border-teal/25 text-teal-ink"
-                >
-                  {p}
-                </span>
-              ))}
-              {detectedProcs.length === 0 && isDetecting && (
-                <span className="text-[11px] text-text-secondary italic">Analisando o relato…</span>
-              )}
             </div>
           </motion.div>
         )}

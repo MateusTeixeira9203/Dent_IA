@@ -72,6 +72,17 @@ export type OrigemRegistro = 'clinica' | 'preexistente';
  *  realizado_em, §1.10). Só é significativo quando status='indicado' (constraint no banco). */
 export type MomentoPlanejado = 'sessao_atual' | 'proxima_sessao';
 
+/** R-125a — decisão manual, transitória, de como o lançamento nasce no prontuário.
+ * Não é mais um status persistido: converte para os três eixos clínicos já existentes. */
+export type ModoLancamento =
+  | 'realizado_hoje'
+  | 'a_fazer'
+  | 'proxima_sessao'
+  | 'preexistente';
+
+/** R-125a — separa o que já veio planejado do que nasceu nesta captura. Nunca persiste. */
+export type FonteFluxoDraft = 'planejado' | 'novo';
+
 /**
  * Cor semântica — função pura de status+origem+momentoPlanejado. 'indicado' é coral, exceto
  * quando planejado pra próxima sessão (âmbar) — não existe 4ª cor "pendência pré-existente".
@@ -291,6 +302,13 @@ export interface OdontogramaEventoDraft extends OdontogramaEventoInput {
    * não é enviado no payload de salvar (o servidor não aceita mudança de assinatura por aqui).
    */
   assinaturaId?: string | null;
+  /** R-125a — apresentação do rascunho, removida antes do save. */
+  fonteFluxo?: FonteFluxoDraft;
+  /** R-125a — destino escolhido junto da revisão. `undefined` preserva evento já existente;
+   * `null` remove explicitamente o encaminhamento no save. */
+  encaminhadoParaId?: string | null;
+  /** R-125a — identidade estável dentro de uma mesma captura explícita. */
+  chaveCaptura?: string;
   /** R-49 — proveniência e dúvidas são só da revisão deste rascunho; montarRowsEventos não
    * as envia ao banco. O detalhe clínico continua sendo o único dado persistido. */
   endo_revisao?: {

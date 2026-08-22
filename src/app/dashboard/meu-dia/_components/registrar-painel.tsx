@@ -56,7 +56,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { Check, AlertTriangle, Loader2, X } from 'lucide-react';
+import { Check, AlertTriangle, ChevronDown, Loader2, X } from 'lucide-react';
 import { Odontograma } from '@/components/odontograma/Odontograma';
 import { salvarEventosOdontograma } from '@/server/patients/registro-actions';
 import { CampoMagicoMeuDia } from './campo-magico-meu-dia';
@@ -73,12 +73,14 @@ import {
   corDoRegistro,
   type OdontogramaEventoDraft,
   type AncoraClinica,
+  type ModoLancamento,
   type TipoRegistroOdontograma,
 } from '@/types/odontograma';
+import { criarEventosContextuais } from '@/lib/odontograma/criar-eventos-contextuais';
 import { normalizarOrtoManutencao, type OrtoManutencaoDetalhe } from '@/lib/especialidades/orto';
 import { type SugestaoLocal } from '@/lib/odontograma/casar-procedimento-local';
 import { ditadoDevolveMapa, type SlotCentral } from '@/lib/odontograma/ditado-devolve-mapa';
-import { eventoRotina, cycleRotina } from '@/lib/odontograma/rotina-boca';
+import { aplicarRotinaComModo, eventoRotina } from '@/lib/odontograma/rotina-boca';
 import type { MeuDiaPendencia, MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
 
 // R-109 — a faixa de lote inteira (lógica, estado interno e markup) saiu daqui pro componente
@@ -223,10 +225,13 @@ export function useRegistrarPainel({
   dicaCampoMagico,
 }: RegistrarPainelProps): RegistrarPainelSlots {
   const [textoAberto, setTextoAberto] = useState(false);
+  const [controlesAbertos, setControlesAbertos] = useState(true);
+  const [quantidadeAoRenderizar, setQuantidadeAoRenderizar] = useState(eventosDraft.length);
   /** D1 — só escrita pro campo mágico; quem lê é `handleSalvar` abaixo (I3). */
   const [alertaNovo, setAlertaNovo] = useState<string | null>(null);
 
   const [onde, setOnde] = useState<OndeValor>(null);
+  const [modoLancamento, setModoLancamento] = useState<ModoLancamento>('a_fazer');
   // R-62 — carrega `dentes` junto (não só o item): quando a sugestão veio do texto do campo
   // mágico com número ("resina Z350 no 24"), o dente tem que sobreviver até o clique em
   // "qual tipo clínico?" — sem isso o passo seguinte caía de volta no `onde` (possivelmente
@@ -275,9 +280,16 @@ export function useRegistrarPainel({
   // `meu-dia-client.tsx` (`idAoResetar`) já usa, pelo mesmo motivo (o lint do projeto,
   // `react-hooks/set-state-in-effect`, bloqueia a versão com `useEffect`).
   const [agendamentoIdAoResetar, setAgendamentoIdAoResetar] = useState(agendamentoId);
+  if (eventosDraft.length !== quantidadeAoRenderizar) {
+    const adicionouRegistro = eventosDraft.length > quantidadeAoRenderizar;
+    setQuantidadeAoRenderizar(eventosDraft.length);
+    if (adicionouRegistro) setControlesAbertos(false);
+  }
   if (agendamentoId !== agendamentoIdAoResetar) {
     setAgendamentoIdAoResetar(agendamentoId);
     setTextoAberto(false);
+    setControlesAbertos(true);
+    setQuantidadeAoRenderizar(eventosDraft.length);
     setAlertaNovo(null);
     setOnde(null);
     setCatalogoPendente(null);
@@ -339,24 +351,15 @@ export function useRegistrarPainel({
     setOrtoChipAberto(true);
   }
 
-  /** R-107a — sem controle de status na barra: todo evento criado por aqui (dente/catálogo/
-   *  texto do campo mágico) nasce 'realizado', igual sempre foi o default antes do controle
-   *  sair. Correção pós-criação é o pill em "Nesta sessão" (`nesta-sessao-bloco.tsx`). */
+  /** R-125a — todos os caminhos manuais criam o mesmo draft contextual. */
   function criarEventos(tipo: TipoRegistroOdontograma, observacaoDoCatalogo: string, ancoras: AncoraClinica[]): OdontogramaEventoDraft[] {
-    return ancoras.map((ancora) => ({
-      id: crypto.randomUUID(),
+    return criarEventosContextuais({
       tipo,
-      status: 'realizado',
-      origem: 'clinica',
-      // R-101 — este painel não tem o controle de 3 vias (só os 4 pontos listados na spec
-      // têm); todo evento criado aqui nasce 'sessao_atual', igual sempre foi antes do R-101.
-      momento_planejado: 'sessao_atual',
-      ancora,
-      grupo_id: null,
-      papel_no_grupo: null,
+      ancoras,
+      dataPadrao,
       observacao: observacaoDoCatalogo,
-      realizado_em: dataPadrao,
-    }));
+      contexto: { capturaId: crypto.randomUUID(), modo: modoLancamento },
+    });
   }
 
   // R-62 — `dentesSugeridos` substitui o antigo `extrairDenteDoTexto(buscaTipo)`: o campo de
@@ -375,9 +378,9 @@ export function useRegistrarPainel({
     // SEMPRE boca, e nenhum dente clicado antes se aplica aqui — não é esquecido, é ignorado
     // de propósito (D5 do R-06-07: nível boca nunca pinta dente).
     // R-107a — este branch (caminho digitado/ditado) continua acrescentando sem dedup; os
-    // chips de Profilaxia/Clareamento na barra usam `cycleRotina` (dedup real) em vez deste
-    // caminho. Digitar o mesmo tipo 2x no campo mágico ainda cria 2 eventos — comportamento
-    // pré-existente, fora de escopo desta fatia (spec R-107a §6).
+    // chips de Profilaxia/Clareamento da revisão atualizam o registro de rotina existente com
+    // o modo manual ativo. Digitar o mesmo tipo 2x no campo mágico ainda cria 2 eventos —
+    // comportamento pré-existente, fora de escopo desta fatia (spec R-107a §6).
     if (TIPOS_NIVEL_BOCA.has(tipo)) {
       setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacaoDoCatalogo, [{ nivel: 'boca' }])]);
       setTipoPendente(null);
@@ -535,6 +538,7 @@ export function useRegistrarPainel({
       anexarTexto={anexarTexto}
       catalogoProcedimentos={catalogoProcedimentos}
       onAplicarSugestao={aplicarSugestaoLocal}
+      modoLancamento={modoLancamento}
       realce={realceCampoMagico}
       dica={dicaCampoMagico}
       compacto
@@ -549,7 +553,39 @@ export function useRegistrarPainel({
        * existem em `ToothDetailPanel`/`NestaSessaoBloco`) e trouxe os chips de rotina que já
        * existiam em `FichasTab.tsx`. "+ Observação" fica de propósito (não é redundante: é o
        * único jeito de salvar uma nota pura sem passar pelo Dex — I1, IA fora do ar). */}
-      <div className="mt-3 flex flex-col gap-2.5 border-t border-border pt-3">
+      <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface-alt/25">
+        <button
+          type="button"
+          onClick={() => setControlesAbertos((aberto) => !aberto)}
+          aria-expanded={controlesAbertos}
+          className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left outline-none transition-colors hover:bg-surface-alt focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal"
+        >
+          <span>
+            <span className="block text-xs font-bold text-text-primary">Registrar procedimento</span>
+            {!controlesAbertos && (
+              <span className="mt-0.5 block text-[11px] text-text-secondary">
+                {onde?.dentes.length
+                  ? `${onde.dentes.length === 1 ? `Dente ${onde.dentes[0]}` : `${onde.dentes.length} dentes`} selecionado${onde.dentes.length === 1 ? '' : 's'}`
+                  : 'Selecione no odontograma ou use uma ação de rotina'}
+              </span>
+            )}
+          </span>
+          <ChevronDown
+            className={`h-4 w-4 shrink-0 text-text-secondary transition-transform ${controlesAbertos ? 'rotate-180' : ''}`}
+            aria-hidden
+          />
+        </button>
+        <AnimatePresence initial={false}>
+          {controlesAbertos && (
+            <motion.div
+              key="controles-registro"
+              initial={reduceMotion ? false : { opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={reduceMotion ? undefined : { opacity: 0, height: 0 }}
+              transition={{ duration: reduceMotion ? 0 : 0.16, ease: 'easeOut' }}
+              className="overflow-hidden"
+            >
+              <div className="flex flex-col gap-2.5 border-t border-border px-3 pb-3 pt-2.5">
         {catalogoPendente && (
           <div className="rounded-lg border border-teal/30 bg-teal/5 px-3 py-2">
             <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -580,10 +616,9 @@ export function useRegistrarPainel({
           </div>
         )}
 
-        {/* R-107a — chips de rotina (Profilaxia/Clareamento): mesmo ciclo sem registro → a
-            fazer → feito → remove que já existe em `FichasTab.tsx`, portado via
-            `@/lib/odontograma/rotina-boca` (dedup real — nunca duplica). Flúor/raspagem/exame
-            periodontal ficam de fora (spec R-107a §6, sem sinal de uso na barra do Meu dia). */}
+        {/* R-125a — os chips de rotina usam o modo manual ativo: diferentemente do ciclo
+            histórico da ficha completa, um clique não apaga o registro e não decide sozinho
+            se foi realizado. Flúor/raspagem/exame periodontal ficam de fora (R-107a §6). */}
         <div className="flex flex-wrap items-center gap-1.5">
           {(['profilaxia', 'clareamento'] as const).map((tipo) => {
             const ev = eventoRotina(eventosDraft, tipo);
@@ -592,8 +627,8 @@ export function useRegistrarPainel({
               <button
                 key={tipo}
                 type="button"
-                onClick={() => setEventosDraft(cycleRotina(eventosDraft, tipo))}
-                aria-label={`${TIPO_LABEL[tipo]} (boca toda) — ${ev ? (ev.status === 'indicado' ? 'a fazer' : 'feito') : 'sem registro'}`}
+                onClick={() => setEventosDraft(aplicarRotinaComModo(eventosDraft, tipo, modoLancamento, dataPadrao))}
+                aria-label={`${TIPO_LABEL[tipo]} (boca toda) — registrar como ${modoLancamento.replace('_', ' ')}`}
                 className="rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
                 style={{
                   background: cor
@@ -633,6 +668,8 @@ export function useRegistrarPainel({
             onEventosDraftChange={setEventosDraft}
             catalogoProcedimentos={catalogoProcedimentos}
             dataPadrao={dataPadrao}
+            modoLancamento={modoLancamento}
+            onModoLancamentoChange={setModoLancamento}
             onLimpar={limparLote}
             onModoMultidenteChange={() => {}}
             onAbrirDetalheDental={onAbrirDetalheDental}
@@ -645,24 +682,49 @@ export function useRegistrarPainel({
           </p>
         )}
 
-        {textoAberto ? (
-          <textarea
-            value={textoVisita}
-            onChange={(e) => setTextoVisita(e.target.value)}
-            placeholder="Observação da visita (opcional)"
-            rows={3}
-            autoFocus
-            className="w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm text-text-primary outline-none focus:border-teal"
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setTextoAberto(true)}
-            className="w-fit text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
-          >
-            + Observação
-          </button>
-        )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <div className="border-t border-border px-3 py-2.5">
+          {textoAberto ? (
+            <div className="rounded-lg border border-border bg-surface-alt p-2.5">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">
+                  Observação da visita
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setTextoAberto(false)}
+                  className="text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
+                >
+                  Recolher
+                </button>
+              </div>
+              <textarea
+                value={textoVisita}
+                onChange={(e) => setTextoVisita(e.target.value)}
+                placeholder="Observação da visita (opcional)"
+                rows={3}
+                autoFocus
+                className="w-full resize-y rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-teal"
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setTextoAberto(true)}
+              className="flex w-full items-center justify-between gap-3 rounded-lg text-left text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
+            >
+              <span>{textoVisita.trim() ? 'Observação da visita' : '+ Observação'}</span>
+              {textoVisita.trim() && (
+                <span className="max-w-[70%] truncate font-normal italic text-text-secondary">
+                  {textoVisita.trim()}
+                </span>
+              )}
+            </button>
+          )}
+        </div>
       </div>
     </>
   );

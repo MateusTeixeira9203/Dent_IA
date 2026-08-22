@@ -22,6 +22,7 @@ import { extrairEndoDeterministico } from '@/lib/especialidades/extrair-endo-det
 import { mesclarDetalheEndo } from '@/lib/especialidades/mesclar-endo-extracao';
 import type { EndoDetalhe } from '@/lib/especialidades/endo';
 import type { OdontogramaEventoDraft, OrtoManutencaoInfo } from '@/types/odontograma';
+import type { ModoLancamento } from '@/types/odontograma';
 import type { EvolucaoFormatada } from '@/app/api/dex/formatar-evolucao/route';
 import type { SugestaoLocal } from '@/lib/odontograma/casar-procedimento-local';
 import type { MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
@@ -47,6 +48,8 @@ export interface CampoMagicoMeuDiaProps {
   /** R-62 — clique num chip de sugestão local. Dono da lógica é `registrar-painel.tsx`
    *  (mesma função `registrar`/`escolherDoCatalogo` que a antiga "Registrar sem IA" usava). */
   onAplicarSugestao: (sugestao: SugestaoLocal) => void;
+  /** R-125a — o dentista decide o estado; o Dex apenas organiza o relato. */
+  modoLancamento: ModoLancamento;
   /** R-105a §4.2 — primeira sessão com paciente na tela: este é o único controle vivo, então
    *  ele acende. Só vale FECHADO (aberto, o próprio conteúdo já é o foco) e só até o primeiro
    *  procedimento entrar no rascunho — quem deriva isso é `meu-dia-client.tsx` (I2). */
@@ -62,7 +65,7 @@ export interface CampoMagicoMeuDiaProps {
 export function CampoMagicoMeuDia({
   pacienteNome, eventosDraft, onEventosDraftChange, textoVisita, onTextoVisitaChange,
   onAlertaNovoChange, onOrtoDetectado, onEndoDetectado, anexarTexto, catalogoProcedimentos, onAplicarSugestao,
-  realce, dica, compacto = false,
+  realce, dica, compacto = false, modoLancamento,
 }: CampoMagicoMeuDiaProps) {
   const [aberto, setAberto] = useState(compacto);
   const [jaAbriu, setJaAbriu] = useState(false);
@@ -111,7 +114,10 @@ export function CampoMagicoMeuDia({
   }
 
   function aplicar(data: EvolucaoFormatada, relato: string) {
-    const mesclados = mesclarEventosSemPerda(eventosDraft, data.odontograma_eventos, hojeBRT());
+    const mesclados = mesclarEventosSemPerda(eventosDraft, data.odontograma_eventos, hojeBRT(), {
+      capturaId: crypto.randomUUID(),
+      modo: modoLancamento,
+    });
     const dentesEndo = mesclados
       .filter((evento) => evento.tipo === 'endodontia' && evento.ancora.dente != null)
       .map((evento) => evento.ancora.dente as number);

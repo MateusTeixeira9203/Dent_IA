@@ -39,6 +39,9 @@ export function montarRowsEventos(
     dente:          ev.ancora.dente ?? null,
     faces:          ev.ancora.faces ?? [],
     papel_no_grupo: ev.papel_no_grupo,
+    // `undefined` some do JSON e manda a RPC preservar um encaminhamento antigo; null é a
+    // remoção deliberada escolhida pelo dentista no card.
+    encaminhado_para: ev.encaminhadoParaId,
     observacao:     ev.observacao || null,
     detalhe:        ev.detalhe ?? null,
     realizado_em:

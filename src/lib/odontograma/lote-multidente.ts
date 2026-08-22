@@ -1,6 +1,7 @@
 import type {
   FaceDental, OdontogramaEventoDraft, TipoRegistroOdontograma,
 } from '@/types/odontograma';
+import { criarEventosContextuais, type ContextoLancamento } from '@/lib/odontograma/criar-eventos-contextuais';
 
 /**
  * R-109 — o lote multidente, extraído de `registrar-painel.tsx` (R-107d §3) pra que a ficha
@@ -12,9 +13,8 @@ import type {
  * isso o módulo carregaria os setters de uma tela só e não serviria pra outra — que é
  * exatamente o problema que ele existe pra resolver.
  *
- * Procedimentos clínicos em lote nascem como `indicado`: selecionar vários dentes descreve a
- * intenção clínica, mas não pode afirmar que todos foram realizados sem a confirmação explícita
- * do dentista em “Nesta sessão”. Ausência continua sendo o único lote preexistente.
+ * O contexto manual é explícito e compartilhado com a ficha: o mesmo chip pode nascer como
+ * realizado, indicado, próxima sessão ou pré-existente sem criar um terceiro status no banco.
  */
 
 /** R-107d — chips oferecidos em lote (subconjunto de `TIPO_LABEL`, spec §3). Ponte fica de
@@ -37,14 +37,17 @@ export function eventosDoLote(
   dentes: number[],
   eventosDraft: OdontogramaEventoDraft[],
   dataPadrao: string,
+  contexto: ContextoLancamento,
 ): OdontogramaEventoDraft[] {
-  return dentes
-    .filter((d) => !eventosDraft.some((e) => e.tipo === tipo && e.origem === 'clinica' && e.ancora.dente === d))
-    .map((d): OdontogramaEventoDraft => ({
-      id: crypto.randomUUID(), tipo, status: 'indicado', origem: 'clinica',
-      momento_planejado: 'sessao_atual', ancora: { nivel: 'dente', dente: d },
-      grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: null,
-    }));
+  const modo = contexto.modo;
+  return criarEventosContextuais({
+    tipo,
+    dataPadrao,
+    contexto,
+    ancoras: dentes
+      .filter((d) => !eventosDraft.some((e) => e.tipo === tipo && e.origem === (modo === 'preexistente' ? 'preexistente' : 'clinica') && e.ancora.dente === d))
+      .map((d) => ({ nivel: 'dente', dente: d })),
+  });
 }
 
 /**
@@ -60,12 +63,14 @@ export function eventosDoLoteRestauracao(
   face: FaceDental,
   dentes: number[],
   dataPadrao: string,
+  contexto: ContextoLancamento,
 ): OdontogramaEventoDraft[] {
-  return dentes.map((d) => ({
-    id: crypto.randomUUID(), tipo: 'carie_restauracao', status: 'indicado', origem: 'clinica',
-    momento_planejado: 'sessao_atual', ancora: { nivel: 'face', dente: d, faces: [face] },
-    grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: null,
-  }));
+  return criarEventosContextuais({
+    tipo: 'carie_restauracao',
+    dataPadrao,
+    contexto,
+    ancoras: dentes.map((d) => ({ nivel: 'face', dente: d, faces: [face] })),
+  });
 }
 
 /**
@@ -78,14 +83,17 @@ export function eventosDoLoteRestauracao(
 export function eventosDoLoteAusente(
   dentes: number[],
   eventosDraft: OdontogramaEventoDraft[],
+  dataPadrao: string,
+  contexto: ContextoLancamento,
 ): OdontogramaEventoDraft[] {
-  return dentes
-    .filter((d) => !eventosDraft.some((e) => e.tipo === 'exodontia' && e.origem === 'preexistente' && e.ancora.dente === d))
-    .map((d): OdontogramaEventoDraft => ({
-      id: crypto.randomUUID(), tipo: 'exodontia', status: 'realizado', origem: 'preexistente',
-      momento_planejado: 'sessao_atual', ancora: { nivel: 'dente', dente: d },
-      grupo_id: null, papel_no_grupo: null, observacao: '', realizado_em: null,
-    }));
+  return criarEventosContextuais({
+    tipo: 'exodontia',
+    dataPadrao,
+    contexto: { ...contexto, modo: 'preexistente' },
+    ancoras: dentes
+      .filter((d) => !eventosDraft.some((e) => e.tipo === 'exodontia' && e.origem === 'preexistente' && e.ancora.dente === d))
+      .map((d) => ({ nivel: 'dente', dente: d })),
+  });
 }
 
 /**
@@ -96,10 +104,13 @@ export function eventosDoLoteAvulso(
   texto: string,
   dentes: number[],
   dataPadrao: string,
+  contexto: ContextoLancamento,
 ): OdontogramaEventoDraft[] {
-  return dentes.map((d) => ({
-    id: crypto.randomUUID(), tipo: 'outro', status: 'indicado', origem: 'clinica',
-    momento_planejado: 'sessao_atual', ancora: { nivel: 'dente', dente: d },
-    grupo_id: null, papel_no_grupo: null, observacao: texto, realizado_em: null,
-  }));
+  return criarEventosContextuais({
+    tipo: 'outro',
+    dataPadrao,
+    contexto,
+    observacao: texto,
+    ancoras: dentes.map((d) => ({ nivel: 'dente', dente: d })),
+  });
 }

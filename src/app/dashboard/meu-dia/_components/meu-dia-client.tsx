@@ -115,6 +115,7 @@ function draftParaEventoOrc(e: OdontogramaEventoDraft): EventoOdontogramaParaOrc
   return {
     id: e.id,
     tipo: e.tipo,
+    observacao: e.observacao,
     status: e.status,
     origem: e.origem,
     nivel: e.ancora.nivel,
@@ -125,7 +126,7 @@ function draftParaEventoOrc(e: OdontogramaEventoDraft): EventoOdontogramaParaOrc
     papel_no_grupo: e.papel_no_grupo,
     grupo_id: e.grupo_id,
     assinatura_id: e.assinaturaId ?? null,
-    encaminhado_para: null, // rascunho de hoje nunca foi encaminhado ainda
+    encaminhado_para: e.encaminhadoParaId ?? null,
     encaminhado_dentista: null,
   };
 }
@@ -328,9 +329,6 @@ export function MeuDiaClient({
     procedimentosClinica: catalogoProcedimentos,
     isSecretaria: false,
     dentistasClinica: [],
-    // R-46h (achado ao vivo 08/08) — histórico é compartilhado da clínica; sem isto o
-    // picker deixava puxar procedimento indicado por outro dentista pro orçamento.
-    restringirAoMeuDentista: true,
   });
 
   // R-78 F0 — hook (era componente `<RegistrarPainel key={agendamentoId}>`): mesma
@@ -708,6 +706,14 @@ export function MeuDiaClient({
                 <p className="font-heading text-lg text-text-primary">Revisão da consulta</p>
                 <Contador n={eventosDraft.length} />
               </div>
+              {/* R-125a — ações de registro ficam onde o resultado será revisado. O mapa à
+                  direita segue sendo só seleção/leitura; a seleção atualiza esta faixa sem
+                  duplicar estado ou criar um segundo formulário no painel dental. */}
+              {gavetaAberta === null && !denteAberto && !leituraGrande && (
+                <div className="mb-3">
+                  {registrarPainel.controlesOdontograma}
+                </div>
+              )}
               {/* F0+F1: "Hoje" + "Novos" fundidos numa lista só (todo `eventosDraft`, os 2
                   status juntos), `RegistroCard` editável — pill clicável, observação
                   inline, detalhe de especialidade colapsável (`nesta-sessao-bloco.tsx`). */}
@@ -721,6 +727,7 @@ export function MeuDiaClient({
                 onEventosDraftChange={setEventosDraft}
                 onAbrirDenteGrande={abrirDenteGrande}
                 idsDeAntes={idsDeAntes}
+                destinosEncaminhar={destinosEncaminhar}
                 nomeTratamentoPorEvento={contexto?.nomeTratamentoPorEvento ?? {}}
               />
 
@@ -902,11 +909,6 @@ export function MeuDiaClient({
                   </motion.div>
                 )}
               </AnimatePresence>}
-              {gavetaAberta === null && !denteAberto && !leituraGrande && (
-                <div className="mt-3 border-t border-border pt-3">
-                  {registrarPainel.controlesOdontograma}
-                </div>
-              )}
             </motion.div>
           </div>
 

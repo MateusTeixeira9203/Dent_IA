@@ -7,50 +7,10 @@ import { revalidatePath } from 'next/cache';
 import { inserirNotificacao } from '@/lib/notificacoes';
 import { buscarGruposAbertos, type GrupoAberto } from '@/server/patients/get-grupos-abertos';
 import type { OdontogramaEventoDraft } from '@/types/odontograma';
+import { montarRowsEventos } from '@/lib/odontograma/montar-rows-eventos';
 import { endoDetalheSchema } from '@/lib/especialidades/endo';
 import { implanteDetalheSchema } from '@/lib/especialidades/implante';
 import { criarDocumentoConclusaoAssinatura } from '@/server/legal/documentos-aceite';
-
-/**
- * Monta as linhas de `odontograma_eventos` a partir dos drafts revisados pelo dentista.
- * Extraído pra ser reusado pelo save inicial E pelo retry (`salvarEventosOdontograma`) —
- * a data clínica e as âncoras precisam ser idênticas nos dois caminhos.
- */
-function montarRowsEventos(
-  eventos: OdontogramaEventoDraft[],
-  ctx: { clinicId: string; pacienteId: string; dentistaId: string; fichaId: string },
-) {
-  const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-  return eventos.map((ev) => ({
-    id:             ev.id, // id estável gerado no client (R-01) — upsert por id, nunca renumera
-    clinica_id:     ctx.clinicId,
-    paciente_id:    ctx.pacienteId,
-    dentista_id:    ctx.dentistaId,
-    ficha_id:       ctx.fichaId,
-    grupo_id:       ev.grupo_id,
-    tipo:           ev.tipo,
-    status:         ev.status,
-    origem:         ev.origem,
-    // R-101 — sem isso, todo save reseta silenciosamente pro default da RPC (sessao_atual).
-    momento_planejado: ev.momento_planejado,
-    nivel:          ev.ancora.nivel,
-    arcada:         ev.ancora.arcada ?? null,
-    quadrante:      ev.ancora.quadrante ?? null,
-    dente:          ev.ancora.dente ?? null,
-    faces:          ev.ancora.faces ?? [],
-    papel_no_grupo: ev.papel_no_grupo,
-    observacao:     ev.observacao || null,
-    // Dado clínico da especialidade (migration 106) — tabela de endo, campos de implante.
-    // undefined (a maioria dos tipos) vira null explícito; o insert nunca omite a coluna.
-    detalhe:        ev.detalhe ?? null,
-    // Data clínica: obrigatória no realizado da clínica (default hoje BRT — rede de
-    // segurança; a UI já manda explícita). Indicado nunca tem data (constraint SQL).
-    realizado_em:
-      ev.status === 'realizado'
-        ? (ev.realizado_em ?? (ev.origem === 'clinica' ? hoje : null))
-        : null,
-  }));
-}
 
 /**
  * Salva o event-log do odontograma — retry do save inicial (fail-soft, ver

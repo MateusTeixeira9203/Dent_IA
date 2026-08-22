@@ -11,7 +11,7 @@
 
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronRight, Maximize2, Forward, Check, X, Clock } from 'lucide-react';
+import { ChevronDown, ChevronRight, Maximize2, Forward, Check, X, Clock } from 'lucide-react';
 import { TextoExpansivel } from './texto-expansivel';
 import {
   TIPO_LABEL,
@@ -104,6 +104,11 @@ export interface RegistroCardProps {
    * §1.4/§1.5 da spec). `children` é ignorado nesse modo.
    */
   onAbrirGrande?: () => void;
+  /** Variante enxuta usada na bancada do Meu Dia. A ficha salva mantém o desenho atual. */
+  compacto?: boolean;
+  /** Controle externo do acordeão compacto — permite ao chamador manter só um card aberto. */
+  aberto?: boolean;
+  onAbertoChange?: (aberto: boolean) => void;
 }
 
 const PILL: Record<'coral' | 'teal' | 'slate' | 'warning', { label: string; wrap: string; dot: string }> = {
@@ -156,8 +161,14 @@ export function RegistroCard({
   data, children, defaultOpen = false, onToggleStatus, onToggleMomento,
   selecionavel = false, selecionado = false, onToggleSelecao, onRemoverEncaminhamento,
   editavel = false, onObservacaoChange, onRemover, onAbrirGrande,
+  compacto = false, aberto: abertoControlado, onAbertoChange,
 }: RegistroCardProps) {
-  const [aberto, setAberto] = useState(defaultOpen);
+  const [abertoInterno, setAbertoInterno] = useState(defaultOpen);
+  const aberto = abertoControlado ?? abertoInterno;
+  const setAberto = (proximo: boolean) => {
+    if (abertoControlado == null) setAbertoInterno(proximo);
+    onAbertoChange?.(proximo);
+  };
   const cor = corDoRegistro(data.status, data.origem, data.momentoPlanejado);
   const pill = PILL[cor];
 
@@ -165,17 +176,25 @@ export function RegistroCard({
   const titulo = `${TIPO_LABEL[data.tipo]}${faces ? ` ${faces}` : ''} · ${resumoAncora(data.ancoras)}`;
 
   const retroativo = data.realizadoEm != null && dataBRT(data.registradoEm) > data.realizadoEm;
-  // `onAbrirGrande` sempre vence: o card redireciona em vez de expandir aqui, então o
-  // corpo local nunca monta mesmo que o chamador tenha passado `children` por engano.
+  // Fora do modo compacto, `onAbrirGrande` redireciona o card inteiro. Na bancada compacta,
+  // o card abre a observação e o detalhe dental conserva um botão próprio.
   const abreFora = onAbrirGrande != null;
-  const temCorpo = !abreFora && children != null;
+  const temCorpo = (compacto && editavel) || (!abreFora && children != null);
 
   // Modo seleção (variante B): o clique no card marca/desmarca em vez de expandir; o
   // pill e o × ficam inertes (a ação da vez é escolher o que encaminhar).
   const emSelecao = selecionavel;
   const pillClicavel = !emSelecao && onToggleStatus;
   const containerInterativo = emSelecao || temCorpo || abreFora;
-  const aoClicar = emSelecao ? onToggleSelecao : abreFora ? onAbrirGrande : temCorpo ? () => setAberto((v) => !v) : undefined;
+  const aoClicar = emSelecao
+    ? onToggleSelecao
+    : compacto && editavel
+      ? () => setAberto(!aberto)
+      : abreFora
+        ? onAbrirGrande
+        : temCorpo
+          ? () => setAberto(!aberto)
+          : undefined;
 
   return (
     <motion.article
@@ -199,11 +218,11 @@ export function RegistroCard({
         // Acessibilidade (achado dele 08/08): sem isto o modo "abre fora" lia igual a um
         // simples expandir/colapsar pro leitor de tela — o rótulo deixa explícito que o
         // clique LEVA a outro lugar, não revela conteúdo aqui mesmo.
-        aria-label={abreFora ? `${titulo} — abrir tabela no perfil do dente` : undefined}
+        aria-label={abreFora && !compacto ? `${titulo} — abrir tabela no perfil do dente` : undefined}
         // div (não <button>): no modo seleção o checkbox interativo fica aninhado aqui,
         // e o × do badge (fora do modo) também — elemento interativo dentro de <button>
         // é HTML inválido. Por isso role/tabIndex/teclado manuais.
-        className={`min-h-[104px] w-full flex items-center gap-3 px-5 py-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-teal ${containerInterativo ? 'cursor-pointer' : 'cursor-default'}`}
+        className={`${compacto ? 'min-h-[72px] flex-wrap px-4 py-3 sm:flex-nowrap' : 'min-h-[104px] px-5 py-4'} flex w-full items-center gap-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-teal ${containerInterativo ? 'cursor-pointer' : 'cursor-default'}`}
       >
         {emSelecao && (
           <span
@@ -216,12 +235,12 @@ export function RegistroCard({
           </span>
         )}
 
-        <div className="min-w-0 flex-1">
+        <div className={`min-w-0 flex-1 ${compacto && !emSelecao ? 'basis-full sm:basis-auto' : ''}`}>
           <p className="font-semibold text-sm text-text-primary truncate">{titulo}</p>
           {data.revisarStatus && (
             <p className="mt-0.5 text-xs font-semibold text-warning-ink">Confira o status</p>
           )}
-          {editavel ? (
+          {editavel && !compacto ? (
             <textarea
               rows={1}
               value={data.observacao ?? ''}
@@ -239,11 +258,11 @@ export function RegistroCard({
           ) : data.observacao && (
             <TextoExpansivel
               texto={`“${data.observacao}”`}
-              clampLines={2}
-              className="text-xs text-text-secondary italic mt-0.5"
+              clampLines={compacto ? 1 : 2}
+              className="mt-0.5 text-xs italic text-text-secondary"
             />
           )}
-          <p className="text-xs text-text-secondary mt-0.5">
+          <p className={`${compacto ? 'hidden' : 'mt-0.5'} text-xs text-text-secondary`}>
             {data.realizadoEm && (
               <span>
                 Realizado em <span className="font-mono tabular-nums">{fmtData(data.realizadoEm)}</span>
@@ -342,12 +361,25 @@ export function RegistroCard({
         )}
 
         {!emSelecao && abreFora && (
-          <Maximize2 className="w-3.5 h-3.5 shrink-0 text-text-secondary" aria-hidden />
+          compacto ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onAbrirGrande(); }}
+              onKeyDown={(e) => e.stopPropagation()}
+              title="Abrir detalhe dental"
+              aria-label={`${titulo} — abrir detalhe dental`}
+              className="shrink-0 rounded-md p-1.5 text-text-secondary outline-none transition-colors hover:bg-surface-alt hover:text-teal-ink focus-visible:ring-2 focus-visible:ring-teal"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </button>
+          ) : (
+            <Maximize2 className="w-3.5 h-3.5 shrink-0 text-text-secondary" aria-hidden />
+          )
         )}
         {!emSelecao && temCorpo && (
-          <ChevronRight
-            className={`w-4 h-4 shrink-0 text-text-secondary transition-transform ${aberto ? 'rotate-90' : ''}`}
-          />
+          compacto
+            ? <ChevronDown className={`h-4 w-4 shrink-0 text-text-secondary transition-transform ${aberto ? 'rotate-180' : ''}`} />
+            : <ChevronRight className={`h-4 w-4 shrink-0 text-text-secondary transition-transform ${aberto ? 'rotate-90' : ''}`} />
         )}
       </div>
 
@@ -363,7 +395,29 @@ export function RegistroCard({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
           >
-            <div className="border-t border-border bg-surface-alt/40 px-4 py-3">{children}</div>
+            <div className="border-t border-border bg-surface-alt/40 px-4 py-3">
+              {compacto && editavel && (
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-text-secondary">
+                    Material, técnica e intercorrência
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={data.observacao ?? ''}
+                    onChange={(e) => onObservacaoChange?.(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onInput={(e) => ajustarAlturaObservacao(e.currentTarget, true)}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    placeholder="Ex.: resina Z350, isolamento absoluto, sem intercorrências…"
+                    className="max-h-40 min-h-[72px] w-full resize-y overflow-y-auto rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-text-primary outline-none transition-colors placeholder:text-text-secondary/60 focus:border-teal"
+                  />
+                  <p className="text-[11px] text-text-secondary">
+                    {data.autorNome}{data.autorCro ? ` · ${data.autorCro}` : ''}
+                  </p>
+                </div>
+              )}
+              {children}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

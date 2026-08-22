@@ -66,6 +66,8 @@ export type EventoOdontogramaParaOrc = {
   papel_no_grupo: PapelNoGrupo | null;
   grupo_id: string | null;
   assinatura_id: string | null;
+  /** Texto livre de `outro`; é a descrição clínica quando não há tipo canônico. */
+  observacao: string | null;
   /** R-53 — destino do encaminhamento (R-04/R-52). NÃO exclui do orçamento: define o
    *  responsável exibido (`encaminhado_para ?? autor da ficha`, via filtro-responsavel.ts). */
   encaminhado_para: string | null;
@@ -99,6 +101,9 @@ export type NovoOrcItem = {
   quantidade: number;
   /** Texto decimal BR ("250" ou "250,50") — parsear com `parseValorBR` antes de usar como número. */
   preco: string;
+  /** R-125b — fontes estruturadas que este item representa. Manual/legado ficam vazios. */
+  eventoIds?: string[];
+  origem?: 'evento' | 'manual' | 'legado';
 };
 
 export type OrcEditItem = {

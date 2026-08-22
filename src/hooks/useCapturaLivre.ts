@@ -7,7 +7,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useAudioRecorder, type RecorderStatus, type MicErro } from '@/hooks/useAudioRecorder';
-import { denteLabel } from '@/lib/arcadas';
 import { extensaoDoMime } from '@/lib/audio-mime';
 
 // R-48 §5 — mensagens que dizem a verdade: cada motivo tem o texto certo, nunca
@@ -22,9 +21,6 @@ export interface UseCapturaLivreOptions {
   /** Nome do paciente — reservado pelo contrato da spec; nenhuma rota consumida
    *  pelo hook hoje (transcrever/detectar-consulta) aceita esse campo. */
   pacienteNome?: string;
-  /** Desliga a detecção ao vivo (perfil demo / consulta demo não têm clínica real,
-   *  ou fase da consulta que não é mais captura). Default true. */
-  liveDetection?: boolean;
 }
 
 export interface UseCapturaLivreReturn {
@@ -36,21 +32,16 @@ export interface UseCapturaLivreReturn {
   isTranscribing: boolean;
   liveTranscript: string;
   elapsedSeconds: number;
-  detectedProcs: string[];
-  isDetecting: boolean;
 }
 
 export function useCapturaLivre(options: UseCapturaLivreOptions = {}): UseCapturaLivreReturn {
-  const { liveDetection = true } = options;
+  void options;
 
   const [texto, setTexto] = useState('');
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [liveTranscript, setLiveTranscript] = useState('');
-  const [detectedProcs, setDetectedProcs] = useState<string[]>([]);
-  const [isDetecting, setIsDetecting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const detectDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Latest-ref pro mimeType negociado pelo gravador — processarAudio precisa dele (I2),
   // mas é declarado antes de useAudioRecorder existir (evita ciclo de dependência).
   const mimeTypeRef = useRef<string | null>(null);
@@ -96,40 +87,6 @@ export function useCapturaLivre(options: UseCapturaLivreOptions = {}): UseCaptur
 
   useEffect(() => { mimeTypeRef.current = mimeType; }, [mimeType]);
 
-  // Detecção ao vivo de procedimentos enquanto o dentista escreve.
-  useEffect(() => {
-    if (!liveDetection) { setDetectedProcs([]); setIsDetecting(false); return; }
-
-    const t = texto.trim();
-    if (detectDebounceRef.current) clearTimeout(detectDebounceRef.current);
-    if (t.length < 20) { setDetectedProcs([]); setIsDetecting(false); return; }
-
-    setIsDetecting(true);
-    detectDebounceRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch('/api/dex/detectar-consulta', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ texto: t }),
-        });
-        if (!res.ok) return;
-        const data = await res.json() as { procedimentos?: { descricao: string; dentes: number[] }[] };
-        setDetectedProcs(
-          (data.procedimentos ?? [])
-            .filter(p => p?.descricao)
-            .map(p => p.dentes.length > 0 ? `${p.descricao} – ${p.dentes.map(denteLabel).join(', ')}` : p.descricao)
-            .slice(0, 12)
-        );
-      } catch (err) {
-        console.error('[useCapturaLivre] detecção ao vivo:', err);
-      } finally {
-        setIsDetecting(false);
-      }
-    }, 2000);
-
-    return () => { if (detectDebounceRef.current) clearTimeout(detectDebounceRef.current); };
-  }, [texto, liveDetection]);
-
   // Cleanup do timer ao desmontar.
   useEffect(() => {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
@@ -166,7 +123,5 @@ export function useCapturaLivre(options: UseCapturaLivreOptions = {}): UseCaptur
     isTranscribing,
     liveTranscript,
     elapsedSeconds,
-    detectedProcs,
-    isDetecting,
   };
 }

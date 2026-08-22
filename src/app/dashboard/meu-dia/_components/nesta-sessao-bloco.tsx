@@ -21,8 +21,11 @@
 // tabela já expandida, em vez de `children` (que só sobra pros cards sem detalhe — hoje
 // nenhum, mas o mecanismo do RegistroCard continua aí pra quem precisar).
 
+import { useState } from 'react';
+import { Forward } from 'lucide-react';
 import type { OdontogramaEventoDraft } from '@/types/odontograma';
 import { RegistroCard } from '@/components/fichas/registro-card';
+import { EncaminharBar } from '@/components/fichas/encaminhar-bar';
 import { eventosParaCards, type EventoParaCard } from '@/lib/odontograma/eventos-para-cards';
 import { hojeBRT } from '@/lib/hora-brt';
 
@@ -36,6 +39,8 @@ export interface NestaSessaoBlocoProps {
    *  qualquer id aqui é trabalho de ficha anterior sendo fechado hoje, não indicação nova
    *  desta ficha — ganha a legenda "de consulta anterior", mesmo card, mesma lista. */
   idsDeAntes: ReadonlySet<string>;
+  /** Destinos clínicos já filtrados no servidor: dentistas ativos da mesma clínica, sem o autor. */
+  destinosEncaminhar: { id: string; nome: string; especialidade?: string }[];
   /** R-108b (artefato bloco 7) — `eventoId → nome do tratamento`. A legenda genérica "de
    *  consulta anterior" vira "→ Reabilitação inf. direita": a pendência passa a dizer PRA ONDE
    *  ela volta, que é a pergunta que a tela deixa de fazer. Fica no fallback antigo quando o
@@ -47,7 +52,10 @@ export interface NestaSessaoBlocoProps {
  *  é. Mesmo adaptador que `historico-bloco.tsx`/`corpo-especialidade` já fazem pros seus
  *  tipos; `registradoEm` usa "agora" porque o rascunho ainda não foi salvo (mesma lógica
  *  de `draftsParaCards` no FichasTab). */
-function paraCard(e: OdontogramaEventoDraft): EventoParaCard {
+function paraCard(
+  e: OdontogramaEventoDraft,
+  destinosEncaminhar: NestaSessaoBlocoProps['destinosEncaminhar'],
+): EventoParaCard {
   return {
     id: e.id,
     grupoId: e.grupo_id,
@@ -61,14 +69,34 @@ function paraCard(e: OdontogramaEventoDraft): EventoParaCard {
     realizadoEm: e.realizado_em,
     registradoEm: new Date().toISOString(),
     assinaturaId: e.assinaturaId ?? null,
-    encaminhadoPara: null,
+    encaminhadoPara: e.encaminhadoParaId
+      ? destinosEncaminhar.find((destino) => destino.id === e.encaminhadoParaId) ?? null
+      : null,
     revisar_status: e.revisar_status,
   };
 }
 
 const TEM_DETALHE = new Set(['endodontia', 'implante', 'exame_periodontal']);
 
-export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, onAbrirDenteGrande, idsDeAntes, nomeTratamentoPorEvento }: NestaSessaoBlocoProps) {
+export function NestaSessaoBloco({
+  vazio,
+  eventosDraft,
+  onEventosDraftChange,
+  onAbrirDenteGrande,
+  idsDeAntes,
+  destinosEncaminhar,
+  nomeTratamentoPorEvento,
+}: NestaSessaoBlocoProps) {
+  const [modoEncaminhar, setModoEncaminhar] = useState(false);
+  const [selecionadosEncaminhar, setSelecionadosEncaminhar] = useState<Set<string>>(new Set());
+  const [destinoEncaminhar, setDestinoEncaminhar] = useState<string | null>(null);
+  const [cardAberto, setCardAberto] = useState<string | null>(null);
+
+  function sairModoEncaminhar() {
+    setModoEncaminhar(false);
+    setSelecionadosEncaminhar(new Set());
+    setDestinoEncaminhar(null);
+  }
   function toggleStatus(ids: string[]) {
     onEventosDraftChange(eventosDraft.map((e) => (ids.includes(e.id)
       ? {
@@ -93,6 +121,7 @@ export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, on
   }
   function remover(ids: string[]) {
     onEventosDraftChange(eventosDraft.filter((e) => !ids.includes(e.id)));
+    setCardAberto(null);
   }
   /** "no alto fluxo o normal é ter feito tudo que ditou" (artefato) — 1 toque em vez de N. */
   function marcarTudoFeito() {
@@ -112,14 +141,127 @@ export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, on
     return <p className="text-sm text-text-secondary">{vazio}</p>;
   }
 
-  const cards = eventosParaCards(eventosDraft.map(paraCard), 'Você', null);
+  const cards = eventosParaCards(
+    eventosDraft.map((evento) => paraCard(evento, destinosEncaminhar)),
+    'Você',
+    null,
+  );
   const temIndicado = eventosDraft.some((e) => e.status === 'indicado');
   const temRealizado = eventosDraft.some((e) => e.status === 'realizado');
+  // R-125a — "planejado antes" descreve de onde o registro veio para esta consulta,
+  // não sua origem clínica. `fonteFluxo` cobre os drafts novos; `idsDeAntes` mantém
+  // compatibilidade com eventos carregados antes desse campo transitório existir.
+  const cardsPlanejados = cards.filter(({ ids }) =>
+    ids.some((id) => idsDeAntes.has(id))
+    || ids.every((id) => eventosDraft.find((evento) => evento.id === id)?.fonteFluxo === 'planejado'),
+  );
+  const cardsNovos = cards.filter(({ key }) => !cardsPlanejados.some((planejado) => planejado.key === key));
+  const cardsEncaminhaveis = cardsNovos.filter(({ ids, data }) =>
+    data.status === 'indicado'
+    && data.encaminhadoPara == null
+    && ids.every((id) => !idsDeAntes.has(id)),
+  );
+
+  function toggleSelecaoEncaminhar(key: string) {
+    setSelecionadosEncaminhar((atual) => {
+      const proximo = new Set(atual);
+      if (proximo.has(key)) proximo.delete(key); else proximo.add(key);
+      return proximo;
+    });
+  }
+
+  function selecionarTodosEncaminhaveis() {
+    setSelecionadosEncaminhar(new Set(cardsEncaminhaveis.map(({ key }) => key)));
+  }
+
+  function confirmarEncaminhamento() {
+    if (destinoEncaminhar == null || selecionadosEncaminhar.size === 0) return;
+    const idsSelecionados = new Set(
+      cards
+        .filter(({ key }) => selecionadosEncaminhar.has(key))
+        .flatMap(({ ids }) => ids),
+    );
+    onEventosDraftChange(eventosDraft.map((evento) => (
+      idsSelecionados.has(evento.id)
+        ? { ...evento, encaminhadoParaId: destinoEncaminhar }
+        : evento
+    )));
+    sairModoEncaminhar();
+  }
+
+  function removerEncaminhamento(ids: string[]) {
+    onEventosDraftChange(eventosDraft.map((evento) => (
+      ids.includes(evento.id)
+        ? { ...evento, encaminhadoParaId: null }
+        : evento
+    )));
+  }
+
+  function renderCards(lista: typeof cards) {
+    return lista.map(({ key, ids, data }) => {
+      // Só registro de UM evento tem "o" dente e "a" tabela pra abrir — grupo
+      // multi-dente (ponte etc.) não tem um perfil único pra ir (mesma regra de
+      // FichasTab.tsx, renderCardDraft).
+      const dente = ids.length === 1 ? data.ancoras[0]?.dente : undefined;
+      const temDetalhe = dente != null && TEM_DETALHE.has(data.tipo);
+      // R-84 §4 — grupo misto (ex: ponte que ganhou elemento novo hoje) conta como "de
+      // antes" pra marca visual: QUALQUER id do card já existia no banco.
+      const deAntes = ids.some((id) => idsDeAntes.has(id));
+      // Grupo (ponte etc.) nasce inteiro numa ficha só — o 1º id resolvido basta.
+      const tratamento = deAntes
+        ? ids.map((id) => nomeTratamentoPorEvento[id]).find(Boolean)
+        : undefined;
+      return (
+        <div key={key} className={`flex flex-col gap-0.5 ${cardAberto === key ? 'col-span-full' : ''}`}>
+          <RegistroCard
+            data={data}
+            editavel
+            compacto
+            aberto={cardAberto === key}
+            onAbertoChange={(aberto) => setCardAberto(aberto ? key : null)}
+            selecionavel={modoEncaminhar && cardsEncaminhaveis.some((card) => card.key === key)}
+            selecionado={selecionadosEncaminhar.has(key)}
+            onToggleSelecao={modoEncaminhar && cardsEncaminhaveis.some((card) => card.key === key)
+              ? () => toggleSelecaoEncaminhar(key)
+              : undefined}
+            onToggleStatus={modoEncaminhar ? undefined : () => toggleStatus(ids)}
+            onToggleMomento={modoEncaminhar ? undefined : () => toggleMomento(ids)}
+            onObservacaoChange={modoEncaminhar ? undefined : (v) => updateObservacao(ids, v)}
+            onRemover={modoEncaminhar ? undefined : () => remover(ids)}
+            onRemoverEncaminhamento={
+              !modoEncaminhar && data.encaminhadoPara ? () => removerEncaminhamento(ids) : undefined
+            }
+            onAbrirGrande={modoEncaminhar ? undefined : temDetalhe ? () => onAbrirDenteGrande(dente, ids[0]) : undefined}
+          />
+          {deAntes && (
+            // Artefato bloco 7: DM Mono 11.5px, --tx3, 2px abaixo do card.
+            <p className="mt-0.5 px-1 font-mono text-[11.5px] text-text-secondary">
+              {tratamento ? `→ ${tratamento}` : 'de consulta anterior'}
+            </p>
+          )}
+        </div>
+      );
+    });
+  }
 
   return (
     <div className="flex flex-col gap-2">
       {(temIndicado || temRealizado) && (
-        <div className="flex justify-end gap-2">
+        <div className="flex items-center justify-between gap-2 border-b border-border pb-2">
+          <p className="text-[11px] font-semibold text-text-secondary">
+            {cards.length} {cards.length === 1 ? 'procedimento' : 'procedimentos'}
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+          {!modoEncaminhar && cardsEncaminhaveis.length > 0 && destinosEncaminhar.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setModoEncaminhar(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-bold text-teal-ink transition-colors hover:bg-teal-pale"
+            >
+              <Forward className="h-3.5 w-3.5" />
+              Encaminhar
+            </button>
+          )}
           {temRealizado && (
             <button
               type="button"
@@ -130,51 +272,54 @@ export function NestaSessaoBloco({ vazio, eventosDraft, onEventosDraftChange, on
             </button>
           )}
           {temIndicado && (
-          <button
-            type="button"
-            onClick={marcarTudoFeito}
-            className="rounded-lg px-2 py-1 text-[11px] font-bold text-teal-ink transition-colors hover:bg-teal-pale"
-          >
-            ✓ tudo feito
-          </button>
+            <button
+              type="button"
+              onClick={marcarTudoFeito}
+              className="rounded-lg px-2 py-1 text-[11px] font-bold text-teal-ink transition-colors hover:bg-teal-pale"
+            >
+              ✓ tudo feito
+            </button>
           )}
+          </div>
         </div>
       )}
-      <div className="flex max-h-[420px] flex-col gap-2 overflow-y-auto pr-1">
-        {cards.map(({ key, ids, data }) => {
-          // Só registro de UM evento tem "o" dente e "a" tabela pra abrir — grupo
-          // multi-dente (ponte etc.) não tem um perfil único pra ir (mesma regra de
-          // FichasTab.tsx, renderCardDraft).
-          const dente = ids.length === 1 ? data.ancoras[0]?.dente : undefined;
-          const temDetalhe = dente != null && TEM_DETALHE.has(data.tipo);
-          // R-84 §4 — grupo misto (ex: ponte que ganhou elemento novo hoje) conta como "de
-          // antes" pra marca visual: QUALQUER id do card já existia no banco.
-          const deAntes = ids.some((id) => idsDeAntes.has(id));
-          // Grupo (ponte etc.) nasce inteiro numa ficha só — o 1º id resolvido basta.
-          const tratamento = deAntes
-            ? ids.map((id) => nomeTratamentoPorEvento[id]).find(Boolean)
-            : undefined;
-          return (
-            <div key={key} className="flex flex-col gap-0.5">
-              <RegistroCard
-                data={data}
-                editavel
-                onToggleStatus={() => toggleStatus(ids)}
-                onToggleMomento={() => toggleMomento(ids)}
-                onObservacaoChange={(v) => updateObservacao(ids, v)}
-                onRemover={() => remover(ids)}
-                onAbrirGrande={temDetalhe ? () => onAbrirDenteGrande(dente, ids[0]) : undefined}
-              />
-              {deAntes && (
-                // Artefato bloco 7: DM Mono 11.5px, --tx3, 2px abaixo do card.
-                <p className="mt-0.5 px-1 font-mono text-[11.5px] text-text-secondary">
-                  {tratamento ? `→ ${tratamento}` : 'de consulta anterior'}
-                </p>
-              )}
-            </div>
-          );
-        })}
+      <div className="flex max-h-[430px] flex-col gap-3 overflow-y-auto pr-1">
+        {cardsNovos.length > 0 && (
+          <section className="grid grid-cols-[repeat(auto-fit,minmax(360px,1fr))] gap-2" aria-label="Novo nesta consulta">
+            <p className="col-span-full px-1 text-[11px] font-bold uppercase tracking-widest text-text-secondary">
+              Novo nesta consulta
+            </p>
+            {renderCards(cardsNovos)}
+          </section>
+        )}
+        {cardsPlanejados.length > 0 && (
+          <section className="grid grid-cols-[repeat(auto-fit,minmax(360px,1fr))] gap-2" aria-label="Planejado antes">
+            <p className="col-span-full px-1 text-[11px] font-bold uppercase tracking-widest text-text-secondary">
+              Planejado antes
+            </p>
+            {renderCards(cardsPlanejados)}
+          </section>
+        )}
       </div>
+      {modoEncaminhar && (
+        <EncaminharBar
+          totalSelecionado={selecionadosEncaminhar.size}
+          totalEncaminhavel={cardsEncaminhaveis.length}
+          destinosDisponiveis={destinosEncaminhar}
+          destino={destinoEncaminhar}
+          onDestino={setDestinoEncaminhar}
+          onSelecionarTudo={() => {
+            if (selecionadosEncaminhar.size >= cardsEncaminhaveis.length) {
+              setSelecionadosEncaminhar(new Set());
+            } else {
+              selecionarTodosEncaminhaveis();
+            }
+          }}
+          onLimpar={() => setSelecionadosEncaminhar(new Set())}
+          onConfirmar={confirmarEncaminhamento}
+          onSair={sairModoEncaminhar}
+        />
+      )}
     </div>
   );
 }

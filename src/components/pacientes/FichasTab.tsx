@@ -50,7 +50,7 @@ import { eventoRotina, cycleRotina } from '@/lib/odontograma/rotina-boca';
 import type { MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
 import { TIPO_LABEL, corDoRegistro } from '@/types/odontograma';
 import type {
-  OrtoManutencaoInfo, OdontogramaEventoDraft,
+  OrtoManutencaoInfo, ModoLancamento, OdontogramaEventoDraft,
   TipoRegistroOdontograma, StatusRegistro, OrigemRegistro, AncoraClinica,
   NivelAncora, Arcada, FaceDental, PapelNoGrupo, MomentoPlanejado,
 } from '@/types/odontograma';
@@ -449,6 +449,8 @@ function eventoViewParaDraft(e: EventoView): OdontogramaEventoDraft {
     grupo_id: e.grupoId, papel_no_grupo: e.papelNoGrupo, observacao: e.observacao ?? '',
     detalhe: e.detalhe, realizado_em: e.realizadoEm,
     assinaturaId: e.assinaturaId, // R-30 Parte 2 — dedup nunca colapsa evento assinado
+    encaminhadoParaId: e.encaminhadoPara?.id,
+    fonteFluxo: 'planejado',
   };
 }
 
@@ -555,6 +557,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
    * Mesmo modelo do Meu dia: tocar seleciona; a faixa de ações decide o que criar.
    */
   const [dentesLote, setDentesLote] = React.useState<number[]>([]);
+  const [modoLancamento, setModoLancamento] = React.useState<ModoLancamento>('a_fazer');
 
   // R-35 item 2 — conta orçamentos/pagamentos que a ficha leva junto (ON DELETE CASCADE)
   // antes de deixar confirmar, em vez de apagar em silêncio.
@@ -1916,6 +1919,8 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                 onEventosDraftChange={setEventosDraft}
                 catalogoProcedimentos={catalogoProcedimentos ?? []}
                 dataPadrao={formData.dataAtendimento}
+                modoLancamento={modoLancamento}
+                onModoLancamentoChange={setModoLancamento}
                 onLimpar={limparLote}
                 onModoMultidenteChange={() => {}}
                 onAbrirDetalheDental={abrirDetalheDental}

@@ -7,7 +7,14 @@
  * 2 cópias da mesma lógica divergiram em silêncio: R-44, R-56, R-67).
  */
 import { hojeBRT } from '@/lib/hora-brt';
-import type { OdontogramaEventoDraft, QuadranteFDI, TipoRegistroOdontograma } from '@/types/odontograma';
+import type {
+  AncoraClinica,
+  ModoLancamento,
+  OdontogramaEventoDraft,
+  QuadranteFDI,
+  TipoRegistroOdontograma,
+} from '@/types/odontograma';
+import { camposDoModoLancamento } from './criar-eventos-contextuais';
 
 function achaRotina(
   eventos: OdontogramaEventoDraft[],
@@ -60,4 +67,43 @@ export function cycleRotina(
     );
   }
   return eventos.filter((_, j) => j !== i);
+}
+
+/**
+ * R-125a — versão contextual da rotina usada no Meu Dia. Diferente do ciclo histórico da
+ * ficha completa, o clique aplica a decisão explícita do dentista e nunca apaga um registro
+ * por acidente. O mesmo procedimento de boca/quadrante é atualizado no rascunho atual;
+ * quando ainda não existe, nasce com os eixos clínicos derivados do modo manual ativo.
+ */
+export function aplicarRotinaComModo(
+  eventos: OdontogramaEventoDraft[],
+  tipo: TipoRegistroOdontograma,
+  modo: ModoLancamento,
+  dataPadrao: string,
+  quadrante?: QuadranteFDI,
+): OdontogramaEventoDraft[] {
+  const i = achaRotina(eventos, tipo, quadrante);
+  const ancora: AncoraClinica = quadrante != null
+    ? { nivel: 'quadrante', quadrante }
+    : { nivel: 'boca' };
+  const estado = camposDoModoLancamento(modo, dataPadrao);
+
+  if (i === -1) {
+    return [...eventos, {
+      id: crypto.randomUUID(),
+      tipo,
+      ancora,
+      grupo_id: null,
+      papel_no_grupo: null,
+      observacao: '',
+      fonteFluxo: 'novo',
+      ...estado,
+    }];
+  }
+
+  return eventos.map((evento, index) =>
+    index === i
+      ? { ...evento, ...estado, fonteFluxo: 'novo' }
+      : evento,
+  );
 }

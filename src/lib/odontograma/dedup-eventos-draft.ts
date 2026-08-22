@@ -4,6 +4,8 @@
  * Behavior-preserving: mesma lógica, mesmo comportamento — só muda de casa.
  */
 import type { OdontogramaEventoDraft, OdontogramaEventoInput } from '@/types/odontograma';
+import type { ContextoLancamento } from '@/lib/odontograma/criar-eventos-contextuais';
+import { camposDoModoLancamento } from '@/lib/odontograma/criar-eventos-contextuais';
 
 /**
  * Chave semântica — mesmo tipo/status/origem/âncora/papel, mesmo com id diferente.
@@ -60,12 +62,20 @@ export function mesclarEventosSemPerda(
   draftAtual: OdontogramaEventoDraft[],
   novosDaIA: OdontogramaEventoInput[],
   realizadoEmPadrao: string,
+  contexto?: ContextoLancamento,
 ): OdontogramaEventoDraft[] {
   const chavesExistentes = new Set(draftAtual.map(chaveDedupEvento));
   const novos: OdontogramaEventoDraft[] = novosDaIA.map((ev) => ({
     ...ev,
+    ...(contexto ? camposDoModoLancamento(contexto.modo, realizadoEmPadrao) : {
+      realizado_em: ev.status === 'realizado' && ev.origem === 'clinica' ? realizadoEmPadrao : null,
+    }),
     id: crypto.randomUUID(), // R-01 — id estável nasce aqui, na entrada do rascunho
-    realizado_em: ev.status === 'realizado' && ev.origem === 'clinica' ? realizadoEmPadrao : null,
+    fonteFluxo: 'novo',
+    encaminhadoParaId: contexto?.encaminharParaId,
+    chaveCaptura: contexto
+      ? `${contexto.capturaId}:${ev.tipo}|${ev.ancora.nivel}|${ev.ancora.dente ?? ''}|${ev.ancora.faces?.join(',') ?? ''}`
+      : undefined,
   }));
   const novosSemColisao = dedupEventosDraft(novos)
     .filter((ev) => !chavesExistentes.has(chaveDedupEvento(ev)));

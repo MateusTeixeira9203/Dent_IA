@@ -9,8 +9,16 @@ import {
   CHIPS_LOTE, FACES_LOTE,
   eventosDoLote, eventosDoLoteAusente, eventosDoLoteAvulso, eventosDoLoteRestauracao,
 } from '@/lib/odontograma/lote-multidente';
+import type { ContextoLancamento } from '@/lib/odontograma/criar-eventos-contextuais';
 import type { MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
-import { TIPO_LABEL, type FaceDental, type OdontogramaEventoDraft, type TipoRegistroOdontograma } from '@/types/odontograma';
+import { TIPO_LABEL, type FaceDental, type ModoLancamento, type OdontogramaEventoDraft, type TipoRegistroOdontograma } from '@/types/odontograma';
+
+const MODOS: Array<{ id: ModoLancamento; label: string }> = [
+  { id: 'a_fazer', label: 'A fazer' },
+  { id: 'realizado_hoje', label: 'Realizado hoje' },
+  { id: 'proxima_sessao', label: 'Próxima sessão' },
+  { id: 'preexistente', label: 'Pré-existente' },
+];
 
 /**
  * R-109 — a faixa de lote multidente, extraída de `registrar-painel.tsx` (R-107d) pra que a
@@ -35,6 +43,9 @@ export interface FaixaLoteProps {
   catalogoProcedimentos: MeuDiaCatalogoProcedimento[];
   /** 'YYYY-MM-DD' — `realizado_em` dos eventos criados em lote. */
   dataPadrao: string;
+  /** R-125a — decisão explícita do dentista aplicada a qualquer ação rápida. */
+  modoLancamento: ModoLancamento;
+  onModoLancamentoChange: (modo: ModoLancamento) => void;
   onLimpar: () => void;
   onModoMultidenteChange: (v: boolean) => void;
   /** Com um único dente, abre o painel completo apenas por gesto explícito. */
@@ -43,7 +54,7 @@ export interface FaixaLoteProps {
 
 export function FaixaLote({
   dentes, eventosDraft, onEventosDraftChange, catalogoProcedimentos, dataPadrao,
-  onLimpar, onModoMultidenteChange, onAbrirDetalheDental,
+  modoLancamento, onModoLancamentoChange, onLimpar, onModoMultidenteChange, onAbrirDetalheDental,
 }: FaixaLoteProps) {
   const [facePendente, setFacePendente] = useState(false);
   const [facesSelecionadas, setFacesSelecionadas] = useState<FaceDental[]>([]);
@@ -65,8 +76,12 @@ export function FaixaLote({
 
   if (dentes.length === 0) return null;
 
+  function contexto(modo: ModoLancamento = modoLancamento): ContextoLancamento {
+    return { capturaId: crypto.randomUUID(), modo };
+  }
+
   function aplicar(tipo: TipoRegistroOdontograma) {
-    const novos = eventosDoLote(tipo, dentes, eventosDraft, dataPadrao);
+    const novos = eventosDoLote(tipo, dentes, eventosDraft, dataPadrao, contexto());
     if (novos.length > 0) onEventosDraftChange([...eventosDraft, ...novos]);
     onModoMultidenteChange(false);
   }
@@ -79,8 +94,9 @@ export function FaixaLote({
 
   function aplicarRestauracao() {
     if (facesSelecionadas.length === 0) return;
+    const contextoAtual = contexto();
     const novos = facesSelecionadas.flatMap((face) => (
-      eventosDoLoteRestauracao(face, dentes, dataPadrao)
+      eventosDoLoteRestauracao(face, dentes, dataPadrao, contextoAtual)
     ));
     onEventosDraftChange([...eventosDraft, ...novos]);
     setFacesSelecionadas([]);
@@ -89,7 +105,7 @@ export function FaixaLote({
   }
 
   function aplicarAusente() {
-    const novos = eventosDoLoteAusente(dentes, eventosDraft);
+    const novos = eventosDoLoteAusente(dentes, eventosDraft, dataPadrao, contexto('preexistente'));
     if (novos.length > 0) onEventosDraftChange([...eventosDraft, ...novos]);
     onModoMultidenteChange(false);
   }
@@ -103,7 +119,7 @@ export function FaixaLote({
   function lancarAvulso() {
     const texto = busca.trim();
     if (!texto) return;
-    onEventosDraftChange([...eventosDraft, ...eventosDoLoteAvulso(texto, dentes, dataPadrao)]);
+    onEventosDraftChange([...eventosDraft, ...eventosDoLoteAvulso(texto, dentes, dataPadrao, contexto())]);
     setAvulso(texto);
     setBusca('');
     setCatalogoPendente(null);
@@ -172,6 +188,25 @@ export function FaixaLote({
             <X className="h-3.5 w-3.5" aria-hidden />
           </button>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5" aria-label="Como registrar os procedimentos selecionados">
+        <span className="mr-0.5 text-[10px] font-bold uppercase tracking-wider text-text-secondary">Registrar como</span>
+        {MODOS.map((modo) => (
+          <button
+            key={modo.id}
+            type="button"
+            aria-pressed={modoLancamento === modo.id}
+            onClick={() => onModoLancamentoChange(modo.id)}
+            className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors ${
+              modoLancamento === modo.id
+                ? 'border-teal bg-teal/15 text-teal-ink'
+                : 'border-border bg-surface text-text-secondary hover:border-teal/40 hover:text-teal-ink'
+            }`}
+          >
+            {modo.label}
+          </button>
+        ))}
       </div>
 
       {facePendente ? (
