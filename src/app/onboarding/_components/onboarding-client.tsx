@@ -175,8 +175,11 @@ export function OnboardingClient({ initialStep, focoInicial, nomeInicial }: Onbo
         toast.error('Não foi possível concluir o cadastro. Tente novamente.');
         return;
       }
-      router.replace('/dashboard/meu-dia');
-      router.refresh();
+      // A clínica acabou de mudar de estado no servidor. Em navegadores mobile/PWA,
+      // combinar uma transição App Router com refresh podia manter a apresentação do
+      // Dex renderizada, mesmo com onboarding_completo=true. Navegação de documento
+      // garante que o dashboard lê o estado novo antes de montar a tela.
+      window.location.assign('/dashboard/meu-dia');
     } finally {
       setIsLoading(false);
     }
