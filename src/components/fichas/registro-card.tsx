@@ -222,7 +222,7 @@ export function RegistroCard({
         // div (não <button>): no modo seleção o checkbox interativo fica aninhado aqui,
         // e o × do badge (fora do modo) também — elemento interativo dentro de <button>
         // é HTML inválido. Por isso role/tabIndex/teclado manuais.
-        className={`${compacto ? 'min-h-[72px] flex-wrap px-4 py-3 sm:flex-nowrap' : 'min-h-[104px] px-5 py-4'} flex w-full items-center gap-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-teal ${containerInterativo ? 'cursor-pointer' : 'cursor-default'}`}
+        className={`${compacto ? 'min-h-[72px] flex-wrap px-4 py-3 sm:flex-nowrap' : 'min-h-[104px] flex-wrap items-start px-4 py-4 sm:flex-nowrap sm:items-center sm:px-5'} flex w-full gap-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-teal ${containerInterativo ? 'cursor-pointer' : 'cursor-default'}`}
       >
         {emSelecao && (
           <span
@@ -235,7 +235,7 @@ export function RegistroCard({
           </span>
         )}
 
-        <div className={`min-w-0 flex-1 ${compacto && !emSelecao ? 'basis-full sm:basis-auto' : ''}`}>
+        <div className={`min-w-0 flex-1 ${compacto && !emSelecao ? 'basis-full sm:basis-auto' : !compacto ? 'basis-full sm:basis-auto' : ''}`}>
           <p className="font-semibold text-sm text-text-primary truncate">{titulo}</p>
           {data.revisarStatus && (
             <p className="mt-0.5 text-xs font-semibold text-warning-ink">Confira o status</p>

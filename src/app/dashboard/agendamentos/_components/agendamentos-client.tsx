@@ -1422,7 +1422,7 @@ export function AgendamentosClient({
 
           {/* ── Corpo: 2 colunas ──────────────────────────────────────── */}
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-32 sm:flex-row sm:overflow-hidden sm:pb-0">
-            <div className="min-w-0 flex-1 p-6 space-y-5 sm:max-h-[58vh] sm:overflow-y-auto">
+            <div className="min-w-0 flex-1 space-y-5 p-4 sm:max-h-[58vh] sm:overflow-y-auto sm:p-6">
 
               {/* Dentista — apenas secretária */}
               {isSecretaria && dentistas.length > 0 && (
@@ -1615,7 +1615,7 @@ export function AgendamentosClient({
 
             {/* ── Coluna fixa: Quando + ações — nunca rola ─────────────── */}
             <div className="w-full shrink-0 sm:w-72 border-t sm:border-t-0 sm:border-l border-border flex flex-col">
-              <div className="p-5 space-y-4 flex-1">
+              <div className="flex-1 space-y-4 p-4 sm:p-5">
                 <div className="space-y-2">
                   <Label className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">Quando</Label>
                   <div className="grid grid-cols-2 gap-2.5">

@@ -164,7 +164,95 @@ export function DayView({
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <>
+      {/* No celular, a agenda do dia é uma lista de atendimento — não uma miniatura
+          da grade. A grade continua intacta a partir de sm. */}
+      <div className="flex flex-col gap-3 p-3 sm:hidden">
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-surface px-2 py-2">
+          <button
+            type="button"
+            onClick={() => onDateChange(subDays(selectedDate, 1))}
+            aria-label="Dia anterior"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border text-text-secondary"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <div className="min-w-0 text-center">
+            <p className={`truncate text-sm font-bold capitalize ${isToday ? 'text-teal' : 'text-text-primary'}`}>
+              {format(selectedDate, "EEEE, d 'de' MMMM", { locale: ptBR })}
+            </p>
+            <p className="text-[11px] text-text-secondary">{dayApts.length} consulta{dayApts.length !== 1 ? 's' : ''}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onDateChange(addDays(selectedDate, 1))}
+            aria-label="Próximo dia"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border text-text-secondary"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onSlotVazioClick(selectedDate, '09:00', colunas.length === 1 ? colunas[0]?.id : undefined)}
+          className="min-h-12 rounded-xl border border-dashed border-teal/40 bg-teal/5 px-4 text-sm font-bold text-teal transition-colors active:bg-teal/10"
+        >
+          + Novo agendamento neste dia
+        </button>
+
+        <div className="space-y-2">
+          {dayApts.map((apt) => {
+            const config = STATUS_CONFIG[apt.status as AgendamentoStatus] ?? STATUS_CONFIG.scheduled;
+            const corSlot = slotPorDentista[apt.dentista_id];
+            return (
+              <button
+                key={apt.id}
+                type="button"
+                onClick={() => onAppointmentClick(apt)}
+                className={`w-full rounded-xl border p-3 text-left transition-colors active:bg-surface-alt ${config.bg} ${config.border}`}
+                style={corSlot !== undefined ? { borderLeftWidth: '4px', borderLeftColor: corDoDentista(corSlot) } : undefined}
+              >
+                <div className="flex items-start gap-3">
+                  <span className="shrink-0 font-mono text-sm font-bold" style={{ color: config.timeline.text }}>
+                    {format(parseISO(apt.data_hora), 'HH:mm')}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-bold text-text-primary">{apt.paciente?.nome ?? '—'}</span>
+                    <span className="mt-0.5 block truncate text-xs text-text-secondary">
+                      {apt.duracao_minutos} min{isSecretaria && apt.dentista ? ` · Dr. ${apt.dentista.nome.split(' ')[0]}` : ''}
+                    </span>
+                  </span>
+                  <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${config.text} ${config.bg}`}>
+                    {config.label}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+          {dayBloqueios.map((bloqueio) => (
+            <button
+              key={bloqueio.id}
+              type="button"
+              onClick={() => onBloqueioClick(bloqueio)}
+              className="flex w-full items-center gap-3 rounded-xl border border-border bg-surface-alt px-3 py-3 text-left"
+            >
+              <Lock className="h-4 w-4 shrink-0 text-text-secondary" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold text-text-primary">{bloqueio.titulo || 'Compromisso pessoal'}</span>
+                <span className="block text-xs text-text-secondary">{format(parseISO(bloqueio.data_hora), 'HH:mm')}</span>
+              </span>
+            </button>
+          ))}
+          {dayApts.length === 0 && dayBloqueios.length === 0 && (
+            <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-text-secondary">
+              Nenhum compromisso neste dia.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="hidden h-full flex-col sm:flex">
       {/* Navigation header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-alt/40 shrink-0">
         <div className="flex items-center gap-2">
@@ -475,6 +563,7 @@ export function DayView({
           })}
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

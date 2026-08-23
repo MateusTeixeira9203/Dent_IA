@@ -103,12 +103,12 @@ export function MarcarRetornoModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="max-w-lg sm:max-w-[1120px] rounded-2xl bg-surface border-border p-0 gap-0 overflow-hidden"
+        className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none rounded-2xl border-border bg-surface p-0 gap-0 overflow-hidden sm:max-h-[90vh] sm:w-auto sm:max-w-[1120px]"
       >
         <DialogDescription className="sr-only">Agende o retorno de {pacienteNome}.</DialogDescription>
 
         {/* Cabeçalho */}
-        <div className="flex items-center justify-between gap-4 border-b border-border px-6 py-4">
+        <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-4 sm:px-6">
           <DialogTitle className="font-heading text-xl font-semibold leading-tight text-text-primary">
             Marcar retorno
           </DialogTitle>
@@ -122,7 +122,7 @@ export function MarcarRetornoModal({
         </div>
 
         {/* Faixa ao vivo */}
-        <div className="grid grid-cols-3 gap-px border-b border-border bg-border">
+        <div className="grid grid-cols-1 gap-px border-b border-border bg-border sm:grid-cols-3">
           <div className="min-w-0 bg-surface px-4 py-3">
             <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Paciente</p>
             <p className="mt-0.5 truncate text-sm font-medium text-text-primary">{pacienteNome}</p>
@@ -142,8 +142,8 @@ export function MarcarRetornoModal({
         </div>
 
         {/* Corpo: 2 colunas — grade à esquerda, inputs fixos à direita */}
-        <div className="flex flex-col sm:flex-row">
-          <div className="min-w-0 flex-1 overflow-y-auto p-6" style={{ maxHeight: '58vh' }}>
+        <div className="flex min-h-0 flex-col overflow-y-auto sm:flex-row sm:overflow-visible">
+          <div className="min-w-0 flex-1 p-4 sm:max-h-[58vh] sm:overflow-y-auto sm:p-6">
             {precisaEscolherDentista && (
               <div className="mb-4 space-y-1">
                 <Label className="text-xs text-text-secondary">Dentista responsável *</Label>
@@ -162,14 +162,52 @@ export function MarcarRetornoModal({
                 </Select>
               </div>
             )}
-            <RetornoSemanaGrid
-              dentistaId={dentistaAlvoId}
-              duracaoMin={duracaoMin}
-              selecionado={podeConfirmar ? { data: form.data!, minutoDoDia: form.minutoDoDia! } : null}
-              onSelecionar={(data, minutoDoDia) => setForm((f) => ({ ...f, data, minutoDoDia }))}
-            />
+            <div className="space-y-4 sm:hidden">
+              <div className="grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="retorno-data-mobile" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
+                    Data
+                  </Label>
+                  <Input
+                    id="retorno-data-mobile"
+                    type="date"
+                    disabled={dentistaAlvoId == null}
+                    value={form.data ?? ''}
+                    onChange={(e) => setForm((f) => ({ ...f, data: e.target.value || null }))}
+                    className="h-11 rounded-xl border-border bg-surface-alt text-text-primary disabled:opacity-50"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="retorno-hora-mobile" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
+                    Hora
+                  </Label>
+                  <Input
+                    id="retorno-hora-mobile"
+                    type="time"
+                    disabled={form.data == null}
+                    value={form.minutoDoDia != null ? formatHora(form.minutoDoDia) : ''}
+                    onChange={(e) => {
+                      const minuto = minutoDoInputHora(e.target.value);
+                      if (minuto != null) setForm((f) => ({ ...f, minutoDoDia: minuto }));
+                    }}
+                    className="h-11 rounded-xl border-border bg-surface-alt text-text-primary disabled:opacity-50"
+                  />
+                </div>
+              </div>
+              <p className="rounded-xl border border-border bg-surface-alt/60 px-3 py-2.5 text-xs leading-relaxed text-text-secondary">
+                Escolha a data e a hora. O sistema confere conflitos ao confirmar — não precisa arrastar na agenda.
+              </p>
+            </div>
+            <div className="hidden sm:block">
+              <RetornoSemanaGrid
+                dentistaId={dentistaAlvoId}
+                duracaoMin={duracaoMin}
+                selecionado={podeConfirmar ? { data: form.data!, minutoDoDia: form.minutoDoDia! } : null}
+                onSelecionar={(data, minutoDoDia) => setForm((f) => ({ ...f, data, minutoDoDia }))}
+              />
+            </div>
             {dentistaAlvoId != null && form.data == null && (
-              <p className="mt-3 text-[11px] text-text-secondary">
+              <p className="mt-3 hidden text-[11px] text-text-secondary sm:block">
                 Clique um horário livre na semana acima — a data e a hora vêm do clique
                 (dá pra ajustar a hora exata ao lado).
               </p>
@@ -178,8 +216,8 @@ export function MarcarRetornoModal({
 
           {/* Coluna fixa: Hora + Duração + Observações + ações — nunca rola */}
           <div className="flex w-full flex-col border-t border-border sm:w-80 sm:shrink-0 sm:border-t-0 sm:border-l">
-            <div className="flex-1 space-y-4 p-5">
-              <div className="space-y-2">
+            <div className="flex-1 space-y-4 p-4 sm:p-5">
+              <div className="hidden space-y-2 sm:block">
                 <Label htmlFor="retorno-hora" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
                   Hora
                 </Label>
@@ -246,7 +284,7 @@ export function MarcarRetornoModal({
               </div>
             </div>
 
-            <div className="space-y-2.5 border-t border-border p-5">
+            <div className="sticky bottom-0 z-10 space-y-2.5 border-t border-border bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:static sm:p-5">
               {error && (
                 <p className="rounded-lg bg-coral-pale p-2 text-xs text-coral-ink">{error}</p>
               )}

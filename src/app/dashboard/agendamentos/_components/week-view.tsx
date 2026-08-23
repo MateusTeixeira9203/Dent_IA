@@ -213,7 +213,101 @@ export function WeekView({
   const picoCarga = Math.max(1, ...[...cargaPorDentistaDia.values()].flat());
 
   return (
-    <div className="flex flex-col">
+    <>
+      {/* Celular: resumo navegável por dia. A grade de 7×13 horas continua no desktop,
+          mas no toque ela escondia dias e deixava o usuário sem uma ação clara. */}
+      <div className="space-y-3 p-3 sm:hidden">
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-surface px-2 py-2">
+          <button
+            type="button"
+            onClick={() => onWeekChange(subWeeks(selectedWeek, 1))}
+            aria-label="Semana anterior"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border text-text-secondary"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <p className="min-w-0 text-center text-sm font-bold text-text-primary">
+            {format(weekStart, "d 'de' MMM", { locale: ptBR })} – {format(weekEnd, "d 'de' MMM", { locale: ptBR })}
+          </p>
+          <button
+            type="button"
+            onClick={() => onWeekChange(addWeeks(selectedWeek, 1))}
+            aria-label="Próxima semana"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border text-text-secondary"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        {days.map((day) => {
+          const key = format(day, 'yyyy-MM-dd');
+          const consultas = aptsByDay[key] ?? [];
+          const bloqueiosDoDia = bloqueiosByDay[key] ?? [];
+          const hoje = isDateToday(day);
+          return (
+            <section key={key} className={`overflow-hidden rounded-xl border ${hoje ? 'border-teal/40 bg-teal/[0.03]' : 'border-border bg-surface'}`}>
+              <button
+                type="button"
+                onClick={() => onDayClick(day)}
+                className="flex w-full items-center justify-between gap-3 border-b border-border px-4 py-3 text-left active:bg-surface-alt"
+              >
+                <span>
+                  <span className={`block text-sm font-bold capitalize ${hoje ? 'text-teal' : 'text-text-primary'}`}>
+                    {format(day, 'EEEE', { locale: ptBR })}, {format(day, 'd')}
+                  </span>
+                  <span className="text-xs text-text-secondary">Abrir agenda do dia</span>
+                </span>
+                <span className="rounded-full bg-surface-alt px-2.5 py-1 text-xs font-bold text-text-secondary">
+                  {consultas.length} {consultas.length === 1 ? 'consulta' : 'consultas'}
+                </span>
+              </button>
+              <div className="space-y-1 p-2">
+                {consultas.slice(0, 3).map((apt) => {
+                  const config = STATUS_CONFIG[apt.status as AgendamentoStatus] ?? STATUS_CONFIG.scheduled;
+                  return (
+                    <button
+                      key={apt.id}
+                      type="button"
+                      onClick={() => onAppointmentClick(apt)}
+                      className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left active:bg-surface-alt"
+                    >
+                      <span className="w-11 shrink-0 font-mono text-xs font-bold" style={{ color: config.timeline.text }}>
+                        {format(parseISO(apt.data_hora), 'HH:mm')}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">{apt.paciente?.nome ?? '—'}</span>
+                      <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${config.bg} ${config.text}`}>{config.label}</span>
+                    </button>
+                  );
+                })}
+                {bloqueiosDoDia.slice(0, 2).map((bloqueio) => (
+                  <button
+                    key={bloqueio.id}
+                    type="button"
+                    onClick={() => onBloqueioClick(bloqueio)}
+                    className="flex w-full items-center gap-3 rounded-lg bg-surface-alt px-2 py-2 text-left"
+                  >
+                    <Lock className="h-3.5 w-3.5 shrink-0 text-text-secondary" />
+                    <span className="min-w-0 flex-1 truncate text-xs font-semibold text-text-secondary">{bloqueio.titulo || 'Compromisso pessoal'}</span>
+                    <span className="font-mono text-xs text-text-secondary">{format(parseISO(bloqueio.data_hora), 'HH:mm')}</span>
+                  </button>
+                ))}
+                {consultas.length === 0 && bloqueiosDoDia.length === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onSlotVazioClick(day, '09:00')}
+                    className="w-full rounded-lg border border-dashed border-border px-3 py-2 text-left text-xs font-semibold text-text-secondary"
+                  >
+                    + Agendar neste dia
+                  </button>
+                )}
+                {consultas.length > 3 && <p className="px-2 pt-1 text-xs text-text-secondary">+ {consultas.length - 3} na agenda do dia</p>}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+
+      <div className="hidden flex-col sm:flex">
       {/* Week navigation header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-alt/40 shrink-0">
         <div className="flex items-center gap-2">
@@ -487,6 +581,7 @@ export function WeekView({
           className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface to-transparent md:hidden"
         />
       </div>
-    </div>
+      </div>
+    </>
   );
 }

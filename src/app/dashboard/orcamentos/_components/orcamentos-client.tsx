@@ -1945,13 +1945,12 @@ export function OrcamentosClient({
         }}
       >
         <DialogContent
-          className="rounded-3xl bg-surface border-border p-0 overflow-hidden gap-0"
-          style={{ width: '58vw', maxWidth: 'none', maxHeight: '82vh', left: '55%' }}
+          className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none overflow-hidden rounded-3xl border-border bg-surface p-0 gap-0 sm:max-h-[82vh] sm:w-[58vw] sm:left-[55%]"
           showCloseButton={false}
         >
 
           {/* Banner teal */}
-          <div className="relative px-8 pt-6 pb-5 shrink-0" style={{ background: 'linear-gradient(135deg, #2f9c85 0%, #1a7a65 100%)' }}>
+          <div className="relative shrink-0 px-4 pb-5 pt-6 sm:px-8" style={{ background: 'linear-gradient(135deg, #2f9c85 0%, #1a7a65 100%)' }}>
             <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent pointer-events-none" />
             <div className="relative flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.15)' }}>
@@ -1964,10 +1963,10 @@ export function OrcamentosClient({
             </div>
           </div>
 
-          <div className="flex" style={{ height: 'calc(82vh - 92px)', minHeight: 0 }}>
+          <div className="flex min-h-0 flex-col overflow-y-auto sm:h-[calc(82vh-92px)] sm:flex-row sm:overflow-hidden">
 
             {/* ── Coluna esquerda: scrollável ── */}
-            <div className="flex-1 min-w-0 overflow-y-auto p-6 space-y-5">
+            <div className="min-w-0 flex-none space-y-5 p-4 sm:flex-1 sm:overflow-y-auto sm:p-6">
               <DialogHeader className="sr-only">
                 <DialogTitle>Novo Orçamento</DialogTitle>
                 <DialogDescription>Selecione o paciente e os procedimentos a cobrar.</DialogDescription>
@@ -2250,8 +2249,8 @@ export function OrcamentosClient({
             </div>
 
             {/* ── Coluna direita: sticky ── */}
-            <div className="w-80 shrink-0 border-l border-border flex flex-col" style={{ background: 'rgba(47,156,133,0.04)' }}>
-              <div className="flex-1 p-6 space-y-5 overflow-y-auto">
+            <div className="flex w-full shrink-0 flex-col border-t border-border bg-teal/5 sm:w-80 sm:border-l sm:border-t-0">
+              <div className="flex-1 space-y-5 p-4 sm:overflow-y-auto sm:p-6">
 
                 {/* Desconto */}
                 <div className="space-y-3">
@@ -2325,7 +2324,7 @@ export function OrcamentosClient({
               </div>
 
               {/* Botões de ação — fixos no rodapé da coluna direita */}
-              <div className="p-6 border-t border-border space-y-2">
+              <div className="sticky bottom-0 z-10 space-y-2 border-t border-border bg-surface/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur sm:static sm:bg-transparent sm:p-6">
                 {orcError && (
                   <p className="text-xs text-red-500 bg-red-500/10 rounded-lg px-3 py-2">{orcError}</p>
                 )}
