@@ -3,7 +3,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { PlanosClient } from './_components/planos-client';
 
 interface PlanosPageProps {
-  searchParams: Promise<{ expired?: string }>;
+  searchParams: Promise<{ expired?: string; onboarding?: string; cancelado?: string }>;
 }
 
 export default async function PlanosPage({ searchParams }: PlanosPageProps) {
@@ -48,6 +48,8 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
       trialUsed={trialUsed}
       statusAssinatura={statusAssinatura}
       expired={expired}
+      onboarding={params.onboarding === '1'}
+      cancelado={params.cancelado === '1'}
     />
   );
 }

@@ -39,12 +39,12 @@ export async function obterAcessoFormacaoClinica(input: {
 
   const { data: formacao, error: formacaoError } = await db
     .from('formacoes_clinica')
-    .select('expires_at, status')
+    .select('expires_at, status, criado_por_usuario_id')
     .eq('id', assinatura.formacao_id)
     .eq('clinica_id', input.clinicId)
     .in('status', ['aguardando_equipe', 'coletando_pagamento'])
     .gt('expires_at', agora)
-    .maybeSingle<{ expires_at: string; status: string }>();
+    .maybeSingle<{ expires_at: string; status: string; criado_por_usuario_id: string }>();
   if (formacaoError || !formacao) return { liberado: false, expiresAt: null };
 
   const [{ count: convites, error: convitesError }, { count: participantes, error: participantesError }] = await Promise.all([
@@ -60,7 +60,9 @@ export async function obterAcessoFormacaoClinica(input: {
   ]);
   if (convitesError || participantesError) return { liberado: false, expiresAt: formacao.expires_at };
   return {
-    liberado: (convites ?? 0) > 0 || (participantes ?? 0) > 0,
+    // O criador não pode ficar preso enquanto convida o segundo dentista. Ele já deixou
+    // o cartão validado e tem 48h para formar a clínica; os demais ainda exigem convite.
+    liberado: formacao.criado_por_usuario_id === input.userId || (convites ?? 0) > 0 || (participantes ?? 0) > 0,
     expiresAt: formacao.expires_at,
   };
 }

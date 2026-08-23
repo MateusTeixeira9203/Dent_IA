@@ -102,11 +102,13 @@ interface OnboardingClientProps {
   focoInicial: FocoPrincipal | null;
   /** Primeiro nome do dentista (resumo da volta da demo) — saudação do sucesso. */
   nomeInicial: string;
+  /** Flag resolvida no servidor: não expõe segredo e evita depender de env público. */
+  billingEnabled: boolean;
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
-export function OnboardingClient({ initialStep, focoInicial, nomeInicial }: OnboardingClientProps) {
+export function OnboardingClient({ initialStep, focoInicial, nomeInicial, billingEnabled }: OnboardingClientProps) {
   const router = useRouter();
   const [step, setStep]               = useState<OnboardingStep>(initialStep);
   const foco: FocoPrincipal           = focoInicial ?? 'economizar_tempo';
@@ -152,8 +154,13 @@ export function OnboardingClient({ initialStep, focoInicial, nomeInicial }: Onbo
         return;
       }
       if (result.success) {
-        // FASE 1: teatro do onboarding (aha/plano/procedimentos) desativado — ver roadmap-3-fases A1
         setNome(data.nome.trim().split(' ')[0]);
+        // Billing comercial é opt-in por flag. Quando ativo, plano e cartão vêm ANTES
+        // do Dex; quando desligado, o localhost continua no fluxo gratuito de teste.
+        if (billingEnabled) {
+          router.push('/planos?onboarding=1');
+          return;
+        }
         setStep('dex');
       } else {
         toast.error(result.error ?? 'Erro ao salvar. Tente novamente.');

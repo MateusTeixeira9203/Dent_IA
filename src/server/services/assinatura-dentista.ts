@@ -168,6 +168,7 @@ export async function criarCheckoutAssinaturaDentista(
   ciclo: CicloCobranca,
   planoSolicitado?: PlanoAssinatura,
   clinicIdSolicitada?: string,
+  retorno: 'padrao' | 'onboarding' = 'padrao',
 ): Promise<{ url?: string; error?: string }> {
   if (!billingAtivo()) return { error: 'A cobrança Stripe ainda não foi ativada.' };
 
@@ -199,6 +200,12 @@ export async function criarCheckoutAssinaturaDentista(
     const customerId = await criarCustomerStripe(assinatura);
     const stripe = getStripeClient();
     const siteUrl = getSiteUrl();
+    const successUrl = retorno === 'onboarding'
+      ? `${siteUrl}/checkout/retorno?checkout=sucesso`
+      : `${siteUrl}/bem-vindo-agregado?checkout=sucesso`;
+    const cancelUrl = retorno === 'onboarding'
+      ? `${siteUrl}/planos?onboarding=1&cancelado=1`
+      : `${siteUrl}/bem-vindo-agregado?checkout=cancelado`;
     const metadata: Record<string, string> = {
       assinaturaDentistaId: assinatura.id,
       clinicaId: assinatura.clinica_id,
@@ -213,8 +220,8 @@ export async function criarCheckoutAssinaturaDentista(
           customer: customerId,
           mode: 'setup',
           payment_method_types: ['card'],
-          success_url: `${siteUrl}/bem-vindo-agregado?checkout=sucesso`,
-          cancel_url: `${siteUrl}/bem-vindo-agregado?checkout=cancelado`,
+          success_url: successUrl,
+          cancel_url: cancelUrl,
           metadata,
           setup_intent_data: { metadata },
           custom_text: {
@@ -228,8 +235,8 @@ export async function criarCheckoutAssinaturaDentista(
           mode: 'subscription',
           payment_method_collection: 'always',
           line_items: [{ price: assinatura.stripe_price_id, quantity: 1 }],
-          success_url: `${siteUrl}/bem-vindo-agregado?checkout=sucesso`,
-          cancel_url: `${siteUrl}/bem-vindo-agregado?checkout=cancelado`,
+          success_url: successUrl,
+          cancel_url: cancelUrl,
           metadata,
           subscription_data: {
             trial_period_days: TRIAL_DAYS,

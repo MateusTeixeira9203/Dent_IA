@@ -14,6 +14,8 @@ interface PlanosClientProps {
   trialUsed: boolean;
   statusAssinatura: 'trial' | 'ativo' | 'inativo';
   expired: boolean;
+  onboarding: boolean;
+  cancelado: boolean;
 }
 
 const plans = [
@@ -65,6 +67,8 @@ export function PlanosClient({
   trialUsed,
   statusAssinatura,
   expired,
+  onboarding,
+  cancelado,
 }: PlanosClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -74,14 +78,10 @@ export function PlanosClient({
 
   const handleCheckoutClick = (planId: 'SOLO' | 'CLINICA') => {
     if (!userId) { router.push('/cadastro?next=/planos'); return; }
-    if (planId === 'CLINICA') {
-      router.push('/dashboard/configuracoes?aba=plano&criar=clinica');
-      return;
-    }
     setErrorMsg(null);
     setLoadingPlan(planId);
     startTransition(async () => {
-      const result = await createCheckout(planId, ciclo);
+      const result = await createCheckout(planId, ciclo, onboarding ? 'onboarding' : 'padrao');
       if (result.error) { setErrorMsg(result.error); setLoadingPlan(null); return; }
       if (result.url) window.location.href = result.url;
     });
@@ -135,6 +135,14 @@ export function PlanosClient({
             <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-coral/10 border border-coral/20 text-coral text-sm">
               <AlertCircle className="w-4 h-4 shrink-0" />
               {errorMsg}
+            </div>
+          </div>
+        )}
+
+        {cancelado && (
+          <div className="mx-auto mt-4 max-w-md px-6">
+            <div className="rounded-xl border border-warning/30 bg-warning-pale px-4 py-3 text-sm text-warning-ink">
+              Checkout cancelado. Seus dados foram preservados; escolha um plano para continuar.
             </div>
           </div>
         )}
@@ -251,7 +259,7 @@ export function PlanosClient({
                     >
                       {isLoading
                         ? <><Loader2 className="w-4 h-4 animate-spin" /> Redirecionando…</>
-                        : isActive ? 'Plano Ativo' : plan.id === 'CLINICA' ? 'Montar equipe' : canTrial ? 'Começar 7 dias grátis' : 'Assinar agora'
+                        : isActive ? 'Plano Ativo' : plan.id === 'CLINICA' ? 'Escolher Clínica' : canTrial ? 'Começar 7 dias grátis' : 'Assinar agora'
                       }
                     </button>
                 </motion.div>

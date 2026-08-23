@@ -93,6 +93,7 @@ export async function activateTrial(): Promise<AtivarTrialResult> {
 export async function createCheckout(
   planoId: 'SOLO' | 'CLINICA',
   ciclo: string,
+  fluxo: 'padrao' | 'onboarding' = 'padrao',
 ): Promise<{ url?: string; error?: string }> {
   if (!isCicloCobranca(ciclo)) return { error: 'Ciclo de cobrança inválido.' };
   try {
@@ -106,6 +107,7 @@ export async function createCheckout(
       ciclo,
       planoId === 'SOLO' ? 'CONSULTORIO' : 'CLINICA',
       clinicId,
+      fluxo,
     );
   } catch (error) {
     console.error('[planos] checkout não iniciado:', error);
