@@ -8,6 +8,7 @@ import {
   crownPathOcclusalTop, crownPathOcclusalBottom, rootPathDown, rootPathUp, canalPaths,
 } from './tooth-geometry';
 import { corDoRegistro, type OdontogramaEventoDraft } from '@/types/odontograma';
+import { eventoPrincipalPorDente } from '@/lib/odontograma/evento-principal';
 
 // ─── FDI tooth layout ────────────────────────────────────────────────────────
 export const TEETH_UPPER = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28];
@@ -236,6 +237,7 @@ export function buildResumos(
   const mexidos = new Set(
     eventos.map((ev) => ev.ancora.dente).filter((d): d is number => d != null),
   );
+  const principais = eventoPrincipalPorDente(eventos, eventosPersistidos);
 
   const map = new Map<number, ResumoDente>();
   for (const ev of porId.values()) {
@@ -272,6 +274,17 @@ export function buildResumos(
         break; // rotina (boca/quadrante) nunca chega aqui — sem dente âncora (D5)
     }
     map.set(dente, r);
+  }
+  // R-127 — ausência é um estado estrutural exclusivo. Um implante (ou qualquer registro
+  // posterior) precisa voltar a desenhar o dente; o evento antigo continua no histórico e
+  // segue contribuindo para os demais resumos compatíveis.
+  for (const [dente, principal] of principais) {
+    const r = map.get(dente);
+    if (!r) continue;
+    const ausenciaAtual = principal.status === 'realizado'
+      && (principal.tipo === 'exodontia' || principal.tipo === 'esfoliacao');
+    r.ausente = ausenciaAtual;
+    r.esfoliado = ausenciaAtual && principal.tipo === 'esfoliacao';
   }
   for (const dente of mexidos) {
     const r = map.get(dente);

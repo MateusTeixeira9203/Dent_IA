@@ -189,7 +189,7 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
       // apresentada quando houver (senão herdaria evento de OUTRO atendimento do paciente).
       let eventosQuery = supabase
         .from('odontograma_eventos')
-        .select('id,tipo,status,origem,momento_planejado,nivel,arcada,quadrante,dente,faces,grupo_id,papel_no_grupo,observacao,realizado_em')
+        .select('id,tipo,status,origem,momento_planejado,nivel,arcada,quadrante,dente,faces,grupo_id,papel_no_grupo,observacao,realizado_em,registrado_em,created_at')
         .eq('paciente_id', patientId)
         .eq('clinica_id', clinicaId);
       if (fichaId) eventosQuery = eventosQuery.eq('ficha_id', fichaId);
@@ -253,6 +253,8 @@ export function usePlanejamentoPaciente(patientId: string, clinicaId: string, pa
           ancora, grupo_id: (e.grupo_id as string | null) ?? null,
           papel_no_grupo: (e.papel_no_grupo as OdontogramaEventoDraft['papel_no_grupo']) ?? null,
           observacao: (e.observacao as string | null) ?? '', realizado_em: (e.realizado_em as string | null) ?? null,
+          registrado_em: (e.registrado_em as string | null) ?? undefined,
+          created_at: (e.created_at as string | null) ?? undefined,
         };
       }));
     } catch (error) {

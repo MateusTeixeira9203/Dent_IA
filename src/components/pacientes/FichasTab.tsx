@@ -126,6 +126,7 @@ interface EventoView {
   observacao: string | null;
   realizadoEm: string | null;
   registradoEm: string;
+  createdAt: string;
   /** Dado clínico da especialidade (migration 106) — cru, ainda não validado. */
   detalhe: unknown | null;
   /** Destino do encaminhamento (R-04) — null = não encaminhado. */
@@ -163,6 +164,7 @@ type EventoRow = {
   detalhe: unknown | null;
   realizado_em: string | null;
   registrado_em: string;
+  created_at: string;
   /** Destino do encaminhamento (R-04, migration 106/109) — null = não encaminhado. */
   encaminhado_para: string | null;
   encaminhado_dentista: { id: string; nome: string } | null;
@@ -448,6 +450,7 @@ function eventoViewParaDraft(e: EventoView): OdontogramaEventoDraft {
     tipo: e.tipo, status: e.status, origem: e.origem, momento_planejado: e.momentoPlanejado, ancora: e.ancora,
     grupo_id: e.grupoId, papel_no_grupo: e.papelNoGrupo, observacao: e.observacao ?? '',
     detalhe: e.detalhe, realizado_em: e.realizadoEm,
+    registrado_em: e.registradoEm, created_at: e.createdAt,
     assinaturaId: e.assinaturaId, // R-30 Parte 2 — dedup nunca colapsa evento assinado
     encaminhadoParaId: e.encaminhadoPara?.id,
     fonteFluxo: 'planejado',
@@ -848,7 +851,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       // antigas não têm eventos → recebem [] e seguem no display legado (fonte híbrida).
       const { data: evData, error: evError } = await supabase
         .from("odontograma_eventos")
-        .select("id, ficha_id, grupo_id, papel_no_grupo, tipo, status, origem, momento_planejado, nivel, arcada, quadrante, dente, faces, observacao, detalhe, realizado_em, registrado_em, encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(id, nome), assinatura_id")
+        .select("id, ficha_id, grupo_id, papel_no_grupo, tipo, status, origem, momento_planejado, nivel, arcada, quadrante, dente, faces, observacao, detalhe, realizado_em, registrado_em, created_at, encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(id, nome), assinatura_id")
         .eq("paciente_id", patientId)
         .eq("clinica_id", clinicaId);
 
@@ -876,7 +879,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
         const view: EventoView = {
           id: e.id, grupoId: e.grupo_id, papelNoGrupo: e.papel_no_grupo ?? null, tipo: e.tipo, status: e.status,
           origem: e.origem, momentoPlanejado: e.momento_planejado, ancora, observacao: e.observacao ?? null,
-          realizadoEm: e.realizado_em, registradoEm: e.registrado_em,
+          realizadoEm: e.realizado_em, registradoEm: e.registrado_em, createdAt: e.created_at,
           detalhe: e.detalhe ?? null,
           encaminhadoPara: e.encaminhado_para ? (e.encaminhado_dentista ?? null) : null,
           assinaturaId: e.assinatura_id ?? null,

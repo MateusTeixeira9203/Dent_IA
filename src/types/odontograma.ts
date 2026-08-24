@@ -295,6 +295,11 @@ export interface OdontogramaEventoDraft extends OdontogramaEventoInput {
    */
   id: string;
   realizado_em: string | null;
+  /** R-127 — ordem clínica do evento salvo. Ausente em evento novo ainda não persistido;
+   * nesse caso, a posição no rascunho define a ordem até o save. */
+  registrado_em?: string;
+  /** R-127 — desempata eventos registrados no mesmo dia. Campo somente de leitura/UI. */
+  created_at?: string;
   /**
    * R-30 Parte 2 — presente só quando o draft veio de um evento já carregado do banco
    * (`eventoViewParaDraft`); ausente em draft novo (IA/manual). Existe só pra o dedup de

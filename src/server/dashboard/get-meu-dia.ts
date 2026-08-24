@@ -284,7 +284,8 @@ function eventoParaBoca(e: EventoRow): OdontogramaEventoDraft {
     id: e.id, tipo: e.tipo, status: e.status, origem: e.origem,
     momento_planejado: e.momento_planejado, ancora,
     grupo_id: e.grupo_id, papel_no_grupo: e.papel_no_grupo, observacao: e.observacao ?? '',
-    realizado_em: e.realizado_em, detalhe: e.detalhe,
+    realizado_em: e.realizado_em, registrado_em: e.registrado_em,
+    created_at: e.created_at, detalhe: e.detalhe,
   };
 }
 
