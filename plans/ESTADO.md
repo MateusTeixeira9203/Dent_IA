@@ -9,7 +9,7 @@ em produção na agenda, retorno, orçamento, protético e ficha antes do lança
 
 **Auditoria 24/08:** o P1 da RPC `salvar_eventos_odontograma` foi corrigido pela migration
 `20260824033242` e validado em produção com rollback: evento cruzado é recusado e evento da
-própria ficha segue aceito. Permanecem os gates mobile, RLS de duas contas e Stripe E2E.
+própria ficha segue aceito. Permanece o gate mobile; isolamento entre dentistas foi confirmado pelo usuário e Stripe será validado na primeira compra real (ou em modo teste se necessário).
 
 ### Feito nesta rodada
 

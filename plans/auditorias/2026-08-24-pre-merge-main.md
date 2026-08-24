@@ -50,12 +50,8 @@ clínico foi persistido durante os testes.
 
 1. **R126a mobile:** validar em produção os cenários que já quebraram: agenda, retorno,
    orçamento, ficha e encaminhamento ao protético em celular.
-3. **R97/R92:** teste com duas contas reais: dentista A não vê orçamento/financeiro de B;
-   secretária mantém o escopo previsto; clínica em formação e saída da clínica preservam os
-   vínculos corretos.
-4. **Stripe E2E:** Checkout, webhook `checkout.session.completed`, trial de 7 dias,
-   `invoice.payment_failed` e carência/suspensão. Fazer em modo teste ou com cliente de teste,
-   nunca cobrando uma pessoa real por acidente.
+2. **Stripe comercial:** a primeira compra real será o gate final do fluxo de cobrança; se não
+   houver comprador disponível, repetir o mesmo percurso com as chaves de teste.
 
 ## Higiene de release (não bloqueia a correção do P1, mas não deve ficar esquecida)
 
@@ -71,5 +67,5 @@ clínico foi persistido durante os testes.
 
 ## Não coberto por esta auditoria
 
-Não foram submetidos formulários, logins ou pagamentos em produção. A revisão visual foi
-somente pública/read-only; os gates autenticados acima precisam de uma clínica de teste.
+Não foram submetidos formulários, logins ou pagamentos em produção nesta auditoria. A revisão
+visual foi somente pública/read-only; a primeira compra fará a validação comercial restante.
