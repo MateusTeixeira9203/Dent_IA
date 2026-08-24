@@ -1,41 +1,26 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-08-22
+> **ESTADO** · atualizado 2026-08-23
 
 ## Agora
 
-🔵 **R-92 — Assinatura individual Stripe.** Integração implementada e configurada para a oferta
-Fundador: Consultório e Clínica por R$200/mês ou R$2.000/ano por dentista. Clínica exige 2–8
-dentistas e formação em até 48 horas.
+🔵 **R-126a — Estabilização mobile crítica.** Corrigir os recortes e compressões reais vistos
+em produção na agenda, retorno, orçamento, protético e ficha antes do lançamento.
 
-### Feito
+### Feito nesta rodada
 
-- Checkout, portal, webhook idempotente, trial de 7 dias, carência e formação implementados.
-- Quatro Prices Fundador, chaves live e segredo do webhook configurados no `.env.local`.
-- Endpoint de produção definido em `https://odontoia.app/api/webhooks/stripe`.
-- Migrations R-92, R-97, R-105 e R-120 aplicadas; R-97 conferida diretamente no schema.
-- R-105, R-113, R-121, R-122 e R-123 validados localmente nos fluxos discutidos.
-- R-125a e R-125b validados no localhost; migrations 150 e 151 aplicadas. Falta conferir o
-  fluxo publicado antes de promovê-los a concluídos.
-- TypeScript, testes unitários de billing/especialidades e build de produção passaram antes do push.
-
-### Falta
-
-1. Fazer E2E real do Consultório mensal e anual com um usuário novo.
-2. Fazer E2E Clínica com duas contas e dois cartões, incluindo formação e migração.
-3. Confirmar no Stripe que os eventos do webhook chegam e não geram duplicidade.
-4. Testar R-97 com duas contas logadas antes de promovê-lo a verificado.
-5. Manter `STRIPE_BILLING_ENABLED=false` até os gates financeiros acima passarem.
+- **R-110 ✅:** grade de quarta 13h–18h e agendamento às 08h verificados em produção; a tela
+  avisa e permite "Marcar mesmo assim". Criação e edição compartilham a mesma regra.
 
 ## Travado
 
 - Nenhum bloqueio de código conhecido.
-- Cobrança não deve ser ativada antes do E2E financeiro real.
-
-## Esperando você
-
-- Executar os fluxos reais de Checkout e portal após o deploy.
-- Confirmar o teste de duas contas da gestão colaborativa.
+- Cobrança não deve ser ativada antes do E2E financeiro real (R-92 permanece localmente pronto).
+- **Produção mobile — 23/08:** bloqueios reais de usabilidade ainda sem correção: retorno usa a
+  grade semanal de desktop e afasta a confirmação; agenda diária/semanal é recortada; modal de
+  orçamento preserva duas colunas e embaralha resumo/itens; cards da ficha comprimem conteúdo;
+  encaminhamento ao protético precisa de reprodução específica. O onboarding pula de identidade
+  para Dex/Meu Dia e, portanto, não alcança pagamento/checkout.
 
 ## Próximo da fila
 

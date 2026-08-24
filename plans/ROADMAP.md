@@ -1,6 +1,6 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · atualizado **2026-08-22** · ordenado por **importância pro dentista**
+> **ROADMAP** · atualizado **2026-08-23** · ordenado por **importância pro dentista**
 > **Último push:** 13/08 (`323e095`) — R-108 e R-108b no ar: a ficha virou documento de
 > tratamento e a visita passou a rotear. **Histórico de push mora nos [handoffs](handoffs/)** —
 > não aqui.
@@ -59,7 +59,8 @@ prioridade, por melhor que seja.
 | 🟡 [**R-125b**](specs/R-125b-orcamento-fonte-deterministica.md) | **Orçamento por fonte determinística** — evento entra uma vez no orçamento; elimina reaparição e seleção parcial inconsistente | migration 151 aplicada; criação atômica e não-reaparição validadas no localhost em 22/08; aguarda verificação em produção | G |
 | [**R-109**](specs/R-109-registro-na-ficha.md) | **Registro na ficha** — lote multidente + Modo multidente portados do Meu dia | ⏳ partes locais entregues são preservadas; campo mágico e trilho único remanescentes foram absorvidos pelo R-125a | M |
 | [**R-111**](specs/R-111-responsividade-mobile.md) | **Responsividade no celular e no tablet** — as 8 telas que o dentista abre no celular | ⏳ validado localmente em 17/08; falta commit/deploy e veredito visual em produção. Não é item no ar ainda | G |
-| [**R-110**](specs/R-110-horario-do-dentista-na-agenda.md) | **O horário do dentista vale na agenda** — `criarAgendamento` nunca olha `horarios_disponiveis`; marcar 22h de domingo passa sem piscar | ⏳ [spec](specs/R-110-horario-do-dentista-na-agenda.md) fase `plano` 14/08. **Virou "avisar com override", não bloquear** — o levantamento achou 13,8% dos agendamentos já fora do expediente e **11 de 14 dentistas sem grade cadastrada** (inclusive os 2 mais movimentados da Clindent). Bloqueio travaria a agenda real no deploy. **§9 tem 2 decisões dele** | P |
+| [**R-126a**](specs/R-126a-estabilizacao-mobile-critica.md) | **Estabilização mobile crítica** — agenda, retorno, protético, orçamento e ficha deixam de comprimir desktop em celular | 🔵 execução aprovada 23/08; bloqueio de lançamento achado em produção | G |
+| ✅ [**R-110**](_arquivo/specs/R-110-horario-do-dentista-na-agenda.md) | **O horário do dentista vale na agenda** — avisa e exige confirmação explícita ao marcar fora do expediente | verificado em produção 23/08: grade de quarta 13h–18h avisou ao marcar 08h; override validado | P |
 | [**R-118**](specs/R-118-retorno-secretaria-dentista.md) | 🐛 **Retorno da secretária na agenda do dentista** — escolhe o profissional e vê a grade correta | ⏳ spec em contrato 18/08; fecha também autorização server-side de agenda entre profissionais | P |
 | [**R-103**](specs/R-103-painel-do-dex.md) | **Painel do Dex** — modal de 3 colunas: pendências · números do negócio · central de atualização | ⏳ fatias a/b/c entregues; resta R-104 (curso). **Absorve o R-26** | G |
 | [**R-106**](specs/R-106-status-clinico-da-voz.md) | 🐛 **Voz distingue realizado × indicado × negação × ambiguidade** — só execução explícita nasce feita; ambíguo nasce indicado + “Confira” | ⏳ validado pelo usuário no localhost em 19/08; pronto para a fila de commit. Eval HTTP fica como melhoria de infraestrutura | M |
@@ -123,6 +124,7 @@ do sistema inteiro (Landing **C**, Auth **D**).
 | ID | Item | Estado | Peso |
 |---|---|---|---|
 | [**R-92**](specs/R-92-assinatura-individual-stripe.md) | **Assinatura individual Stripe** — Consultório individual ou Clínica com 2–8 assinaturas próprias | 🔵 implementação local em auditoria; flag desligada. Faltam migration segura, test mode, webhooks e E2E financeiro | G |
+| [**R-126b**](specs/R-126b-ativacao-comercial-checkout.md) | **Ativação comercial e checkout obrigatório** — identidade → plano/ciclo → Stripe → Dex → Meu Dia, sem bloquear clínica em formação | ⏳ contrato 23/08; corrige o bypass atual do checkout | G |
 | **R-105** | **Onboarding orientado ao primeiro valor** — specs **[a](specs/R-105a-primeira-fase-e-ativacao.md)** e **[b](specs/R-105b-marcos-e-gatilhos.md)**: cartão → primeiro atendimento (existente, novo ou demo) → Campo Mágico → ficha; Clínica em formação usa o produto durante as 48h | ⏳ implementação local; apresentação Dex aprovada em 21/08, fluxo completo ainda aguarda auditoria | M |
 | **R-88b** | 🔧 **Não existe importação de pacientes** — achado 14/08 conferindo a FAQ. O que importa de arquivo é a tabela de procedimentos; a agenda vem do Google Calendar. A landing responde "o paciente entra quando senta na cadeira", que é verdade, mas **é o maior risco de conversão da página** pra dentista com base grande | ⏳ achado 14/08, sem spec | ? |
 | **R-89** | **Auth (login · cadastro · esqueci · redefinir · verifique-email)** — nota D: 5/12 capturas em branco, dark quebrado, AA reprovado, 2 sistemas de form diferentes | ⏳ depois do R-88 (a landing define a linguagem que o auth herda) | M |

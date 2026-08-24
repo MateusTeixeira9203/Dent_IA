@@ -1,7 +1,7 @@
 # R-110 — O horário do dentista vale na agenda
 
-> **SPEC** · **R-110** · ⏳ fila
-> **Aberto:** 2026-08-13 · **Fase:** **`plano`** — 2 decisões dele ainda abertas (§9)
+> **SPEC** · **R-110** · 🔵 ativo
+> **Aberto:** 2026-08-13 · **Fase:** **`implementação local`** — decisões de §9 fechadas em 22/08
 > **Modelo:** Sonnet — é validação com números já levantados, sem ambiguidade de modelo de dado.
 > **Origem:** pedido dele 13/08 como pontual; **recusado como pontual** (mexe na rota de escrita
 > da agenda e tinha 5 decisões abertas). O levantamento de 14/08 mudou o item de *bloquear* pra
@@ -139,11 +139,9 @@ Minuto do dia **sempre no fuso da clínica** (`America/Sao_Paulo`) — mesma reg
 - O **R-68** foi cortado em 07/08 por não sentir falta disso no "Marcar retorno". Este item é
   outra tela (a agenda) e outro gesto (criar, não sugerir) — não reabre aquele
 
-## 9. Decisões dele ainda abertas
+## 9. Decisões fechadas em 22/08
 
-1. **Vale pro dentista também, ou só pra secretária?** Os dois passam pela mesma função. Avisar o
-   dentista sobre o próprio horário pode ser útil (ele esqueceu) ou irritante (ele sabe, está
-   fazendo de propósito).
-2. **Dentista marcando pra OUTRO dentista** não enxerga a grade do colega pela RLS
-   (`is_own_clinical_record` só libera geral pra secretária) — então cai em "sem grade" e não
-   avisa. Aceitável, ou a checagem deve rodar com `security definer` nesse caso?
+1. O aviso vale para **secretária** e para o **dentista na própria agenda**. Continua sendo
+   confirmação, nunca bloqueio.
+2. Dentista em agenda de colega não recebe o aviso. Não criamos `security definer` nem elevamos
+   privilégio só para ler a grade; a secretária já vê a grade pela RLS existente.
