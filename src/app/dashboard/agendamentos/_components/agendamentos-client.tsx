@@ -95,6 +95,7 @@ import {
   criarPedidoProtetico,
   type StatusAgendamento,
 } from '../actions';
+import type { MotivoForaDoExpediente } from '@/lib/agenda/expediente';
 import { criarPacienteRapido } from '@/app/dashboard/pacientes/[id]/actions';
 import { createClient } from '@/lib/supabase/client';
 import { normalizarNome } from '@/lib/normalizar-nome';
@@ -108,6 +109,18 @@ import { AtenderAgoraModal } from './atender-agora-modal';
 import { CompromissoPessoalDialog } from './compromisso-pessoal-dialog';
 import { BotaoMensagemIA } from '@/components/orcamentos/botao-mensagem-ia';
 import { StatusBadge } from './status-badge';
+
+type AvisoAgenda = {
+  conflitoDentista: boolean;
+  foraDoExpediente?: MotivoForaDoExpediente;
+};
+
+const MENSAGEM_FORA_DO_EXPEDIENTE: Record<MotivoForaDoExpediente, string> = {
+  antes_de_abrir: 'O horário começa antes da abertura configurada para este dentista.',
+  depois_de_fechar: 'O atendimento termina depois do fechamento configurado para este dentista.',
+  no_almoco: 'O atendimento coincide com o intervalo de almoço configurado para este dentista.',
+  dia_sem_grade: 'Este dentista não tem expediente configurado para este dia.',
+};
 
 const STATUSES_ATIVOS = new Set(['scheduled', 'confirmed', 'checked_in', 'in_progress']);
 
@@ -387,8 +400,9 @@ export function AgendamentosClient({
   /** R-31a §3.2 — trava síncrona: pointerdown e o click de fallback (teclado) podem
    *  disparar o mesmo handler em sequência antes do re-render desabilitar o botão. */
   const criandoPacienteNovoRef = useRef(false);
-  /** O servidor recusou por conflito do DENTISTA — libera o "marcar mesmo assim". */
-  const [conflitoServidor, setConflitoServidor] = useState(false);
+  /** Avisos recuperáveis validados no servidor: conflito e/ou fora da grade do dentista. */
+  const [avisoNovoAgendamento, setAvisoNovoAgendamento] = useState<AvisoAgenda | null>(null);
+  const [avisoEdicao, setAvisoEdicao] = useState<AvisoAgenda | null>(null);
 
   // `visao` e a semana desenhada vêm da URL. Não existe mais estado local de navegação —
   // era exatamente a duplicação que deixava a grade e os dados discordarem.
@@ -560,7 +574,7 @@ export function AgendamentosClient({
    */
   const abrirNovoAgendamento = useCallback((pre?: { data?: string; hora?: string; dentistaId?: string }) => {
     setSaveError(null);
-    setConflitoServidor(false);
+    setAvisoNovoAgendamento(null);
     setNovoForm((f) => ({
       ...f,
       ...(pre?.data ? { data: pre.data } : {}),
@@ -710,7 +724,7 @@ export function AgendamentosClient({
     setPacienteSugestoes([]);
     setShowSugestoes(false);
     setSaveError(null);
-    setConflitoServidor(false); // senão o banner âmbar reaparece no próximo agendamento
+    setAvisoNovoAgendamento(null); // senão o aviso reaparece no próximo agendamento
   };
 
   // ── Importação do Google Calendar ──────────────────────────────────────────
@@ -775,7 +789,7 @@ export function AgendamentosClient({
   };
 
   // Cria novo agendamento via server action.
-  // `forcar` = o usuário já viu o conflito do dentista e escolheu marcar mesmo assim.
+  // O usuário confirma explicitamente cada alerta que o servidor devolveu.
   const handleCriarAgendamento = async (forcar = false) => {
     if (!novoForm.pacienteId) {
       setSaveError('Selecione um paciente.');
@@ -791,7 +805,7 @@ export function AgendamentosClient({
       if (!novoForm.observacaoProtetico.trim()) { setSaveError('Descreva o que o protético precisa saber.'); return; }
     }
     setSaveError(null);
-    if (!forcar) setConflitoServidor(false);
+    if (!forcar) setAvisoNovoAgendamento(null);
     setIsSaving(true);
 
     // Timestamp explicitamente em BRT (UTC-3) — independente do timezone do browser
@@ -805,16 +819,20 @@ export function AgendamentosClient({
       duracaoMinutos: parseInt(novoForm.duracao, 10) || 30,
       observacoes: observacoesCombinadas,
       ...(isSecretaria && novoForm.dentistaId ? { dentistaId: novoForm.dentistaId } : {}),
-      ...(forcar ? { forcarConflitoDentista: true } : {}),
+      ...(forcar ? { forcarConflitoDentista: true, forcarForaDoExpediente: true } : {}),
     });
 
     if (result.error) {
       setSaveError(result.error);
-      // Conflito do dentista é recuperável: a tela oferece "marcar mesmo assim".
-      // Qualquer outro erro (inclusive conflito do PACIENTE) não ganha esse botão.
-      setConflitoServidor(result.conflitoDentista === true);
+      // Conflito do dentista e fora do expediente são recuperáveis. Conflito do paciente
+      // continua sem override e, por isso, não recebe este painel.
+      setAvisoNovoAgendamento(
+        result.conflitoDentista || result.foraDoExpediente
+          ? { conflitoDentista: result.conflitoDentista === true, foraDoExpediente: result.foraDoExpediente }
+          : null,
+      );
     } else {
-      setConflitoServidor(false);
+      setAvisoNovoAgendamento(null);
 
       // R-94 — pedido pro protético, best-effort: o agendamento já foi criado com
       // sucesso; se isto falhar, avisa mas não desfaz nem trava o fluxo principal.
@@ -881,12 +899,14 @@ export function AgendamentosClient({
       observacoes: selectedApt.observacoes ?? '',
     });
     setSaveError(null);
+    setAvisoEdicao(null);
     setDetailMode('edit');
   };
 
-  const handleSalvarEdicao = async () => {
+  const handleSalvarEdicao = async (forcar = false) => {
     if (!selectedApt) return;
     setSaveError(null);
+    if (!forcar) setAvisoEdicao(null);
     setIsSaving(true);
 
     // Timestamp explicitamente em BRT (UTC-3) — independente do timezone do browser
@@ -896,11 +916,18 @@ export function AgendamentosClient({
       dataHora,
       duracaoMinutos: parseInt(editForm.duracao, 10) || 30,
       observacoes: editForm.observacoes.trim() || null,
+      ...(forcar ? { forcarConflitoDentista: true, forcarForaDoExpediente: true } : {}),
     });
 
     if (result.error) {
       setSaveError(result.error);
+      setAvisoEdicao(
+        result.conflitoDentista || result.foraDoExpediente
+          ? { conflitoDentista: result.conflitoDentista === true, foraDoExpediente: result.foraDoExpediente }
+          : null,
+      );
     } else {
+      setAvisoEdicao(null);
       const updated: AgendamentoRow = {
         ...selectedApt,
         data_hora: dataHora,
@@ -1374,7 +1401,7 @@ export function AgendamentosClient({
           <DialogDescription className="sr-only">Preencha os dados para marcar uma nova consulta.</DialogDescription>
 
           {/* ── Cabeçalho ─────────────────────────────────────────────── */}
-          <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-border">
+          <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-4 sm:px-6">
             <DialogTitle className="font-heading font-semibold text-xl text-text-primary leading-tight">
               Novo agendamento
             </DialogTitle>
@@ -1689,21 +1716,25 @@ export function AgendamentosClient({
               </div>
 
               {/* ── Rodapé da coluna de ação ────────────────────────────── */}
-              <div className="absolute inset-x-0 bottom-0 z-10 p-5 border-t border-border bg-surface space-y-2.5 sm:static">
-                {saveError && !conflitoServidor && (
+              <div className="sticky bottom-0 z-10 space-y-2.5 border-t border-border bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:static sm:p-5">
+                {saveError && !avisoNovoAgendamento && (
                   <p className="text-xs text-coral-ink bg-coral-pale rounded-lg p-2">{saveError}</p>
                 )}
 
-                {/* Conflito do DENTISTA — recuperável. Aviso, não erro: a recepção
-                    decide. O conflito do PACIENTE nunca chega aqui, cai no bloco
-                    coral acima e continua sem saída. */}
-                {conflitoServidor && (
+                {/* R-110: conflito da agenda e expediente são confirmações independentes.
+                    O conflito do paciente nunca chega aqui, pois continua sem override. */}
+                {avisoNovoAgendamento && (
                   <div className="rounded-xl border border-warning/30 bg-warning-pale p-3">
                     <div className="flex items-start gap-2 mb-2.5">
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-warning-ink" />
-                      <p className="text-xs text-warning-ink">
-                        {saveError} Marcar mesmo assim vai <b>sobrepor</b> os dois na agenda.
-                      </p>
+                      <div className="space-y-1 text-xs text-warning-ink">
+                        {avisoNovoAgendamento.conflitoDentista && (
+                          <p>{saveError} Marcar mesmo assim vai <b>sobrepor</b> horários na agenda.</p>
+                        )}
+                        {avisoNovoAgendamento.foraDoExpediente && (
+                          <p>{MENSAGEM_FORA_DO_EXPEDIENTE[avisoNovoAgendamento.foraDoExpediente]}</p>
+                        )}
+                      </div>
                     </div>
                     <Button
                       onClick={() => void handleCriarAgendamento(true)}
@@ -2354,8 +2385,28 @@ export function AgendamentosClient({
                       />
                     </div>
 
-                    {saveError && (
+                    {saveError && !avisoEdicao && (
                       <p className="text-sm text-red-500 bg-red-500/10 rounded-lg p-3">{saveError}</p>
+                    )}
+                    {avisoEdicao && (
+                      <div className="rounded-xl border border-warning/30 bg-warning-pale p-3 space-y-2.5">
+                        <div className="flex items-start gap-2 text-xs text-warning-ink">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                          <div className="space-y-1">
+                            {avisoEdicao.conflitoDentista && <p>{saveError}</p>}
+                            {avisoEdicao.foraDoExpediente && <p>{MENSAGEM_FORA_DO_EXPEDIENTE[avisoEdicao.foraDoExpediente]}</p>}
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          onClick={() => void handleSalvarEdicao(true)}
+                          disabled={isSaving}
+                          size="sm"
+                          className="w-full rounded-lg text-xs bg-warning-pale border border-warning text-warning-ink hover:bg-warning/20"
+                        >
+                          Salvar mesmo assim
+                        </Button>
+                      </div>
                     )}
                   </div>
 
