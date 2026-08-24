@@ -7,6 +7,10 @@
 🔵 **R-126a — Estabilização mobile crítica.** Corrigir os recortes e compressões reais vistos
 em produção na agenda, retorno, orçamento, protético e ficha antes do lançamento.
 
+**Auditoria 24/08:** o P1 da RPC `salvar_eventos_odontograma` foi corrigido pela migration
+`20260824033242` e validado em produção com rollback: evento cruzado é recusado e evento da
+própria ficha segue aceito. Permanecem os gates mobile, RLS de duas contas e Stripe E2E.
+
 ### Feito nesta rodada
 
 - **R-110 ✅:** grade de quarta 13h–18h e agendamento às 08h verificados em produção; a tela
