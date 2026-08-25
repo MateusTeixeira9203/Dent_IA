@@ -11,6 +11,7 @@ import { montarRowsEventos } from '@/lib/odontograma/montar-rows-eventos';
 import { endoDetalheSchema } from '@/lib/especialidades/endo';
 import { implanteDetalheSchema } from '@/lib/especialidades/implante';
 import { criarDocumentoConclusaoAssinatura } from '@/server/legal/documentos-aceite';
+import { hojeBRT } from '@/lib/hora-brt';
 
 /**
  * Salva o event-log do odontograma — retry do save inicial (fail-soft, ver
@@ -165,13 +166,12 @@ export async function iniciarAtendimentoConsulta(agendamentoId: string): Promise
  * Alterna planejado ⇄ realizado de UM registro (grupo de eventos) na ficha salva.
  * Bug 21/07: a ficha salva não tinha caminho pra marcar o que foi feito — tudo
  * ficava "Planejado". Regras herdadas do núcleo clínico: só o AUTOR escreve, e
- * ficha assinada é imutável (invariante #14). `realizado_em` segue a regra §1.10:
- * ganha a data clínica ao virar realizado, volta a null ao virar planejado.
+ * ficha assinada é imutável (invariante #14). `realizado_em` registra o dia em que
+ * o dentista marcou o procedimento como realizado e volta a null ao reabrir o registro.
  */
 export async function alternarStatusRegistro(params: {
   eventoIds: string[];
   novoStatus: 'indicado' | 'realizado';
-  dataClinica: string;
 }): Promise<{ ok: boolean; error?: string }> {
   const { supabase, user, clinicId, role } = await requireClinicContext();
   if (role === 'secretaria') return { ok: false, error: 'Sem permissão.' };
@@ -214,9 +214,10 @@ export async function alternarStatusRegistro(params: {
     .from('odontograma_eventos')
     .update({
       status: params.novoStatus,
-      // Pré-existente nunca ganha data da clínica (§1.10); indicado nunca tem data.
+      // Pré-existente nunca ganha data; indicado nunca tem data. A data vem do servidor
+      // para refletir o dia da confirmação, não o dia antigo em que a ficha foi criada.
       realizado_em: realizado
-        ? (eventos[0].origem === 'clinica' ? params.dataClinica : null)
+        ? (eventos[0].origem === 'clinica' ? hojeBRT() : null)
         : null,
       // R-101 — sem isso, marcar como realizado um evento em "próxima seção" violaria a
       // constraint odontograma_eventos_momento_coerente (momento só é != sessao_atual
@@ -438,7 +439,6 @@ export async function encaminharProcedimento(params: {
 export async function atualizarStatusEncaminhado(params: {
   eventoIds: string[];
   novoStatus: 'indicado' | 'realizado';
-  realizadoEm: string | null;
 }): Promise<{ ok: boolean; error?: string }> {
   const { supabase, user, clinicId, role } = await requireClinicContext();
   if (role === 'secretaria') return { ok: false, error: 'Sem permissão.' };
@@ -447,7 +447,9 @@ export async function atualizarStatusEncaminhado(params: {
   const { error } = await supabase.rpc('concluir_evento_encaminhado', {
     p_evento_ids:   params.eventoIds,
     p_novo_status:  params.novoStatus,
-    p_realizado_em: params.realizadoEm,
+    // A data clínica desta confirmação é do servidor: o cliente não pode forjar nem
+    // reaproveitar a data de uma ficha antiga ao concluir um encaminhamento.
+    p_realizado_em: params.novoStatus === 'realizado' ? hojeBRT() : null,
   });
 
   if (error) {

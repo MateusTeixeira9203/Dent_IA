@@ -6,7 +6,8 @@ import {
   FileText,
   Download,
   Check,
-  Loader2,  PenLine,
+  Loader2,
+  PenLine,
   Pencil,
   Clock,
   Circle,
@@ -33,6 +34,7 @@ import { Odontograma, computeToothState, type ToothStatus } from "@/components/o
 import { ToothDetailPanel } from "@/components/odontograma/ToothDetailPanel";
 import { OdontogramaComPainel } from "@/components/odontograma/OdontogramaComPainel";
 import { FaixaLote } from "@/components/odontograma/faixa-lote";
+import { FaixaEscopoRegional } from "@/components/odontograma/faixa-escopo-regional";
 import { ARCH_LABELS } from "@/lib/arcadas";
 import dynamic from 'next/dynamic';
 import type SignaturePadLib from 'signature_pad';
@@ -46,9 +48,9 @@ import { RegistroCard, type RegistroCardData } from '@/components/fichas/registr
 import { DenteGrupoHeader } from '@/components/fichas/dente-grupo-header';
 import { corpoEspecialidade, corpoEspecialidadeEditavel } from '@/components/fichas/corpo-especialidade';
 import { eventosParaCards } from '@/lib/odontograma/eventos-para-cards';
-import { eventoRotina, cycleRotina } from '@/lib/odontograma/rotina-boca';
+import type { EscopoRegional } from '@/lib/odontograma/escopo-regional';
 import type { MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
-import { TIPO_LABEL, corDoRegistro } from '@/types/odontograma';
+import { TIPO_LABEL } from '@/types/odontograma';
 import type {
   OrtoManutencaoInfo, ModoLancamento, OdontogramaEventoDraft,
   TipoRegistroOdontograma, StatusRegistro, OrigemRegistro, AncoraClinica,
@@ -226,6 +228,36 @@ type FichaDB = {
   /** R-108 — nullable: fichas existentes nasceram sem nome, leitura cai no derivado. */
   nome: string | null;
 };
+
+/** R-129e — snapshot estreito do que a edição de uma ficha pode alterar. Ele não inclui
+ * estado visual (dente aberto, filtros, cards expandidos), para que uma interação de leitura
+ * nunca habilite "Salvar alterações" por engano. */
+type EstadoEditavelFicha = {
+  formData: {
+    dataAtendimento: string;
+    type: string;
+    observation: string;
+    teethNotes: ToothNote[];
+    procedimentos: string[];
+    conduta: string;
+    ortoManutencao: OrtoManutencaoInfo | null;
+  };
+  selectedTeeth: number[];
+  sharedTeeth: number[];
+  sharedNotes: string[];
+  eventosDraft: OdontogramaEventoDraft[];
+};
+
+/** Contador legível, por área clínica alterada — não tenta contar cada caractere digitado. */
+function contarAlteracoesFicha(inicial: EstadoEditavelFicha, atual: EstadoEditavelFicha): number {
+  const campos: Array<keyof EstadoEditavelFicha> = [
+    'formData', 'selectedTeeth', 'sharedTeeth', 'sharedNotes', 'eventosDraft',
+  ];
+  return campos.reduce(
+    (total, campo) => total + (JSON.stringify(inicial[campo]) === JSON.stringify(atual[campo]) ? 0 : 1),
+    0,
+  );
+}
 
 /**
  * Exibição da data (§7.1): se `data_atendimento` cai no mesmo dia do `created_at`
@@ -541,8 +573,14 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   const [eventosFalharamAoSalvar, setEventosFalharamAoSalvar] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isPanelOpen, setIsPanelOpen] = React.useState(false);
-  const [editingId, setEditingId] = React.useState<string | null>(null);  const [selectedTeeth, setSelectedTeeth] = React.useState<number[]>([]);
-  const [sharedTeeth, setSharedTeeth] = React.useState<number[]>([]);  const [sharedNotes, setSharedNotes] = React.useState<string[]>(['']);  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState<string | null>(null);
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [editingSnapshot, setEditingSnapshot] = React.useState<EstadoEditavelFicha | null>(null);
+  const [fichaParaReabrirAposSave, setFichaParaReabrirAposSave] = React.useState<string | null>(null);
+  const scrollAntesDeEditarRef = React.useRef<number | null>(null);
+  const [selectedTeeth, setSelectedTeeth] = React.useState<number[]>([]);
+  const [sharedTeeth, setSharedTeeth] = React.useState<number[]>([]);
+  const [sharedNotes, setSharedNotes] = React.useState<string[]>(['']);
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState<string | null>(null);
   /**
    * R-122 — seleção de ações rápidas, estado próprio e separado do `selectedTeeth`.
    *
@@ -560,7 +598,9 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
    * Mesmo modelo do Meu dia: tocar seleciona; a faixa de ações decide o que criar.
    */
   const [dentesLote, setDentesLote] = React.useState<number[]>([]);
+  const [escopoRegional, setEscopoRegional] = React.useState<EscopoRegional | null>(null);
   const [modoLancamento, setModoLancamento] = React.useState<ModoLancamento>('a_fazer');
+  const complementosDetailsRef = React.useRef<HTMLDetailsElement>(null);
 
   // R-35 item 2 — conta orçamentos/pagamentos que a ficha leva junto (ON DELETE CASCADE)
   // antes de deixar confirmar, em vez de apagar em silêncio.
@@ -606,6 +646,45 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   // reusa a mesma RPC atômica da consulta por baixo. Vazio = save não toca a tabela de
   // eventos (edição sem reorganizar preserva os eventos existentes — no-opa em lista vazia).
   const [eventosDraft, setEventosDraft] = React.useState<OdontogramaEventoDraft[]>([]);
+
+  const estadoEditavelAtual = React.useMemo<EstadoEditavelFicha>(() => ({
+    formData,
+    selectedTeeth,
+    sharedTeeth,
+    sharedNotes,
+    eventosDraft,
+  }), [eventosDraft, formData, selectedTeeth, sharedNotes, sharedTeeth]);
+  const alteracoesPendentes = React.useMemo(
+    () => editingSnapshot ? contarAlteracoesFicha(editingSnapshot, estadoEditavelAtual) : 0,
+    [editingSnapshot, estadoEditavelAtual],
+  );
+  const temAlteracoesPendentes = editingId !== null && alteracoesPendentes > 0;
+
+  React.useEffect(() => {
+    if (!temAlteracoesPendentes) return;
+    const avisarSaida = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', avisarSaida);
+    return () => window.removeEventListener('beforeunload', avisarSaida);
+  }, [temAlteracoesPendentes]);
+
+  React.useEffect(() => {
+    if (!fichaParaReabrirAposSave) return;
+    const ficha = evolutions.find((evo) => evo.id === fichaParaReabrirAposSave);
+    if (!ficha) return;
+    setViewingEvo(ficha);
+    setFichaParaReabrirAposSave(null);
+    requestAnimationFrame(() => {
+      const alvo = document.getElementById(`ficha-${ficha.id}`);
+      if (alvo) alvo.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      else if (scrollAntesDeEditarRef.current != null) {
+        window.scrollTo({ top: scrollAntesDeEditarRef.current, behavior: 'smooth' });
+      }
+      scrollAntesDeEditarRef.current = null;
+    });
+  }, [evolutions, fichaParaReabrirAposSave]);
 
   // R-47 (achado 6, 31/07) — alerta_novo detectado pelo Organizar com Dex nesta sessão.
   // null = nada detectado agora, omite do payload do save; o servidor preserva o que já
@@ -736,6 +815,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   /** R-122 — tocar no mapa só seleciona/desseleciona para as ações rápidas. Nunca abre
    * histórico ou perfil sozinho e nunca altera a seleção legada da ficha. */
   const selecionarDenteParaAcoes = React.useCallback((dente: number) => {
+    setEscopoRegional(null);
     setDentesLote((prev) => (prev.includes(dente) ? prev.filter((item) => item !== dente) : [...prev, dente]));
   }, []);
 
@@ -759,13 +839,6 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   const atualizarDetalheDraft = (idx: number, detalhe: unknown) => {
     setEventosDraft((prev) => prev.map((ev, i) => (i === idx ? { ...ev, detalhe } : ev)));
   };
-
-  // R-07 — chips de rotina (spec R-06-07 Fase 3): ciclo de boca/quadrante no rascunho (sem
-  // registro → indicado → realizado → remove). R-107a extraiu `eventoRotina`/`cycleRotina`
-  // pra `@/lib/odontograma/rotina-boca` (o Meu dia passou a precisar do mesmo ciclo) — os
-  // call sites abaixo passam `eventosDraft` explícito e envolvem `cycleRotina` num
-  // `setEventosDraft` local, já que o util agora é puro (devolve a lista nova, não fecha
-  // sobre state).
 
   /**
    * R-02 Fase 1: alterna planejado ⇄ realizado no RASCUNHO — flip local, sem chamada ao
@@ -1090,6 +1163,13 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   /** "✕ limpar" da faixa — esvazia somente a seleção, nunca o rascunho já criado. */
   const limparLote = React.useCallback(() => {
     setDentesLote([]);
+    setEscopoRegional(null);
+  }, []);
+
+  const selecionarEscopoRegional = React.useCallback((escopo: EscopoRegional | null) => {
+    setDentesLote([]);
+    setDenteAberto(null);
+    setEscopoRegional(escopo);
   }, []);
 
   // Job A Fatia B (§5) — form já preenchido pede confirmação antes do "Organizar"
@@ -1191,7 +1271,8 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     if (primeiroComDetalhe?.ancora.dente != null) setDenteAberto(primeiroComDetalhe.ancora.dente);
     // Mesmo critério do handleEdit (linha 666): sentinela de arcada entre os dentes
     // afetados põe o modo em 'arch' — mantém os botões de seleção coerentes com o
-    // que a IA de fato preencheu.    setSharedTeeth([]);
+    // que a IA de fato preencheu.
+    setSharedTeeth([]);
     setSharedNotes(['']);
     setSelectedTeeth(data.dentes_afetados);
     void complementarEndoNaFicha(relato, dentesEndo);
@@ -1211,11 +1292,11 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     setEvolutions((prev) => prev.map((e) => e.id !== evo.id ? e : {
       ...e,
       eventos: e.eventos.map((ev) => ids.includes(ev.id)
-        ? { ...ev, status: novoStatus, realizadoEm: novoStatus === 'realizado' ? evo.dataAtendimento : null }
+        ? { ...ev, status: novoStatus, realizadoEm: novoStatus === 'realizado' ? hojeBRT() : null }
         : ev),
     }));
 
-    const res = await alternarStatusRegistro({ eventoIds: ids, novoStatus, dataClinica: evo.dataAtendimento });
+    const res = await alternarStatusRegistro({ eventoIds: ids, novoStatus });
     if (!res.ok) {
       setEvolutions(antes);
       toast.error(res.error ?? 'Não foi possível atualizar o registro.');
@@ -1328,7 +1409,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     evo: Evolution, ids: string[], statusAtual: StatusRegistro,
   ) => {
     const novoStatus: StatusRegistro = statusAtual === 'realizado' ? 'indicado' : 'realizado';
-    const realizadoEm = novoStatus === 'realizado' ? evo.dataAtendimento : null;
+    const realizadoEm = novoStatus === 'realizado' ? hojeBRT() : null;
     const antes = evolutions;
     setEvolutions((prev) => prev.map((e) => e.id !== evo.id ? e : {
       ...e,
@@ -1337,7 +1418,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
         : ev),
     }));
 
-    const res = await atualizarStatusEncaminhado({ eventoIds: ids, novoStatus, realizadoEm });
+    const res = await atualizarStatusEncaminhado({ eventoIds: ids, novoStatus });
     if (!res.ok) {
       setEvolutions(antes);
       toast.error(res.error ?? 'Não foi possível atualizar o registro.');
@@ -1456,8 +1537,10 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       }
       setEventosFalharamAoSalvar(false);
 
+      const fichaSalvaId = editingId;
+      if (fichaSalvaId) setFichaParaReabrirAposSave(fichaSalvaId);
       await fetchFichas();
-      closePanel();
+      closePanel(true);
     } catch (err) {
       console.error("Erro ao salvar ficha:", err);
       toast.error("Erro ao salvar a ficha. Tente novamente.");
@@ -1572,12 +1655,18 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     }
   };
 
-  const closePanel = () => {
+  const closePanel = (forcar = false) => {
+    if (!forcar && temAlteracoesPendentes) {
+      const confirmar = window.confirm('Descartar as alterações desta ficha? Elas ainda não foram salvas.');
+      if (!confirmar) return;
+    }
     setIsPanelOpen(false);
     setEditingId(null);
+    setEditingSnapshot(null);
     setSelectedTeeth([]);
     limparLote(); // R-109 — seleção de lote não sobrevive ao fechamento do painel
-    setSharedTeeth([]);    setSharedNotes(['']);
+    setSharedTeeth([]);
+    setSharedNotes(['']);
     setFormData({ dataAtendimento: hojeBRT(), type: "Evolução", observation: "", teethNotes: [], procedimentos: [], conduta: "", ortoManutencao: null });
     setEventosDraft([]);
     setDenteAberto(null);
@@ -1630,15 +1719,10 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     }
 
     const sharedTeethSet = new Set(detectedSharedGroup?.teeth ?? []);
-    const individualNotes = evolution.teethNotes.filter((tn) => !sharedTeethSet.has(tn.tooth));    setSharedTeeth(detectedSharedGroup?.teeth ?? []);
-    setSharedNotes(
-      detectedSharedGroup ? detectedSharedGroup.notes.split('\n').filter(Boolean) : ['']
-    );
-    setEditingId(evolution.id);
-    setEventosFalharamAoSalvar(false); // ficha diferente — resíduo da anterior não se aplica
-    setOrtoHerdadaDe(null); // editar ficha salva: o orto é o dela, não herdado (R-05b)
-    setAlertaNovoDetectado(null); // idem — nada detectado nesta sessão até reorganizar
-    setFormData({
+    const individualNotes = evolution.teethNotes.filter((tn) => !sharedTeethSet.has(tn.tooth));
+    const proximosSharedTeeth = detectedSharedGroup?.teeth ?? [];
+    const proximosSharedNotes = detectedSharedGroup ? detectedSharedGroup.notes.split('\n').filter(Boolean) : [''];
+    const proximoFormData = {
       dataAtendimento: evolution.dataAtendimento,
       type: evolution.type,
       observation: evolution.observation,
@@ -1649,12 +1733,29 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       procedimentos: evolution.procedimentos,
       conduta: evolution.conduta ?? '',
       ortoManutencao: evolution.ortoManutencao,
-    });
+    };
+    const proximosEventos = evolution.eventos.map(eventoViewParaDraft);
+    const proximosDentesSelecionados = individualNotes.map((tn) => tn.tooth);
+    scrollAntesDeEditarRef.current = window.scrollY;
+    setSharedTeeth(proximosSharedTeeth);
+    setSharedNotes(proximosSharedNotes);
+    setEditingId(evolution.id);
+    setEventosFalharamAoSalvar(false); // ficha diferente — resíduo da anterior não se aplica
+    setOrtoHerdadaDe(null); // editar ficha salva: o orto é o dela, não herdado (R-05b)
+    setAlertaNovoDetectado(null); // idem — nada detectado nesta sessão até reorganizar
+    setFormData(proximoFormData);
     // Edição RECARREGA os eventos salvos como rascunho (mesmo id, via eventoViewParaDraft):
     // senão o registro do dente some ao editar e não dá pra mexer no canal/detalhe. Salvar
     // faz upsert por id (R-01), não duplica nem renumera. Bug achado 23/07.
-    setEventosDraft(evolution.eventos.map(eventoViewParaDraft));
-    setSelectedTeeth(individualNotes.map((tn) => tn.tooth));
+    setEventosDraft(proximosEventos);
+    setSelectedTeeth(proximosDentesSelecionados);
+    setEditingSnapshot({
+      formData: proximoFormData,
+      selectedTeeth: proximosDentesSelecionados,
+      sharedTeeth: proximosSharedTeeth,
+      sharedNotes: proximosSharedNotes,
+      eventosDraft: proximosEventos,
+    });
     limparLote(); // R-109 — abrir outra ficha pra editar não herda o lote da anterior
     setIsPanelOpen(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1664,6 +1765,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   const abrirNovaComOrto = () => {
     if (!ultimaOrto) return;
     setEditingId(null);
+    setEditingSnapshot(null);
     setSharedTeeth([]);
     setSharedNotes(['']);
     setSelectedTeeth([]);
@@ -1797,15 +1899,50 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                   tipo/data/autoria; só dá início claro à ficha. */}
               <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 pb-4">
                 <div>
-                  <h3 className="font-heading text-xl text-text-primary">Nova ficha clínica</h3>
+                  <h3 className="font-heading text-xl text-text-primary">
+                    {editingId ? 'Editando ficha clínica' : 'Nova ficha clínica'}
+                  </h3>
                   <p className="mt-0.5 text-xs text-text-secondary">
                     {formData.type} · {dataBR(formData.dataAtendimento)} · {autorNomeDraft}
                   </p>
                 </div>
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-teal/30 bg-teal/5 px-2.5 py-1 text-[11px] font-bold text-teal-ink">
-                  <span className="h-1.5 w-1.5 rounded-full bg-teal" /> Rascunho
+                  <span className="h-1.5 w-1.5 rounded-full bg-teal" /> {editingId ? 'Edição' : 'Rascunho'}
                 </span>
               </div>
+
+              {/* R-129e — a edição histórica não pode terminar no rodapé de uma ficha longa.
+                  A mesma action atômica continua sendo usada; a barra só a mantém no contexto. */}
+              {editingId && (
+                <div className="sticky top-3 z-20 flex flex-col gap-3 rounded-2xl border border-teal/30 bg-surface/95 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-text-primary">Editando ficha de {dataBR(formData.dataAtendimento)}</p>
+                    <p className="text-xs text-text-secondary" aria-live="polite">
+                      {temAlteracoesPendentes
+                        ? `${alteracoesPendentes} alteraç${alteracoesPendentes === 1 ? 'ão pendente' : 'ões pendentes'}`
+                        : 'Nenhuma alteração'}
+                    </p>
+                  </div>
+                  <div className="flex gap-2 sm:shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => closePanel()}
+                      disabled={isSaving}
+                      className="min-h-11 flex-1 rounded-xl border border-border px-3 text-sm font-semibold text-text-secondary transition-colors hover:bg-surface-alt hover:text-text-primary disabled:opacity-50 sm:flex-none"
+                    >
+                      Descartar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleSave()}
+                      disabled={isSaving || !temAlteracoesPendentes}
+                      className="min-h-11 flex-1 rounded-xl bg-teal px-4 text-sm font-bold text-white transition-colors hover:bg-teal-lt disabled:opacity-50 sm:flex-none"
+                    >
+                      {isSaving ? 'Salvando...' : 'Salvar alterações'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Campo mágico (Job A Fatia B) — não renderiza no perfil demo (§8: sem clínica real). */}
               {patientId !== 'demo' && (
@@ -1914,6 +2051,30 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                 }
               />
 
+              <FaixaEscopoRegional
+                escopo={escopoRegional}
+                onEscopoChange={selecionarEscopoRegional}
+                eventosDraft={eventosDraft}
+                onEventosDraftChange={setEventosDraft}
+                catalogoProcedimentos={catalogoProcedimentos ?? []}
+                dataPadrao={formData.dataAtendimento}
+                modoLancamento={modoLancamento}
+                onModoLancamentoChange={setModoLancamento}
+                manutencaoOrtodonticaAtiva={formData.ortoManutencao != null}
+                onManutencaoOrtodontica={() => {
+                  setFormData((atual) => ({
+                    ...atual,
+                    ortoManutencao: atual.ortoManutencao ?? { ...ORTO_VAZIO },
+                  }));
+                  if (complementosDetailsRef.current) {
+                    complementosDetailsRef.current.open = true;
+                    requestAnimationFrame(() => {
+                      complementosDetailsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    });
+                  }
+                }}
+              />
+
               {/* R-122 — a mesma faixa do Meu Dia: seleção vale para 1+ dentes; detalhe dental
                   só abre pelo gesto explícito dentro dela. */}
               <FaixaLote
@@ -1982,11 +2143,12 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                   <p className="mt-0.5 text-[11px] text-text-secondary">Só abra o que precisar nesta consulta.</p>
                 </div>
               <details
+                ref={complementosDetailsRef}
                 className="group rounded-2xl border border-border bg-surface"
               >
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left marker:content-none">
                   <span>
-                    <span className="block font-semibold text-sm text-text-primary">Anotações, rotina e ortodontia</span>
+                    <span className="block font-semibold text-sm text-text-primary">Anotações e ortodontia</span>
                     <span className="block text-[11px] text-text-secondary">Abra para complementar o registro clínico.</span>
                   </span>
                   <ChevronRight className="h-4 w-4 shrink-0 text-text-secondary transition-transform group-open:rotate-90" />
@@ -2016,68 +2178,6 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                     className="w-full bg-surface-alt border border-border rounded-xl px-3.5 py-2.5 text-sm font-medium text-text-primary outline-none focus:border-teal transition-colors min-h-[80px] resize-y"
                   />
                 </div>
-              </div>
-
-              {/* R-07 — procedimentos de rotina (boca/quadrante): chips que ciclam eventos no
-                  rascunho. Nunca pintam o odontograma (D5) — o registro cai na seção "Geral" da
-                  lista e persiste pelo caminho normal de eventos. Raspagem ancora por quadrante. */}
-              <div className="border-t border-border/60 pt-4">
-                <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-[0.15em] mb-2">
-                  Procedimentos de rotina
-                </label>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {(['profilaxia', 'fluor', 'clareamento', 'exame_periodontal'] as const).map((tipo) => {
-                    const ev = eventoRotina(eventosDraft, tipo);
-                    const cor = ev ? corDoRegistro(ev.status, ev.origem) : null;
-                    return (
-                      <button
-                        key={tipo}
-                        type="button"
-                        onClick={() => setEventosDraft(cycleRotina(eventosDraft, tipo))}
-                        aria-label={`${TIPO_LABEL[tipo]} (boca toda) — ${ev ? (ev.status === 'indicado' ? 'a fazer' : 'feito') : 'sem registro'}`}
-                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all outline-none focus-visible:ring-1 focus-visible:ring-teal"
-                        style={{
-                          background: cor
-                            ? `color-mix(in srgb, var(--color-${cor}) 16%, var(--color-surface-alt))`
-                            : 'var(--color-surface-alt)',
-                          color: cor ? `var(--color-${cor}-ink)` : 'var(--color-text-secondary)',
-                          border: `1px solid ${cor ? `color-mix(in srgb, var(--color-${cor}) 45%, var(--color-border))` : 'var(--color-border)'}`,
-                        }}
-                      >
-                        {TIPO_LABEL[tipo]}
-                      </button>
-                    );
-                  })}
-                  <span className="mx-1 text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                    Raspagem
-                  </span>
-                  {([1, 2, 3, 4] as const).map((q) => {
-                    const ev = eventoRotina(eventosDraft, 'raspagem', q);
-                    const cor = ev ? corDoRegistro(ev.status, ev.origem) : null;
-                    return (
-                      <button
-                        key={q}
-                        type="button"
-                        onClick={() => setEventosDraft(cycleRotina(eventosDraft, 'raspagem', q))}
-                        aria-label={`Raspagem quadrante ${q} — ${ev ? (ev.status === 'indicado' ? 'a fazer' : 'feito') : 'sem registro'}`}
-                        title={`Raspagem — quadrante ${q}`}
-                        className="px-2 py-1.5 rounded-lg text-[11px] font-mono font-bold transition-all outline-none focus-visible:ring-1 focus-visible:ring-teal"
-                        style={{
-                          background: cor
-                            ? `color-mix(in srgb, var(--color-${cor}) 16%, var(--color-surface-alt))`
-                            : 'var(--color-surface-alt)',
-                          color: cor ? `var(--color-${cor}-ink)` : 'var(--color-text-secondary)',
-                          border: `1px solid ${cor ? `color-mix(in srgb, var(--color-${cor}) 45%, var(--color-border))` : 'var(--color-border)'}`,
-                        }}
-                      >
-                        Q{q}
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="mt-1.5 text-[10px] text-text-muted">
-                  1º toque marca <span className="font-semibold">a fazer</span>, 2º marca <span className="font-semibold">feito</span>, 3º remove.
-                </p>
               </div>
 
               {/* R-05 — manutenção ortodôntica manual: monta o OrtoForm (que já existia mas nunca
@@ -2144,18 +2244,18 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/60">
                 <button
                   type="button"
-                  onClick={closePanel}
+                  onClick={() => closePanel()}
                   className="px-5 py-2.5 rounded-xl font-semibold text-sm text-text-secondary hover:text-text-primary hover:bg-surface-alt transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={() => void handleSave()}
-                  disabled={isSaving}
+                  disabled={isSaving || (editingId !== null && !temAlteracoesPendentes)}
                   className="bg-teal hover:bg-teal-lt text-white px-5 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-[0_0_15px_rgba(47,156,133,0.3)] disabled:opacity-50"
                 >
                   {isSaving ? (<Loader2 className="w-4 h-4 animate-spin" />) : (<Check className="w-4 h-4" />)}
-                  {isSaving ? "Salvando..." : "Salvar Evolução"}
+                  {isSaving ? "Salvando..." : editingId ? "Salvar alterações" : "Salvar Evolução"}
                 </button>
               </div>
             </div>
@@ -2213,7 +2313,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                 {/* ═══ Ficha salva — design definitivo (artefato §05, 21/07). Header 1 linha:
                     tipo · data · autor/CRO · contagem · pills · ações. Expandido: odontograma-
                     índice + registros (eventos OU derivação v2 no MESMO visual) + orto + textos. */}
-                <div className={`bg-surface rounded-2xl border transition-all duration-200 overflow-hidden ${isExpanded ? 'border-teal/50 shadow-lg' : 'border-border/60 shadow-sm'}`}>
+                <div id={`ficha-${evo.id}`} className={`bg-surface rounded-2xl border transition-all duration-200 overflow-hidden ${isExpanded ? 'border-teal/50 shadow-lg' : 'border-border/60 shadow-sm'}`}>
                   <div
                     role="button"
                     tabIndex={0}
@@ -2290,15 +2390,18 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                       {podeEditarFicha(evo) && (
                         <button
                           onClick={() => handleEdit(evo)}
-                          title="Editar"
-                          className="h-11 w-11 hover:bg-surface-alt rounded-lg transition-colors text-text-secondary hover:text-text-primary inline-flex items-center justify-center"
+                          title="Editar ficha"
+                          aria-label="Editar ficha"
+                          className="min-h-11 rounded-lg px-3 text-[11px] font-bold text-text-secondary transition-colors hover:bg-surface-alt hover:text-text-primary inline-flex items-center justify-center gap-1.5"
                         >
                           <Pencil className="w-4 h-4" />
+                          <span>Editar ficha</span>
                         </button>
                       )}
-                      <button
-                        onClick={() => window.open(`/api/fichas/${evo.id}/pdf`, '_blank')}
-                        title="Baixar"
+                        <button
+                          onClick={() => window.open(`/api/fichas/${evo.id}/pdf`, '_blank')}
+                          title="Baixar"
+                          aria-label="Baixar ficha em PDF"
                         className="h-11 w-11 hover:bg-surface-alt rounded-lg transition-colors text-text-secondary hover:text-text-primary inline-flex items-center justify-center"
                       >
                         <Download className="w-4 h-4" />
@@ -2314,6 +2417,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                               .finally(() => setVinculosLoading(false));
                           }}
                           title="Excluir"
+                          aria-label="Excluir ficha"
                           className="h-11 w-11 hover:bg-surface-alt rounded-lg transition-colors text-text-secondary hover:text-coral inline-flex items-center justify-center"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -2837,4 +2941,3 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
     </div>
   );
 }
-

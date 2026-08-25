@@ -536,7 +536,6 @@ export function MeuDiaClient({
     const res = await atualizarStatusEncaminhado({
       eventoIds: [p.id],
       novoStatus: 'realizado',
-      realizadoEm: hojeBRT(),
     });
     setConcluindoId(null);
     if (!res.ok) {

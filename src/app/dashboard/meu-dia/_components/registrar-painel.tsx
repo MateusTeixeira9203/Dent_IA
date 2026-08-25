@@ -17,10 +17,9 @@
 //
 // R-107a (13/08, debate ao vivo) — Status (a fazer/feito) e Observação globais SAÍRAM: eram
 // redundantes com o pill de status e o textarea por-evento que já existem em
-// `ToothDetailPanel`/`NestaSessaoBloco`. Todo evento criado por aqui nasce `realizado` fixo
-// (era o default do state removido). Entraram chips de Profilaxia/Clareamento — mesmo ciclo
-// que `FichasTab.tsx` já tinha, portado via `@/lib/odontograma/rotina-boca` em vez de
-// duplicado. "+ texto da visita" virou "+ Observação" (mesmo mecanismo, só rótulo).
+// `ToothDetailPanel`/`NestaSessaoBloco`. R-128 substituiu os atalhos fixos de rotina por
+// escopo regional universal, compartilhado com a ficha. "+ texto da visita" virou
+// "+ Observação" (mesmo mecanismo, só rótulo).
 //
 // 04/08 (pedido dele, ao vivo) — `OndeSeletor` (chips de arcada/quadrante) SAIU da barra
 // sem-IA: clicar direto no dente do odontograma já resolve "onde" pros tipos por-dente, e os
@@ -70,7 +69,6 @@ import { MarcarRetornoModal, type MarcarRetornoForm } from '@/components/pacient
 import { formatHora } from '@/lib/agenda/disponibilidade';
 import {
   TIPO_LABEL,
-  corDoRegistro,
   type OdontogramaEventoDraft,
   type AncoraClinica,
   type ModoLancamento,
@@ -80,13 +78,14 @@ import { criarEventosContextuais } from '@/lib/odontograma/criar-eventos-context
 import { normalizarOrtoManutencao, type OrtoManutencaoDetalhe } from '@/lib/especialidades/orto';
 import { type SugestaoLocal } from '@/lib/odontograma/casar-procedimento-local';
 import { ditadoDevolveMapa, type SlotCentral } from '@/lib/odontograma/ditado-devolve-mapa';
-import { aplicarRotinaComModo, eventoRotina } from '@/lib/odontograma/rotina-boca';
+import type { EscopoRegional } from '@/lib/odontograma/escopo-regional';
 import type { MeuDiaPendencia, MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
 
 // R-109 — a faixa de lote inteira (lógica, estado interno e markup) saiu daqui pro componente
 // compartilhado; a ficha monta a MESMA em vez de uma cópia (spec §2). Aqui ficou só o `onde`,
 // que é a SELEÇÃO — essa continua sendo desta tela, porque cada tela seleciona do seu jeito.
 import { FaixaLote } from '@/components/odontograma/faixa-lote';
+import { FaixaEscopoRegional } from '@/components/odontograma/faixa-escopo-regional';
 
 const TIPOS = Object.entries(TIPO_LABEL) as Array<[TipoRegistroOdontograma, string]>;
 
@@ -231,6 +230,7 @@ export function useRegistrarPainel({
   const [alertaNovo, setAlertaNovo] = useState<string | null>(null);
 
   const [onde, setOnde] = useState<OndeValor>(null);
+  const [escopoRegional, setEscopoRegional] = useState<EscopoRegional | null>(null);
   const [modoLancamento, setModoLancamento] = useState<ModoLancamento>('a_fazer');
   // R-62 — carrega `dentes` junto (não só o item): quando a sugestão veio do texto do campo
   // mágico com número ("resina Z350 no 24"), o dente tem que sobreviver até o clique em
@@ -292,6 +292,7 @@ export function useRegistrarPainel({
     setQuantidadeAoRenderizar(eventosDraft.length);
     setAlertaNovo(null);
     setOnde(null);
+    setEscopoRegional(null);
     setCatalogoPendente(null);
     setTipoPendente(null);
     setOrtoChipAberto(false);
@@ -432,6 +433,7 @@ export function useRegistrarPainel({
   // por "Abrir detalhe dental" na faixa; assim vários dentes podem ser marcados em sequência
   // sem trocar o contexto visual a cada clique.
   function onToothToggle(dente: number) {
+    setEscopoRegional(null);
     const sel = onde?.dentes ?? [];
     if (!sel.includes(dente)) {
       handleOndeChange({ dentes: [...sel, dente] });
@@ -462,6 +464,14 @@ export function useRegistrarPainel({
   /** "✕ limpar" — só esvazia a seleção, nunca desfaz o que já foi registrado. */
   function limparLote() {
     setOnde(null);
+  }
+
+  function selecionarEscopoRegional(escopo: EscopoRegional | null) {
+    setOnde(null);
+    setDenteAberto(null);
+    setTipoPendente(null);
+    setCatalogoPendente(null);
+    setEscopoRegional(escopo);
   }
 
   // I1 — 1 clique = 1 ficha: `salvarFicha` não é idempotente por agendamentoId, o `disabled`
@@ -566,7 +576,9 @@ export function useRegistrarPainel({
               <span className="mt-0.5 block text-[11px] text-text-secondary">
                 {onde?.dentes.length
                   ? `${onde.dentes.length === 1 ? `Dente ${onde.dentes[0]}` : `${onde.dentes.length} dentes`} selecionado${onde.dentes.length === 1 ? '' : 's'}`
-                  : 'Selecione no odontograma ou use uma ação de rotina'}
+                  : escopoRegional
+                    ? 'Região selecionada para registrar'
+                    : 'Selecione um dente ou uma região'}
               </span>
             )}
           </span>
@@ -616,49 +628,18 @@ export function useRegistrarPainel({
           </div>
         )}
 
-        {/* R-125a — os chips de rotina usam o modo manual ativo: diferentemente do ciclo
-            histórico da ficha completa, um clique não apaga o registro e não decide sozinho
-            se foi realizado. Flúor/raspagem/exame periodontal ficam de fora (R-107a §6). */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {(['profilaxia', 'clareamento'] as const).map((tipo) => {
-            const ev = eventoRotina(eventosDraft, tipo);
-            const cor = ev ? corDoRegistro(ev.status, ev.origem) : null;
-            return (
-              <button
-                key={tipo}
-                type="button"
-                onClick={() => setEventosDraft(aplicarRotinaComModo(eventosDraft, tipo, modoLancamento, dataPadrao))}
-                aria-label={`${TIPO_LABEL[tipo]} (boca toda) — registrar como ${modoLancamento.replace('_', ' ')}`}
-                className="rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors"
-                style={{
-                  background: cor
-                    ? `color-mix(in srgb, var(--color-${cor}) 16%, var(--color-surface-alt))`
-                    : 'var(--color-surface-alt)',
-                  color: cor ? `var(--color-${cor}-ink)` : 'var(--color-text-secondary)',
-                  borderColor: cor
-                    ? `color-mix(in srgb, var(--color-${cor}) 45%, var(--color-border))`
-                    : 'var(--color-border)',
-                }}
-              >
-                {TIPO_LABEL[tipo]}
-              </button>
-            );
-          })}
-
-          {/* 04/08 — 1º chip de "não usa o odontograma". Pré-preenchido com a última
-              manutenção real (herança R-05b) quando existe. */}
-          <button
-            type="button"
-            onClick={() => setOrtoChipAberto((v) => !v)}
-            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-              ortoChipAberto || ortoValor != null
-                ? 'border-teal bg-teal/10 text-teal-ink'
-                : 'border-border bg-surface-alt text-text-secondary hover:border-teal/40'
-            }`}
-          >
-            Manutenção ortodôntica
-          </button>
-        </div>
+        <FaixaEscopoRegional
+          escopo={escopoRegional}
+          onEscopoChange={selecionarEscopoRegional}
+          eventosDraft={eventosDraft}
+          onEventosDraftChange={setEventosDraft}
+          catalogoProcedimentos={catalogoProcedimentos}
+          dataPadrao={dataPadrao}
+          modoLancamento={modoLancamento}
+          onModoLancamentoChange={setModoLancamento}
+          manutencaoOrtodonticaAtiva={ortoChipAberto || ortoValor != null}
+          onManutencaoOrtodontica={() => setOrtoChipAberto((aberto) => !aberto)}
+        />
 
         {/* R-122 — seleção única e múltipla usam a mesma faixa. */}
         {onde && (
