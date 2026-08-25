@@ -2,6 +2,9 @@
 
 > **Fase:** implementação local · **Migration:** 1 (RPC de orçamento) · **RLS:** não muda.
 
+> **Complemento pendente de execução (2026-08-25):** corrigir o falso erro ao excluir
+> recebimento e permitir editar o valor final negociado de orçamento já salvo.
+
 ## Problema confirmado
 
 1. O compromisso pessoal usa `agenda_bloqueios`, cuja RLS já permite à secretária operar a
@@ -21,6 +24,13 @@
    detalhe avançado de um dente e fora do menu multidente rápido; por isso é difícil de descobrir
    no atendimento. Também precisa chegar ao orçamento como uma ponte única, não como três
    procedimentos independentes.
+5. Ao excluir um recebimento, `excluirPagamento` pode apagar a linha e ainda devolver
+   `Não foi possível excluir este pagamento.`: o `count` da operação `DELETE` não é uma
+   confirmação confiável nesse client. A tela então mostra erro, mas ao fechar o orçamento a
+   remoção já está persistida.
+6. Depois de salvo, o orçamento não permite corrigir o **valor final negociado** sem reabrir o
+   plano de pagamento. Isso obriga o dentista a refazer informação financeira mesmo quando os
+   procedimentos continuam corretos.
 
 ## Decisões
 
@@ -35,6 +45,9 @@
 | D7 | Não será criado outro tipo, tabela ou símbolo para ponte fixa. O R-130 reutiliza o grupo `ponte` já persistido: dentes extremos são **pilares**; os dentes internos são **pônticos**. |
 | D8 | No menu rápido, **Ponte fixa** abre diretamente o fluxo seguro do pilar inicial: selecionar o primeiro pilar → tocar `Ponte fixa` → escolher o outro extremo do mesmo arco → revisar e confirmar. Nenhum evento é salvo antes da confirmação. |
 | D9 | Uma ponte é um único item de orçamento, ligado a todos os eventos do seu `grupo_id`. A linha identifica pilares e pônticos e usa a quantidade de elementos da ponte (ex.: 24–26 = 3). O valor continua editável pelo dentista. |
+| D10 | Excluir recebimento confirma sucesso por `DELETE ... select('id')`, não por `count`. Só há sucesso visual quando exatamente a linha solicitada voltar na seleção; o perfil do paciente também é revalidado. |
+| D11 | “Valor final” significa **valor negociado** (`valor_acordado`), nunca `total`: o total segue sendo a soma da proposta inteira. A edição fica no resumo financeiro do orçamento, em ação explícita e separada dos procedimentos. |
+| D12 | O valor negociado só pode mudar sem plano de pagamento configurado nem parcela agendada. Nunca pode ser menor que a soma já paga. Havendo `plano_forma` ou `pagamento.status='pendente'`, a interface bloqueia a alteração e explica que o plano/parcela precisa ser ajustado primeiro. |
 
 ## Contrato técnico
 
@@ -72,6 +85,28 @@
   valor anterior e novo nas `metadata`, e revalida orçamento, financeiro e perfil do paciente.
 - Excluir pagamento continua ação separada e confirmada. Nenhum recebimento é apagado por
   `editarOrcamento`.
+- `excluirPagamento` troca `.delete({ count: 'exact' })` por `.delete().select('id')`. Erro do
+  banco continua sendo retornado; array vazio ou com id diferente retorna erro explícito antes
+  de qualquer atualização otimista. Em êxito, revalida orçamento, financeiro **e** perfil do
+  paciente.
+
+### B.1 Valor final negociado do orçamento
+
+**Arquivos:** `orcamentos/actions.ts`, `paciente-detail-client.tsx`,
+`detalhe-orcamento-modal.tsx`. **Schema/migration:** nenhum.
+
+- O resumo financeiro do detalhe ganha a seção `Valor final negociado`. O campo começa em
+  `valor_acordado`; se estiver `null`, mostra o total atual como sugestão. O rótulo deixa
+  explícito: `Não altera os procedimentos.`
+- Nova action `editarValorAcordado(orcamentoId, valorAcordado)` recebe valor em centavos/number
+  já validado no cliente e revalida no servidor: orçamento existe na clínica ativa, valor é
+  positivo, e `valorAcordado >= soma(pagamentos.status='pago')`.
+- A action consulta `plano_forma` e pagamentos pendentes. Se houver plano ou parcela agendada,
+  retorna erro sem escrever nada. Não recalcula, edita ou exclui parcelas implicitamente.
+- Em êxito, atualiza exclusivamente `orcamentos.valor_acordado`, registra
+  `orcamento.editado` com `alteracao='valor_negociado'` e valores anterior/novo, e revalida
+  orçamento, financeiro e perfil. O estado/valor devido é recalculado pela fórmula do R-114
+  sem escrita adicional de status.
 
 ### C. Fonte completa da ficha para orçamento
 
@@ -128,6 +163,12 @@ o contexto clínico individual. [Glossário da ADA](https://www.ada.org/publicat
 - Secretária pode criar bloqueio para dentista ativo da própria clínica; outro usuário não.
 - Falha de inserir ou de recarregar não vira sucesso visual silencioso.
 - Recebimento corrigido mantém trilha de auditoria e nunca edita/exclui outro recebimento.
+- Um `DELETE` de pagamento só confirma êxito se devolver o id solicitado; nunca existe toast de
+  erro depois de uma remoção já persistida.
+- `total` continua sendo a soma de todos os itens da proposta; editar o valor final só altera
+  `valor_acordado`.
+- Valor negociado nunca fica abaixo do total já recebido e nunca deixa um plano/parcelas ativos
+  com valores desencontrados.
 - Registro `preexistente` nunca nasce como item de orçamento.
 - O mesmo evento não entra em dois orçamentos, mesmo com dois cliques concorrentes.
 - Alterar a fonte do orçamento não muda status, assinatura nem data do evento clínico.
@@ -152,6 +193,14 @@ o contexto clínico individual. [Glossário da ADA](https://www.ada.org/publicat
 - [ ] Em um orçamento pago, **Editar orçamento → Recebimentos → Editar** permite corrigir
       valor, forma e data no desktop e celular; o histórico registra `pagamento.editado`.
 - [ ] UPDATE barrado/zero linhas mostra erro e não atualiza a tela otimisticamente.
+- [ ] Excluir um recebimento uma vez remove a linha, exibe apenas `Pagamento excluído.` e mantém
+      o mesmo resultado ao fechar/reabrir o orçamento; uma segunda tentativa recebe
+      `Pagamento não encontrado.`.
+- [ ] Orçamento sem plano, com R$ 300 pagos: alterar valor final de R$ 1.000 para R$ 800 atualiza
+      somente `valor_acordado`; os itens e o total original não mudam.
+- [ ] Tentar definir R$ 299 no mesmo orçamento falha sem alteração.
+- [ ] Orçamento com `plano_forma`/parcelas ativas mostra o bloqueio de renegociação e não altera
+      `valor_acordado` nem nenhuma parcela.
 - [ ] Ficha com procedimento indicado, realizado e assinado (todos `origem='clinica'`) gera
       três itens; um evento `preexistente` não aparece.
 - [ ] Um evento já ligado a orçamento anterior não reaparece e a RPC recusa tentativa manual de
@@ -170,6 +219,7 @@ o contexto clínico individual. [Glossário da ADA](https://www.ada.org/publicat
 - Transformar evento pré-existente em procedimento cobrável automaticamente.
 - Mudança de RLS de pagamentos, orçamento ou agenda.
 - Edição do conteúdo clínico a partir do orçamento.
+- Renegociação automática de parcelas ou de plano já definido.
 - Alterar o desenho anatômico/símbolo da ponte no odontograma (o símbolo atual já representa o
   grupo; o refinamento visual permanece no item próprio de símbolos).
 
