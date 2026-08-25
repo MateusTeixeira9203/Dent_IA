@@ -69,6 +69,8 @@ body:has(.lp) { background: #0d0d0d }
 @media (prefers-reduced-motion: reduce) {
   .lp .sobe, .lp .revelar { opacity: 1 !important; transform: none !important; animation: none !important; transition: none !important }
   .lp .ponto-vivo, .lp .dente, .lp .bolinha, .lp .cursor { animation: none !important }
+  /* Sem a animação de entrada, os dentes não podem permanecer em opacity: 0. */
+  .lp .dente { opacity: 1 !important; transform: none !important }
 }
 
 /* ════════ topo — transparente, ganha corpo ao rolar ════════ */
