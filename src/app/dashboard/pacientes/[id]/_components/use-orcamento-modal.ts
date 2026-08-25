@@ -77,8 +77,8 @@ const CAMPOS_EVENTO_ORC =
   'id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, assinatura_id, observacao, ' +
   'encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(nome)';
 const SELECT_FICHA_PARA_ORC = `${CAMPOS_FICHA_ORC}, odontograma_eventos(${CAMPOS_EVENTO_ORC})`;
-// R-53 (§3) — !inner: só fichas com ≥1 evento indicado/não-assinado voltam, e o embed já vem
-// filtrado pra esses eventos. Sem `.limit()` (medido: no máx. 6 fichas/paciente).
+// R-130 — !inner mantém o agregado enxuto, mas a elegibilidade financeira não depende mais
+// de status/assinatura: qualquer evento clínico da ficha pode virar item de orçamento.
 const SELECT_FICHA_PARA_ORC_AGREGADO = `${CAMPOS_FICHA_ORC}, odontograma_eventos!inner(${CAMPOS_EVENTO_ORC})`;
 
 export function useOrcamentoModal({
@@ -204,15 +204,18 @@ export function useOrcamentoModal({
     });
   };
 
-  // R-53 — função PURA sobre uma lista de eventos, serve tanto 1 ficha (fallback) quanto o
-  // agregado de N fichas (itensDoAgregado). Só status='indicado' sem assinatura entra.
+  // R-130 — fonte única da elegibilidade: evento clínico pode ser cobrado tenha sido ele
+  // planejado ou realizado. Pré-existente é histórico; vínculo existente evita duplicidade.
+  const eventoPodeEntrarNoOrcamento = (
+    evento: EventoOdontogramaParaOrc,
+    idsJaOrcados: ReadonlySet<string>,
+  ) => evento.origem === 'clinica' && !idsJaOrcados.has(evento.id);
+
   const eventosParaItens = (
     eventos: EventoOdontogramaParaOrc[],
     idsJaOrcados: ReadonlySet<string> = eventoIdsJaOrcados,
   ): NovoOrcItem[] => {
-    const elegiveis = eventos.filter(
-      (ev) => ev.status === 'indicado' && ev.assinatura_id == null && !idsJaOrcados.has(ev.id),
-    );
+    const elegiveis = eventos.filter((ev) => eventoPodeEntrarNoOrcamento(ev, idsJaOrcados));
     if (elegiveis.length === 0) return [];
 
     const grupos = new Map<string, EventoOdontogramaParaOrc[]>();
@@ -242,9 +245,19 @@ export function useOrcamentoModal({
             ? `D${dentesDistintos.join(', D')}`
             : '';
 
+      const pilares = grupoEventos
+        .filter((ev) => ev.papel_no_grupo === 'pilar' && ev.dente != null)
+        .map((ev) => `D${ev.dente}`);
+      const ponticos = grupoEventos
+        .filter((ev) => ev.papel_no_grupo === 'pontico' && ev.dente != null)
+        .map((ev) => `D${ev.dente}`);
+      const descricaoPonte = primeiro.tipo === 'ponte'
+        ? `${match?.nome ?? 'Ponte fixa'} — pilares ${pilares.join(' e ') || alcance} · ${ponticos.length === 1 ? 'pôntico' : 'pônticos'} ${ponticos.join(', ') || alcance}`
+        : null;
+
       return {
         procedimentoId: match?.id ?? '',
-        descricao: alcance ? `${match?.nome ?? rotulo} — ${alcance}` : (match?.nome ?? rotulo),
+        descricao: descricaoPonte ?? (alcance ? `${match?.nome ?? rotulo} — ${alcance}` : (match?.nome ?? rotulo)),
         quantidade,
         preco: match?.preco_padrao != null ? formatValorBR(match.preco_padrao) : '',
         eventoIds: grupoEventos.map((evento) => evento.id),
@@ -329,8 +342,8 @@ export function useOrcamentoModal({
     }
   };
 
-  // R-53 — busca única do agregado (todos os indicados abertos do paciente), reusada pelos
-  // pontos de entrada que agregam (botão geral e, agora, o picker do Meu dia).
+  // R-130 — busca única do agregado: todos os eventos clínicos do paciente, reusada pelos
+  // pontos de entrada que agregam. A responsabilidade continua resolvida em JS.
   const carregarFichasAgregado = async (): Promise<FichaParaOrc[]> => {
     const supabase = createClient();
     const query = supabase
@@ -338,8 +351,7 @@ export function useOrcamentoModal({
       .select(SELECT_FICHA_PARA_ORC_AGREGADO)
       .eq('paciente_id', pacienteId)
       .eq('clinica_id', clinicaId)
-      .eq('odontograma_eventos.status', 'indicado')
-      .is('odontograma_eventos.assinatura_id', null);
+      .eq('odontograma_eventos.origem', 'clinica');
     const { data, error } = await query.order('data_atendimento', { ascending: false });
     if (error) throw new Error(error.message);
     return (data as unknown as FichaParaOrc[]) ?? [];

@@ -150,6 +150,8 @@ interface RegistrarPainelProps {
   onAbrirPickerOrcamento: () => void;
   /** R-122 — detalhe é sempre um gesto explícito da faixa de ações rápidas. */
   onAbrirDetalheDental: (dente: number) => void;
+  /** R-130 — variante explícita que abre o fluxo de ponte no pilar selecionado. */
+  onIniciarPonte: (dente: number) => void;
   /** R-49 F1 — o campo mágico extraiu detalhe de endo; abre o editor já expandido. */
   onAbrirDetalheEndo: (dente: number, eventoId: string) => void;
   /** R-105a §4.2 — repassado direto pro campo mágico. Derivado em `meu-dia-client.tsx`
@@ -219,6 +221,7 @@ export function useRegistrarPainel({
   detalheEspecialidadeAberto,
   onAbrirPickerOrcamento,
   onAbrirDetalheDental,
+  onIniciarPonte,
   onAbrirDetalheEndo,
   realceCampoMagico,
   dicaCampoMagico,
@@ -654,6 +657,7 @@ export function useRegistrarPainel({
             onLimpar={limparLote}
             onModoMultidenteChange={() => {}}
             onAbrirDetalheDental={onAbrirDetalheDental}
+            onIniciarPonte={onIniciarPonte}
           />
         )}
 

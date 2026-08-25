@@ -27,6 +27,7 @@ import {
 import { toast } from 'sonner';
 import { buildClinicDatetime } from './date-helpers';
 import type { DentistaAgenda } from './cor-dentista';
+import { nomeDentistaExibicao } from '@/lib/agenda/nome-dentista';
 import type { BloqueioRow } from '../page';
 import {
   criarCompromissoPessoal,
@@ -67,7 +68,9 @@ export function CompromissoPessoalDialog({
   open, onOpenChange, dentistas, isSecretaria, dentistaAtualId, editando, onSalvo,
 }: Props) {
   const dentistasOrdenados = useMemo(
-    () => [...dentistas].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
+    () => [...dentistas].sort((a, b) =>
+      nomeDentistaExibicao(a.nome).localeCompare(nomeDentistaExibicao(b.nome), 'pt-BR'),
+    ),
     [dentistas],
   );
 
@@ -82,6 +85,7 @@ export function CompromissoPessoalDialog({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  const semDentistaSelecionavel = isSecretaria && !editando && dentistasOrdenados.length === 0;
 
   // Reseta/preenche o form a cada abertura — nunca herda estado da vez anterior. Ajuste
   // durante o render (padrão React: "adjusting state when a prop changes"), não em efeito —
@@ -115,6 +119,10 @@ export function CompromissoPessoalDialog({
   }
 
   const handleSalvar = async (forcar = false) => {
+    if (semDentistaSelecionavel || (isSecretaria && !editando && !form.dentistaId)) {
+      setError('Nenhum dentista ativo está disponível para este compromisso.');
+      return;
+    }
     if (!form.data || !form.hora) { setError('Preencha dia e hora.'); return; }
     const duracaoMinutos = parseInt(form.duracao, 10);
     if (!duracaoMinutos || duracaoMinutos < 5 || duracaoMinutos > 600) {
@@ -154,7 +162,7 @@ export function CompromissoPessoalDialog({
   };
 
   const nomeDentistaEditando = editando
-    ? dentistas.find((d) => d.id === editando.dentista_id)?.nome ?? 'dentista'
+    ? nomeDentistaExibicao(dentistas.find((d) => d.id === editando.dentista_id)?.nome)
     : null;
 
   return (
@@ -207,6 +215,12 @@ export function CompromissoPessoalDialog({
 
             {/* Dentista — secretária escolhe ao criar; ao editar, é só informativo (a
                 action não muda o dono do bloqueio, mesma decisão de não reabrir esse caminho). */}
+            {semDentistaSelecionavel && (
+              <p className="rounded-xl border border-warning/30 bg-warning-pale p-3 text-xs text-warning-ink">
+                Não há dentista ativo nesta clínica para receber o compromisso.
+              </p>
+            )}
+
             {isSecretaria && dentistas.length > 0 && (
               editando ? (
                 <div className="flex items-center gap-2 px-3 py-2.5 bg-surface-alt rounded-xl border border-border">
@@ -222,7 +236,9 @@ export function CompromissoPessoalDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-surface border-border">
-                      {dentistasOrdenados.map((d) => <SelectItem key={d.id} value={d.id}>{d.nome}</SelectItem>)}
+                      {dentistasOrdenados.map((d) => (
+                        <SelectItem key={d.id} value={d.id}>{nomeDentistaExibicao(d.nome)}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -320,7 +336,7 @@ export function CompromissoPessoalDialog({
           <div className="p-5 border-t border-border space-y-2.5">
             <Button
               onClick={() => void handleSalvar(false)}
-              disabled={saving}
+              disabled={saving || semDentistaSelecionavel}
               className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl font-bold disabled:opacity-50"
             >
               {saving ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Salvando...</> : (editando ? 'Salvar alterações' : 'Criar compromisso')}

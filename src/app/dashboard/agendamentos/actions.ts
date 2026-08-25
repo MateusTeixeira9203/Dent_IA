@@ -888,18 +888,22 @@ export async function criarCompromissoPessoal(input: {
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   const dados = parsed.data;
 
-  const { supabase, clinicId, dentistaId } = await requireClinicContext();
+  const { supabase, clinicId, dentistaId, role } = await requireClinicContext();
   const dentistaAlvo = dados.dentistaId ?? dentistaId;
 
   // Mesmo padrão de criarPedidoProtetico (R-94): só a secretária informa dentistaId, e
   // só é aceito se ele for admin/dentista da clínica ativa (RLS reforça isso de qualquer
   // forma no insert — esta checagem só devolve um erro legível em vez de um 0-linhas mudo).
   if (dados.dentistaId && dados.dentistaId !== dentistaId) {
+    if (role !== 'secretaria') {
+      return { error: "Somente a secretária pode criar um compromisso na agenda de outro dentista." };
+    }
     const { count } = await supabase
       .from("dentistas")
       .select("id", { count: "exact", head: true })
       .eq("id", dados.dentistaId)
       .eq("clinica_id", clinicId)
+      .eq("ativo", true)
       .in("role", ["admin", "dentista"]);
     if ((count ?? 0) === 0) return { error: "Dentista não encontrado." };
   }

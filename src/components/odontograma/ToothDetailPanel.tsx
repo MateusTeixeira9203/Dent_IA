@@ -139,6 +139,10 @@ export interface ToothDetailPanelProps {
    * comportamento de sempre (nasce fechado, I3 — os outros consumidores não passam isto).
    */
   abrirDetalheDoEvento?: string;
+  /** R-130 — a ação rápida "Ponte fixa" já abre o fluxo seguro de pilares. */
+  iniciarPonte?: boolean;
+  /** Confirma que o pedido de abrir a ponte foi consumido, sem reabrir ao renderizar. */
+  onPonteIniciada?: () => void;
   /**
    * R-107b — catálogo pro match local da busca livre (§3.1 da spec). Ausente = a busca só
    * casa os 18 tipos estruturais, sem sugestão de catálogo — mesmo padrão de degradação que
@@ -160,6 +164,8 @@ export function ToothDetailPanel({
   state = 'default',
   onDetalheAbertoChange,
   abrirDetalheDoEvento,
+  iniciarPonte = false,
+  onPonteIniciada,
   catalogoProcedimentos = [],
 }: ToothDetailPanelProps) {
   const superior = (dente >= 11 && dente <= 28) || (dente >= 51 && dente <= 65);
@@ -235,6 +241,12 @@ export function ToothDetailPanel({
   const [ponteFlow, setPonteFlow] = useState<
     { ate: number | null; papeis: Record<number, PapelNoGrupo>; status: StatusRegistro } | null
   >(null);
+
+  useEffect(() => {
+    if (!iniciarPonte || readOnly) return;
+    setPonteFlow({ ate: null, papeis: {}, status: 'indicado' });
+    onPonteIniciada?.();
+  }, [iniciarPonte, onPonteIniciada, readOnly]);
 
   /** Dentes do vão na ordem do arco (inclusive). [] se algum extremo não é do arco. */
   function spanPonte(a: number, b: number): number[] {

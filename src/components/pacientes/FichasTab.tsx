@@ -697,6 +697,8 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
 
   // Camada 1: dente aberto no painel de revisão do odontograma (rascunho do Dex).
   const [denteAberto, setDenteAberto] = React.useState<number | null>(null);
+  /** R-130 — pedido transitório consumido pelo ToothDetailPanel ao abrir a ponte. */
+  const [iniciarPonteDente, setIniciarPonteDente] = React.useState<number | null>(null);
   // R-20 Fase 2 — destino da tabela de especialidade (endo/implante) abaixo do bloco, full-width.
   // Um por site (criação vs. ficha salva), já que cada um tem seu OdontogramaComPainel.
   const [tabelaElA, setTabelaElA] = React.useState<HTMLElement | null>(null);
@@ -822,6 +824,13 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   /** Único gesto explícito que abre o perfil dental na criação. */
   const abrirDetalheDental = React.useCallback((dente: number) => {
     setDenteAberto(dente);
+    setIniciarPonteDente(null);
+    destacarDente(dente, 'A', setDentesAbertosA, cardsDraft);
+  }, [cardsDraft, destacarDente]);
+
+  const iniciarPonte = React.useCallback((dente: number) => {
+    setDenteAberto(dente);
+    setIniciarPonteDente(dente);
     destacarDente(dente, 'A', setDentesAbertosA, cardsDraft);
   }, [cardsDraft, destacarDente]);
 
@@ -2033,8 +2042,10 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                       dente={denteAberto}
                       eventos={eventosDraft}
                       onChange={setEventosDraft}
-                      onClose={() => setDenteAberto(null)}
+                      onClose={() => { setDenteAberto(null); setIniciarPonteDente(null); }}
                       dataPadrao={formData.dataAtendimento}
+                      iniciarPonte={iniciarPonteDente === denteAberto}
+                      onPonteIniciada={() => setIniciarPonteDente(null)}
                       gruposAbertos={gruposAbertos}
                       tabelaContainer={tabelaElA}
                       catalogoProcedimentos={catalogoProcedimentos}
@@ -2088,6 +2099,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                 onLimpar={limparLote}
                 onModoMultidenteChange={() => {}}
                 onAbrirDetalheDental={abrirDetalheDental}
+                onIniciarPonte={iniciarPonte}
               />
                 </div>
               </article>

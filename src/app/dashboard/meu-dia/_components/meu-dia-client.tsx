@@ -177,6 +177,7 @@ export function MeuDiaClient({
    *  de verdade, depois, EDITA esta mesma ficha em vez de criar uma 2ª. */
   const [fichaRascunhoId, setFichaRascunhoId] = useState<string | null>(null);
   const [denteAberto, setDenteAberto] = useState<number | null>(null);
+  const [iniciarPonteDente, setIniciarPonteDente] = useState<number | null>(null);
   /** R-78 F2 — dente aberto mostra o HISTÓRICO por padrão (§3.2 da spec: leitura antes de
    *  escrita); isto revela o editor de faces/chips (`ToothDetailPanel`, reusado tal qual)
    *  por cima, via "+ registrar neste dente" ou "continuar aqui" do aviso de grupo aberto. */
@@ -400,6 +401,7 @@ export function MeuDiaClient({
     },
     onAbrirDetalheEndo: abrirDenteGrande,
     onAbrirDetalheDental: abrirDetalheDental,
+    onIniciarPonte: iniciarPonte,
   });
 
   // C6 — o Sheet precisa da mesma lista que o painel do dente sempre recebeu; migrado de
@@ -469,6 +471,7 @@ export function MeuDiaClient({
   function handleDenteAbertoChange(dente: number | null) {
     if (dente != null) setJaTocouDente(true); // R-105a §4.2.1 — dispensa a dica do odontograma
     setDenteAberto(dente);
+    setIniciarPonteDente(null);
     // R-63 — nova seleção (ou fechar via ✕) nunca herda a tabela aberta do dente anterior;
     // o próprio ToothDetailPanel também reseta o índice local pro mesmo efeito (§4.2/I3).
     setDetalheEspecialidadeAberto(false);
@@ -504,6 +507,11 @@ export function MeuDiaClient({
     handleDenteAbertoChange(dente);
     setRegistrandoDenteAberto(true);
     setDetalheAlvoId(null);
+  }
+
+  function iniciarPonte(dente: number) {
+    abrirDetalheDental(dente);
+    setIniciarPonteDente(dente);
   }
 
   // R-123 — o painel de faces só existe por gesto explícito. Esc acompanha o ✕ e
@@ -854,6 +862,8 @@ export function MeuDiaClient({
                       // continua acessível pelo gesto explícito "Ver histórico".
                       onClose={() => handleDenteAbertoChange(null)}
                       dataPadrao={hojeBRT()}
+                      iniciarPonte={iniciarPonteDente === denteAberto}
+                      onPonteIniciada={() => setIniciarPonteDente(null)}
                       gruposAbertos={gruposAbertos}
                       onDetalheAbertoChange={setDetalheEspecialidadeAberto}
                       abrirDetalheDoEvento={detalheAlvoId ?? undefined}

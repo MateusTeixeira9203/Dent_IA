@@ -319,7 +319,11 @@ export function AgendamentosClient({
       toast.error('Não foi possível atualizar a agenda. Recarregue a página.');
       return;
     }
-    if (bloqueiosErr) console.error('[agenda] recarregar bloqueios falhou:', bloqueiosErr.message);
+    if (bloqueiosErr) {
+      console.error('[agenda] recarregar bloqueios falhou:', bloqueiosErr.message);
+      toast.error('O compromisso foi salvo, mas a agenda não pôde ser atualizada. Recarregue a página.');
+      return;
+    }
     if (data) setAgendamentos(data as unknown as AgendamentoRow[]);
     if (bloqueiosData) setBloqueios(bloqueiosData as unknown as BloqueioRow[]);
   }, [_clinicaId, visao, ancora]);

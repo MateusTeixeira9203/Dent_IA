@@ -50,11 +50,14 @@ export interface FaixaLoteProps {
   onModoMultidenteChange: (v: boolean) => void;
   /** Com um único dente, abre o painel completo apenas por gesto explícito. */
   onAbrirDetalheDental?: (dente: number) => void;
+  /** R-130 — abre o fluxo seguro de ponte já no pilar selecionado. */
+  onIniciarPonte?: (dente: number) => void;
 }
 
 export function FaixaLote({
   dentes, eventosDraft, onEventosDraftChange, catalogoProcedimentos, dataPadrao,
   modoLancamento, onModoLancamentoChange, onLimpar, onModoMultidenteChange, onAbrirDetalheDental,
+  onIniciarPonte,
 }: FaixaLoteProps) {
   const [facePendente, setFacePendente] = useState(false);
   const [facesSelecionadas, setFacesSelecionadas] = useState<FaceDental[]>([]);
@@ -271,6 +274,15 @@ export function FaixaLote({
           >
             Dente ausente
           </button>
+          {dentes.length === 1 && onIniciarPonte && (
+            <button
+              type="button"
+              onClick={() => onIniciarPonte(dentes[0])}
+              className="rounded-full border border-teal/30 bg-surface px-2.5 py-1 text-[11px] font-semibold text-teal-ink hover:bg-teal/10"
+            >
+              Ponte fixa
+            </button>
+          )}
         </div>
       )}
 

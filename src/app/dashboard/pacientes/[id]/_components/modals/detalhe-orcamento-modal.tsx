@@ -590,6 +590,10 @@ export function DetalheOrcamentoModal({
                   {detalheOrc.pagamentos.length > 0 && (
                     <>
                       <div className="h-px bg-border my-4" />
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-text-secondary">Recebimentos</h4>
+                        <span className="text-[11px] text-text-secondary">Edite valor, forma e data quando precisar</span>
+                      </div>
                       <div className="space-y-1.5">
                         {detalheOrc.pagamentos.map(pg => {
                           const Icon = FORMA_ICON[pg.forma_pagamento ?? 'outro'] ?? CircleDollarSign;
@@ -733,7 +737,7 @@ export function DetalheOrcamentoModal({
                                   </button>
                                 )}
                               </div>
-                              <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="flex items-center gap-0.5 shrink-0">
                                 {isPago ? (
                                   <button
                                     onClick={() => onIniciarEdicaoPagamento(pg)}

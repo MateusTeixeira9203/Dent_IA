@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { nomeDentistaExibicao } from '@/lib/agenda/nome-dentista';
 import { STATUS_CONFIG } from './status-config';
 import type { AgendamentoRow, BloqueioRow } from '../page';
 import type { AgendamentoStatus } from '@/types/database';
@@ -270,7 +271,7 @@ export function MonthView({
                             {isSecretaria && bl.dentista && (
                               <p className="text-xs text-text-secondary mt-1 flex items-center gap-1">
                                 <UserCog className="w-3 h-3" />
-                                Dr(a). {bl.dentista.nome}
+                                Dr(a). {nomeDentistaExibicao(bl.dentista.nome)}
                               </p>
                             )}
                           </div>

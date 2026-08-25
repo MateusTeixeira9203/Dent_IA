@@ -808,11 +808,14 @@ export async function editarPagamento(
   pagamentoId: string,
   dados: { valor: number; formaPagamento: FormaPagamento; data: string },
 ): Promise<{ error?: string }> {
+  if (!Number.isFinite(dados.valor) || dados.valor <= 0) {
+    return { error: "Informe um valor de recebimento maior que zero." };
+  }
   const { supabase, user, clinicId } = await requireClinicContext();
 
   const { data: pagAtual } = await supabase
     .from("pagamentos")
-    .select("id, paciente_id")
+    .select("id, paciente_id, valor, forma_pagamento, data_pagamento")
     .eq("id", pagamentoId)
     .eq("clinica_id", clinicId)
     .maybeSingle();
@@ -821,7 +824,7 @@ export async function editarPagamento(
     return { error: "Pagamento não encontrado." };
   }
 
-  const { error } = await supabase
+  const { data: atualizados, error } = await supabase
     .from("pagamentos")
     .update({
       valor:           dados.valor,
@@ -829,10 +832,11 @@ export async function editarPagamento(
       data_pagamento:  dados.data,
     })
     .eq("id", pagamentoId)
-    .eq("clinica_id", clinicId);
+    .eq("clinica_id", clinicId)
+    .select("id");
 
-  if (error) {
-    return { error: error.message };
+  if (error || !atualizados || atualizados.length !== 1) {
+    return { error: error?.message ?? "Não foi possível atualizar este recebimento." };
   }
 
   const { data: dentistaPerfil } = await supabase
@@ -849,11 +853,15 @@ export async function editarPagamento(
     entityType:  'pagamento',
     entityId:    pagamentoId,
     action:      'pagamento.editado',
-    metadata:    { valor: dados.valor, forma: dados.formaPagamento },
+    metadata:    {
+      antes: { valor: pagAtual.valor, forma: pagAtual.forma_pagamento, data: pagAtual.data_pagamento },
+      depois: { valor: dados.valor, forma: dados.formaPagamento, data: dados.data },
+    },
   });
 
   revalidatePath("/dashboard/orcamentos");
   revalidatePath("/dashboard/financeiro");
+  revalidatePath(`/dashboard/pacientes/${pagAtual.paciente_id}`);
   return {};
 }
 
