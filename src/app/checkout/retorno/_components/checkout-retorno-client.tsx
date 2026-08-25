@@ -33,7 +33,12 @@ export function CheckoutRetornoClient() {
       const resultado = await conferir();
       if (cancelado || resultado.estado !== 'aguardando') return;
       tentativas += 1;
-      if (tentativas < 12) window.setTimeout(() => { void verificar(); }, 2_500);
+      if (tentativas < 12) {
+        window.setTimeout(() => { void verificar(); }, 2_500);
+      } else {
+        setTela('erro');
+        setMensagem('A confirmação ainda não chegou ao sistema. Nenhuma cobrança será repetida: aguarde alguns minutos ou confira novamente.');
+      }
     };
     void verificar();
     return () => { cancelado = true; };

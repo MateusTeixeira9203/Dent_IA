@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Building2, Clock, Stethoscope, Check, Plus, Loader2, Pencil, X, UserCircle, LogOut, AlertTriangle, ImageIcon, FileUp, CreditCard, Gift, Copy, ArrowUpRight, Sparkles, MessageCircle } from 'lucide-react';
+import { Building2, Clock, Stethoscope, Check, Plus, Loader2, Pencil, X, UserCircle, LogOut, AlertTriangle, ImageIcon, FileUp, CreditCard, Gift, ArrowUpRight, Sparkles, MessageCircle } from 'lucide-react';
 import Link from 'next/link';
 import { ImportarProcedimentosModal } from './importar-procedimentos-modal';
 import { MigrarClinicaModal } from './migrar-clinica-modal';
@@ -10,6 +10,7 @@ import { createClient } from '@/lib/supabase/client';
 import { parseValorBR, formatValorBR } from '@/lib/valor-br';
 import { getLabelContexto, getPlano } from '@/lib/planos';
 import type { PlanoId } from '@/lib/planos';
+import type { EstadoComercial } from '@/lib/billing/estado-comercial';
 import { motion } from 'motion/react';
 import { PageContainer } from '@/components/layout/page-container';
 import type { ConfiguracaoClinica, HorarioDisponivel, Procedimento, DentistaRole } from '@/types/database';
@@ -63,8 +64,8 @@ interface Props {
     limiteDentistas: number;
     convitesRestantes: number;
   };
-  assinatura?: {
-    status: 'trial' | 'ativo' | 'inativo' | 'past_due' | 'suspenso';
+  estadoComercial?: {
+    estado: EstadoComercial;
     trialEndsAt: string | null;
     graceEndsAt: string | null;
   };
@@ -73,13 +74,14 @@ interface Props {
   abrirFormacaoInicial?: boolean;
   procedimentosPendente?: boolean;
   clinicId?: string;
-  appUrl?: string;
 }
 
-export function ConfiguracoesClient({ plano, dentista, config, horarios, procedimentos: procedimentosIniciais, abaInicial, equipe, assinatura, formacao, elegibilidade, abrirFormacaoInicial = false, procedimentosPendente = false, clinicId, appUrl }: Props) {
+export function ConfiguracoesClient({ plano, dentista, config, horarios, procedimentos: procedimentosIniciais, abaInicial, equipe, estadoComercial, formacao, elegibilidade, abrirFormacaoInicial = false, procedimentosPendente = false, clinicId }: Props) {
   const labelContexto = getLabelContexto(plano); // "Consultório" (SOLO) ou "Clínica" (CLINICA)
   const isSolo = !plano || plano === 'SOLO' || (plano as string) === 'BASICO';
   const planoConfig = getPlano(plano);
+  const estadoPlano = estadoComercial?.estado ?? 'inativo';
+  const clinicaIsenta = estadoPlano === 'isento';
 
   const ABAS_TODAS = [
     { id: 'perfil'        as const, label: 'Meu Perfil',      icon: UserCircle  },
@@ -102,17 +104,6 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
   // --- Plano e Indicação ---
   const [migrarOpen, setMigrarOpen]   = useState(abrirFormacaoInicial);
   const dentistasAtivos = (equipe?.usuarios ?? []).filter((u) => ['admin', 'dentista'].includes(u.role) && u.ativo).length;
-  const [copiouLink, setCopiouLink]   = useState(false);
-  const codigoIndicacao = (clinicId ?? '').replace(/-/g, '').slice(0, 8).toUpperCase();
-  const baseUrl = appUrl ?? 'https://odontoia.app';
-  const linkIndicacao = `${baseUrl}/cadastro?ref=${codigoIndicacao}`;
-
-  function copiarLink() {
-    void navigator.clipboard.writeText(linkIndicacao);
-    setCopiouLink(true);
-    setTimeout(() => setCopiouLink(false), 2500);
-  }
-
   function formatarDataTrial(iso: string): string {
     return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
   }
@@ -1098,22 +1089,24 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                     </p>
                   </div>
                   <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold shrink-0 ${
-                    assinatura?.status === 'ativo'  ? 'bg-teal/10 text-teal' :
-                    assinatura?.status === 'trial'  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' :
-                    assinatura?.status === 'past_due' ? 'bg-red-500/10 text-red-500' :
-                    assinatura?.status === 'suspenso' ? 'bg-red-500/10 text-red-500' :
+                    estadoPlano === 'ativo'  ? 'bg-teal/10 text-teal' :
+                    estadoPlano === 'trial'  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' :
+                    estadoPlano === 'past_due' ? 'bg-red-500/10 text-red-500' :
+                    estadoPlano === 'suspenso' ? 'bg-red-500/10 text-red-500' :
                                                       'bg-surface-alt text-text-secondary'
                   }`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${
-                      assinatura?.status === 'ativo'  ? 'bg-teal' :
-                      assinatura?.status === 'trial'  ? 'bg-amber-500 animate-pulse' :
-                      assinatura?.status === 'past_due' || assinatura?.status === 'suspenso' ? 'bg-red-500' :
+                      estadoPlano === 'ativo'  ? 'bg-teal' :
+                      estadoPlano === 'trial'  ? 'bg-amber-500 animate-pulse' :
+                      estadoPlano === 'past_due' || estadoPlano === 'suspenso' ? 'bg-red-500' :
                                                         'bg-text-secondary'
                     }`} />
-                    {assinatura?.status === 'ativo'  ? 'Ativo' :
-                     assinatura?.status === 'trial'  ? 'Teste de 7 dias' :
-                     assinatura?.status === 'past_due' ? 'Pagamento pendente' :
-                     assinatura?.status === 'suspenso' ? 'Suspenso' : 'Inativo'}
+                    {estadoPlano === 'isento' ? 'Cortesia permanente' :
+                     estadoPlano === 'ativo'  ? 'Ativo' :
+                     estadoPlano === 'trial'  ? 'Teste de 7 dias' :
+                     estadoPlano === 'em_formacao' ? 'Clínica em formação' :
+                     estadoPlano === 'past_due' ? 'Pagamento pendente' :
+                     estadoPlano === 'suspenso' ? 'Suspenso' : 'Inativo'}
                   </span>
                 </div>
 
@@ -1132,7 +1125,7 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                       R${planoConfig.preco}{isSolo ? '/mês' : '/dentista/mês'}
                     </p>
                   </div>
-                  {isSolo && assinatura?.status === 'inativo' && (
+                  {isSolo && estadoPlano === 'inativo' && (
                     <button
                       onClick={() => setMigrarOpen(true)}
                       className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-teal bg-teal/10 border border-teal/20 hover:bg-teal/20 transition-colors shrink-0"
@@ -1143,27 +1136,27 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                   )}
                 </div>
 
-                {assinatura?.status === 'trial' && assinatura.trialEndsAt && (
+                {estadoPlano === 'trial' && estadoComercial?.trialEndsAt && (
                   <div className="mt-4 flex items-start gap-3 p-4 rounded-xl border border-amber-300/40 bg-amber-50/60 dark:bg-amber-900/15">
                     <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0 animate-pulse" />
                     <p className="text-sm text-amber-700 dark:text-amber-400 font-medium">
                       Trial ativo. Expira em{' '}
-                      <span className="font-bold">{formatarDataTrial(assinatura.trialEndsAt)}</span>.{' '}
+                      <span className="font-bold">{formatarDataTrial(estadoComercial.trialEndsAt)}</span>.{' '}
                       Assine para não perder o acesso.
                     </p>
                   </div>
                 )}
 
-                {assinatura?.status === 'past_due' && (
+                {estadoPlano === 'past_due' && (
                   <div className="mt-4 rounded-xl border border-red-500/25 bg-red-500/5 p-4">
                     <p className="text-sm font-semibold text-red-500">Não conseguimos confirmar a última cobrança.</p>
                     <p className="mt-1 text-sm text-text-secondary">
-                      Atualize o cartão no portal Stripe{assinatura.graceEndsAt ? ` até ${new Date(assinatura.graceEndsAt).toLocaleString('pt-BR')}` : ''} para evitar a suspensão do acesso.
+                      Atualize o cartão no portal Stripe{estadoComercial?.graceEndsAt ? ` até ${new Date(estadoComercial.graceEndsAt).toLocaleString('pt-BR')}` : ''} para evitar a suspensão do acesso.
                     </p>
                   </div>
                 )}
 
-                {assinatura?.status === 'inativo' && (
+                {estadoPlano === 'inativo' && (
                   <div className="mt-4">
                     <Link
                       href="/planos"
@@ -1180,7 +1173,19 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                 )}
               </div>
 
-              {/* A Stripe hospeda cartão, faturas e cancelamento; o sistema não recebe dados do cartão. */}
+              {clinicaIsenta ? (
+                <div className="bg-surface p-6 rounded-3xl border border-border shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-teal/10">
+                      <Gift className="size-5 text-teal" />
+                    </div>
+                    <div>
+                      <h2 className="font-heading text-xl font-bold text-text-primary">Acesso de cortesia</h2>
+                      <p className="mt-1 text-sm text-text-secondary">Esta clínica é parceira do Odonto.IA e não possui cobrança, cartão ou faturas vinculadas.</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
               <div className="bg-surface p-6 rounded-3xl border border-border shadow-sm">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-start gap-3">
@@ -1194,7 +1199,7 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                       </p>
                     </div>
                   </div>
-                  {assinatura?.status !== 'inativo' ? (
+                  {estadoPlano !== 'inativo' && estadoPlano !== 'em_formacao' ? (
                     <button
                       type="button"
                       disabled={isPending}
@@ -1214,6 +1219,7 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                 </div>
                 <p className="mt-4 text-xs text-text-secondary">O Odonto.IA não armazena o número completo do seu cartão.</p>
               </div>
+              )}
 
               {formacao && formacao.status !== 'ativa' && (
                 <div className="rounded-3xl border border-amber-500/25 bg-amber-500/5 p-6">
@@ -1230,7 +1236,7 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                 </div>
               )}
 
-              {/* Card: Programa de Indicação */}
+              {/* A indicação ainda não possui rastreio/cobrança implementados: não prometemos benefício automático. */}
               <div
                 className="rounded-3xl overflow-hidden"
                 style={{
@@ -1244,11 +1250,10 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                       Programa de Indicação
                     </span>
                     <h3 className="font-heading font-bold text-xl text-text-primary mt-1">
-                      Indique e ganhe 1 mês grátis
+                      Indicações em breve
                     </h3>
                     <p className="text-sm text-text-secondary mt-2 leading-relaxed">
-                      Compartilhe seu link. Quando um colega assinar,
-                      vocês dois ganham 1 mês grátis automaticamente.
+                      Estamos preparando o programa de indicação com regras e benefícios transparentes.
                     </p>
                   </div>
                   <div
@@ -1260,59 +1265,9 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                 </div>
 
                 <div className="px-6 pb-6 space-y-6">
-                  {/* Link de indicação */}
-                  <div className="flex gap-2">
-                    <div className="flex-1 flex items-center gap-2 px-4 py-3 bg-surface/80 rounded-2xl border border-border/60 overflow-hidden">
-                      <span className="text-xs text-teal shrink-0">🔗</span>
-                      <span className="text-sm font-mono text-text-primary truncate">
-                        {linkIndicacao.replace('https://', '')}
-                      </span>
-                    </div>
-                    <button
-                      onClick={copiarLink}
-                      className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold transition-all shrink-0 ${
-                        copiouLink
-                          ? 'bg-teal text-white'
-                          : 'bg-surface border border-border/60 text-text-primary hover:border-teal/40 hover:text-teal'
-                      }`}
-                    >
-                      {copiouLink
-                        ? <><Check className="w-4 h-4" /> Copiado!</>
-                        : <><Copy className="w-4 h-4" /> Copiar</>
-                      }
-                    </button>
-                  </div>
-
-                  {/* Como funciona — 3 etapas */}
-                  <div className="grid grid-cols-3 gap-4">
-                    {[
-                      'Compartilhe o link com um colega dentista',
-                      'Ele assina qualquer plano pelo seu link',
-                      'Vocês dois ganham 1 mês grátis',
-                    ].map((label, i) => (
-                      <div key={i} className="flex flex-col items-center text-center gap-2.5">
-                        <div
-                          className="w-9 h-9 rounded-full flex items-center justify-center text-teal font-bold text-base font-mono"
-                          style={{ background: 'rgba(47,156,133,0.12)', border: '1px solid rgba(47,156,133,0.25)' }}
-                        >
-                          {i + 1}
-                        </div>
-                        <p className="text-sm text-text-secondary leading-snug">{label}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Stats */}
-                  <div className="border-t border-border/30 pt-5 grid grid-cols-2 gap-4">
-                    <div className="text-center">
-                      <p className="font-mono text-3xl font-bold text-text-primary">0</p>
-                      <p className="text-sm text-text-secondary mt-1">indicações feitas</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="font-mono text-3xl font-bold text-teal">0</p>
-                      <p className="text-sm text-text-secondary mt-1">meses conquistados</p>
-                    </div>
-                  </div>
+                  <p className="rounded-2xl border border-border/60 bg-surface/80 px-4 py-3 text-sm text-text-secondary">
+                    Você será avisado aqui quando o programa estiver disponível.
+                  </p>
                 </div>
               </div>
 

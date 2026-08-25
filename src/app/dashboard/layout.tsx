@@ -6,6 +6,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { WelcomeModal } from "./_components/welcome-modal";
 import { createServiceClient } from '@/lib/supabase/service';
 import { clinicaIsentaDeCobranca } from '@/lib/billing/exemptions';
+import { resolverEstadoComercial } from '@/lib/billing/estado-comercial';
 import { obterAcessoFormacaoClinica } from '@/server/services/formacao-clinica';
 
 const ROTA_PROTETICO = "/dashboard/protetico";
@@ -52,8 +53,12 @@ export default async function DashboardLayout({
 
     if (dentista.role === 'admin' || dentista.role === 'dentista') {
       const statusIndividual = assinaturaIndividual?.status;
-      const assinaturaLiberada = clinicaIsentaDeCobranca(clinicId)
-        || Boolean(statusIndividual && ['trialing', 'active', 'past_due'].includes(statusIndividual))
+      const estadoComercial = resolverEstadoComercial({
+        isento: clinicaIsentaDeCobranca(clinicId),
+        statusAssinatura: statusIndividual,
+        formacaoAtiva: acessoFormacao.liberado,
+      });
+      const assinaturaLiberada = ['isento', 'trial', 'ativo', 'past_due'].includes(estadoComercial)
         || acessoFormacao.liberado;
 
       if (!assinaturaLiberada) {

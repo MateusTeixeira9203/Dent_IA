@@ -7,12 +7,13 @@ import { useRouter } from 'next/navigation';
 import { NeuralBackground } from '@/components/layout/NeuralBackground';
 import { createCheckout } from '../actions';
 import { PLANOS } from '@/lib/planos';
+import type { EstadoComercial } from '@/lib/billing/estado-comercial';
 import Link from 'next/link';
 
 interface PlanosClientProps {
   userId: string | null;
   trialUsed: boolean;
-  statusAssinatura: 'trial' | 'ativo' | 'inativo';
+  estadoComercial: EstadoComercial;
   expired: boolean;
   onboarding: boolean;
   cancelado: boolean;
@@ -65,7 +66,7 @@ const plans = [
 export function PlanosClient({
   userId,
   trialUsed,
-  statusAssinatura,
+  estadoComercial,
   expired,
   onboarding,
   cancelado,
@@ -87,7 +88,7 @@ export function PlanosClient({
     });
   };
 
-  const isActive = statusAssinatura === 'ativo';
+  const isActive = estadoComercial === 'ativo' || estadoComercial === 'trial';
 
   return (
     <div className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-bg">

@@ -4,6 +4,8 @@ import type { ConfiguracaoClinica, HorarioDisponivel, Procedimento, DentistaRole
 import { PageTransition } from '@/components/layout/page-transition';
 import type { PlanoId } from '@/lib/planos';
 import { createServiceClient } from '@/lib/supabase/service';
+import { clinicaIsentaDeCobranca } from '@/lib/billing/exemptions';
+import { resolverEstadoComercial } from '@/lib/billing/estado-comercial';
 
 export default async function ConfiguracoesPage({
   searchParams,
@@ -48,7 +50,7 @@ export default async function ConfiguracoesPage({
   const procedimentosPendente = clinicaData?.procedimentos_pendente ?? false;
   const limiteDentistas = clinicaData?.limite_dentistas ?? 5;
   const planoClinica = (clinicaData?.plano ?? 'SOLO') as PlanoId;
-  let statusAssinatura = (clinicaData?.status_assinatura ?? 'inativo') as 'trial' | 'ativo' | 'inativo' | 'past_due' | 'suspenso';
+  let statusAssinatura = clinicaData?.status_assinatura ?? 'inativo';
   let trialEndsAt = clinicaData?.trial_ends_at ?? null;
   let graceEndsAt: string | null = null;
 
@@ -60,15 +62,7 @@ export default async function ConfiguracoesPage({
       .select('status, trial_ends_at, grace_ends_at').eq('usuario_id', user.id).eq('clinica_id', clinicId)
       .maybeSingle<{ status: string; trial_ends_at: string | null; grace_ends_at: string | null }>();
     if (assinaturaRaw) {
-      statusAssinatura = assinaturaRaw.status === 'trialing'
-        ? 'trial'
-        : assinaturaRaw.status === 'active'
-          ? 'ativo'
-          : assinaturaRaw.status === 'past_due'
-            ? 'past_due'
-            : ['suspended', 'unpaid'].includes(assinaturaRaw.status)
-              ? 'suspenso'
-              : 'inativo';
+      statusAssinatura = assinaturaRaw.status;
       trialEndsAt = assinaturaRaw.trial_ends_at;
       graceEndsAt = assinaturaRaw.grace_ends_at;
     }
@@ -93,6 +87,11 @@ export default async function ConfiguracoesPage({
       formacao = { status: formacaoRaw.status, expiresAt: formacaoRaw.expires_at, cartoesProntos: count ?? 0 };
     }
   }
+  const estadoComercial = resolverEstadoComercial({
+    isento: clinicaIsentaDeCobranca(clinicId),
+    statusAssinatura,
+    formacaoAtiva: Boolean(formacao && formacao.status !== 'ativa'),
+  });
 
   const dentistasAtivos = ((usuariosRaw ?? []) as Array<{ role: string; ativo: boolean }>).filter(
     (u) => (u.role === 'admin' || u.role === 'dentista') && u.ativo
@@ -118,13 +117,12 @@ export default async function ConfiguracoesPage({
     <PageTransition>
       <ConfiguracoesClient
         plano={planoClinica}
-        assinatura={{ status: statusAssinatura, trialEndsAt, graceEndsAt }}
+        estadoComercial={{ estado: estadoComercial, trialEndsAt, graceEndsAt }}
         formacao={formacao}
         elegibilidade={elegibilidade}
         abrirFormacaoInicial={params.criar === 'clinica'}
         procedimentosPendente={procedimentosPendente}
         clinicId={clinicId}
-        appUrl={process.env.NEXT_PUBLIC_APP_URL ?? 'https://odontoia.app'}
         dentista={{
           id: dentistaPerfil?.id ?? '',
           nome: (dentistaPerfil?.nome as string) ?? '',

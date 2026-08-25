@@ -331,6 +331,9 @@ export async function ativarFormacaoSePronta(formacaoId: string): Promise<void> 
 
 export async function criarPortalAssinaturaDentista(userId: string, clinicId: string): Promise<{ url?: string; error?: string }> {
   if (!billingAtivo()) return { error: 'A cobrança Stripe ainda não foi ativada.' };
+  if (clinicaIsentaDeCobranca(clinicId)) {
+    return { error: 'Esta clínica possui acesso de cortesia e não tem portal de cobrança.' };
+  }
   const db = createServiceClient();
   const { data: assinatura } = await db.from('assinaturas_dentista').select('stripe_customer_id')
     .eq('usuario_id', userId).eq('clinica_id', clinicId)
