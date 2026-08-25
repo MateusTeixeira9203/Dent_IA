@@ -888,18 +888,18 @@ export async function excluirPagamento(
     return { error: 'Você não tem permissão para excluir este pagamento.' };
   }
 
-  const { error, count } = await supabase
+  // PostgREST pode executar o DELETE e devolver `count=null` mesmo com `count: 'exact'`.
+  // Isso fazia a tela acusar erro apesar de o recebimento já ter sido removido. Selecionar o id
+  // apagado é a confirmação inequívoca e também protege contra RLS silenciosa.
+  const { data: deletados, error } = await supabase
     .from("pagamentos")
-    .delete({ count: 'exact' })
+    .delete()
     .eq("id", pagamentoId)
-    .eq("clinica_id", clinicId);
+    .eq("clinica_id", clinicId)
+    .select("id");
 
-  if (error) {
-    return { error: error.message };
-  }
-
-  if (!count) {
-    return { error: 'Não foi possível excluir este pagamento.' };
+  if (error || deletados?.length !== 1 || deletados[0]?.id !== pagamentoId) {
+    return { error: error?.message ?? 'Não foi possível excluir este pagamento.' };
   }
 
   const { data: dentistaPerfil } = await supabase
@@ -921,6 +921,86 @@ export async function excluirPagamento(
 
   revalidatePath("/dashboard/orcamentos");
   revalidatePath("/dashboard/financeiro");
+  revalidatePath(`/dashboard/pacientes/${pagAtual.paciente_id}`);
+  return {};
+}
+
+/**
+ * R-130 — corrige somente o valor que foi negociado com o paciente. `total` continua sendo a
+ * proposta (soma dos itens) e nunca é reescrito aqui. Planos/parcelas são uma fotografia do
+ * acordo: mudar o valor por baixo deles deixaria o saldo financeiro inconsistente, então essa
+ * ação recusa enquanto houver `plano_forma` ou parcela ainda agendada.
+ */
+export async function editarValorAcordado(
+  orcamentoId: string,
+  valorAcordado: number,
+): Promise<{ error?: string }> {
+  if (!Number.isFinite(valorAcordado) || valorAcordado <= 0) {
+    return { error: 'Informe um valor final maior que zero.' };
+  }
+
+  const { supabase, clinicId, dentistaId } = await requireClinicContext();
+  const { data: orcamento } = await supabase
+    .from('orcamentos')
+    .select('id, paciente_id, valor_acordado, plano_forma, pagamentos(valor, status)')
+    .eq('id', orcamentoId)
+    .eq('clinica_id', clinicId)
+    .maybeSingle();
+
+  if (!orcamento) return { error: 'Orçamento não encontrado.' };
+
+  if (orcamento.plano_forma) {
+    return {
+      error: 'Este orçamento já tem um plano de pagamento. Ajuste as parcelas antes de alterar o valor final.',
+    };
+  }
+
+  const temParcelaAgendada = (orcamento.pagamentos ?? []).some(
+    (pagamento) => pagamento.status === 'pendente',
+  );
+  if (temParcelaAgendada) {
+    return {
+      error: 'Este orçamento tem parcela agendada. Ajuste ou remova a parcela antes de alterar o valor final.',
+    };
+  }
+
+  const valorJaPago = (orcamento.pagamentos ?? [])
+    .filter((pagamento) => pagamento.status === 'pago')
+    .reduce((soma, pagamento) => soma + (pagamento.valor ?? 0), 0);
+
+  // Trabalha em centavos para não reprovar um valor igual por ruído de ponto flutuante.
+  if (Math.round(valorAcordado * 100) < Math.round(valorJaPago * 100)) {
+    return { error: 'O valor final não pode ser menor que o total já recebido.' };
+  }
+
+  const { data: atualizado, error } = await supabase
+    .from('orcamentos')
+    .update({ valor_acordado: valorAcordado })
+    .eq('id', orcamentoId)
+    .eq('clinica_id', clinicId)
+    .select('id');
+
+  if (error || atualizado?.length !== 1 || atualizado[0]?.id !== orcamentoId) {
+    return { error: error?.message ?? 'Não foi possível atualizar o valor final.' };
+  }
+
+  registrarLog(supabase, {
+    clinicaId: clinicId,
+    actorId: dentistaId,
+    pacienteId: orcamento.paciente_id,
+    entityType: 'orcamento',
+    entityId: orcamentoId,
+    action: 'orcamento.editado',
+    metadata: {
+      alteracao: 'valor_negociado',
+      antes: orcamento.valor_acordado,
+      depois: valorAcordado,
+    },
+  });
+
+  revalidatePath('/dashboard/orcamentos');
+  revalidatePath('/dashboard/financeiro');
+  revalidatePath(`/dashboard/pacientes/${orcamento.paciente_id}`);
   return {};
 }
 

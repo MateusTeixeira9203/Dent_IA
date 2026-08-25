@@ -70,6 +70,7 @@ import {
   editarPagamento,
   marcarPagamentoPago,
   excluirPagamento,
+  editarValorAcordado,
   editarOrcamento,
   excluirOrcamento,
   gerarParcelas,
@@ -281,6 +282,12 @@ export function PacienteDetailClient({
   const [editPagError, setEditPagError] = useState<string | null>(null);
   const [confirmDeletePagId, setConfirmDeletePagId] = useState<string | null>(null);
   const [pagDeleteSaving, setPagDeleteSaving] = useState(false);
+
+  // R-130 — valor negociado é uma edição financeira independente dos procedimentos.
+  const [editValorAcordadoAberto, setEditValorAcordadoAberto] = useState(false);
+  const [valorAcordadoTexto, setValorAcordadoTexto] = useState('');
+  const [valorAcordadoSaving, setValorAcordadoSaving] = useState(false);
+  const [valorAcordadoError, setValorAcordadoError] = useState<string | null>(null);
 
   // Edição de orçamento
   const [orcEditMode, setOrcEditMode] = useState(false);
@@ -955,6 +962,41 @@ export function PacienteDetailClient({
       toast.success('Pagamento excluído.');
     }
     setPagDeleteSaving(false);
+  };
+
+  const handleIniciarEdicaoValorAcordado = () => {
+    if (!detalheOrc) return;
+    setValorAcordadoTexto(formatValorBR(detalheOrc.valor_acordado ?? detalheOrc.total ?? 0));
+    setValorAcordadoError(null);
+    setEditValorAcordadoAberto(true);
+  };
+
+  const handleCancelarEdicaoValorAcordado = () => {
+    setEditValorAcordadoAberto(false);
+    setValorAcordadoError(null);
+  };
+
+  const handleSalvarValorAcordado = async () => {
+    if (!detalheOrc) return;
+    const valor = parseValorBR(valorAcordadoTexto);
+    if (!valor || valor <= 0) {
+      setValorAcordadoError('Informe um valor final válido.');
+      return;
+    }
+
+    setValorAcordadoError(null);
+    setValorAcordadoSaving(true);
+    const result = await editarValorAcordado(detalheOrc.id, valor);
+    if (result.error) {
+      setValorAcordadoError(result.error);
+    } else {
+      setOrcamentosState((prev) => prev.map((orc) =>
+        orc.id === detalheOrc.id ? { ...orc, valor_acordado: valor } : orc,
+      ));
+      setEditValorAcordadoAberto(false);
+      toast.success('Valor final atualizado.');
+    }
+    setValorAcordadoSaving(false);
   };
 
   const handleOpenEditOrc = () => {
@@ -1763,6 +1805,8 @@ export function PacienteDetailClient({
           setEditingPagId(null);
           setEditPagError(null);
           setConfirmDeletePagId(null);
+          setEditValorAcordadoAberto(false);
+          setValorAcordadoError(null);
           setParcelasMode(false);
           setParcelasForm({ numero: '3', primeiroVencimento: '' });
           setParcelasError(null);
@@ -1810,6 +1854,14 @@ export function PacienteDetailClient({
         setConfirmDeletePagId={setConfirmDeletePagId}
         pagDeleteSaving={pagDeleteSaving}
         onExcluirPagamento={handleExcluirPagamento}
+        editValorAcordadoAberto={editValorAcordadoAberto}
+        valorAcordadoTexto={valorAcordadoTexto}
+        setValorAcordadoTexto={setValorAcordadoTexto}
+        valorAcordadoSaving={valorAcordadoSaving}
+        valorAcordadoError={valorAcordadoError}
+        onIniciarEdicaoValorAcordado={handleIniciarEdicaoValorAcordado}
+        onCancelarEdicaoValorAcordado={handleCancelarEdicaoValorAcordado}
+        onSalvarValorAcordado={handleSalvarValorAcordado}
         onAceiteRegistrado={() => {
           // R-03c-1: o snapshot real (cro_no_ato, termos exatos) é montado no servidor —
           // busca de novo em vez de aproximar no client, mesma disciplina do handleStatusChange.

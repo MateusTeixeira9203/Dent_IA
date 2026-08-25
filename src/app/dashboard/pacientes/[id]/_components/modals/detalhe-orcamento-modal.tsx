@@ -114,6 +114,14 @@ interface Props {
   setConfirmDeletePagId: (id: string | null) => void;
   pagDeleteSaving: boolean;
   onExcluirPagamento: (id: string) => void;
+  editValorAcordadoAberto: boolean;
+  valorAcordadoTexto: string;
+  setValorAcordadoTexto: React.Dispatch<React.SetStateAction<string>>;
+  valorAcordadoSaving: boolean;
+  valorAcordadoError: string | null;
+  onIniciarEdicaoValorAcordado: () => void;
+  onCancelarEdicaoValorAcordado: () => void;
+  onSalvarValorAcordado: () => void;
   /** R-03c-1 — chamado depois que o servidor confirma o aceite (o pai decide como refletir). */
   onAceiteRegistrado: () => void;
   /** R-38 — liga/desliga o valor por procedimento no PDF deste orçamento. */
@@ -138,6 +146,9 @@ export function DetalheOrcamentoModal({
   editingPagId, editPagForm, setEditPagForm, editPagSaving, editPagError,
   onIniciarEdicaoPagamento, onCancelarEdicaoPagamento, onSalvarEdicaoPagamento,
   confirmDeletePagId, setConfirmDeletePagId, pagDeleteSaving, onExcluirPagamento,
+  editValorAcordadoAberto, valorAcordadoTexto, setValorAcordadoTexto,
+  valorAcordadoSaving, valorAcordadoError,
+  onIniciarEdicaoValorAcordado, onCancelarEdicaoValorAcordado, onSalvarValorAcordado,
   onAceiteRegistrado,
   onToggleMostrarValorPorItem,
 }: Props) {
@@ -201,6 +212,12 @@ export function DetalheOrcamentoModal({
       valorAprovado: derivado.valorAprovado,
     };
   }, [detalheOrc]);
+
+  const valorNegociado = detalheOrc?.valor_acordado ?? detalheOrc?.total ?? 0;
+  const temParcelaAgendada = detalheOrc?.pagamentos.some(
+    (pagamento) => pagamento.status === 'pendente',
+  ) ?? false;
+  const valorFinalTravado = Boolean(detalheOrc?.plano_forma) || temParcelaAgendada;
 
   /**
    * R-27a: quantidade de pagamentos recebidos e formas distintas usadas — é o que a
@@ -585,6 +602,62 @@ export function DetalheOrcamentoModal({
                         </p>
                       )}
                     </div>
+                  )}
+
+                  {!orcEditMode && (
+                    <>
+                      <div className="h-px bg-border my-4" />
+                      {editValorAcordadoAberto ? (
+                        <div className="rounded-xl border border-teal/30 bg-teal/5 p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <Label className="text-xs font-bold text-text-primary">Valor final negociado</Label>
+                            <span className="text-[10px] text-text-secondary">Não altera os procedimentos</span>
+                          </div>
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="0,00"
+                            value={valorAcordadoTexto}
+                            onChange={(event) => setValorAcordadoTexto(event.target.value)}
+                            className="rounded-lg bg-surface border-border text-text-primary font-mono"
+                          />
+                          {valorAcordadoError && <p className="text-xs text-coral-ink">{valorAcordadoError}</p>}
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={onCancelarEdicaoValorAcordado} disabled={valorAcordadoSaving} className="flex-1 rounded-lg">
+                              Cancelar
+                            </Button>
+                            <Button size="sm" onClick={onSalvarValorAcordado} disabled={valorAcordadoSaving} className="flex-1 rounded-lg bg-teal text-white hover:bg-teal/90">
+                              {valorAcordadoSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Salvar valor'}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-border bg-surface-alt/40 p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-bold uppercase tracking-widest text-text-secondary">Valor final negociado</p>
+                              <p className="font-mono text-lg font-semibold text-text-primary mt-1">R$ {fmt(valorNegociado)}</p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={onIniciarEdicaoValorAcordado}
+                              disabled={valorFinalTravado}
+                              className="rounded-lg h-8 text-xs"
+                            >
+                              <Edit2 className="w-3.5 h-3.5 mr-1" /> Editar
+                            </Button>
+                          </div>
+                          <p className="text-[11px] text-text-secondary mt-2">
+                            {detalheOrc.plano_forma
+                              ? 'Há um plano de pagamento ativo. Ajuste as parcelas antes de alterar este valor.'
+                              : temParcelaAgendada
+                                ? 'Há uma parcela agendada. Ajuste ou remova a parcela antes de alterar este valor.'
+                                : 'Você pode corrigir o combinado sem mudar os procedimentos.'}
+                          </p>
+                        </div>
+                      )}
+                    </>
                   )}
 
                   {detalheOrc.pagamentos.length > 0 && (

@@ -34,8 +34,10 @@ export type OrcamentoComItens = {
    *  e o campo alimenta o rótulo enquanto a tela antiga não migra. */
   status: 'rascunho' | 'enviado' | 'aprovado' | 'recusado';
   total: number | null;
-  /** R-114 — quando definido (RPCs do R-34), é o devido; nunca escrito por aprovação de item (I1). */
+  /** R-114/R-130 — quando definido, é o valor negociado e portanto o devido. */
   valor_acordado: number | null;
+  /** Plano ativo trava a edição direta do valor negociado para parcelas não divergirem. */
+  plano_forma?: string | null;
   desconto: number | null;
   created_at: string;
   validade_dias: number;
