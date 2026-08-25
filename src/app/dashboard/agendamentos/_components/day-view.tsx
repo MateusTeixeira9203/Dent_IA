@@ -167,7 +167,7 @@ export function DayView({
     <>
       {/* No celular, a agenda do dia é uma lista de atendimento — não uma miniatura
           da grade. A grade continua intacta a partir de sm. */}
-      <div className="flex flex-col gap-3 p-3 sm:hidden">
+      <div className="flex flex-col gap-3 p-3 md:hidden">
         <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-surface px-2 py-2">
           <button
             type="button"
@@ -252,7 +252,7 @@ export function DayView({
         </div>
       </div>
 
-      <div className="hidden h-full flex-col sm:flex">
+      <div className="hidden h-full flex-col md:flex">
       {/* Navigation header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-alt/40 shrink-0">
         <div className="flex items-center gap-2">

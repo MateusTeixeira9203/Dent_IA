@@ -14,9 +14,11 @@ interface PageTransitionProps {
 export function PageTransition({ children, className }: PageTransitionProps) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 14 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.28, ease: [0.25, 0.46, 0.45, 0.94] }}
+      // R-129a — a rota já chegou com conteúdo server-rendered. Escondê-lo até o
+      // JavaScript montar cria a impressão de tela vazia e piora a navegação lenta.
+      // Mantemos Motion como wrapper para transições locais, mas sem animação de
+      // entrada global que bloqueie o primeiro paint.
+      initial={false}
       className={className}
     >
       {children}

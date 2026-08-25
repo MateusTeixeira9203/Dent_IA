@@ -210,10 +210,6 @@ export default async function AgendamentosPage({ searchParams }: PageProps) {
         calendarConnectedPerDentista={calendarConnectedPerDentista}
         temSecretaria={temSecretaria}
         visao={visao}
-        // R-111 §4.3 — o servidor não sabe o tamanho da tela, então quem escolhe a visão do
-        // celular é o cliente. O que ele precisa saber é só se a visão VEIO da URL: se veio, foi
-        // o dentista que escolheu e ninguém sobrescreve.
-        visaoExplicita={ehVisao(v)}
         ancora={ancora}
         canEdit={canEdit}
         autoOpenNovo={novo === '1'}

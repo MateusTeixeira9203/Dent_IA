@@ -216,7 +216,7 @@ export function WeekView({
     <>
       {/* Celular: resumo navegável por dia. A grade de 7×13 horas continua no desktop,
           mas no toque ela escondia dias e deixava o usuário sem uma ação clara. */}
-      <div className="space-y-3 p-3 sm:hidden">
+      <div className="space-y-3 p-3 md:hidden">
         <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-surface px-2 py-2">
           <button
             type="button"
@@ -307,7 +307,7 @@ export function WeekView({
         })}
       </div>
 
-      <div className="hidden flex-col sm:flex">
+      <div className="hidden flex-col md:flex">
       {/* Week navigation header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-alt/40 shrink-0">
         <div className="flex items-center gap-2">

@@ -103,12 +103,12 @@ export function MarcarRetornoModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none rounded-2xl border-border bg-surface p-0 gap-0 overflow-hidden sm:max-h-[90vh] sm:w-auto sm:max-w-[1120px]"
+        className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none rounded-2xl border-border bg-surface p-0 gap-0 overflow-hidden md:max-h-[90vh] md:w-auto md:max-w-[1120px]"
       >
         <DialogDescription className="sr-only">Agende o retorno de {pacienteNome}.</DialogDescription>
 
         {/* Cabeçalho */}
-        <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-4 sm:px-6">
+        <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-4 md:px-6">
           <DialogTitle className="font-heading text-xl font-semibold leading-tight text-text-primary">
             Marcar retorno
           </DialogTitle>
@@ -122,7 +122,7 @@ export function MarcarRetornoModal({
         </div>
 
         {/* Faixa ao vivo */}
-        <div className="grid grid-cols-1 gap-px border-b border-border bg-border sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-px border-b border-border bg-border md:grid-cols-3">
           <div className="min-w-0 bg-surface px-4 py-3">
             <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Paciente</p>
             <p className="mt-0.5 truncate text-sm font-medium text-text-primary">{pacienteNome}</p>
@@ -142,8 +142,8 @@ export function MarcarRetornoModal({
         </div>
 
         {/* Corpo: 2 colunas — grade à esquerda, inputs fixos à direita */}
-        <div className="flex min-h-0 flex-col overflow-y-auto sm:flex-row sm:overflow-visible">
-          <div className="min-w-0 flex-1 p-4 sm:max-h-[58vh] sm:overflow-y-auto sm:p-6">
+        <div className="flex min-h-0 flex-col overflow-y-auto md:flex-row md:overflow-visible">
+          <div className="min-w-0 flex-1 p-4 md:max-h-[58vh] md:overflow-y-auto md:p-6">
             {precisaEscolherDentista && (
               <div className="mb-4 space-y-1">
                 <Label className="text-xs text-text-secondary">Dentista responsável *</Label>
@@ -162,7 +162,7 @@ export function MarcarRetornoModal({
                 </Select>
               </div>
             )}
-            <div className="space-y-4 sm:hidden">
+            <div className="space-y-4 md:hidden">
               <div className="grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="retorno-data-mobile" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
@@ -198,7 +198,7 @@ export function MarcarRetornoModal({
                 Escolha a data e a hora. O sistema confere conflitos ao confirmar — não precisa arrastar na agenda.
               </p>
             </div>
-            <div className="hidden sm:block">
+            <div className="hidden md:block">
               <RetornoSemanaGrid
                 dentistaId={dentistaAlvoId}
                 duracaoMin={duracaoMin}
@@ -207,7 +207,7 @@ export function MarcarRetornoModal({
               />
             </div>
             {dentistaAlvoId != null && form.data == null && (
-              <p className="mt-3 hidden text-[11px] text-text-secondary sm:block">
+              <p className="mt-3 hidden text-[11px] text-text-secondary md:block">
                 Clique um horário livre na semana acima — a data e a hora vêm do clique
                 (dá pra ajustar a hora exata ao lado).
               </p>
@@ -215,9 +215,9 @@ export function MarcarRetornoModal({
           </div>
 
           {/* Coluna fixa: Hora + Duração + Observações + ações — nunca rola */}
-          <div className="flex w-full flex-col border-t border-border sm:w-80 sm:shrink-0 sm:border-t-0 sm:border-l">
-            <div className="flex-1 space-y-4 p-4 sm:p-5">
-              <div className="hidden space-y-2 sm:block">
+          <div className="flex w-full flex-col border-t border-border md:w-80 md:shrink-0 md:border-t-0 md:border-l">
+            <div className="flex-1 space-y-4 p-4 md:p-5">
+              <div className="hidden space-y-2 md:block">
                 <Label htmlFor="retorno-hora" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
                   Hora
                 </Label>
@@ -242,7 +242,7 @@ export function MarcarRetornoModal({
                       key={opt.value}
                       type="button"
                       onClick={() => setForm((f) => ({ ...f, duracao: opt.value }))}
-                      className={`rounded-lg border py-2 text-xs font-bold transition-all ${
+                      className={`min-h-11 rounded-lg border py-2 text-xs font-bold transition-all ${
                         form.duracao === opt.value
                           ? 'border-teal bg-teal/10 text-teal-ink'
                           : 'border-border bg-surface-alt text-text-secondary hover:border-teal/40 hover:text-teal-ink'
@@ -284,7 +284,7 @@ export function MarcarRetornoModal({
               </div>
             </div>
 
-            <div className="sticky bottom-0 z-10 space-y-2.5 border-t border-border bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:static sm:p-5">
+            <div className="sticky bottom-0 z-10 space-y-2.5 border-t border-border bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:static md:p-5">
               {error && (
                 <p className="rounded-lg bg-coral-pale p-2 text-xs text-coral-ink">{error}</p>
               )}
@@ -296,7 +296,7 @@ export function MarcarRetornoModal({
               <Button
                 onClick={onMarcarRetorno}
                 disabled={saving || !podeConfirmar}
-                className="w-full rounded-xl bg-teal-dark font-bold text-white hover:opacity-90 disabled:opacity-40"
+                className="min-h-11 w-full rounded-xl bg-teal-dark font-bold text-white hover:opacity-90 disabled:opacity-40"
               >
                 {saving ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</>
@@ -306,7 +306,7 @@ export function MarcarRetornoModal({
               </Button>
               <button
                 onClick={fechar}
-                className="w-full py-1.5 text-sm font-medium text-text-secondary transition-colors hover:text-text-primary"
+                className="min-h-11 w-full py-1.5 text-sm font-medium text-text-secondary transition-colors hover:text-text-primary"
               >
                 Cancelar
               </button>

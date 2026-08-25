@@ -54,7 +54,6 @@ import {
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
-import { useIsMobile } from '@/hooks/use-mobile';
 import {
   Dialog,
   DialogContent,
@@ -153,8 +152,6 @@ interface Props {
   temSecretaria: boolean;
   /** Visão ativa — vem da URL (`?v=`), não de estado local. */
   visao: VisaoAgenda;
-  /** R-111 — `?v=` estava mesmo na URL? Falso = ninguém escolheu, é só o padrão do servidor. */
-  visaoExplicita: boolean;
   /** Dia de referência da janela carregada, 'yyyy-MM-dd' — vem da URL (`?d=`). */
   ancora: string;
   /** Pode criar agendamentos: plano SOLO ou secretária */
@@ -177,7 +174,6 @@ export function AgendamentosClient({
   calendarConnectedPerDentista,
   temSecretaria,
   visao: visaoUrl,
-  visaoExplicita,
   ancora,
   canEdit,
   autoOpenNovo = false,
@@ -188,23 +184,16 @@ export function AgendamentosClient({
   const isSecretaria = role === 'secretaria';
 
   /**
-   * R-111 §4.3 — no celular a agenda abre no **Dia**. Semana em 375px são 7 colunas de 48px:
-   * medido em 14/08, a grade tinha 504px de conteúdo em 342px visíveis, **sem scroll
-   * horizontal** — quinta, sexta e sábado eram inalcançáveis, inclusive a coluna de hoje.
-   *
-   * Só decide o **estado inicial**. Assim que o dentista toca em Dia/Semana/Mês, o `irPara`
-   * grava `?v=` na URL, `visaoExplicita` vira true e a escolha dele manda daí em diante — nada
-   * volta atrás pelas costas.
+   * A semana é a visão inicial em qualquer dispositivo. A página já aplica
+   * `VISAO_PADRAO = 'semana'` quando não há `?v=` na URL; depois que o dentista
+   * escolhe Dia/Semana/Mês, `irPara` grava `?v=` e a escolha explícita continua
+   * valendo tanto no celular quanto no desktop.
    *
    * Renomeado pra `visao` de propósito: o resto do arquivo (grade, atalhos de teclado,
-   * `selectedDate`) continua lendo `visao` e passa a ler o valor efetivo sem nenhuma outra
-   * edição — uma variável só, sem dois conceitos circulando.
-   *
-   * O servidor carregou a janela da SEMANA neste caso, e o Dia é um pedaço dela: nenhuma busca
-   * a mais, nenhum dado faltando.
+   * `selectedDate`) continua lendo uma única fonte, sem uma preferência diferente por
+   * breakpoint.
    */
-  const ehCelular = useIsMobile();
-  const visao: VisaoAgenda = !visaoExplicita && ehCelular && visaoUrl === 'semana' ? 'dia' : visaoUrl;
+  const visao: VisaoAgenda = visaoUrl;
 
   // A âncora é a fonte da data em toda a tela. `T12:00` de propósito: `parseISO('2026-08-05')`
   // devolve meia-noite local e, num fuso a leste, cai no dia 4.
@@ -1115,7 +1104,7 @@ export function AgendamentosClient({
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 onClick={() => { setFiltroDentistaId('todos'); setDiaDestacado(null); }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                className={`min-h-11 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   filtroDentistaId === 'todos'
                     ? 'bg-teal text-white shadow-sm'
                     : 'bg-surface border border-border text-text-secondary hover:text-text-primary'
@@ -1127,7 +1116,7 @@ export function AgendamentosClient({
                 <button
                   key={d.id}
                   onClick={() => { setFiltroDentistaId(d.id); setDiaDestacado(null); }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  className={`min-h-11 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                     filtroDentistaId === d.id
                       ? 'bg-teal text-white shadow-sm'
                       : 'bg-surface border border-border text-text-secondary hover:text-text-primary'
@@ -1216,7 +1205,7 @@ export function AgendamentosClient({
                 setEncaixeForm((f) => ({ ...f, dentistaId: dentistaPadraoForm() }));
                 setIsEncaixeOpen(true);
               }}
-              className="border border-border text-text-secondary hover:bg-surface-alt hover:text-text-primary active:scale-[0.98] px-4 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all group"
+              className="min-h-11 border border-border text-text-secondary hover:bg-surface-alt hover:text-text-primary active:scale-[0.98] px-4 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all group"
             >
               <Stethoscope className="w-4 h-4" />
               Encaixe
@@ -1291,7 +1280,7 @@ export function AgendamentosClient({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.18 }}
-          className="bg-surface rounded-3xl border border-border shadow-sm overflow-hidden h-[440px] sm:h-[560px] lg:h-[680px]"
+          className="h-auto overflow-visible rounded-3xl border border-border bg-surface shadow-sm md:h-[560px] md:overflow-hidden lg:h-[680px]"
         >
           <DayView
             agendamentos={agendamentosParaDayView}
@@ -1396,12 +1385,12 @@ export function AgendamentosClient({
       <Dialog open={isNewModalOpen} onOpenChange={(open) => { if (!open) resetForm(); setIsNewModalOpen(open); }}>
         <DialogContent
           showCloseButton={false}
-          className="max-w-lg sm:max-w-[880px] rounded-2xl bg-surface border-border p-0 gap-0 overflow-hidden flex max-h-[calc(100dvh-2rem)] flex-col"
+          className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-hidden rounded-2xl border-border bg-surface p-0 md:max-h-[calc(100dvh-2rem)] md:w-auto md:max-w-[880px]"
         >
           <DialogDescription className="sr-only">Preencha os dados para marcar uma nova consulta.</DialogDescription>
 
           {/* ── Cabeçalho ─────────────────────────────────────────────── */}
-          <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-4 sm:px-6">
+          <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-4 md:px-6">
             <DialogTitle className="font-heading font-semibold text-xl text-text-primary leading-tight">
               Novo agendamento
             </DialogTitle>
@@ -1418,7 +1407,7 @@ export function AgendamentosClient({
               Substitui o card "Pronto para agendar" que ficava no FIM do formulário —
               agora preenche em tempo real no topo, sem exigir rolar até o fim pra
               conferir o que está sendo criado. */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-px border-b border-border bg-border">
+          <div className="grid grid-cols-2 gap-px border-b border-border bg-border md:grid-cols-4">
             <div className="bg-surface px-4 py-3 min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Paciente</p>
               <p className="text-sm font-medium text-text-primary mt-0.5 truncate">{novoForm.pacienteNome || '—'}</p>
@@ -1448,12 +1437,12 @@ export function AgendamentosClient({
           </div>
 
           {/* ── Corpo: 2 colunas ──────────────────────────────────────── */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-32 sm:flex-row sm:overflow-hidden sm:pb-0">
-            <div className="min-w-0 flex-1 space-y-5 p-4 sm:max-h-[58vh] sm:overflow-y-auto sm:p-6">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
+            <div className="contents md:block md:min-w-0 md:flex-1 md:max-h-[58vh] md:space-y-5 md:overflow-y-auto md:p-6">
 
               {/* Dentista — apenas secretária */}
               {isSecretaria && dentistas.length > 0 && (
-                <div className="space-y-2">
+                <div className="order-1 space-y-2 p-4 md:p-0">
                   <Label className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
                     Dentista <span className="text-coral-ink">*</span>
                   </Label>
@@ -1482,7 +1471,7 @@ export function AgendamentosClient({
               )}
 
               {/* Busca de paciente com autocomplete */}
-              <div className="space-y-2 relative">
+              <div className="relative order-1 space-y-2 p-4 pt-0 md:p-0">
                 <Label htmlFor="patient-drawer" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
                   Paciente <span className="text-coral-ink">*</span>
                 </Label>
@@ -1555,7 +1544,7 @@ export function AgendamentosClient({
               </div>
 
               {/* Notas */}
-              <div className="space-y-2">
+              <div className="order-3 space-y-2 p-4 pt-0 md:p-0">
                 <Label htmlFor="apt-notes-drawer" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
                   Observações
                 </Label>
@@ -1571,7 +1560,7 @@ export function AgendamentosClient({
               {/* R-94 — pedido pro protético, opcional. Some se a clínica não tem
                   protético cadastrado: sem isso o dentista veria caixa morta (spec §5). */}
               {proteticos.length > 0 && (
-                <div className="rounded-2xl border border-teal/30 overflow-hidden">
+                <div className="order-4 mx-4 mb-4 overflow-hidden rounded-2xl border border-teal/30 md:mx-0 md:mb-0">
                   <div className="flex items-center justify-between gap-3.5 p-3.5 bg-teal/5">
                     <div>
                       <p className="text-sm font-semibold text-text-primary">Enviar pro protético</p>
@@ -1633,7 +1622,7 @@ export function AgendamentosClient({
 
               {/* Aviso de conflito */}
               {conflitoNovo && (
-                <div className="flex items-start gap-2 rounded-xl bg-warning-pale border border-warning/30 p-3 text-xs text-warning-ink">
+                <div className="order-5 mx-4 mb-4 flex items-start gap-2 rounded-xl border border-warning/30 bg-warning-pale p-3 text-xs text-warning-ink md:mx-0 md:mb-0">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                   <span>Conflito de horário — já existe um agendamento nesse intervalo.</span>
                 </div>
@@ -1641,8 +1630,8 @@ export function AgendamentosClient({
             </div>
 
             {/* ── Coluna fixa: Quando + ações — nunca rola ─────────────── */}
-            <div className="w-full shrink-0 sm:w-72 border-t sm:border-t-0 sm:border-l border-border flex flex-col">
-              <div className="flex-1 space-y-4 p-4 sm:p-5">
+            <div className="contents md:flex md:w-72 md:shrink-0 md:flex-col md:border-l md:border-t-0">
+              <div className="order-2 flex-1 space-y-4 border-t border-border p-4 md:border-t-0 md:p-5">
                 <div className="space-y-2">
                   <Label className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">Quando</Label>
                   <div className="grid grid-cols-2 gap-2.5">
@@ -1716,7 +1705,7 @@ export function AgendamentosClient({
               </div>
 
               {/* ── Rodapé da coluna de ação ────────────────────────────── */}
-              <div className="sticky bottom-0 z-10 space-y-2.5 border-t border-border bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:static sm:p-5">
+              <div className="sticky bottom-0 z-10 order-6 space-y-2.5 border-t border-border bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:static md:p-5">
                 {saveError && !avisoNovoAgendamento && (
                   <p className="text-xs text-coral-ink bg-coral-pale rounded-lg p-2">{saveError}</p>
                 )}
