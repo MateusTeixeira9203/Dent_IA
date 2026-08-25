@@ -1,31 +1,35 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado 2026-08-23
+> **ESTADO** · atualizado 2026-08-24
 
 ## Agora
 
-🔵 **R-126a — Estabilização mobile crítica.** Corrigir os recortes e compressões reais vistos
-em produção na agenda, retorno, orçamento, protético e ficha antes do lançamento.
+🔵 **R-129 — Estabilização pós-varredura.** Plano de implementação pronto em
+`plans/specs/R-129-estabilizacao-pos-varredura.md`; aguarda o comando do usuário para executar.
 
-**Auditoria 24/08:** o P1 da RPC `salvar_eventos_odontograma` foi corrigido pela migration
-`20260824033242` e validado em produção com rollback: evento cruzado é recusado e evento da
-própria ficha segue aceito. Permanece o gate mobile; isolamento entre dentistas foi confirmado pelo usuário e Stripe será validado na primeira compra real (ou em modo teste se necessário).
+O corte começa no R-127. Tudo anterior foi declarado pronto e testado pelo usuário; achados
+novos em telas antigas pertencem às specs filhas do R-129, sem reabrir os itens encerrados.
 
-### Feito nesta rodada
+### Ordem aprovada para execução
 
-- **R-110 ✅:** grade de quarta 13h–18h e agendamento às 08h verificados em produção; a tela
-  avisa e permite "Marcar mesmo assim". Criação e edição compartilham a mesma regra.
+1. QA/fechamento do R-127.
+2. QA, commit e deploy isolado do R-128 (código local ainda não publicado).
+3. R-129a — performance e hidratação.
+4. R-129b — Agenda e modais mobile.
+5. R-129e — edição explícita de ficha histórica.
+6. R-129c — estado comercial verdadeiro.
+7. R-129d — acessibilidade operacional.
+8. Gate com dentista, secretária, protético, mobile real e Stripe.
 
-## Travado
+## Estado local que deve ser preservado
 
-- Nenhum bloqueio de código conhecido.
-- Cobrança não deve ser ativada antes do E2E financeiro real (R-92 permanece localmente pronto).
-- **Produção mobile — 23/08:** bloqueios reais de usabilidade ainda sem correção: retorno usa a
-  grade semanal de desktop e afasta a confirmação; agenda diária/semanal é recortada; modal de
-  orçamento preserva duas colunas e embaralha resumo/itens; cards da ficha comprimem conteúdo;
-  encaminhamento ao protético precisa de reprodução específica. O onboarding pula de identidade
-  para Dex/Meu Dia e, portanto, não alcança pagamento/checkout.
+- R-128 altera `registrar-painel.tsx` e `FichasTab.tsx` e adiciona o componente/lib/teste de
+  escopo regional. TypeScript, build e 2 testes passaram; falta QA visual.
+- `plans/auditorias/2026-08-24-resultado-varredura.md` e specs R-129 ainda não estão commitados.
+- `supabase/.temp/*` e `tmp/` são alheios ao lote e não entram nos commits.
 
-## Próximo da fila
+## Bloqueios
 
-Resend → limites/telemetria de IA → otimização do Dex → auditoria financeira completa.
+- Nenhum bloqueio de implementação conhecido.
+- R-129c não sobe sem teste financeiro próprio; isenção precisa ser testada separadamente.
+- Mudança inesperada de schema/API/RLS interrompe a execução e volta para planejamento.
