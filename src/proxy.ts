@@ -5,7 +5,7 @@ const PUBLIC_ROUTES = ["/", "/planos"];
 const AUTH_ROUTES = ["/login", "/cadastro", "/esqueci-senha"];
 const ALWAYS_ALLOWED_AUTH_ROUTES = ["/redefinir-senha"];
 const CANONICAL_ORIGIN = 'https://odontoia.app';
-const LEGACY_HOSTS = new Set(['dentia.app.br', 'www.odontoia.app']);
+const LEGACY_HOSTS = new Set(['dentia.app.br']);
 
 function isPublicRoute(pathname: string): boolean {
   return PUBLIC_ROUTES.includes(pathname);
@@ -37,8 +37,8 @@ function createRedirectResponse(sourceResponse: NextResponse, url: URL): NextRes
 }
 
 export async function proxy(request: NextRequest) {
-  // R-129c — a origem pública única é odontoia.app. Manter o alias legado na Vercel como
-  // redirect evita quebrar favoritos e convites antigos, mas nenhuma sessão/Auth nasce nele.
+  // R-129c — o host antigo aponta para o domínio atual. A Vercel controla a canonicalização
+  // entre apex e www; redirecionar www aqui criaria um loop se a plataforma apontar apex → www.
   // Isso acontece antes de renovar token para não fazer trabalho de autenticação no host errado.
   const host = (request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? '')
     .toLowerCase()
