@@ -10,7 +10,7 @@ import {
 import { ptBR } from 'date-fns/locale';
 import {
   ChevronLeft, ChevronRight, CalendarIcon, User, UserCog,
-  CalendarOff, CheckCircle2, AlertTriangle, Loader2,
+  CalendarOff, CheckCircle2, AlertTriangle, Loader2, Clock3,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { marcarPedidoEntregue } from '../actions';
@@ -34,6 +34,13 @@ const STATUS_CHIP: Record<'entregue' | 'atrasado' | 'pendente', { bg: string; te
   atrasado: { bg: 'bg-coral-pale',    text: 'text-coral-ink',      label: 'Atrasado' },
   pendente: { bg: 'bg-warning-pale',  text: 'text-warning-ink',    label: 'Pendente' },
 };
+
+const HORA_CLINICA = new Intl.DateTimeFormat('pt-BR', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: 'America/Sao_Paulo',
+});
 
 export function ProteticoClient({ pedidos }: { pedidos: PedidoProteticoRow[]; nomeProtetico: string }) {
   const hoje = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
@@ -191,10 +198,17 @@ export function ProteticoClient({ pedidos }: { pedidos: PedidoProteticoRow[]; no
                         <div className={`bg-surface border border-border rounded-2xl p-5 shadow-sm ${status === 'entregue' ? 'opacity-60' : ''}`}>
                           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-3 mb-2 flex-wrap">
-                                <span className="font-mono text-lg font-medium text-text-primary">
+                              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                <span className="inline-flex items-center gap-1.5 font-mono text-base font-medium text-text-primary">
+                                  <CalendarIcon className="w-4 h-4 text-text-secondary" />
                                   {format(new Date(`${p.data_entrega}T00:00:00`), 'dd/MM')}
                                 </span>
+                                {p.agendamento_data_hora && (
+                                  <span className="inline-flex items-center gap-1.5 font-mono text-base font-medium text-text-primary">
+                                    <Clock3 className="w-4 h-4 text-text-secondary" />
+                                    {HORA_CLINICA.format(new Date(p.agendamento_data_hora))}
+                                  </span>
+                                )}
                                 <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${chip.bg} ${chip.text}`}>
                                   {status === 'entregue' && <CheckCircle2 className="w-3 h-3" />}
                                   {status === 'atrasado' && <AlertTriangle className="w-3 h-3" />}
@@ -203,11 +217,11 @@ export function ProteticoClient({ pedidos }: { pedidos: PedidoProteticoRow[]; no
                               </div>
                               <h3 className="font-semibold text-lg text-text-primary flex items-center gap-2">
                                 <User className="w-4 h-4 text-text-secondary shrink-0" />
-                                {p.paciente?.nome ?? 'Paciente removido'}
+                                {p.paciente?.nome ?? 'Paciente não disponível'}
                               </h3>
                               <p className="text-xs text-text-secondary mt-1 flex items-center gap-1">
                                 <UserCog className="w-3 h-3" />
-                                Dr(a). {p.dentista?.nome ?? '—'}
+                                Dr(a). {p.dentista?.nome ?? 'Dentista não disponível'}
                               </p>
                               <p className="text-sm text-text-secondary mt-2 bg-surface-alt/45 border-l-2 border-border rounded-r-lg px-3 py-2">
                                 {p.observacao}

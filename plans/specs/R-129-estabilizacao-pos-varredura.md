@@ -92,7 +92,7 @@ descobrir que precisa disso, a execução para e a spec é atualizada antes do c
 
 ## 5. Contrato visual comum
 
-- Reutilizar Dashboard/Tratamento e os contratos aprovados R-122/R-123.
+- Reutilizar Dashboard, Meu Dia, Ficha clínica e os contratos aprovados R-122/R-123.
 - Tokens sem cor hardcoded: `bg-background`, `bg-card`, `text-foreground`,
   `text-muted-foreground`, `border-border` e equivalentes existentes no projeto.
 - Densidade clínica compacta; ações primárias explícitas; alvo mínimo de 44 px.
@@ -117,3 +117,28 @@ descobrir que precisa disso, a execução para e a spec é atualizada antes do c
 - Novo design do sistema, troca de arquitetura ou refactor global de tokens.
 - WhatsApp, ICP-Brasil, novas especialidades e novos relatórios.
 - Reescrever isolamento/RLS já validado; o gate apenas confirma que não regrediu.
+
+## 8. Correção operacional — pedidos do protético (25/08)
+
+Diagnóstico confirmado em produção: `pedidos_protetico` conserva `paciente_id`, `dentista_id`
+e `agendamento_id`, mas o perfil `protetico` não passa pela policy de leitura de `pacientes`
+nem de `agendamentos`. O embed devolve `null` e a tela mente “Paciente removido”. O seletor do
+agendamento também renderiza o UUID bruto porque o `SelectValue` não traduz o valor selecionado.
+
+Contrato da correção:
+
+- a query autenticada/RLS continua decidindo quais pedidos o protético pode ver;
+- o servidor hidrata **somente** paciente, dentista e horário vinculados a esses pedidos, sempre
+  com `clinica_id`, sem ampliar a RLS das tabelas clínicas;
+- o card mostra data de entrega, horário do agendamento do paciente, nome do paciente, nome do
+  dentista, observação e status; vínculo inexistente vira “não disponível”, nunca “removido”;
+- o seletor “Protético” mostra o nome correspondente ao UUID;
+- nenhum dado clínico do paciente além do nome é exposto ao protético.
+
+Gate: dentista cria um agendamento com pedido; o protético destinatário vê os seis dados acima;
+outro protético não recebe o pedido; TypeScript e build permanecem limpos.
+
+## 9. Performance pós-auditoria (25/08)
+
+- [R-129f](R-129f-dex-sob-demanda.md) — Dex sob demanda: badge leve global e painel completo
+  somente quando aberto.
