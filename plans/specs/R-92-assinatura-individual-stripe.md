@@ -26,6 +26,10 @@ mensal/anual.
 - ClinDent e VIP Odontologia permanecem gratuitas, fechadas e fora do gate.
 - A isenção usa allowlist explícita de UUIDs em `STRIPE_BILLING_EXEMPT_CLINIC_IDS`; ausência de
   assinatura nunca isenta implicitamente uma clínica, e a allowlist também recusa Checkout.
+- Clínica de teste só entra na mesma isenção quando estiver explicitamente na allowlist. Convite
+  de dentista em clínica isenta cria vínculo **ativo** e segue para o onboarding, sem tela de
+  ciclo, cartão, Checkout ou webhook Stripe. Vínculo isento legado que tenha ficado `pendente`
+  é reparado de forma idempotente na rota de boas-vindas antes do redirecionamento.
 - Sair da clínica é voluntário. Suspensão financeira bloqueia acesso, nunca apaga dados.
 
 ## 3. Arquitetura escolhida
@@ -206,6 +210,8 @@ fluxo.
 - Clínica não ativa com convite pendente, conta fantasma ou cartão ausente.
 - Bloqueio financeiro revoga acesso, nunca prontuário, autoria ou documento.
 - ClinDent/VIP não recebem backfill, Checkout ou gate.
+- Nenhuma clínica presente na allowlist de isenção mostra preço, plano ou CTA de cartão para
+  dentista convidado; ela também não pode ficar com membership pendente por causa do billing.
 - Plano abaixo do mínimo nunca migra sozinho e não cobra enquanto permanecer bloqueado.
 
 ## 7. Gates de aceite
@@ -227,6 +233,8 @@ fluxo.
 - [ ] Falha abre graça de 3 dias; pagamento reativa sem tocar dados clínicos.
 - [ ] Duas contas logadas não acessam assinatura uma da outra.
 - [ ] ClinDent/VIP continuam entrando sem Stripe.
+- [ ] Dentista convidado em clínica explicitamente isenta aceita o convite, recebe membership e
+  perfil ativos e entra no onboarding sem visualizar `/bem-vindo-agregado` ou Stripe.
 
 ## 8. Fora de escopo
 
