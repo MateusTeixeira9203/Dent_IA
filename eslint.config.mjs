@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Worktrees e metadados locais não fazem parte do produto nem do CI.
+    ".claude/**",
+    ".worktrees/**",
+    "supabase/.temp/**",
     // Scripts CLI standalone (CommonJS, fora do build da app) — require() é o correto aqui,
     // não faz sentido a regra de import de TS (ex.: capture-audit*.cjs do audit visual).
     "scripts/**",
