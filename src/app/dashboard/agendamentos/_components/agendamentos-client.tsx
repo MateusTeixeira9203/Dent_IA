@@ -5,7 +5,6 @@ import {
   Calendar as CalendarIcon,
   User,
   ExternalLink,
-  UserCog,
   Pencil,
   Trash2,
   ArrowLeft,
@@ -18,7 +17,6 @@ import {
   AlertTriangle,
   UserCheck,
   CalendarCheck,
-  Clock,
   X,
   ThumbsUp,
   UserPlus,
@@ -87,7 +85,6 @@ import {
   deletarAgendamento,
   criarAgendamento,
   importarEventosGoogle,
-  fazerCheckIn,
   marcarNoShow,
   cancelarComMotivo,
   criarEncaixe,
@@ -172,7 +169,6 @@ export function AgendamentosClient({
   dentistaAtualId,
   dentistas,
   calendarConnectedPerDentista,
-  temSecretaria,
   visao: visaoUrl,
   ancora,
   canEdit,
@@ -1586,7 +1582,13 @@ export function AgendamentosClient({
                           onValueChange={(v) => v && setNovoForm((f) => ({ ...f, proteticoId: v }))}
                         >
                           <SelectTrigger className="rounded-xl bg-surface-alt border-border text-text-primary">
-                            <SelectValue />
+                            <SelectValue>
+                              {(v: string | null) =>
+                                v
+                                  ? (proteticos.find((p) => p.id === v)?.nome ?? 'Protético indisponível')
+                                  : 'Selecione o protético...'
+                              }
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent className="bg-surface border-border">
                             {proteticos.map((p) => (
