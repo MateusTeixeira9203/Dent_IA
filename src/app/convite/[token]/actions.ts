@@ -20,12 +20,11 @@ export async function aceitarConviteAction(
     return { error: result.error };
   }
 
-  // Dentistas convidados (agregados) vão para a tela de boas-vindas,
-  // onde serão informados sobre a taxa de agregado.
-  // Admins e secretárias seguem direto para o dashboard.
-  if (result.role === 'dentista') {
+  // Só o dentista que realmente precisa cadastrar cartão entra na tela de cobrança.
+  // Clínica isenta cria vínculo ativo e segue pelo onboarding normal.
+  if (result.exigeCheckout) {
     redirect(`/bem-vindo-agregado?clinica=${result.clinicId}`);
   }
 
-  redirect('/dashboard');
+  redirect(result.role === 'dentista' ? '/onboarding' : '/dashboard');
 }

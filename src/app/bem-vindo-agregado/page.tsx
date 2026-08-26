@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { clinicaIsentaDeCobranca } from '@/lib/billing/exemptions';
 import { NeuralBackground } from '@/components/layout/NeuralBackground';
 import { OdontoIALogo } from '@/components/ui/dent-ia-logo';
 import { AgregadoWelcomeClient } from './_components/agregado-welcome-client';
@@ -23,17 +24,34 @@ export default async function BemVindoAgregadoPage({ searchParams }: Props) {
   const db = createServiceClient();
   const { data: membership } = await db
     .from('clinica_usuarios')
-    .select('clinica_id, role, status')
+    .select('id, clinica_id, role, status')
     .eq('usuario_id', user.id)
     .in('role', ['admin', 'dentista'])
     .in('status', ['pendente', 'suspenso'])
     .order('updated_at', { ascending: false })
     .limit(1)
-    .maybeSingle<{ clinica_id: string; role: string; status: string }>();
+    .maybeSingle<{ id: string; clinica_id: string; role: string; status: string }>();
 
   if (!membership) redirect('/dashboard');
 
   const clinicId = membership.clinica_id;
+
+  // Reparação de compatibilidade: antes da correção R-92, clínicas isentas podiam receber
+  // dentista como pendente e cair neste checkout. A allowlist é a fonte de verdade, então
+  // o reparo só promove o vínculo pendente de uma clínica explicitamente isenta.
+  if (membership.status === 'pendente' && clinicaIsentaDeCobranca(clinicId)) {
+    const [{ error: membershipError }, { error: dentistaError }, { error: userError }] = await Promise.all([
+      db.from('clinica_usuarios').update({ status: 'ativo' }).eq('id', membership.id),
+      db.from('dentistas').update({ ativo: true }).eq('user_id', user.id).eq('clinica_id', clinicId),
+      db.from('users').update({ active_clinica_id: clinicId }).eq('id', user.id),
+    ]);
+
+    if (membershipError || dentistaError || userError) {
+      throw new Error('Não foi possível liberar o acesso isento desta clínica.');
+    }
+
+    redirect('/onboarding');
+  }
   const [{ data: clinicaData }, { data: dentistaData }, { data: assinaturaData }, { data: formacaoData }] = await Promise.all([
     db
       .from('clinicas')
@@ -79,7 +97,7 @@ export default async function BemVindoAgregadoPage({ searchParams }: Props) {
     >
       <NeuralBackground />
 
-      <div className="relative z-10 w-full max-w-lg">
+      <div className="relative z-10 w-full max-w-xl px-1 sm:px-0">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-teal text-white mb-4 shadow-lg">
             <OdontoIALogo className="w-7 h-7" />

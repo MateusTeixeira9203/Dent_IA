@@ -2,11 +2,16 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { inserirNotificacao } from '@/lib/notificacoes';
 import { getResend } from '@/lib/email/resend';
 import { conviteEmailHtml, conviteEmailText } from '@/lib/email/templates/convite';
+import { clinicaIsentaDeCobranca } from '@/lib/billing/exemptions';
 
 export type CriarConviteInput = { email: string };
 
 export type CriarConviteResult =
   | { ok: true; inviteId: string; token: string; link: string; emailEnviado: boolean }
+  | { ok: false; error: string };
+
+export type AceitarConviteResult =
+  | { ok: true; clinicId: string; role: string; exigeCheckout: boolean }
   | { ok: false; error: string };
 
 export async function criarConvite(
@@ -22,7 +27,7 @@ export async function criarConvite(
   const email = input.email.trim().toLowerCase();
   const db = createServiceClient();
 
-  if (process.env.STRIPE_BILLING_ENABLED === 'true') {
+  if (process.env.STRIPE_BILLING_ENABLED === 'true' && !clinicaIsentaDeCobranca(ctx.clinicId)) {
     const [{ data: clinicaPlano }, { data: formacao }] = await Promise.all([
       db.from('clinicas').select('plano').eq('id', ctx.clinicId)
         .maybeSingle<{ plano: string }>(),
@@ -328,7 +333,7 @@ export async function aceitarConvite(
   token: string,
   userId: string,
   userEmail: string,
-): Promise<{ ok: boolean; clinicId?: string; role?: string; error?: string }> {
+): Promise<AceitarConviteResult> {
   const db = createServiceClient();
 
   // 1. Validar token — pendente e dentro da validade
@@ -352,11 +357,13 @@ export async function aceitarConvite(
   const clinicId = convite.clinica_id as string;
   const role = convite.role as string;
   const isDentistaConvidado = role === 'dentista';
-  // Billing ainda não está ativado localmente/nem em produção. Enquanto a flag estiver
-  // desligada, convite segue o fluxo clínico normal e não toca a tabela nova do R-92.
   const billingEnabled = process.env.STRIPE_BILLING_ENABLED === 'true';
+  // R-92: apenas dentista convidado de clínica não-isenta espera o Checkout. Esta única
+  // variável governa perfil, membership e redirecionamento; deixar um deles fora criava
+  // o estado contraditório de isento com cartão obrigatório.
+  const exigeCheckout = billingEnabled && isDentistaConvidado && !clinicaIsentaDeCobranca(clinicId);
 
-  if (billingEnabled && isDentistaConvidado) {
+  if (exigeCheckout) {
     const [{ data: clinicaPlano }, { data: formacao }] = await Promise.all([
       db.from('clinicas').select('plano').eq('id', clinicId)
         .maybeSingle<{ plano: string }>(),
@@ -402,7 +409,7 @@ export async function aceitarConvite(
         email: userEmail,
         // O convite pago só vira contexto ativo depois do webhook. Assim, cancelar
         // o Checkout não prende um dentista que já trabalhava em outra clínica.
-        active_clinica_id: billingEnabled && isDentistaConvidado
+        active_clinica_id: exigeCheckout
           ? userAntes?.active_clinica_id ?? null
           : clinicId,
       },
@@ -410,7 +417,7 @@ export async function aceitarConvite(
     ),
     // Perfil clínico legado — cria ou reativa linha para esta clínica+usuário
     db.from('dentistas').upsert(
-      { clinica_id: clinicId, user_id: userId, nome, email: userEmail, role, ativo: !billingEnabled || !isDentistaConvidado },
+      { clinica_id: clinicId, user_id: userId, nome, email: userEmail, role, ativo: !exigeCheckout },
       { onConflict: 'clinica_id,user_id' },
     ).select('id').single(),
   ]);
@@ -450,12 +457,12 @@ export async function aceitarConvite(
     }
   }
 
-  // 6. Membership canônica — com billing ativo, dentista fica pendente até o webhook.
+  // 6. Membership canônica — apenas o Checkout real deixa dentista pendente até o webhook.
   const memberData = {
     usuario_id: userId,
     clinica_id: clinicId,
     role,
-    status: billingEnabled && isDentistaConvidado ? 'pendente' : 'ativo',
+    status: exigeCheckout ? 'pendente' : 'ativo',
     joined_at: new Date().toISOString(),
   };
   const { error: memberError } = membershipExistente
@@ -486,5 +493,5 @@ export async function aceitarConvite(
     // Continua: usuário entrou na clínica, só o status do convite ficou pendente
   }
 
-  return { ok: true, clinicId, role };
+  return { ok: true, clinicId, role, exigeCheckout };
 }
