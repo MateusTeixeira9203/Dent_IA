@@ -227,7 +227,7 @@ interno e define o contrato do prompt real quando ele existir.
 
 ### Login, cadastro e convite
 
-- direção: **clinical editorial + operational SaaS**, a mesma do Dashboard/Tratamento;
+- direção: **clinical editorial + operational SaaS**, a mesma do Dashboard, Meu Dia e Ficha clínica;
 - paleta: somente tokens atuais (`background`, `card`, `foreground`, `muted-foreground`,
   `border`, teal/coral sem valor hardcoded);
 - tipografia: heading serif peso real 400; corpo Outfit; micro-rótulos e números em mono;

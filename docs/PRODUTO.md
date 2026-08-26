@@ -70,7 +70,7 @@ Dashboard, Stripe Dashboard.
 - **Premium = refinamento** — clareza, elegância, simplicidade. Evitar excesso de elementos,
   cores, bordas e informação simultânea.
 
-A régua prática (Dashboard e Tratamento como referência oficial, tokens, dark/light) está
+A régua prática (Dashboard, Meu Dia e Ficha clínica como referência oficial, tokens, dark/light) está
 no `CLAUDE.md` §Design — é regra de código, não visão.
 
 ## Retenção e evolução
@@ -81,11 +81,12 @@ comunicação próxima das clínicas — construção junto com clínicas reais.
 
 **Comunicação:** modernidade, evolução, fluidez, inteligência operacional, proximidade.
 
-## Mobile — direção futura
+## Mobile — direção atual
 
-App híbrido (React Native + Expo) em algum momento. O que isso exige do código de hoje já
-está no `CLAUDE.md`: lógica separada da UI, auth centralizada, APIs reutilizáveis, não
-depender excessivamente de SSR.
+O PWA é o aplicativo atual: precisa abrir rápido, responder bem em tela pequena e funcionar
+como produto de uso diário. App híbrido (React Native + Expo) é uma possibilidade futura, não
+um substituto prometido. O que isso exige do código de hoje está no `AGENTS.md`: lógica separada
+da UI, auth centralizada, APIs reutilizáveis e pouca dependência de SSR.
 
 ## Filosofia
 

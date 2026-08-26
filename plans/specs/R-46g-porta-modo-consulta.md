@@ -298,7 +298,7 @@ teal sólido. **Divergência consciente:** o hero real é bem maior (`px-8 py-4`
 (A3), não esta fatia. Do artefato importa o rótulo e o destino, não a geometria.
 
 **Ação de atender no rail é desenho novo** (o artefato só desenha seleção, sem esse
-controle) — Dashboard/Tratamento como referência, peso secundário: o card é o elemento
+controle) — Dashboard, Meu Dia e Ficha clínica como referências, peso secundário: o card é o elemento
 primário, a ação é um controle dentro dele.
 
 ## 10. Riscos

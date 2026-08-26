@@ -82,4 +82,4 @@ não apaga as outras.
 - decisão após perda do mínimo usa duas ações equivalentes e explica o efeito antes de confirmar;
 - não mostrar WhatsApp funcional antes da atualização correspondente;
 - não inventar novos destinos: toda ação deve apontar para action/rota mapeada na spec;
-- deve parecer feita pela mesma equipe do Dashboard e Tratamento.
+- deve parecer feita pela mesma equipe do Dashboard, Meu Dia e Ficha clínica.

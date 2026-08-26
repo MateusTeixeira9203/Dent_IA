@@ -66,8 +66,8 @@ src/
 - **Tokens sempre:** `bg-background` · `bg-card` · `text-foreground` · `text-muted-foreground` · `border-border`.
 - **Proibido:** `bg-white`, `text-black`, `gray-*` e qualquer cor hardcoded — quebra dark mode.
 - Dark **e** light impecáveis. Light mode tem histórico de contraste ruim — confira sempre os dois.
-- **Referência oficial: Dashboard e Tratamento.** Antes de dar tela por pronta, a pergunta
-  obrigatória: *"parece feita pela mesma equipe que fez o Dashboard e o Tratamento?"* Se não, não acabou.
+- **Referência oficial: Dashboard, Meu Dia e Ficha clínica.** Antes de dar tela por pronta, a pergunta
+  obrigatória: *"parece feita pela mesma equipe que fez o Dashboard, o Meu Dia e a Ficha?"* Se não, não acabou.
 - Processamento de IA usa **`DexLoader`** (`src/components/ui/dex-loader.tsx`) — já existe, não crie outro loader.
 - Motion: **sentida, não percebida.** Hover leve, feedback claro, skeletons consistentes.
 - Pipeline de design do setup (regra 4 do bloco abaixo) vale em toda tela nova.
@@ -230,3 +230,13 @@ Decisão **reversível** (código ainda não commitado, arquivo local, escolha q
 
 **Push nunca é automático.** Antes de propor: o que sobe está verificado (não só compilando), migration vai primeiro e sozinha, mudança de RLS/permissão passou por teste com 2 contas logadas. **Com usuário real em produção, lote pequeno e frequente ganha de lote grande** — represar commits maximiza a superfície de mudança e destrói a chance de isolar o que quebrou. Se eu não sei como voltar atrás, esse é o motivo pra não subir ainda.
 <!-- SAAS-BASE-RULES:END -->
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

@@ -100,7 +100,7 @@ fichas existentes continuam usando a forma estruturada anterior.
 
 ## 6. Referência visual
 
-É um refinamento do painel existente, não uma tela de marca nova. Segue Dashboard/Tratamento:
+É um refinamento do painel existente, não uma tela de marca nova. Segue Dashboard, Meu Dia e Ficha clínica:
 `bg-surface`, `bg-surface-alt`, `text-text-primary`, `text-text-secondary`, `border-border` e
 teal apenas para foco e títulos de arcada. Cada arcada é uma área de texto com label explícito;
 não usar chips decorativos, campos com aparência de planilha ou cores novas.
