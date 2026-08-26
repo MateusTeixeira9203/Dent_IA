@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence } from 'motion/react';
@@ -11,14 +11,14 @@ interface DexWidgetProps {
   nome: string;
 }
 
+const subscribeMounted = () => () => {};
+
 export function DexWidget({ nome }: DexWidgetProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(subscribeMounted, () => true, () => false);
 
-  const hub = useDexHub();
-
-  useEffect(() => setMounted(true), []);
+  const hub = useDexHub({ enabled: isOpen });
 
   // Listener externo — a bola do dock abre/fecha via evento
   useEffect(() => {

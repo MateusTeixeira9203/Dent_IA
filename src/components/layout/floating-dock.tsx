@@ -9,7 +9,7 @@ import {
 import { OdontoIALogo } from '@/components/ui/dent-ia-logo';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useTheme } from 'next-themes';
-import { useState, useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import Image from 'next/image';
 import { temFeature } from '@/lib/planos';
 import type { DentistaRole } from '@/types/database';
@@ -17,6 +17,7 @@ import type { PlanoId } from '@/lib/planos';
 import { DockNavItem } from './dock-nav-item';
 import { useClinicSwitcher } from '@/hooks/use-clinic-switcher';
 import { useLogout } from '@/hooks/use-logout';
+import { useDexBadge } from '@/hooks/use-dex-badge';
 
 interface FloatingDockProps {
   nome: string;
@@ -51,17 +52,8 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const mounted = useSyncExternalStore(subscribeMounted, () => true, () => false);
-  const [dexBadge, setDexBadge] = useState(0);
+  const dexBadge = useDexBadge(role !== 'protetico');
   const { clinicas, loading: clinicasLoading, switching, switchClinic } = useClinicSwitcher();
-
-  // Badge da bola do Dex — o hub despacha a contagem (useDexHub.ts), sem provider novo
-  useEffect(() => {
-    const handler = (e: Event) => {
-      setDexBadge((e as CustomEvent<{ count: number }>).detail?.count ?? 0);
-    };
-    window.addEventListener('dex-badge', handler);
-    return () => window.removeEventListener('dex-badge', handler);
-  }, []);
 
   // R-19 — convenção de zona segura: o dock publica sua presença (body.has-dock) pra que barras
   // contextuais fixas no bottom-center (EncaminharBar, voice-ux, futuras) ancorem ACIMA dele via

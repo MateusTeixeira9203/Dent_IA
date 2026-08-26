@@ -29,14 +29,36 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   try {
     const dentista = await getDentistaCached();
-    if (!dentista) return NextResponse.json({ alerts: [] });
+    const modo = req.nextUrl.searchParams.get('modo');
+    if (!dentista) return NextResponse.json(modo === 'badge' ? { count: 0 } : { alerts: [] });
 
     // R-94 — protético não usa Dex: nenhum alerta aqui (perfil/CRO, agendamento,
     // orçamento, follow-up) foi desenhado pensando nesse role. Gate único em vez de
     // remendar tipo por tipo — mesmo raciocínio do gate em dashboard/layout.tsx.
-    if (dentista.role === 'protetico') return NextResponse.json({ alerts: [] });
+    if (dentista.role === 'protetico') {
+      return NextResponse.json(modo === 'badge' ? { count: 0 } : { alerts: [] });
+    }
 
     const supabase = await createClient();
+
+    // R-129f — o dock existe em toda página. Fechado, ele só precisa saber se há uma
+    // notificação humana não lida, não recalcular agenda/orçamentos/contexto do Dex.
+    if (modo === 'badge') {
+      const { count, error } = await supabase
+        .from('notificacoes')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinica_id', dentista.clinica_id)
+        .or(`para_role.eq.${dentista.role},para_role.eq.all`)
+        .or(`para_dentista_id.is.null,para_dentista_id.eq.${dentista.id}`)
+        .eq('lida', false);
+
+      if (error) {
+        console.error('[dex/alerts badge] Erro:', error);
+        return NextResponse.json({ count: 0 });
+      }
+      return NextResponse.json({ count: count ?? 0 });
+    }
+
     const agora = new Date();
     const hojeInicio = new Date(agora);
     hojeInicio.setHours(0, 0, 0, 0);
