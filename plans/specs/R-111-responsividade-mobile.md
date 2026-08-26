@@ -125,9 +125,10 @@ Provado por sonda: num viewport de 500px a caixa trava em 468px e rola os 432px 
 
 ### 4.3 Agenda — o que muda
 
-- **Celular: a visão padrão vira Dia** (decisão dele, 14/08). Semana em 375px são 7 colunas de
-  48px — indefensável. A Semana continua existindo e passa a **rolar na horizontal com dica
-  visual**; o que muda é só qual abre primeiro. A escolha do dentista dentro da sessão manda: o
+- **Celular e desktop: a visão padrão é Semana** (decisão dele, 25/08). Em telas estreitas, a
+  Semana não pode ser comprimida: ela mostra os **sete dias como resumo navegável**, e tocar em
+  um deles abre a visão de Dia completa. Assim todos os dias ficam alcançáveis sem uma grade de
+  sete colunas ilegível ou horários cortados. A escolha do dentista dentro da sessão manda: o
   padrão só decide o estado inicial, nunca sobrescreve quem trocou de visão.
 - **Tablet:** o cabeçalho não pode virar `sm:flex-row` — o conteúdo precisa de 1135px. Sobe pro
   breakpoint que realmente comporta, ou quebra em duas linhas.
@@ -149,7 +150,7 @@ mesmo problema com outro nome.
 
 | Estado | Celular | Tablet |
 |---|---|---|
-| Agenda | visão do dia por padrão; semana rola horizontal com dica | semana inteira, cabeçalho em 2 linhas |
+| Agenda | visão da semana por padrão; resumo dos 7 dias abre o Dia completo | semana inteira, cabeçalho em 2 linhas |
 | Diálogo | tela cheia, cabeçalho e ação fixos, miolo rola | centralizado, `max-height` com folga |
 | Financeiro | cards em 1 coluna | 3 colunas (já cabe) |
 | Prontuário | abas rolam horizontal com dica | como está |
@@ -220,7 +221,9 @@ nativo — tema próprio, e este item é pré-requisito dos dois de qualquer jei
 
 **Decisões dele — as 3 fechadas em 14/08:**
 
-1. ✅ **Agenda no celular: visão do Dia por padrão.** Contrato no §4.3.
+1. ✅ **Agenda: visão da Semana por padrão em celular e desktop.** No celular, os sete dias
+   aparecem em resumo navegável e abrem a visão de Dia em vez de comprimir colunas. Contrato no
+   §4.3.
 2. ✅ **Link de texto inline é isento** do alvo de 44px. Contrato no §4.1, critério 3.
 3. ✅ **R-111 é o item 🔵.** O R-108b sai de ativo (segue 🟡, com G7/G9/G8 em aberto) e o R-109
    fica 🟡 com os pedaços 1 e 2 na fila.
