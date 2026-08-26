@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
-import { cancelarConvite, renovarConvite } from '@/server/services/invites';
+import { cancelarConvite, reenviarConvite, renovarConvite } from '@/server/services/invites';
 
 // Resolução canônica: users.active_clinica_id → clinica_usuarios (não dentistas)
 async function resolveDentistaCtx(user: { id: string }) {
@@ -55,9 +55,9 @@ export async function DELETE(
   return NextResponse.json({ success: true });
 }
 
-// PATCH — renovar convite expirado/cancelado
+// PATCH — reenviar convite pendente ou renovar convite expirado/cancelado
 export async function PATCH(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
   const { id } = await params;
@@ -68,6 +68,16 @@ export async function PATCH(
 
   const ctx = await resolveDentistaCtx(user);
   if (!ctx) return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
+
+  const rawPayload: unknown = await request.json().catch(() => null);
+  const action = typeof rawPayload === 'object' && rawPayload !== null && 'action' in rawPayload
+    ? rawPayload.action
+    : undefined;
+  if (action === 'reenviar') {
+    const result = await reenviarConvite(ctx, id);
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+    return NextResponse.json({ success: true, link: result.link, emailEnviado: result.emailEnviado });
+  }
 
   const result = await renovarConvite(ctx, id);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });

@@ -32,6 +32,13 @@ type EstadoComercial =
 - Configurações e `/planos` consomem o mesmo estado; não recalculam labels inline.
 - `isento`: mostra `Acesso parceiro — sem cobrança`, plano real e nenhum portal/checkout/preço.
 - `NEXT_PUBLIC_APP_URL` é a única origem do link público; valor inválido falha de forma visível.
+- `odontoia.app` é a origem canônica. A aplicação responde a aliases legados somente com
+  redirecionamento permanente que preserva caminho e query; nenhum link novo nasce em
+  `dentia.app.br` ou `www.odontoia.app`.
+- Convite pendente pode ser **reenviado manualmente** pela Equipe. Reenvio mantém token e
+  validade atuais, monta o e-mail com a origem canônica e devolve o link copiável caso o
+  provedor de e-mail falhe; não há disparo automático em massa nem rotação que invalide o
+  convite anterior.
 - Até existir persistência de indicação, esconder estatísticas e trocar promessa por `Em breve`
   ou remover o card inteiro.
 - Checkout após tentativas esgotadas mostra retry e canal de suporte; não libera acesso sem
@@ -60,6 +67,7 @@ semânticos existentes; isento usa teal neutro, sem preço riscado ou urgência 
 - Apenas webhook confirma assinatura.
 - Secretária/protético herdam acesso da clínica e não veem checkout individual.
 - Nenhuma chave Stripe ou ID sensível chega ao cliente.
+- Reenviar convite não altera `status`, `token` ou `expires_at` de convite pendente válido.
 
 ## 7. Gates de aceite
 
@@ -67,6 +75,8 @@ semânticos existentes; isento usa teal neutro, sem preço riscado ou urgência 
 - [ ] Conta ativa mostra portal; inativa mostra planos; past_due mostra prazo correto.
 - [ ] Formação 1/2 e 2/2 não se confunde com assinatura ativa.
 - [ ] Nenhum link contém `dentia.app.br`; todos usam `https://odontoia.app`.
+- [ ] Reenviar um convite pendente entrega (ou expõe para cópia) a URL canônica sem invalidar
+      o convite que já estava em circulação.
 - [ ] Zero estatística hardcoded apresentada como real.
 - [ ] Webhook atrasado termina em estado acionável, sem loop infinito.
 - [ ] Testes unitários cobrem a precedência dos sete estados.

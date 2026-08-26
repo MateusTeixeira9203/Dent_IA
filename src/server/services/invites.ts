@@ -208,6 +208,56 @@ export async function cancelarConvite(
   return { ok: true };
 }
 
+/**
+ * Reenvia o convite que já está pendente sem trocar token nem prazo. Isso é importante na
+ * migração de domínio: o link antigo continua válido pelo redirect 308, e o novo e-mail nasce
+ * canônico sem derrubar o acesso que já estava em circulação.
+ */
+export async function reenviarConvite(
+  ctx: { userId: string; clinicId: string; role: string },
+  inviteId: string,
+): Promise<{ ok: boolean; error?: string; link?: string; emailEnviado?: boolean }> {
+  if (ctx.role !== 'admin' && ctx.role !== 'dentista') {
+    return { ok: false, error: 'Sem permissão.' };
+  }
+
+  const db = createServiceClient();
+  const { data: convite } = await db
+    .from('convites')
+    .select('id, email, token, status, expires_at')
+    .eq('id', inviteId)
+    .eq('clinica_id', ctx.clinicId)
+    .maybeSingle<{ id: string; email: string; token: string; status: string; expires_at: string }>();
+
+  if (!convite) return { ok: false, error: 'Convite não encontrado.' };
+  if (convite.status !== 'pendente' || new Date(convite.expires_at) <= new Date()) {
+    return { ok: false, error: 'Este convite não está mais ativo. Renove-o para gerar um novo link.' };
+  }
+
+  const base = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/$/, '');
+  if (!base) return { ok: false, error: 'Endereço público do sistema não configurado.' };
+  const link = `${base}/convite/${convite.token}`;
+
+  try {
+    const { data: clinica } = await db
+      .from('clinicas')
+      .select('nome')
+      .eq('id', ctx.clinicId)
+      .maybeSingle<{ nome: string }>();
+    const { error } = await getResend().emails.send({
+      from: process.env.EMAIL_FROM ?? 'Odonto.IA <equipe@odontoia.app>',
+      to: convite.email,
+      subject: `Convite para ${clinica?.nome ?? 'clínica'} — Odonto.IA`,
+      html: conviteEmailHtml({ clinicaNome: clinica?.nome ?? 'sua clínica', link }),
+      text: conviteEmailText({ clinicaNome: clinica?.nome ?? 'sua clínica', link }),
+    });
+    return { ok: true, link, emailEnviado: !error };
+  } catch (error) {
+    console.error('[convite] reenvio falhou:', error);
+    return { ok: true, link, emailEnviado: false };
+  }
+}
+
 export async function renovarConvite(
   ctx: { userId: string; clinicId: string; role: string },
   inviteId: string,

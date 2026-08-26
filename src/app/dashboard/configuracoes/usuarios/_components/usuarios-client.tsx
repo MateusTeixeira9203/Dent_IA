@@ -118,6 +118,7 @@ export function UsuariosClient({
   // ── Estado da lista ───────────────────────────────────────────────────────
   const [pendentes, setPendentes]         = useState<ConvitePendente[]>(convitesPendentes);
   const [deletingId, setDeletingId]       = useState<string | null>(null);
+  const [resendingId, setResendingId]     = useState<string | null>(null);
   const [usuariosAtivos, setUsuariosAtivos] = useState<UsuarioRow[]>(usuarios);
   const [confirmDelete, setConfirmDelete] = useState<UsuarioRow | null>(null);
   const [isDeletingUser, setIsDeletingUser] = useState(false);
@@ -255,6 +256,32 @@ export function UsuariosClient({
       toast.error('Erro de conexão');
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function handleReenviarConvite(convite: ConvitePendente): Promise<void> {
+    setResendingId(convite.id);
+    try {
+      const response = await fetch(`/api/convite/${convite.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reenviar' }),
+      });
+      const data = (await response.json()) as { error?: string; link?: string; emailEnviado?: boolean };
+      if (!response.ok || !data.link) {
+        toast.error(data.error ?? 'Não foi possível reenviar o convite.');
+        return;
+      }
+
+      setEmailConvite(convite.email);
+      setConviteLink(data.link);
+      setConviteEmailEnviado(data.emailEnviado ?? false);
+      setShowDialog(true);
+      setStep('convite-link');
+    } catch {
+      toast.error('Erro de conexão ao reenviar convite.');
+    } finally {
+      setResendingId(null);
     }
   }
 
@@ -419,14 +446,24 @@ export function UsuariosClient({
                   {ROLE_LABELS[c.role]}
                 </Badge>
                 {(meuRole === 'admin' || meuRole === 'dentista') && (
-                  <button
-                    onClick={() => void handleCancelarConvite(c.id)}
-                    disabled={deletingId === c.id}
-                    className="p-1.5 rounded-lg text-text-secondary hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40"
-                    title="Cancelar convite"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => void handleReenviarConvite(c)}
+                      disabled={resendingId === c.id}
+                      className="p-1.5 rounded-lg text-text-secondary hover:text-teal hover:bg-teal/10 transition-colors disabled:opacity-40"
+                      title="Reenviar convite"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => void handleCancelarConvite(c.id)}
+                      disabled={deletingId === c.id}
+                      className="p-1.5 rounded-lg text-text-secondary hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40"
+                      title="Cancelar convite"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
