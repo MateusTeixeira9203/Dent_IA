@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { addWeeks, format, startOfWeek, subWeeks } from 'date-fns';
+import { addWeeks, endOfWeek, format, startOfWeek, subWeeks } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { buscarDisponibilidadeSemana } from '@/server/agenda/buscar-disponibilidade';
@@ -17,6 +17,16 @@ interface RetornoMobileAgendaProps {
 
 function hojeISO(): string {
   return format(new Date(), 'yyyy-MM-dd');
+}
+
+function diaTemHorarioLivre(dia: DisponibilidadeDia, duracaoMin: number): boolean {
+  const agora = new Date();
+  return dia.livres.some((bloco) => {
+    for (let minuto = bloco.inicioMin; minuto + duracaoMin <= bloco.fimMin; minuto += dia.intervaloMinutos) {
+      if (slotEstaLivre(minuto, duracaoMin, dia, agora)) return true;
+    }
+    return false;
+  });
 }
 
 export function RetornoMobileAgenda({
@@ -50,14 +60,13 @@ export function RetornoMobileAgenda({
     return () => { cancelado = true; };
   }, [dentistaId, semanaInicioISO]);
 
-  const diasConfigurados = useMemo(() => {
-    if (!dias) return [];
-    return dias.filter((dia) => dia.livres.length > 0 || dia.ocupados.length > 0 || dia.data === selecionado?.data);
-  }, [dias, selecionado?.data]);
-  const diaAtivo = diasConfigurados.find((dia) => dia.data === diaAberto)
-    ?? diasConfigurados.find((dia) => dia.data === selecionado?.data)
-    ?? diasConfigurados.find((dia) => dia.data === hojeISO())
-    ?? diasConfigurados[0]
+  const diasSemana = dias ?? [];
+  const diaAtivo = diasSemana.find((dia) => dia.data === diaAberto)
+    ?? diasSemana.find((dia) => dia.data === selecionado?.data)
+    ?? diasSemana.find((dia) => dia.data === hojeISO() && diaTemHorarioLivre(dia, duracaoMin))
+    ?? diasSemana.find((dia) => diaTemHorarioLivre(dia, duracaoMin))
+    ?? diasSemana.find((dia) => dia.data === hojeISO())
+    ?? diasSemana[0]
     ?? null;
   const slots = useMemo(() => {
     if (!diaAtivo) return [];
@@ -92,7 +101,7 @@ export function RetornoMobileAgenda({
           <ChevronLeft className="h-4 w-4" />
         </button>
         <p className="min-w-0 truncate text-center text-xs font-semibold text-text-primary">
-          {format(semanaInicio, "d 'de' MMM", { locale: ptBR })}
+          {format(semanaInicio, 'd MMM', { locale: ptBR })} – {format(endOfWeek(semanaInicio, { weekStartsOn: 0 }), 'd MMM', { locale: ptBR })}
         </p>
         <button
           type="button"
@@ -108,20 +117,22 @@ export function RetornoMobileAgenda({
         <p className="rounded-xl bg-coral-pale px-3 py-2 text-sm text-coral-ink">{erro}</p>
       ) : !dias ? (
         <div className="flex h-20 items-center justify-center rounded-xl border border-border bg-surface-alt/40"><Loader2 className="h-5 w-5 animate-spin text-text-secondary" /></div>
-      ) : diasConfigurados.length === 0 ? (
+      ) : diasSemana.length === 0 ? (
         <p className="rounded-xl border border-border bg-surface-alt/50 px-3 py-4 text-center text-sm text-text-secondary">Sem expediente nesta semana.</p>
       ) : (
         <>
-          <div className="grid grid-cols-5 gap-1.5 min-[390px]:gap-2">
-            {diasConfigurados.map((dia) => {
+          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+            {diasSemana.map((dia) => {
               const ativo = dia.data === diaAtivo?.data;
+              const semExpediente = dia.livres.length === 0;
               return (
                 <button
                   key={dia.data}
                   type="button"
                   onClick={() => setDiaAberto(dia.data)}
-                  className={`min-h-[52px] rounded-xl border px-1 py-1.5 text-center transition-colors ${
-                    ativo ? 'border-teal bg-teal/10 text-teal-ink' : 'border-border bg-surface-alt/50 text-text-secondary hover:border-teal/40'
+                  aria-pressed={ativo}
+                  className={`min-h-[52px] w-11 shrink-0 rounded-xl border px-1 py-1.5 text-center transition-colors ${
+                    ativo ? 'border-teal bg-teal/10 text-teal-ink' : semExpediente ? 'border-border bg-surface-alt/30 text-text-secondary/60' : 'border-border bg-surface-alt/50 text-text-secondary hover:border-teal/40'
                   }`}
                 >
                   <span className="block text-[10px] font-bold uppercase tracking-wide">{format(new Date(`${dia.data}T12:00:00`), 'EEE', { locale: ptBR })}</span>
@@ -133,7 +144,7 @@ export function RetornoMobileAgenda({
           <div>
             <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-teal-ink">Horários livres</p>
             {slots.length === 0 ? (
-              <p className="rounded-xl border border-border bg-surface-alt/50 px-3 py-4 text-center text-sm text-text-secondary">Nenhum horário livre neste dia.</p>
+              <p className="rounded-xl border border-border bg-surface-alt/50 px-3 py-4 text-center text-sm text-text-secondary">{diaAtivo?.livres.length ? 'Nenhum horário livre neste dia.' : 'Sem expediente neste dia.'}</p>
             ) : (
               <div className="grid grid-cols-3 gap-2">
                 {slots.map((minuto) => {

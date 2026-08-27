@@ -180,9 +180,10 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
         </button>
       </div>
 
-      <div className="flex border-b border-border">
-        <div style={{ width: GUTTER_WIDTH }} className="shrink-0" />
-        {eachDayOfInterval({ start: weekStart, end: weekEnd }).map((day) => {
+      <div className="overflow-x-auto">
+        <div className="flex min-w-[620px] border-b border-border">
+          <div style={{ width: GUTTER_WIDTH }} className="shrink-0" />
+          {eachDayOfInterval({ start: weekStart, end: weekEnd }).map((day) => {
           const isToday = isDateToday(day);
           return (
             <div key={day.toISOString()} className="flex-1 py-1.5 text-center">
@@ -196,8 +197,8 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
               </div>
             </div>
           );
-        })}
-      </div>
+          })}
+        </div>
 
         {!dentistaId ? (
           <div className="flex min-h-48 items-center justify-center px-6 text-center text-sm text-text-secondary">
@@ -214,8 +215,7 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
         // — 2 scrollboxes aninhadas ("rolar dentro de rolar") era mais confuso que ajudava.
         // A janela dinâmica de horas (hourStart/hourEnd) é o que evita precisar de QUALQUER
         // scroll no caso comum; overflow-x continua só pra semana não quebrar em telas estreitas.
-        <div className="overflow-x-auto">
-        <div className="flex" style={{ height: totalHeight }}>
+        <div className="flex min-w-[620px]" style={{ height: totalHeight }}>
           <div style={{ width: GUTTER_WIDTH }} className="sticky left-0 z-10 shrink-0 bg-surface">
             {hours.map((h) => (
               <div
@@ -294,8 +294,8 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
             );
           })}
         </div>
-        </div>
       )}
+      </div>
     </div>
   );
 }
