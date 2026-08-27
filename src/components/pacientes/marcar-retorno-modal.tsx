@@ -103,7 +103,7 @@ export function MarcarRetornoModal({
 
   return (
     <Dialog open={open} onOpenChange={alterarAberto}>
-      <DialogContent showCloseButton={false} className="flex h-[min(680px,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-none flex-col gap-0 overflow-hidden rounded-2xl border-border bg-surface p-0 md:h-[min(680px,calc(100dvh-3rem))] md:w-[min(1180px,calc(100vw-0.5rem))] md:rounded-2xl">
+      <DialogContent showCloseButton={false} className="flex h-[min(680px,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-none flex-col gap-0 overflow-hidden rounded-2xl border-border bg-surface p-0 sm:max-w-none md:h-[min(680px,calc(100dvh-3rem))] md:w-[min(1180px,calc(100vw-0.5rem))] md:rounded-2xl">
         <DialogDescription className="sr-only">Agende o retorno de {pacienteNome}.</DialogDescription>
 
         <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-4 py-3 md:px-5">
@@ -132,7 +132,7 @@ export function MarcarRetornoModal({
             <div className="hidden md:block"><RetornoSemanaGrid dentistaId={dentistaAlvoId} duracaoMin={duracaoMin} selecionado={selecionado} onSelecionar={(data, minutoDoDia) => setForm((atual) => ({ ...atual, data, minutoDoDia }))} /></div>
           </div>
 
-          <div className="flex min-h-0 w-full flex-col border-t border-border md:w-[280px] md:shrink-0 md:overflow-y-auto md:border-t-0 md:border-l">
+          <div className="flex min-h-0 w-full flex-col border-t border-border md:w-[250px] md:shrink-0 md:overflow-y-auto md:border-t-0 md:border-l">
             {etapa === 'retorno' ? (
               <motion.div key="retorno" initial={reduzirMotion ? false : { opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: reduzirMotion ? 0 : 0.16, ease: 'easeOut' }} className="flex-1 space-y-4 p-4 md:p-5">
                 <div className="hidden space-y-2 md:block">
@@ -157,7 +157,7 @@ export function MarcarRetornoModal({
 
           </div>
         </div>
-        <div className="shrink-0 space-y-2.5 border-t border-border bg-surface p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:ml-auto md:w-[280px] md:border-l md:p-4">
+        <div className="shrink-0 space-y-2.5 border-t border-border bg-surface p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:ml-auto md:w-[250px] md:border-l md:p-4">
           {error && <p className="rounded-lg bg-coral-pale p-2 text-xs text-coral-ink">{error}</p>}
           {etapa === 'retorno' ? <>
             {!error && !podeConfirmar && <p className="text-xs text-text-secondary">{dentistaAlvoId == null ? 'Escolha o dentista para ver a agenda.' : 'Escolha um horário livre para habilitar.'}</p>}

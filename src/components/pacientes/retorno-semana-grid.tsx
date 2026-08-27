@@ -189,7 +189,7 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
       </div>
 
       <div className="overflow-x-auto">
-        <div className="flex min-w-[760px] border-b border-border">
+        <div className="flex min-w-[680px] border-b border-border">
           <div style={{ width: GUTTER_WIDTH }} className="shrink-0" />
           {eachDayOfInterval({ start: weekStartVisivel, end: weekEnd }).map((day) => {
           const isToday = isDateToday(day);
@@ -218,7 +218,7 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
         // — 2 scrollboxes aninhadas ("rolar dentro de rolar") era mais confuso que ajudava.
         // A janela dinâmica de horas (hourStart/hourEnd) é o que evita precisar de QUALQUER
         // scroll no caso comum; overflow-x continua só pra semana não quebrar em telas estreitas.
-        <div className="flex min-w-[760px]" style={{ height: totalHeight }}>
+        <div className="flex min-w-[680px]" style={{ height: totalHeight }}>
           <div style={{ width: GUTTER_WIDTH }} className="sticky left-0 z-10 shrink-0 bg-surface">
             {hours.map((h) => (
               <div
