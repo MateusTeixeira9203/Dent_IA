@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import {
   Edit2, Trash2, CircleDollarSign, Plus, CheckCircle2, Check,
   Loader2, CreditCard, Banknote, Smartphone,
-  Receipt, User, CalendarClock, Layers, X, PenLine,
+  Receipt, User, CalendarClock, X, PenLine,
 } from 'lucide-react';
 import { AceiteOrcamentoModal } from '@/components/orcamentos/aceite-orcamento-modal';
 import { BotaoDownloadPDF } from '@/components/orcamentos/botao-download-pdf';
@@ -88,10 +88,6 @@ interface Props {
   /** R-114 — atalho de 1 clique: aprova todos os itens ainda não aprovados, num UPDATE só. */
   onAprovarTodosItens: (orcamentoId: string) => void;
   onRegistrarPagamento: () => void;
-  /** R-93 — atalho de 1 clique (R-34 §7.1): fecha a próxima parcela aberta, ou cobra o saldo
-   *  restante, sempre em dinheiro. Sem isso o caminho mais curto pra receber era 3-4 gestos. */
-  onRegistrarDinheiroRapido: () => void;
-  pagRapidoSaving: boolean;
   /** R-28 — id da parcela pendente sendo fechada; null = Registrar pagamento em modo criar novo. */
   closingPagamentoId: string | null;
   onIniciarFechamentoPagamento: (pg: Pagamento) => void;
@@ -139,7 +135,6 @@ export function DetalheOrcamentoModal({
   orcEditSaving, orcEditError, setOrcEditError,
   onOpenEditOrc, onSalvarEdicaoOrc,
   onAlternarAprovacaoItem, onAprovarTodosItens, onRegistrarPagamento,
-  onRegistrarDinheiroRapido, pagRapidoSaving,
   closingPagamentoId, onIniciarFechamentoPagamento, onCancelarFechamentoPagamento,
   onDeleteClick,
   podeExcluir,
@@ -156,11 +151,13 @@ export function DetalheOrcamentoModal({
   /** R-39a: só Procedimentos e Atividade — Pagamentos virou a coluna do dinheiro. */
   const [tab, setTab] = useState<'procedimentos' | 'atividade'>('procedimentos');
   const [showAceiteModal, setShowAceiteModal] = useState(false);
+  const [mostrarAgendamentoUnico, setMostrarAgendamentoUnico] = useState(false);
   const [activityLogs, setActivityLogs] = useState<{ id: string; actor_nome: string | null; action: string; created_at: string }[]>([]);
 
   // Patch 4: Lazy-fetch activity logs quando o modal abre
   useEffect(() => {
-    if (!detalheOrc) { setActivityLogs([]); return; }
+    if (!detalheOrc?.id) return;
+    let ativo = true;
     const supabase = createClient();
     void supabase
       .from('activity_logs')
@@ -169,7 +166,11 @@ export function DetalheOrcamentoModal({
       .eq('entity_id', detalheOrc.id)
       .order('created_at', { ascending: false })
       .limit(5)
-      .then(({ data }) => setActivityLogs((data ?? []) as { id: string; actor_nome: string | null; action: string; created_at: string }[]));
+      .then(({ data }) => {
+        if (!ativo) return;
+        setActivityLogs((data ?? []) as { id: string; actor_nome: string | null; action: string; created_at: string }[]);
+      });
+    return () => { ativo = false; };
   }, [detalheOrc?.id]);
 
   const ACTION_LABEL: Record<string, string> = {
@@ -185,10 +186,10 @@ export function DetalheOrcamentoModal({
 
   // R-114 — estado derivado dos fatos (item aprovado × pagamento), não mais declarado.
   // Mesma fórmula de lib/orcamentos/estado.ts — nunca reimplementada aqui.
-  const { totalPago, totalPendente, pctPago, quitado, restante, estado, valorDevido, valorAprovado } = useMemo(() => {
+  const { totalPago, totalPendente, quitado, restante, estado, valorDevido, valorAprovado } = useMemo(() => {
     if (!detalheOrc) {
       return {
-        totalPago: 0, totalPendente: 0, pctPago: 0, quitado: false, restante: 0,
+        totalPago: 0, totalPendente: 0, quitado: false, restante: 0,
         estado: 'proposto' as EstadoOrcamento, valorDevido: 0, valorAprovado: 0,
       };
     }
@@ -204,7 +205,6 @@ export function DetalheOrcamentoModal({
     return {
       totalPago:     derivado.valorPago,
       totalPendente: pendente,
-      pctPago:       derivado.valorDevido > 0 ? Math.min(100, (derivado.valorPago / derivado.valorDevido) * 100) : 0,
       quitado:       derivado.estado === 'quitado',
       restante:      restanteArred,
       estado:        derivado.estado,
@@ -217,7 +217,17 @@ export function DetalheOrcamentoModal({
   const temParcelaAgendada = detalheOrc?.pagamentos.some(
     (pagamento) => pagamento.status === 'pendente',
   ) ?? false;
+  const temPlanoParcelado = detalheOrc?.plano_forma === 'parcelado'
+    || detalheOrc?.pagamentos.some((pagamento) => pagamento.parcela_numero !== null) === true;
+  const temPlanoAvista = detalheOrc?.plano_forma === 'avista';
+  const temItensAprovados = valorAprovado > 0;
+  const podeEscolherRecebimento = temItensAprovados && !quitado && !temPlanoParcelado && !temPlanoAvista && !closingPagamentoId;
+  const podeConfigurarRecebimento = temItensAprovados && !quitado && !temPlanoParcelado && !closingPagamentoId;
   const valorFinalTravado = Boolean(detalheOrc?.plano_forma) || temParcelaAgendada;
+
+  useEffect(() => {
+    if (temPlanoAvista) setParcelasMode(false);
+  }, [setParcelasMode, temPlanoAvista]);
 
   /**
    * R-27a: quantidade de pagamentos recebidos e formas distintas usadas — é o que a
@@ -233,11 +243,12 @@ export function DetalheOrcamentoModal({
     };
   }, [detalheOrc]);
 
-  // R-39a — clicar em "Falta receber" preenche o valor da coluna do dinheiro com o
-  // saldo restante, igual ao atalho que existia na antiga aba Pagamentos.
+  // R-136 — pequeno atalho dentro do único formulário à vista, sem criar uma segunda
+  // ação financeira concorrente na lateral.
   function preencherRestante() {
     if (restante <= 0) return;
     setPagForm(f => ({ ...f, valor: formatValorBR(restante), dataVencimento: '' }));
+    setMostrarAgendamentoUnico(false);
   }
 
   return (
@@ -386,7 +397,7 @@ export function DetalheOrcamentoModal({
                             <div className="p-6 text-center text-sm text-text-secondary">Nenhum procedimento registrado.</div>
                           ) : (
                             <>
-                              {detalheOrc.itens.map((item, idx) => (
+                              {detalheOrc.itens.map((item) => (
                                 <div
                                   key={item.id}
                                   className={`flex items-center gap-3 px-4 py-3 border-b border-border/60 last:border-b-0 transition-colors ${
@@ -550,53 +561,48 @@ export function DetalheOrcamentoModal({
                         Salve as alterações na aba Procedimentos para registrar pagamentos.
                       </p>
                     </div>
-                  ) : quitado ? (
-                    <div className="rounded-2xl border border-teal p-6 text-center space-y-1">
-                      <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">Recebido neste orçamento</p>
-                      <p className="font-mono text-3xl font-semibold text-teal-ink">R$ {fmt(totalPago)}</p>
-                      <p className="text-xs text-text-secondary">
-                        {pagosCount} {pagosCount === 1 ? 'pagamento' : 'pagamentos'}
-                        {formasUsadas.length > 0 && ` · ${formasUsadas.map(f => FORMA_LABEL[f] ?? f).join(', ')}`}
-                      </p>
-                      <p className="text-xs text-text-secondary pt-2">Nada mais a receber.</p>
-                    </div>
                   ) : (
-                    <div className="space-y-2">
-                      <div className="flex items-baseline justify-between">
-                        <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">Quanto já foi pago</p>
-                        <p className="font-mono text-3xl font-semibold text-teal-ink leading-tight">
-                          {pctPago.toFixed(0)}<span className="text-lg">%</span>
-                        </p>
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">Resumo financeiro</p>
+                        <p className="mt-1 text-xs text-text-secondary">O que foi aceito, recebido e ainda falta receber.</p>
                       </div>
-                      <div className="w-full h-2.5 bg-surface-alt rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-teal rounded-full transition-all duration-700"
-                          style={{ width: `${pctPago}%` }}
-                        />
-                      </div>
-                      {!closingPagamentoId && (
-                        <Button
-                          type="button"
-                          onClick={onRegistrarDinheiroRapido}
-                          disabled={pagRapidoSaving}
-                          className="w-full mt-1 bg-teal text-white hover:bg-teal-lt rounded-xl gap-2 disabled:opacity-50"
-                        >
-                          <Banknote className="w-4 h-4" />
-                          {pagRapidoSaving ? 'Registrando...' : 'Registrar Dinheiro'}
-                        </Button>
+
+                      {temItensAprovados ? (
+                        <div className="grid grid-cols-3 gap-2" aria-label="Resumo do orçamento">
+                          <div className="rounded-xl border border-border bg-surface-alt/40 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Aprovado</p>
+                            <p className="mt-1 font-mono text-sm font-semibold text-text-primary">R$ {fmt(valorAprovado)}</p>
+                          </div>
+                          <div className="rounded-xl border border-border bg-surface-alt/40 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Recebido</p>
+                            <p className="mt-1 font-mono text-sm font-semibold text-teal-ink">R$ {fmt(totalPago)}</p>
+                          </div>
+                          <div className="rounded-xl border border-border bg-surface-alt/40 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Saldo</p>
+                            <p className="mt-1 font-mono text-sm font-semibold text-text-primary">R$ {fmt(restante)}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-border bg-surface-alt/40 p-4">
+                          <p className="text-sm font-semibold text-text-primary">Aguardando aprovação do paciente</p>
+                          <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+                            Selecione os procedimentos aceitos à esquerda. O recebimento só é liberado depois disso.
+                          </p>
+                        </div>
                       )}
-                      <button
-                        type="button"
-                        disabled={restante <= 0}
-                        onClick={preencherRestante}
-                        className="w-full flex items-baseline justify-between pt-1 enabled:hover:opacity-80 transition-opacity disabled:cursor-default"
-                      >
-                        <span className="text-xs text-text-secondary">Falta receber</span>
-                        <span className={`font-mono text-sm font-semibold ${restante > 0 ? 'text-warning-ink' : 'text-teal-ink'}`}>
-                          R$ {fmt(restante)}
-                        </span>
-                      </button>
-                      {totalPendente > 0 && (
+
+                      {quitado && (
+                        <div className="rounded-2xl border border-teal/30 bg-teal/5 p-4">
+                          <p className="text-sm font-semibold text-teal-ink">Orçamento quitado</p>
+                          <p className="mt-1 text-xs text-text-secondary">
+                            {pagosCount} {pagosCount === 1 ? 'pagamento registrado' : 'pagamentos registrados'}
+                            {formasUsadas.length > 0 && ` · ${formasUsadas.map(f => FORMA_LABEL[f] ?? f).join(', ')}`}
+                          </p>
+                        </div>
+                      )}
+
+                      {totalPendente > 0 && !quitado && (
                         <p className="text-[11px] font-mono text-warning-ink">
                           R$ {fmt(totalPendente)} agendado, ainda não recebido
                         </p>
@@ -660,11 +666,13 @@ export function DetalheOrcamentoModal({
                     </>
                   )}
 
-                  {detalheOrc.pagamentos.length > 0 && (
+                  {!orcEditMode && detalheOrc.pagamentos.length > 0 && (
                     <>
                       <div className="h-px bg-border my-4" />
                       <div className="mb-2 flex items-center justify-between gap-3">
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-text-secondary">Recebimentos</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-text-secondary">
+                          {temPlanoParcelado ? 'Parcelas' : 'Recebimentos'}
+                        </h4>
                         <span className="text-[11px] text-text-secondary">Edite valor, forma e data quando precisar</span>
                       </div>
                       <div className="space-y-1.5">
@@ -843,8 +851,8 @@ export function DetalheOrcamentoModal({
                     </>
                   )}
 
-                  {/* ── Formulário — sempre visível, nunca dentro de modal (R-34 §7.0) ── */}
-                  {!orcEditMode && !quitado && (
+                  {/* R-136 — só o caminho financeiro aplicável fica aberto por vez. */}
+                  {!orcEditMode && temItensAprovados && !quitado && (closingPagamentoId || podeConfigurarRecebimento) && (
                     <>
                       <div className="h-px bg-border my-4" />
 
@@ -864,23 +872,40 @@ export function DetalheOrcamentoModal({
                         </div>
                       )}
 
-                      <div className="flex items-center justify-between mb-2">
+                      <div className="mb-3">
                         <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">
-                          {closingPagamentoId ? 'Marcar parcela como paga' : parcelasMode ? 'Dividir em parcelas' : 'Registrar pagamento'}
+                          {closingPagamentoId ? 'Marcar parcela como paga' : parcelasMode ? 'Plano parcelado' : 'Recebimento à vista'}
                         </p>
-                        {!closingPagamentoId && (
-                          <button
-                            onClick={() => setParcelasMode(!parcelasMode)}
-                            className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary hover:text-teal-ink transition-colors"
-                          >
-                            <Layers className="w-3 h-3" />
-                            {parcelasMode ? 'Pagamento único' : 'Dividir em parcelas'}
-                          </button>
+                        {!closingPagamentoId && podeEscolherRecebimento && (
+                          <div className="mt-3 grid grid-cols-2 rounded-xl border border-border bg-surface-alt/40 p-1" role="tablist" aria-label="Forma de recebimento">
+                            <button
+                              type="button"
+                              role="tab"
+                              aria-selected={!parcelasMode}
+                              onClick={() => setParcelasMode(false)}
+                              className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                                !parcelasMode ? 'bg-surface text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
+                              }`}
+                            >
+                              À vista
+                            </button>
+                            <button
+                              type="button"
+                              role="tab"
+                              aria-selected={parcelasMode}
+                              onClick={() => setParcelasMode(true)}
+                              className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                                parcelasMode ? 'bg-surface text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
+                              }`}
+                            >
+                              Parcelado
+                            </button>
+                          </div>
                         )}
                       </div>
 
                       {parcelasMode && !closingPagamentoId ? (
-                        <div className="space-y-2">
+                        <div className="space-y-2 transition-all duration-150 motion-reduce:transition-none">
                           <div className="grid grid-cols-2 gap-2">
                             <div className="space-y-1.5">
                               <Label className="text-xs text-text-secondary">Nº de parcelas</Label>
@@ -915,9 +940,10 @@ export function DetalheOrcamentoModal({
                           )}
                         </div>
                       ) : (
-                        <div className="space-y-2">
-                          <div className="space-y-1.5">
-                            <Label className="text-xs text-text-secondary">Valor (R$)</Label>
+                        <div className="space-y-3 transition-all duration-150 motion-reduce:transition-none">
+                          <div className="flex items-end gap-2">
+                            <div className="min-w-0 flex-1 space-y-1.5">
+                              <Label className="text-xs text-text-secondary">Valor (R$)</Label>
                             <Input
                               type="text" inputMode="decimal" placeholder="0,00"
                               value={pagForm.valor}
@@ -929,27 +955,58 @@ export function DetalheOrcamentoModal({
                               }}
                               className="rounded-xl bg-surface border-border text-text-primary font-mono"
                             />
+                            </div>
+                            {!closingPagamentoId && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={restante <= 0}
+                                onClick={preencherRestante}
+                                className="h-10 shrink-0 rounded-xl text-xs"
+                              >
+                                Usar saldo
+                              </Button>
+                            )}
                           </div>
                           {!closingPagamentoId && (
-                            <div className="space-y-1.5">
-                              <Label className="text-xs text-text-secondary flex items-center gap-1.5">
-                                Vencimento <span className="text-text-secondary/60 font-normal">(deixe vazio se já recebeu)</span>
-                              </Label>
-                              <Input
-                                type="date" min={hoje}
-                                value={pagForm.dataVencimento}
-                                onChange={e => setPagForm(f => ({ ...f, dataVencimento: e.target.value }))}
-                                className="rounded-xl bg-surface border-border text-text-primary"
-                              />
+                            <div className="space-y-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMostrarAgendamentoUnico((aberto) => {
+                                    if (aberto) setPagForm((form) => ({ ...form, dataVencimento: '' }));
+                                    return !aberto;
+                                  });
+                                }}
+                                className="text-xs font-semibold text-text-secondary transition-colors hover:text-teal-ink"
+                              >
+                                {mostrarAgendamentoUnico ? 'Receber agora' : 'Agendar recebimento'}
+                              </button>
+                              {mostrarAgendamentoUnico && (
+                                <div className="space-y-1.5">
+                                  <Label className="text-xs text-text-secondary">Vencimento</Label>
+                                  <Input
+                                    type="date" min={hoje}
+                                    value={pagForm.dataVencimento}
+                                    onChange={e => setPagForm(f => ({ ...f, dataVencimento: e.target.value }))}
+                                    className="rounded-xl bg-surface border-border text-text-primary"
+                                  />
+                                </div>
+                              )}
                             </div>
                           )}
-                          {!closingPagamentoId && pagForm.dataVencimento && pagForm.dataVencimento > hoje ? (
-                            <div className="flex items-center gap-2 bg-warning-pale border border-warning/40 rounded-xl px-3 py-2.5">
-                              <CalendarClock className="w-3.5 h-3.5 text-warning-ink shrink-0" />
-                              <p className="text-xs text-warning-ink">
-                                Vencimento futuro — será registrado como <strong>pendente</strong>.
-                              </p>
-                            </div>
+                          {!closingPagamentoId && mostrarAgendamentoUnico ? (
+                            pagForm.dataVencimento && pagForm.dataVencimento > hoje ? (
+                              <div className="flex items-center gap-2 bg-warning-pale border border-warning/40 rounded-xl px-3 py-2.5">
+                                <CalendarClock className="w-3.5 h-3.5 text-warning-ink shrink-0" />
+                                <p className="text-xs text-warning-ink">
+                                  Vencimento futuro — será registrado como <strong>pendente</strong>.
+                                </p>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-text-secondary">Escolha uma data futura para agendar este recebimento.</p>
+                            )
                           ) : (
                             <>
                               <div className="space-y-1.5">
@@ -992,7 +1049,7 @@ export function DetalheOrcamentoModal({
 
                 {/* ── Ação fixa no pé da coluna — nunca sai da tela, mesmo com muitas
                     parcelas (a lista acima rola; o botão não). ── */}
-                {!orcEditMode && !quitado && (
+                {!orcEditMode && temItensAprovados && !quitado && (closingPagamentoId || podeConfigurarRecebimento) && (
                   <div className="shrink-0 border-t border-border p-4">
                     {parcelasMode && !closingPagamentoId ? (
                       <Button
@@ -1008,14 +1065,16 @@ export function DetalheOrcamentoModal({
                     ) : (
                       <Button
                         onClick={onRegistrarPagamento}
-                        disabled={pagSaving || !pagForm.valor}
+                        disabled={pagSaving || !pagForm.valor || (mostrarAgendamentoUnico && !closingPagamentoId && (!pagForm.dataVencimento || pagForm.dataVencimento <= hoje))}
                         className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl disabled:opacity-50 font-semibold"
                       >
                         {pagSaving
                           ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</>
                           : closingPagamentoId
                             ? 'Marcar como Pago'
-                            : (pagForm.dataVencimento && pagForm.dataVencimento > hoje) ? 'Agendar Parcela' : 'Confirmar Pagamento'
+                            : (mostrarAgendamentoUnico && pagForm.dataVencimento && pagForm.dataVencimento > hoje)
+                              ? 'Agendar recebimento'
+                              : 'Registrar recebimento'
                         }
                       </Button>
                     )}

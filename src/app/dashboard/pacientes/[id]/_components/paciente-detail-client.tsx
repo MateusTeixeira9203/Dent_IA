@@ -66,7 +66,6 @@ import type { DentistaRole } from '@/types/database';
 import type { PlanoId } from '@/lib/planos';
 import {
   registrarPagamento,
-  registrarPagamentoRapido,
   editarPagamento,
   marcarPagamentoPago,
   excluirPagamento,
@@ -265,7 +264,6 @@ export function PacienteDetailClient({
   const [parcelasError, setParcelasError] = useState<string | null>(null);
   const [pagSaving, setPagSaving] = useState(false);
   const [pagError, setPagError] = useState<string | null>(null);
-  const [pagRapidoSaving, setPagRapidoSaving] = useState(false);
 
   // R-28 — fechar uma parcela pendente específica via a aba Registrar pagamento
   // (em vez de abrir um pagamento novo e duplicar o recebimento).
@@ -762,25 +760,6 @@ export function PacienteDetailClient({
     setPagSaving(false);
   };
 
-  // R-93 — atalho de 1 clique (R-34 §7.1, já existia no servidor, nunca ligado nesta tela):
-  // fecha a próxima parcela aberta por UPDATE, ou cobra o saldo restante, sempre em dinheiro.
-  const handlePagamentoRapido = async () => {
-    if (!detalheOrcId) return;
-    setPagRapidoSaving(true);
-    const result = await registrarPagamentoRapido({
-      orcamentoId: detalheOrcId,
-      pacienteId: paciente.id,
-      formaPagamento: 'dinheiro',
-    });
-    if (result.error) {
-      setPagError(result.error);
-    } else {
-      toast.success('Recebimento registrado!');
-      router.refresh();
-    }
-    setPagRapidoSaving(false);
-  };
-
   const handleIniciarFechamentoPagamento = (pg: Pagamento) => {
     setClosingPagamentoId(pg.id);
     setParcelasMode(false);
@@ -845,8 +824,14 @@ export function PacienteDetailClient({
     if (!detalheOrcId) return;
     const numero = parseInt(parcelasForm.numero, 10);
     // Aviso local só de UX — quem soma "já pago" de verdade agora é a RPC (server).
-    const pago = (detalheOrc?.pagamentos ?? []).filter((p) => p.status === 'pago').reduce((s, p) => s + p.valor, 0);
-    const saldoAproximado = Math.max(0, (detalheOrc?.total ?? 0) - pago);
+    const derivado = detalheOrc
+      ? deriveEstadoOrcamento({
+          valorAcordado: detalheOrc.valor_acordado,
+          itens: detalheOrc.itens.map((item) => ({ precoTotal: item.preco_total, aprovado: item.aprovado })),
+          pagamentos: detalheOrc.pagamentos.map((pagamento) => ({ valor: pagamento.valor, status: pagamento.status })),
+        })
+      : null;
+    const saldoAproximado = Math.max(0, (derivado?.valorDevido ?? 0) - (derivado?.valorPago ?? 0));
     if (!numero || numero < 2 || numero > 24) {
       setParcelasError('Informe entre 2 e 24 parcelas.');
       return;
@@ -885,7 +870,7 @@ export function PacienteDetailClient({
       setOrcamentosState((prev) =>
         prev.map((o) =>
           o.id === detalheOrcId
-            ? { ...o, pagamentos: [...o.pagamentos, ...novasPag] }
+            ? { ...o, plano_forma: 'parcelado', pagamentos: [...o.pagamentos, ...novasPag] }
             : o
         )
       );
@@ -1835,8 +1820,6 @@ export function PacienteDetailClient({
         onAprovarTodosItens={handleAprovarTodosItens}
         onToggleMostrarValorPorItem={handleToggleMostrarValorPorItem}
         onRegistrarPagamento={closingPagamentoId ? handleFecharPagamento : handleRegistrarPagamento}
-        onRegistrarDinheiroRapido={handlePagamentoRapido}
-        pagRapidoSaving={pagRapidoSaving}
         closingPagamentoId={closingPagamentoId}
         onIniciarFechamentoPagamento={handleIniciarFechamentoPagamento}
         onCancelarFechamentoPagamento={handleCancelarFechamentoPagamento}
