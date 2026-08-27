@@ -94,9 +94,9 @@ Campos fixos:
 `RootLayout`. A sobreposição renderiza no HTML inicial, mas CSS a exibe somente com
 `display-mode: standalone`; a detecção em JavaScript também cobre `navigator.standalone` no iOS.
 
-- `OdontoIALogo` existente começa centralizado; após 90 ms move apenas `transform: translateX(-52px)`;
+- `OdontoIALogo` existente começa centralizado; após 180 ms move apenas `transform: translateX(-52px)`;
 - wordmark `Odonto.IA` entra com opacidade, deslocamento de 12 px e blur de 2 px → 0;
-- saída do overlay: 120 ms; janela total máxima: 420 ms; curva
+- composição: 820 ms; saída do overlay: 180 ms; janela total aproximada: 1 s; curva
   `cubic-bezier(.22, 1, .36, 1)` e sem bounce;
 - `prefers-reduced-motion` exibe o estado final e remove a sobreposição sem animação;
 - nenhum timer depende de fetch, autenticação ou dados clínicos.
@@ -169,7 +169,7 @@ Não há tela nova. O componente ocupa o slot PWA aprovado do R-121 na landing:
 - [ ] **I5** — CTA nunca aparece como instalável quando o app já está standalone.
 - [ ] **I6** — dispensa do prompt não gera repetição automática ou bloqueio da landing.
 - [ ] **I7** — zero dependência npm e zero mudança de banco, auth ou RLS.
-- [ ] **I8** — a abertura não bloqueia por mais de 420 ms e nunca depende da chegada de dados.
+- [ ] **I8** — a abertura não bloqueia por mais de 1 s e nunca depende da chegada de dados.
 - [ ] **I9** — navegador comum não renderiza nem reserva espaço para a introdução do PWA.
 
 ## 8. Gates de aceite

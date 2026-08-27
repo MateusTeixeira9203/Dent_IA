@@ -13,7 +13,7 @@ ao dashboard. Usa a identidade existente; não é rebrand e não cria uma tela d
 | Paleta | carvão + teal existente | `globals.css` |
 | Tipografia | DM Serif Display + Outfit | `src/app/layout.tsx` |
 | Layout | full-bleed centralizado | abertura de app |
-| Densidade | compacta | janela de até 450 ms |
+| Densidade | compacta | janela de cerca de 1 s |
 | Raio | não aplicável | overlay sem card |
 | Motion | sutil | decisão do usuário em 2026-08-27 |
 | Acessibilidade | `prefers-reduced-motion` | obrigatório |
@@ -22,10 +22,10 @@ ao dashboard. Usa a identidade existente; não é rebrand e não cria uma tela d
 
 - Fundo `--color-brand-charcoal` (`#0d0d0d`); símbolo em `--color-teal` (`#2f9c85`);
   wordmark em `--color-text-primary`.
-- O símbolo começa exatamente no centro. Em 220 ms, desloca 52 px para a esquerda; em paralelo,
+- O símbolo repousa 180 ms exatamente no centro. Em 380 ms, desloca 52 px para a esquerda; em paralelo,
   “Odonto.IA” entra 12 px pela direita com opacidade e blur de 2 px para zero.
 - Curva: `cubic-bezier(.22, 1, .36, 1)`; sem bounce, escala, giro, loop, gradiente ou brilho.
-- A sobreposição cobre somente o PWA em modo standalone e sai em 120 ms após 420 ms totais.
+- A sobreposição cobre somente o PWA em modo standalone e sai em 180 ms após 820 ms totais.
 
 ## Não fazer
 

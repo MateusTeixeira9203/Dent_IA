@@ -34,16 +34,17 @@ export function PwaLaunchIntro(): React.JSX.Element | null {
       return () => window.clearTimeout(removerImediato);
     }
 
-    const revelarWordmark = window.setTimeout(() => setWordmarkVisivel(true), 90);
-    // 300 ms de composição + saída de 120 ms = no máximo 420 ms sobre o conteúdo.
-    const fechar = window.setTimeout(() => setVisivel(false), 300);
+    // O símbolo precisa repousar antes de revelar a marca; sem isso a transição parece um flash.
+    const revelarWordmark = window.setTimeout(() => setWordmarkVisivel(true), 180);
+    // 820 ms de composição + saída de 180 ms = cerca de 1 s sobre o conteúdo, sem esperar dados.
+    const fechar = window.setTimeout(() => setVisivel(false), 820);
     return () => {
       window.clearTimeout(revelarWordmark);
       window.clearTimeout(fechar);
     };
   }, [reduzirMotion]);
 
-  const duracao = reduzirMotion ? 0 : 0.2;
+  const duracao = reduzirMotion ? 0 : 0.38;
 
   return (
     <AnimatePresence>
@@ -54,7 +55,7 @@ export function PwaLaunchIntro(): React.JSX.Element | null {
           initial={false}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: reduzirMotion ? 0 : 0.12, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: reduzirMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
         >
           <div className="relative h-16 w-64">
             <motion.div
@@ -70,7 +71,7 @@ export function PwaLaunchIntro(): React.JSX.Element | null {
               animate={wordmarkVisivel
                 ? { opacity: 1, x: 0, filter: 'blur(0px)' }
                 : { opacity: 0, x: 12, filter: 'blur(2px)' }}
-              transition={{ duration: reduzirMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ duration: reduzirMotion ? 0 : 0.32, ease: [0.22, 1, 0.36, 1] }}
             >
               Odonto.IA
             </motion.p>
@@ -78,7 +79,7 @@ export function PwaLaunchIntro(): React.JSX.Element | null {
               className="absolute inset-x-0 top-[calc(50%+3rem)] m-0 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted"
               initial={{ opacity: 0 }}
               animate={{ opacity: wordmarkVisivel ? 1 : 0 }}
-              transition={{ duration: reduzirMotion ? 0 : 0.12, delay: reduzirMotion ? 0 : 0.08, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ duration: reduzirMotion ? 0 : 0.18, delay: reduzirMotion ? 0 : 0.14, ease: [0.22, 1, 0.36, 1] }}
             >
               Abrindo seu consultório
             </motion.p>
