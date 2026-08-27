@@ -84,6 +84,7 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
 
   const weekStart = semanaInicio;
   const weekEnd = endOfWeek(semanaInicio, { weekStartsOn: 0 });
+  const weekStartVisivel = addDays(weekStart, 1);
   const semanaInicioISO = format(weekStart, 'yyyy-MM-dd');
 
   // Reset síncrono durante o RENDER (não no efeito) quando a semana/dentista muda — mesmo
@@ -107,6 +108,13 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
     return () => { cancelado = true; };
   }, [dentistaId, semanaInicioISO]);
 
+  // A disponibilidade continua sendo buscada de domingo a sábado pelo contrato compartilhado.
+  // O retorno, porém, opera de segunda a sábado tanto no desktop quanto no mobile.
+  const diasVisiveis = useMemo(
+    () => (dias ?? []).filter((dia) => dia.diaSemana !== 0),
+    [dias],
+  );
+
   function navegar(proxima: Date) {
     setSemanaInicio(startOfWeek(proxima, { weekStartsOn: 0 }));
     setDiaDestacado(null);
@@ -118,8 +126,8 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
   }
 
   const { inicio: hourStart, fim: hourEnd } = useMemo(
-    () => janelaHoras(dias, selecionado ? { minutoDoDia: selecionado.minutoDoDia, duracaoMin } : null),
-    [dias, selecionado, duracaoMin],
+    () => janelaHoras(diasVisiveis, selecionado ? { minutoDoDia: selecionado.minutoDoDia, duracaoMin } : null),
+    [diasVisiveis, selecionado, duracaoMin],
   );
 
   // Pedido dele ao vivo ("libere o clique no calendário todo") — o clique nunca trava
@@ -160,7 +168,7 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
             <ChevronLeft className="h-3.5 w-3.5 text-text-secondary" />
           </button>
           <span className="text-xs font-semibold text-text-primary">
-            {format(weekStart, "d 'de' MMM", { locale: ptBR })} – {format(weekEnd, "d 'de' MMM yyyy", { locale: ptBR })}
+            {format(weekStartVisivel, "d 'de' MMM", { locale: ptBR })} – {format(weekEnd, "d 'de' MMM yyyy", { locale: ptBR })}
           </span>
           <button
             type="button"
@@ -183,7 +191,7 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
       <div className="overflow-x-auto">
         <div className="flex min-w-[760px] border-b border-border">
           <div style={{ width: GUTTER_WIDTH }} className="shrink-0" />
-          {eachDayOfInterval({ start: weekStart, end: weekEnd }).map((day) => {
+          {eachDayOfInterval({ start: weekStartVisivel, end: weekEnd }).map((day) => {
           const isToday = isDateToday(day);
           return (
             <div key={day.toISOString()} className="flex-1 py-2 text-center">
@@ -223,7 +231,7 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
             ))}
           </div>
 
-          {dias.map((dia) => {
+          {diasVisiveis.map((dia) => {
             const destacado = !!diaDestacado && isSameDay(parseISO(dia.data), diaDestacado);
             const selecionadoAqui = selecionado?.data === dia.data ? selecionado : null;
             return (
