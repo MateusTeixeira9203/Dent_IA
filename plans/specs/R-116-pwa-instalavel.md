@@ -28,8 +28,8 @@ antiga ou aparentar estar atualizados quando não há rede. Instalar não será 
 o prompt; service worker não é requisito atual. O iOS usa `apple-touch-icon` PNG e modo standalone.
 
 A tela nativa de abertura do sistema operacional não pode ser animada por uma PWA. A introdução
-começa logo depois: o símbolo central desloca 52 px à esquerda e revela “Odonto.IA”. Ela não
-espera dados nem roda em navegação interna.
+web replica seu fundo e símbolo assim que o sistema libera a página, segura a rota e então desloca
+o símbolo à esquerda para revelar “Odonto.IA”. Ela não espera dados nem roda em navegação interna.
 
 Referências: [Chrome/web.dev — critérios de instalação](https://web.dev/articles/install-criteria),
 [web.dev — manifest](https://web.dev/articles/add-manifest),
@@ -90,16 +90,17 @@ Campos fixos:
 
 ### Introdução — `PwaLaunchIntro`
 
-`src/components/pwa/pwa-launch-intro.tsx` é um Client Component montado uma única vez no
-`RootLayout`. A sobreposição só é montada pelo cliente após detectar um modo de aplicativo
-(`standalone`, `fullscreen` ou `minimal-ui`), `navigator.standalone` no iOS ou o lançamento
-`android-app://` no Android. Assim a regra CSS não pode suprimir a abertura após a splash nativa.
+`src/app/layout.tsx` injeta um script crítico `beforeInteractive` que detecta um modo de
+aplicativo (`standalone`, `fullscreen` ou `minimal-ui`), `navigator.standalone` no iOS ou o
+lançamento `android-app://` no Android. Ele marca o HTML como `data-pwa-launch="pending"` antes
+da hidratação e possui um failsafe de 2,5 s. `PwaLaunchIntro` recebe a rota como `children`:
+enquanto a marca está pendente, o CSS oculta a rota e mostra a composição já renderizada no HTML.
 
-- `OdontoIALogo` existente começa centralizado; após 180 ms move apenas `transform: translateX(-52px)`;
+- `OdontoIALogo` existente começa centralizado; após 260 ms move apenas `transform: translateX(-64px)`;
 - wordmark `Odonto.IA` entra com opacidade, deslocamento de 12 px e blur de 2 px → 0;
-- composição: 820 ms; saída do overlay: 180 ms; janela total aproximada: 1 s; curva
+- composição: 980 ms; saída do overlay: 200 ms; janela total aproximada: 1,18 s; curva
   `cubic-bezier(.22, 1, .36, 1)` e sem bounce;
-- `prefers-reduced-motion` exibe o estado final e remove a sobreposição sem animação;
+- `prefers-reduced-motion` não bloqueia a rota nem exibe deslocamento, blur ou atraso;
 - nenhum timer depende de fetch, autenticação ou dados clínicos.
 
 ### UI — `InstallPwaCard`
@@ -173,7 +174,7 @@ Não há tela nova. O componente ocupa o slot PWA aprovado do R-121 na landing:
 - [ ] **I5** — CTA nunca aparece como instalável quando o app já está standalone.
 - [ ] **I6** — dispensa do prompt não gera repetição automática ou bloqueio da landing.
 - [ ] **I7** — zero dependência npm e zero mudança de banco, auth ou RLS.
-- [ ] **I8** — a abertura não bloqueia por mais de 1 s e nunca depende da chegada de dados.
+- [ ] **I8** — a abertura não bloqueia por mais de 1,2 s e nunca depende da chegada de dados.
 - [ ] **I9** — navegador comum não renderiza nem reserva espaço para a introdução do PWA.
 
 ## 8. Gates de aceite

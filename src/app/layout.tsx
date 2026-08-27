@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import { DM_Serif_Display, Outfit, DM_Mono, Geist } from 'next/font/google';
 import './globals.css';
 import { cn } from "@/lib/utils";
@@ -52,10 +53,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           enableSystem
           disableTransitionOnChange
         >
-          {children}
-          <PwaLaunchIntro />
+          <PwaLaunchIntro>{children}</PwaLaunchIntro>
           <Toaster />
         </ThemeProvider>
+        <Script id="pwa-launch-detection" strategy="beforeInteractive">
+          {`try {
+            var pwaDisplayModes = ['standalone', 'fullscreen', 'minimal-ui'];
+            var pwaStandalone = pwaDisplayModes.some(function (mode) {
+              return window.matchMedia('(display-mode: ' + mode + ')').matches;
+            }) || window.navigator.standalone === true || document.referrer.indexOf('android-app://') === 0;
+
+            if (pwaStandalone) {
+              document.documentElement.dataset.pwaLaunch = 'pending';
+              window.setTimeout(function () {
+                if (document.documentElement.dataset.pwaLaunch === 'pending') {
+                  document.documentElement.removeAttribute('data-pwa-launch');
+                }
+              }, 2500);
+            }
+          } catch {}`}
+        </Script>
       </body>
     </html>
   );

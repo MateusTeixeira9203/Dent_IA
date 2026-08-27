@@ -1,4 +1,26 @@
 @import "tailwindcss";
+
+.pwa-launch-intro {
+  display: none;
+}
+
+html[data-pwa-launch='pending'] .pwa-launch-content {
+  visibility: hidden;
+}
+
+html[data-pwa-launch='pending'] .pwa-launch-intro {
+  display: flex;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-pwa-launch='pending'] .pwa-launch-content {
+    visibility: visible;
+  }
+
+  html[data-pwa-launch='pending'] .pwa-launch-intro {
+    display: none;
+  }
+}
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
