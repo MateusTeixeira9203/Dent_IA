@@ -40,9 +40,10 @@ disponível, até `1180px`, para a grade e o painel não disputarem espaço.
 ### Diagnóstico de agenda — 2026-08-27
 
 Consulta somente-leitura em produção: `Dentista01` tem grade ativa nos valores `1, 2, 3`
-(segunda a quarta) e não possui grade em quinta, sexta ou sábado. Portanto, “Sem expediente”
-nesses dias não é slot oculto nem erro do retorno; ativá-los é alteração deliberada em
-Configurações → Horários, fora deste patch visual.
+(segunda a quarta) e não possui grade em quinta, sexta ou sábado. A semântica aprovada para
+**Marcar retorno** é “Agenda livre” nesses dias: o dentista escolhe a hora manualmente, sem
+precisar cadastrar uma escala só para esse retorno. A checagem de conflito continua obrigatória;
+abertura, almoço e fechamento só podem ser ignorados pelo fluxo geral de confirmação já existente.
 
 ## 2. Decisão e alternativas descartadas
 
@@ -89,6 +90,7 @@ export interface PedidoProteticoRetornoForm {
 export interface MarcarRetornoForm {
   data: string | null;
   minutoDoDia: number | null;
+  agendaLivre: boolean; // dia sem grade; permite selecionar hora manualmente no retorno
   duracao: string;
   observacoes: string;
   pedidoProtetico: PedidoProteticoRetornoForm | null;
@@ -136,6 +138,7 @@ export async function criarRetornoComPedido(input: {
   duracaoMinutos: number;
   observacoes: string | null;
   dentistaId?: string;
+  agendaLivre?: boolean;
   pedidoProtetico: PedidoProteticoRetornoForm | null;
 }): Promise<CriarRetornoResult>;
 ```
@@ -143,6 +146,8 @@ export async function criarRetornoComPedido(input: {
 - `listarProteticosAtivos` usa `requireClinicContext()`, filtra `clinica_id = clinicId`,
   `role = 'protetico'`, `ativo = true` e ordena por nome. Protético recebe erro de permissão.
 - `criarRetornoComPedido` chama o contrato existente de `criarAgendamento`; sem pedido, encerra.
+  Quando `agendaLivre` chega de um dia sem grade, ele repete somente a validação que retornou
+  `dia_sem_grade` com esse motivo liberado. Nunca libera conflito, abertura, almoço ou fechamento.
   Com pedido e `agendamentoId`, chama `criarPedidoProtetico` passando o mesmo paciente,
   dentista-alvo e agendamento.
 - `criarPedidoProteticoSchema` passa a ser exportado e continua sendo a fonte única de validação
@@ -170,6 +175,11 @@ reimplementa a regra de colisão. Para cada bloco livre, enumera pelo `intervalo
 filtra pela duração escolhida. Mudança de duração recalcula os slots e limpa a seleção se ela
 deixar de estar livre.
 
+`DisponibilidadeDia.temGrade` separa “não há horário livre” de “não há grade”: no segundo caso,
+o mobile mostra o estado **Agenda livre neste dia** e um campo de hora. A seleção preserva essa
+origem até o submit; no desktop, clicar em uma coluna sem grade marca a mesma origem e o campo
+Hora já existente permanece utilizável.
+
 A agenda de retorno mostra segunda a sábado da semana, com os seis cartões visíveis na largura
 móvel e seis colunas largas no desktop; domingo não é um destino desse fluxo. Dia sem slot mostra
 estado vazio e continua navegável. O servidor permanece a decisão final, porque a agenda pode
@@ -193,6 +203,7 @@ mudar entre carregar e confirmar.
 | Carregando agenda | troca de semana/dentista | skeleton compacto; CTA sem horário | não agenda |
 | Carregando protéticos | modal abre | ação secundária desabilitada | retorno normal não é bloqueado |
 | Sem slots no dia | disponibilidade vazia para a duração | “Nenhum horário livre neste dia” | permite escolher outro dia/semana |
+| Agenda livre | dia sem grade ativa | campo “Hora de atendimento” | agenda após conferir conflito; não exige cadastrar escala |
 | Sucesso sem pedido | retorno válido | fecha + toast com data/hora | grava só agendamento |
 | Sucesso com pedido | dois inserts válidos | fecha + toast único | grava retorno e pedido vinculado |
 | Validação protético | id/data/observação inválidos | permanece na etapa 2 + erro | não cria retorno nem pedido |
@@ -229,7 +240,7 @@ abre Marcar retorno
 
 ## 6. Referência visual
 
-- **Artefato aprovado:** `plans/artefatos/R-137-retorno-protetico-responsivo-v6.html`
+- **Artefato aprovado:** `plans/artefatos/R-137-retorno-protetico-responsivo-v7.html`
 - **Rotas:** `/dashboard/pacientes/[id]` e `/dashboard/meu-dia`
 - **Componente:** `src/components/pacientes/marcar-retorno-modal.tsx`
 - **Temas:** light e dark obrigatórios; zero cor hardcoded na implementação.
@@ -262,6 +273,8 @@ Tokens extraídos por JavaScript do artefato servido em HTTP:
   sábado, sem domingo, com rótulos `Seg`, `Ter`, `Qua`, `Qui`, `Sex`, `Sáb`; “Horários livres”;
   duração; observações. O casco preserva margem da viewport e o rodapé com Cancelar + CTA fica
   sempre visível.
+- Mobile, dia sem grade: substitui “Sem expediente” por card `Agenda livre neste dia.` + campo
+  `Hora de atendimento`; a ajuda informa que o conflito ainda é conferido antes de marcar.
 - Desktop: a grade semanal mostra segunda a sábado, com seis colunas mínimas de `106px`, sem o
   número da data no cabeçalho; a largura excedente usa rolagem horizontal controlada.
 - Etapa 2: “Enviar ao protético”, resumo “Retorno preservado”, Protético, Entrega até,
@@ -277,7 +290,8 @@ Tokens extraídos por JavaScript do artefato servido em HTTP:
 - [ ] Mobile nunca exige scroll horizontal; os seis dias da semana de trabalho e os slots têm no
   mínimo 44px.
 - [ ] Slots mobile vêm de `buscarDisponibilidadeSemana` + `slotEstaLivre`, nunca de cálculo paralelo.
-- [ ] O servidor continua decidindo conflito e fora do expediente no momento do submit.
+- [ ] Dia sem grade vira agenda livre apenas no retorno; a hora manual ainda passa pela decisão
+  final do servidor e nunca sobrepõe um conflito.
 - [ ] Falha do pedido nunca desfaz silenciosamente o retorno nem exibe sucesso completo.
 - [ ] Retry do pedido reutiliza `agendamentoId`; nunca cria agendamento duplicado.
 - [ ] Clínica sem protético continua concluindo retorno normal sem bloqueio.
@@ -292,6 +306,8 @@ Tokens extraídos por JavaScript do artefato servido em HTTP:
 - [ ] Desktop: cabeçalho da semana tem somente segunda a sábado; cada coluna tem pelo menos
   `106px` e a barra horizontal só aparece quando a região da agenda não comportar a grade.
 - [ ] Alterar duração recalcula slots e remove seleção que deixou de caber.
+- [ ] Mobile em dia sem grade mostra `Agenda livre neste dia.`, permite preencher a hora e cria
+  o retorno se não houver conflito; grade configurada continua respeitando abertura/almoço/fim.
 - [ ] Sem protético ativo, ação “Incluir protético” não renderiza e o retorno conclui normalmente.
 - [ ] Com protético, os dois registros compartilham paciente, dentista e `agendamento_id`.
 - [ ] Data passada, observação vazia ou protético inválido mantêm a etapa 2, mostram o erro e não criam retorno nem pedido.
