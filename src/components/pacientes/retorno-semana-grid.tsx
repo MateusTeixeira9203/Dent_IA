@@ -73,7 +73,7 @@ export interface RetornoSemanaGridProps {
   dentistaId: string | null;
   duracaoMin: number;
   selecionado: { data: string; minutoDoDia: number } | null;
-  onSelecionar: (data: string, minutoDoDia: number) => void;
+  onSelecionar: (data: string, minutoDoDia: number, agendaLivre: boolean) => void;
 }
 
 export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelecionar }: RetornoSemanaGridProps) {
@@ -136,7 +136,7 @@ export function RetornoSemanaGrid({ dentistaId, duracaoMin, selecionado, onSelec
   // dia+hora, não um limite de disponibilidade.
   function handleClickDia(dia: DisponibilidadeDia, offsetY: number) {
     const minuto = minutoDoClique(offsetY, hourStart, hourEnd);
-    onSelecionar(dia.data, minuto);
+    onSelecionar(dia.data, minuto, !dia.temGrade);
   }
 
   const totalHeight = (hourEnd - hourStart) * SLOT_HEIGHT;

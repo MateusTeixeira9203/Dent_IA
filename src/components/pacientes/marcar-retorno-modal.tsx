@@ -99,7 +99,7 @@ export function MarcarRetornoModal({
     }));
   }
 
-  const selecionado = podeConfirmar ? { data: form.data!, minutoDoDia: form.minutoDoDia! } : null;
+  const selecionado = podeConfirmar ? { data: form.data!, minutoDoDia: form.minutoDoDia!, agendaLivre: form.agendaLivre } : null;
 
   return (
     <Dialog open={open} onOpenChange={alterarAberto}>
@@ -128,8 +128,8 @@ export function MarcarRetornoModal({
                 </Select>
               </div>
             )}
-            <RetornoMobileAgenda dentistaId={dentistaAlvoId} duracaoMin={duracaoMin} selecionado={selecionado} onSelecionar={(data, minutoDoDia) => setForm((atual) => ({ ...atual, data, minutoDoDia }))} onInvalidarSelecao={() => setForm((atual) => ({ ...atual, minutoDoDia: null }))} />
-            <div className="hidden md:block"><RetornoSemanaGrid dentistaId={dentistaAlvoId} duracaoMin={duracaoMin} selecionado={selecionado} onSelecionar={(data, minutoDoDia) => setForm((atual) => ({ ...atual, data, minutoDoDia }))} /></div>
+            <RetornoMobileAgenda dentistaId={dentistaAlvoId} duracaoMin={duracaoMin} selecionado={selecionado} onSelecionar={(data, minutoDoDia, agendaLivre) => setForm((atual) => ({ ...atual, data, minutoDoDia, agendaLivre }))} onInvalidarSelecao={() => setForm((atual) => ({ ...atual, minutoDoDia: null, agendaLivre: false }))} />
+            <div className="hidden md:block"><RetornoSemanaGrid dentistaId={dentistaAlvoId} duracaoMin={duracaoMin} selecionado={selecionado} onSelecionar={(data, minutoDoDia, agendaLivre) => setForm((atual) => ({ ...atual, data, minutoDoDia, agendaLivre }))} /></div>
           </div>
 
           <div className="flex min-h-0 w-full flex-col border-t border-border md:w-[250px] md:shrink-0 md:overflow-y-auto md:border-t-0 md:border-l">

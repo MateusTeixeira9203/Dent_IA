@@ -833,6 +833,8 @@ export async function criarRetornoComPedido(input: {
   duracaoMinutos: number;
   observacoes: string | null;
   dentistaId?: string;
+  /** Seleção realizada no retorno em um dia que não possui grade configurada. */
+  agendaLivre?: boolean;
   pedidoProtetico: PedidoProteticoRetornoInput | null;
 }): Promise<CriarRetornoResult> {
   if (input.pedidoProtetico) {
@@ -850,13 +852,26 @@ export async function criarRetornoComPedido(input: {
     }
   }
 
-  const agendamento = await criarAgendamento({
+  let agendamento = await criarAgendamento({
     pacienteId: input.pacienteId,
     dataHora: input.dataHora,
     duracaoMinutos: input.duracaoMinutos,
     observacoes: input.observacoes,
     dentistaId: input.dentistaId,
   });
+
+  // “Agenda livre” só substitui a ausência de grade daquele dia. Nunca ignora abertura,
+  // almoço, fechamento ou conflito: esses continuam sendo validados por criarAgendamento.
+  if (input.agendaLivre && agendamento.foraDoExpediente === 'dia_sem_grade') {
+    agendamento = await criarAgendamento({
+      pacienteId: input.pacienteId,
+      dataHora: input.dataHora,
+      duracaoMinutos: input.duracaoMinutos,
+      observacoes: input.observacoes,
+      dentistaId: input.dentistaId,
+      forcarForaDoExpediente: true,
+    });
+  }
   if (agendamento.error || !agendamento.id) {
     return {
       ok: false,

@@ -10,8 +10,8 @@ import { formatHora, slotEstaLivre, type DisponibilidadeDia } from '@/lib/agenda
 interface RetornoMobileAgendaProps {
   dentistaId: string | null;
   duracaoMin: number;
-  selecionado: { data: string; minutoDoDia: number } | null;
-  onSelecionar: (data: string, minutoDoDia: number) => void;
+  selecionado: { data: string; minutoDoDia: number; agendaLivre: boolean } | null;
+  onSelecionar: (data: string, minutoDoDia: number, agendaLivre: boolean) => void;
   onInvalidarSelecao?: () => void;
 }
 
@@ -97,8 +97,9 @@ export function RetornoMobileAgenda({
 
   useEffect(() => {
     if (!selecionado || selecionado.data !== diaAtivo?.data) return;
+    if (selecionado.agendaLivre && diaAtivo?.temGrade === false) return;
     if (!slots.includes(selecionado.minutoDoDia)) onInvalidarSelecao?.();
-  }, [diaAtivo?.data, onInvalidarSelecao, selecionado, slots]);
+  }, [diaAtivo?.data, diaAtivo?.temGrade, onInvalidarSelecao, selecionado, slots]);
 
   if (!dentistaId) {
     return <p className="rounded-xl border border-border bg-surface-alt/50 px-3 py-4 text-center text-sm text-text-secondary">Selecione o dentista para ver a agenda.</p>;
@@ -139,7 +140,7 @@ export function RetornoMobileAgenda({
           <div className="grid grid-cols-6 gap-2">
             {diasSemana.map((dia) => {
               const ativo = dia.data === diaAtivo?.data;
-              const semExpediente = dia.livres.length === 0;
+              const agendaLivre = !dia.temGrade;
               return (
                 <button
                   key={dia.data}
@@ -147,7 +148,7 @@ export function RetornoMobileAgenda({
                   onClick={() => setDiaAberto(dia.data)}
                   aria-pressed={ativo}
                   className={`min-h-[52px] min-w-0 rounded-xl border px-1 py-1.5 text-center transition-colors ${
-                    ativo ? 'border-teal bg-teal/10 text-teal-ink' : semExpediente ? 'border-border bg-surface-alt/30 text-text-secondary/60' : 'border-border bg-surface-alt/50 text-text-secondary hover:border-teal/40'
+                    ativo ? 'border-teal bg-teal/10 text-teal-ink' : agendaLivre ? 'border-teal/30 bg-teal/5 text-teal-ink' : 'border-border bg-surface-alt/50 text-text-secondary hover:border-teal/40'
                   }`}
                 >
                   <span className="block text-[10px] font-bold uppercase tracking-normal">{DIA_LABEL_MOBILE[dia.diaSemana]}</span>
@@ -157,9 +158,26 @@ export function RetornoMobileAgenda({
             })}
           </div>
           <div>
-            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-teal-ink">Horários livres</p>
-            {slots.length === 0 ? (
-              <p className="rounded-xl border border-border bg-surface-alt/50 px-3 py-4 text-center text-sm text-text-secondary">{diaAtivo?.livres.length ? 'Nenhum horário livre neste dia.' : 'Sem expediente neste dia.'}</p>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-teal-ink">{diaAtivo?.temGrade === false ? 'Agenda livre' : 'Horários livres'}</p>
+            {diaAtivo?.temGrade === false ? (
+              <div className="rounded-xl border border-teal/25 bg-teal/5 p-3">
+                <p className="text-sm font-semibold text-teal-ink">Agenda livre neste dia.</p>
+                <label htmlFor="retorno-hora-livre" className="mt-3 block text-[10px] font-bold uppercase tracking-widest text-teal-ink">Hora de atendimento</label>
+                <input
+                  id="retorno-hora-livre"
+                  type="time"
+                  step="900"
+                  value={selecionado?.data === diaAtivo.data ? formatHora(selecionado.minutoDoDia) : ''}
+                  onChange={(event) => {
+                    const [hora, minuto] = event.target.value.split(':').map(Number);
+                    if (Number.isInteger(hora) && Number.isInteger(minuto)) onSelecionar(diaAtivo.data, hora * 60 + minuto, true);
+                  }}
+                  className="mt-2 min-h-11 w-full rounded-xl border border-border bg-surface-alt px-3 font-mono text-sm font-semibold text-text-primary outline-none focus:border-teal/40 focus:ring-2 focus:ring-teal/15"
+                />
+                <p className="mt-2 text-xs text-text-secondary">Escolha a hora. O sistema confere conflitos antes de marcar.</p>
+              </div>
+            ) : slots.length === 0 ? (
+              <p className="rounded-xl border border-border bg-surface-alt/50 px-3 py-4 text-center text-sm text-text-secondary">Nenhum horário livre neste dia.</p>
             ) : (
               <div className="grid grid-cols-3 gap-2">
                 {slots.map((minuto) => {
@@ -168,7 +186,7 @@ export function RetornoMobileAgenda({
                     <button
                       key={minuto}
                       type="button"
-                      onClick={() => onSelecionar(diaAtivo!.data, minuto)}
+                      onClick={() => onSelecionar(diaAtivo!.data, minuto, false)}
                       className={`min-h-11 rounded-xl border font-mono text-sm font-semibold transition-colors ${
                         ativo ? 'border-teal bg-teal-dark text-white' : 'border-border bg-surface-alt/50 text-text-primary hover:border-teal/40 hover:text-teal-ink'
                       }`}

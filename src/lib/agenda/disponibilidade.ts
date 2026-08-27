@@ -29,6 +29,9 @@ export interface OcupadoDia {
 export interface DisponibilidadeDia {
   data: string;
   diaSemana: number;
+  /** Há uma grade de expediente ativa para este dia da semana. Sem ela, o retorno
+   *  trata o dia como agenda livre e deixa o profissional escolher a hora. */
+  temGrade: boolean;
   livres: BlocoHorario[];
   ocupados: OcupadoDia[];
   /** Passo entre horários (`horarios_disponiveis.intervalo_minutos`) — não previsto na
@@ -160,6 +163,7 @@ export async function getDisponibilidadeSemana(params: {
     return {
       data,
       diaSemana,
+      temGrade: grade !== undefined,
       livres: grade ? livresDoDia(grade) : [],
       ocupados: [],
       intervaloMinutos: grade?.intervalo_minutos ?? 30,

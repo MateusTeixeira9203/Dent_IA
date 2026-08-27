@@ -12,6 +12,8 @@ import { formatHora } from '@/lib/agenda/disponibilidade';
 export interface MarcarRetornoForm {
   data: string | null;
   minutoDoDia: number | null;
+  /** Seleção em dia sem grade ativa: o retorno pode usar a agenda livre desse dia. */
+  agendaLivre: boolean;
   duracao: string;
   observacoes: string;
   pedidoProtetico: PedidoProteticoRetornoInput | null;
@@ -21,6 +23,7 @@ export function criarFormRetornoInicial(): MarcarRetornoForm {
   return {
     data: null,
     minutoDoDia: null,
+    agendaLivre: false,
     duracao: '30',
     observacoes: '',
     pedidoProtetico: null,
@@ -91,6 +94,7 @@ export function useMarcarRetorno({ pacienteId, onConcluido }: UseMarcarRetornoOp
         duracaoMinutos: parseInt(form.duracao, 10) || 30,
         observacoes: form.observacoes || null,
         dentistaId,
+        agendaLivre: form.agendaLivre,
         pedidoProtetico: form.pedidoProtetico,
       });
 
