@@ -772,7 +772,7 @@ export async function criarEncaixe(dados: {
 }
 
 // R-94 — pedido solto pro protético (sem vínculo com procedimento/orçamento, spec §2).
-const criarPedidoProteticoSchema = z.object({
+export const criarPedidoProteticoSchema = z.object({
   pacienteId:    z.string().uuid(),
   proteticoId:   z.string().uuid(),
   observacao:    z.string().trim().min(1, "Descreva o que o protético precisa saber."),
@@ -784,6 +784,110 @@ const criarPedidoProteticoSchema = z.object({
   agendamentoId: z.string().uuid().optional(),
   dentistaId:    z.string().uuid().optional(),
 });
+
+export interface ProteticoOption {
+  id: string;
+  nome: string;
+}
+
+export interface PedidoProteticoRetornoInput {
+  proteticoId: string;
+  dataEntrega: string;
+  observacao: string;
+}
+
+export type CriarRetornoResult =
+  | { ok: true; agendamentoId: string; pedidoProteticoId: string | null }
+  | {
+      ok: false;
+      etapa: 'agendamento';
+      error: string;
+      conflitoDentista?: boolean;
+      foraDoExpediente?: MotivoForaDoExpediente;
+    }
+  | { ok: false; etapa: 'validacao_protetico'; error: string }
+  | { ok: false; etapa: 'pedido_protetico'; error: string; agendamentoId: string };
+
+export async function listarProteticosAtivos(): Promise<
+  | { ok: true; data: ProteticoOption[] }
+  | { ok: false; error: string }
+> {
+  const { supabase, clinicId, role } = await requireClinicContext();
+  if (role === 'protetico') return { ok: false, error: 'Você não tem permissão para criar um pedido.' };
+
+  const { data, error } = await supabase
+    .from('dentistas')
+    .select('id, nome')
+    .eq('clinica_id', clinicId)
+    .eq('role', 'protetico')
+    .eq('ativo', true)
+    .order('nome');
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, data: data ?? [] };
+}
+
+export async function criarRetornoComPedido(input: {
+  pacienteId: string;
+  dataHora: string;
+  duracaoMinutos: number;
+  observacoes: string | null;
+  dentistaId?: string;
+  pedidoProtetico: PedidoProteticoRetornoInput | null;
+}): Promise<CriarRetornoResult> {
+  if (input.pedidoProtetico) {
+    const pedidoValido = criarPedidoProteticoSchema.safeParse({
+      pacienteId: input.pacienteId,
+      dentistaId: input.dentistaId,
+      ...input.pedidoProtetico,
+    });
+    if (!pedidoValido.success) {
+      return {
+        ok: false,
+        etapa: 'validacao_protetico',
+        error: pedidoValido.error.issues[0]?.message ?? 'Dados do pedido inválidos.',
+      };
+    }
+  }
+
+  const agendamento = await criarAgendamento({
+    pacienteId: input.pacienteId,
+    dataHora: input.dataHora,
+    duracaoMinutos: input.duracaoMinutos,
+    observacoes: input.observacoes,
+    dentistaId: input.dentistaId,
+  });
+  if (agendamento.error || !agendamento.id) {
+    return {
+      ok: false,
+      etapa: 'agendamento',
+      error: agendamento.error ?? 'Não foi possível marcar o retorno.',
+      conflitoDentista: agendamento.conflitoDentista,
+      foraDoExpediente: agendamento.foraDoExpediente,
+    };
+  }
+
+  if (!input.pedidoProtetico) {
+    return { ok: true, agendamentoId: agendamento.id, pedidoProteticoId: null };
+  }
+
+  const pedido = await criarPedidoProtetico({
+    pacienteId: input.pacienteId,
+    agendamentoId: agendamento.id,
+    dentistaId: input.dentistaId,
+    ...input.pedidoProtetico,
+  });
+  if (pedido.error || !pedido.id) {
+    return {
+      ok: false,
+      etapa: 'pedido_protetico',
+      error: pedido.error ?? 'Retorno marcado, mas não foi possível enviar o pedido.',
+      agendamentoId: agendamento.id,
+    };
+  }
+
+  return { ok: true, agendamentoId: agendamento.id, pedidoProteticoId: pedido.id };
+}
 
 export async function criarPedidoProtetico(input: {
   pacienteId: string;

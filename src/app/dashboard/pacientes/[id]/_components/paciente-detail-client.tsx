@@ -80,8 +80,6 @@ import {
   type FormaPagamento,
 } from '@/app/dashboard/orcamentos/actions';
 import { deriveEstadoOrcamento, rotuloEstado } from '@/lib/orcamentos/estado';
-import { criarAgendamento } from '@/app/dashboard/agendamentos/actions';
-import { buildClinicDatetime } from '@/app/dashboard/agendamentos/_components/date-helpers';
 import type { Paciente } from '@/types/database';
 import type { TimelineEvent } from '@/server/patients/get-visible-timeline-events';
 import { format, parseISO, differenceInCalendarDays } from 'date-fns';
@@ -95,7 +93,8 @@ import { DetalheOrcamentoModal } from './modals/detalhe-orcamento-modal';
 import { ConfirmarDeleteOrcModal } from './modals/confirmar-delete-orc-modal';
 import { ExcluirPacienteModal } from './modals/excluir-paciente-modal';
 import { excluirPaciente } from '@/server/patients/excluir-paciente';
-import { MarcarRetornoModal, type MarcarRetornoForm } from '@/components/pacientes/marcar-retorno-modal';
+import { MarcarRetornoModal } from '@/components/pacientes/marcar-retorno-modal';
+import { useMarcarRetorno } from '@/hooks/use-marcar-retorno';
 import { formatHora as formatHoraRetorno } from '@/lib/agenda/disponibilidade';
 import { EmitirDocumentoModal } from '@/components/pacientes/EmitirDocumentoModal';
 import { EmitirAceiteModal } from '@/components/pacientes/EmitirAceiteModal';
@@ -309,17 +308,23 @@ export function PacienteDetailClient({
   const [isMarcarRetornoOpen, setIsMarcarRetornoOpen] = useState(false);
   const [isEmitirOpen, setIsEmitirOpen] = useState(false);
   const [isEmitirAceiteOpen, setIsEmitirAceiteOpen] = useState(false);
-  const [retornoForm, setRetornoForm] = useState<MarcarRetornoForm>({
-    data: null,
-    minutoDoDia: null,
-    duracao: '30',
-    observacoes: '',
-  });
-  const [retornoSaving, setRetornoSaving] = useState(false);
-  const [retornoError, setRetornoError] = useState<string | null>(null);
   const [retornoDentistaAlvoId, setRetornoDentistaAlvoId] = useState<string | null>(
     role === 'secretaria' ? null : dentistaId,
   );
+  const retorno = useMarcarRetorno({
+    pacienteId: paciente.id,
+    onConcluido: ({ data, minutoDoDia, comPedido }) => {
+      const quando = `${format(parseISO(data), 'dd/MM/yyyy')} às ${formatHoraRetorno(minutoDoDia)}`;
+      setIsMarcarRetornoOpen(false);
+      if (role === 'secretaria') setRetornoDentistaAlvoId(null);
+      setAgendamentosTabData(null);
+      toast.success(comPedido ? `Retorno e pedido enviados para ${quando}` : `Retorno marcado para ${quando}`, {
+        action: data !== format(new Date(), 'yyyy-MM-dd')
+          ? { label: 'Ver na agenda', onClick: () => router.push(`/dashboard/agendamentos?v=dia&d=${data}`) }
+          : undefined,
+      });
+    },
+  });
 
   // Atividades recentes (visão geral) — inicializado do SSR, sem roundtrip extra ao montar
   const [fichasRecentes, setFichasRecentes] = useState<FichaRecente[]>(fichasRecentesSSR ?? []);
@@ -1047,61 +1052,10 @@ export function PacienteDetailClient({
     setOrcDeleteSaving(false);
   };
 
-  const handleMarcarRetorno = async () => {
-    if (!retornoDentistaAlvoId) {
-      setRetornoError('Selecione o dentista responsável.');
-      return;
-    }
-    if (!retornoForm.data || retornoForm.minutoDoDia == null) {
-      setRetornoError('Escolha um horário na grade.');
-      return;
-    }
-    setRetornoError(null);
-    setRetornoSaving(true);
-    try {
-      // Sem offset explícito, o Postgres grava esse horário como UTC — 3h adiantado em
-      // relação ao horário real da clínica (BRT). buildClinicDatetime é a mesma função
-      // que o modal da própria agenda usa para não repetir esse bug.
-      const dataHora = buildClinicDatetime(retornoForm.data, formatHoraRetorno(retornoForm.minutoDoDia));
-      const result = await criarAgendamento({
-        pacienteId: paciente.id,
-        dataHora,
-        duracaoMinutos: parseInt(retornoForm.duracao, 10) || 30,
-        observacoes: retornoForm.observacoes || null,
-        dentistaId: retornoDentistaAlvoId,
-      });
-      if (result.error) {
-        setRetornoError(result.error);
-      } else {
-        // A agenda carrega uma janela por vez: um retorno marcado pra fora dela existe e não
-        // aparece. Um retorno de 30 dias cai fora por definição — então o toast diz a data e
-        // leva até lá. Ler antes de limpar o form.
-        //
-        // A URL da agenda é `?v=…&d=yyyy-MM-dd` (R-13 Fatia 0). O `?mes=` foi removido: um link
-        // com ele hoje é ignorado em silêncio e abre a semana de hoje, que é exatamente o
-        // sumiço que este toast existe pra evitar.
-        const dia = retornoForm.data;
-        const quando = `${format(parseISO(dia), 'dd/MM/yyyy')} às ${formatHoraRetorno(retornoForm.minutoDoDia)}`;
-        setIsMarcarRetornoOpen(false);
-        setRetornoForm({ data: null, minutoDoDia: null, duracao: '30', observacoes: '' });
-        if (role === 'secretaria') setRetornoDentistaAlvoId(null);
-        setAgendamentosTabData(null); // força recarregar a aba Agenda na próxima abertura
-        toast.success(`Retorno marcado para ${quando}`, {
-          // Fora da semana corrente já justifica o atalho — a janela agora é a semana, não o mês.
-          action: dia !== format(new Date(), 'yyyy-MM-dd')
-            ? { label: 'Ver na agenda', onClick: () => router.push(`/dashboard/agendamentos?v=dia&d=${dia}`) }
-            : undefined,
-        });
-      }
-    } finally {
-      setRetornoSaving(false);
-    }
-  };
-
   const handleRetornoDentistaAlvoChange = (id: string) => {
     setRetornoDentistaAlvoId(id);
-    setRetornoForm((form) => ({ ...form, data: null, minutoDoDia: null }));
-    setRetornoError(null);
+    retorno.setForm((form) => ({ ...form, data: null, minutoDoDia: null }));
+    retorno.limparErro();
   };
 
   const handleExcluirPaciente = async () => {
@@ -1204,7 +1158,7 @@ export function PacienteDetailClient({
               />
             )}
             <button
-              onClick={() => { setRetornoError(null); setIsMarcarRetornoOpen(true); }}
+              onClick={() => { retorno.limparErro(); setIsMarcarRetornoOpen(true); }}
               className="min-h-11 shrink-0 flex items-center gap-2 px-4 py-2.5 bg-teal text-white rounded-xl text-xs font-bold hover:bg-teal-lt transition-colors shadow-md"
             >
               <Calendar className="w-3.5 h-3.5" />
@@ -1641,7 +1595,7 @@ export function PacienteDetailClient({
                       Histórico de consultas
                     </span>
                     <button
-                      onClick={() => { setRetornoError(null); setIsMarcarRetornoOpen(true); }}
+                      onClick={() => { retorno.limparErro(); setIsMarcarRetornoOpen(true); }}
                       className="bg-teal text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-teal-lt transition-all shadow-md"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -1883,7 +1837,7 @@ export function PacienteDetailClient({
         onOpenChange={(open) => {
           setIsMarcarRetornoOpen(open);
           if (!open) {
-            setRetornoError(null);
+            retorno.limparErro();
             if (role === 'secretaria') setRetornoDentistaAlvoId(null);
           }
         }}
@@ -1892,11 +1846,13 @@ export function PacienteDetailClient({
         dentistasClinica={dentistasClinica}
         dentistaAlvoId={retornoDentistaAlvoId}
         onDentistaAlvoChange={handleRetornoDentistaAlvoChange}
-        form={retornoForm}
-        setForm={setRetornoForm}
-        error={retornoError}
-        saving={retornoSaving}
-        onMarcarRetorno={handleMarcarRetorno}
+        form={retorno.form}
+        setForm={retorno.setForm}
+        error={retorno.error}
+        saving={retorno.saving}
+        pedidoPendente={retorno.pedidoPendente}
+        onMarcarRetorno={() => void retorno.marcarRetorno(retornoDentistaAlvoId)}
+        onTentarEnviarPedido={() => void retorno.tentarEnviarPedido(retornoDentistaAlvoId)}
       />
 
       <EmitirDocumentoModal

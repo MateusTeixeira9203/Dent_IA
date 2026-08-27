@@ -63,10 +63,8 @@ import { OrtoForm } from '@/components/fichas/orto-form';
 import { hojeBRT } from '@/lib/hora-brt';
 import { salvarVisitaMeuDia } from '../actions';
 import type { SalvarFichaResult } from '@/server/patients/salvar-ficha';
-import { criarAgendamento } from '@/app/dashboard/agendamentos/actions';
-import { buildClinicDatetime } from '@/app/dashboard/agendamentos/_components/date-helpers';
-import { MarcarRetornoModal, type MarcarRetornoForm } from '@/components/pacientes/marcar-retorno-modal';
-import { formatHora } from '@/lib/agenda/disponibilidade';
+import { MarcarRetornoModal } from '@/components/pacientes/marcar-retorno-modal';
+import { useMarcarRetorno } from '@/hooks/use-marcar-retorno';
 import {
   TIPO_LABEL,
   type OdontogramaEventoDraft,
@@ -269,11 +267,13 @@ export function useRegistrarPainel({
   // (agendamentos e fichas são tabelas diferentes) — fica habilitado mesmo com rascunho
   // pendente de propósito, não faz sentido travar uma coisa pela outra.
   const [retornoModalAberto, setRetornoModalAberto] = useState(false);
-  const [retornoForm, setRetornoForm] = useState<MarcarRetornoForm>({
-    data: null, minutoDoDia: null, duracao: '30', observacoes: '',
+  const retorno = useMarcarRetorno({
+    pacienteId,
+    onConcluido: ({ comPedido }) => {
+      setRetornoModalAberto(false);
+      toast.success(comPedido ? 'Retorno marcado e pedido enviado.' : 'Retorno marcado.');
+    },
   });
-  const [retornoSaving, setRetornoSaving] = useState(false);
-  const [retornoError, setRetornoError] = useState<string | null>(null);
 
   // R-78 F0 — reset explícito ao trocar de paciente. Antes disto era de graça: o pai
   // desmontava/remontava o componente inteiro via `key={agendamentoId}` (comentário acima,
@@ -305,36 +305,7 @@ export function useRegistrarPainel({
     setEventosPendentes(null);
     setIsRegravando(false);
     setRetornoModalAberto(false);
-    setRetornoForm({ data: null, minutoDoDia: null, duracao: '30', observacoes: '' });
-    setRetornoSaving(false);
-    setRetornoError(null);
-  }
-
-  async function handleMarcarRetorno() {
-    if (!retornoForm.data || retornoForm.minutoDoDia == null) {
-      setRetornoError('Escolha um horário na grade.');
-      return;
-    }
-    setRetornoError(null);
-    setRetornoSaving(true);
-    try {
-      const dataHora = buildClinicDatetime(retornoForm.data, formatHora(retornoForm.minutoDoDia));
-      const result = await criarAgendamento({
-        pacienteId,
-        dataHora,
-        duracaoMinutos: parseInt(retornoForm.duracao, 10) || 30,
-        observacoes: retornoForm.observacoes || null,
-      });
-      if (result.error) {
-        setRetornoError(result.error);
-        return;
-      }
-      setRetornoModalAberto(false);
-      setRetornoForm({ data: null, minutoDoDia: null, duracao: '30', observacoes: '' });
-      toast.success('Retorno marcado.');
-    } finally {
-      setRetornoSaving(false);
-    }
+    retorno.resetar();
   }
 
   const dataPadrao = hojeBRT();
@@ -819,18 +790,20 @@ export function useRegistrarPainel({
         open={retornoModalAberto}
         onOpenChange={(open) => {
           setRetornoModalAberto(open);
-          if (!open) setRetornoError(null);
+          if (!open) retorno.limparErro();
         }}
         pacienteNome={pacienteNome}
         role="dentista"
         dentistasClinica={[]}
         dentistaAlvoId={dentistaId}
         onDentistaAlvoChange={() => undefined}
-        form={retornoForm}
-        setForm={setRetornoForm}
-        error={retornoError}
-        saving={retornoSaving}
-        onMarcarRetorno={() => void handleMarcarRetorno()}
+        form={retorno.form}
+        setForm={retorno.setForm}
+        error={retorno.error}
+        saving={retorno.saving}
+        pedidoPendente={retorno.pedidoPendente}
+        onMarcarRetorno={() => void retorno.marcarRetorno(dentistaId)}
+        onTentarEnviarPedido={() => void retorno.tentarEnviarPedido(dentistaId)}
       />
     </>
   );

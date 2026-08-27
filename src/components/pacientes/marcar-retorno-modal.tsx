@@ -1,46 +1,23 @@
 'use client';
 
-// R-64 — modal reescrito: a grade de horário real substitui os campos soltos de data/hora
-// de antes (v1 do artefato, lista de pills, foi rejeitada ao vivo — "só trazer o que já
-// temos no sistema, só que menor"). Movido de pacientes/[id]/_components/modals/ pra cá —
-// mesmo padrão de colar-do-word-dialog.tsx (componente de paciente compartilhado entre
-// pacientes/[id] e meu-dia).
-//
-// Layout em 2 colunas — mesmo padrão do "Novo agendamento" real (agendamentos-client.tsx):
-// faixa ao vivo (resumo) no topo, corpo com a área principal à esquerda (aqui, a grade —
-// lá, a busca de paciente) e uma coluna fixa de inputs à direita que NUNCA rola (pedido
-// dele ao vivo, "mesmo estilo que estamos usando pra criar um agendamento").
-
-import React from 'react';
-import { Loader2, X } from 'lucide-react';
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import { ArrowLeft, Loader2, Stethoscope, X } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
+import { motion, useReducedMotion } from 'motion/react';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { listarProteticosAtivos, type ProteticoOption } from '@/app/dashboard/agendamentos/actions';
 import { formatHora } from '@/lib/agenda/disponibilidade';
 import type { DentistaRole } from '@/types/database';
+import type { MarcarRetornoForm } from '@/hooks/use-marcar-retorno';
+import { RetornoMobileAgenda } from './retorno-mobile-agenda';
 import { RetornoSemanaGrid } from './retorno-semana-grid';
 
-export interface MarcarRetornoForm {
-  data: string | null;         // yyyy-MM-dd — null até escolher na grade
-  minutoDoDia: number | null;
-  duracao: string;             // minutos, mesmo campo de hoje
-  observacoes: string;
-}
+export type { MarcarRetornoForm } from '@/hooks/use-marcar-retorno';
 
 interface MarcarRetornoModalProps {
   open: boolean;
@@ -51,265 +28,144 @@ interface MarcarRetornoModalProps {
   dentistaAlvoId: string | null;
   onDentistaAlvoChange: (id: string) => void;
   form: MarcarRetornoForm;
-  setForm: React.Dispatch<React.SetStateAction<MarcarRetornoForm>>;
+  setForm: Dispatch<SetStateAction<MarcarRetornoForm>>;
   error: string | null;
   saving: boolean;
+  pedidoPendente: boolean;
   onMarcarRetorno: () => void;
+  onTentarEnviarPedido: () => void;
 }
 
-/** "HH:mm" (valor de `<input type="time">`) → minuto do dia. `null` se incompleto —
- *  o próprio input não deixa sair do ar incompleto, mas o handler de onChange dispara
- *  a cada tecla. */
+type Etapa = 'retorno' | 'protetico';
+
 function minutoDoInputHora(valor: string): number | null {
-  const m = /^(\d{2}):(\d{2})$/.exec(valor);
-  if (!m) return null;
-  return Number(m[1]) * 60 + Number(m[2]);
+  const match = /^(\d{2}):(\d{2})$/.exec(valor);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
 }
 
-// Mesmas opções de atalho do "Novo agendamento" real — chip é atalho, não limite; o
-// campo livre abaixo cobre qualquer valor, os dois leem o mesmo estado.
 const DURACAO_CHIPS = [
-  { value: '30', label: '30min' },
-  { value: '45', label: '45min' },
-  { value: '60', label: '1h' },
-  { value: '90', label: '1h30' },
-  { value: '120', label: '2h' },
-  { value: '180', label: '3h' },
+  { value: '30', label: '30min' }, { value: '45', label: '45min' }, { value: '60', label: '1h' },
+  { value: '90', label: '1h30' }, { value: '120', label: '2h' }, { value: '180', label: '3h' },
 ];
 
 export function MarcarRetornoModal({
-  open,
-  onOpenChange,
-  pacienteNome,
-  role,
-  dentistasClinica,
-  dentistaAlvoId,
-  onDentistaAlvoChange,
-  form,
-  setForm,
-  error,
-  saving,
-  onMarcarRetorno,
+  open, onOpenChange, pacienteNome, role, dentistasClinica, dentistaAlvoId, onDentistaAlvoChange,
+  form, setForm, error, saving, pedidoPendente, onMarcarRetorno, onTentarEnviarPedido,
 }: MarcarRetornoModalProps) {
+  const [etapa, setEtapa] = useState<Etapa>('retorno');
+  const [proteticos, setProteticos] = useState<ProteticoOption[] | null>(null);
+  const reduzirMotion = useReducedMotion();
+  const [abertoAnterior, setAbertoAnterior] = useState(open);
   const duracaoMin = parseInt(form.duracao, 10) || 30;
   const precisaEscolherDentista = role === 'secretaria';
   const podeConfirmar = dentistaAlvoId != null && form.data != null && form.minutoDoDia != null;
+  const podeEnviar = Boolean(podeConfirmar && form.pedidoProtetico?.proteticoId && form.pedidoProtetico.dataEntrega && form.pedidoProtetico.observacao.trim());
 
-  function fechar() {
-    onOpenChange(false);
+  if (abertoAnterior !== open) {
+    setAbertoAnterior(open);
+    if (open && !pedidoPendente) setEtapa('retorno');
   }
 
+  useEffect(() => {
+    if (!open) return;
+    let cancelado = false;
+    listarProteticosAtivos().then((resultado) => {
+      if (!cancelado) setProteticos(resultado.ok ? resultado.data : []);
+    }).catch(() => { if (!cancelado) setProteticos([]); });
+    return () => { cancelado = true; };
+  }, [open]);
+
+  function alterarAberto(aberto: boolean) {
+    if (!aberto && !pedidoPendente) setEtapa('retorno');
+    onOpenChange(aberto);
+  }
+
+  function incluirProtetico() {
+    if (!podeConfirmar) return;
+    setForm((atual) => ({
+      ...atual,
+      pedidoProtetico: atual.pedidoProtetico ?? {
+        proteticoId: '', dataEntrega: atual.data ?? format(new Date(), 'yyyy-MM-dd'), observacao: '',
+      },
+    }));
+    setEtapa('protetico');
+  }
+
+  function atualizarPedido(campo: keyof NonNullable<MarcarRetornoForm['pedidoProtetico']>, valor: string) {
+    setForm((atual) => ({
+      ...atual,
+      pedidoProtetico: atual.pedidoProtetico ? { ...atual.pedidoProtetico, [campo]: valor } : atual.pedidoProtetico,
+    }));
+  }
+
+  const selecionado = podeConfirmar ? { data: form.data!, minutoDoDia: form.minutoDoDia! } : null;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        showCloseButton={false}
-        className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none rounded-2xl border-border bg-surface p-0 gap-0 overflow-hidden md:max-h-[90vh] md:w-auto md:max-w-[1120px]"
-      >
+    <Dialog open={open} onOpenChange={alterarAberto}>
+      <DialogContent showCloseButton={false} className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none gap-0 overflow-hidden rounded-[26px] border-border bg-surface p-0 md:max-h-[90vh] md:w-auto md:max-w-[1120px] md:rounded-2xl">
         <DialogDescription className="sr-only">Agende o retorno de {pacienteNome}.</DialogDescription>
 
-        {/* Cabeçalho */}
         <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-4 md:px-6">
-          <DialogTitle className="font-heading text-xl font-semibold leading-tight text-text-primary">
-            Marcar retorno
-          </DialogTitle>
-          <button
-            onClick={fechar}
-            aria-label="Fechar"
-            className="rounded-lg p-1.5 text-text-secondary transition-colors hover:bg-surface-alt hover:text-text-primary"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <DialogTitle className="font-heading text-xl font-semibold leading-tight text-text-primary">Marcar retorno</DialogTitle>
+          <button onClick={() => alterarAberto(false)} aria-label="Fechar" className="rounded-lg p-1.5 text-text-secondary transition-colors hover:bg-surface-alt hover:text-text-primary"><X className="h-4 w-4" /></button>
         </div>
 
-        {/* Faixa ao vivo */}
         <div className="grid grid-cols-1 gap-px border-b border-border bg-border md:grid-cols-3">
-          <div className="min-w-0 bg-surface px-4 py-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Paciente</p>
-            <p className="mt-0.5 truncate text-sm font-medium text-text-primary">{pacienteNome}</p>
-          </div>
-          <div className="bg-surface px-4 py-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Data</p>
-            <p className="mt-0.5 font-mono text-sm font-semibold text-text-primary">
-              {form.data ? format(parseISO(form.data), "EEE, dd/MM", { locale: ptBR }) : '—'}
-            </p>
-          </div>
-          <div className="bg-surface px-4 py-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Hora</p>
-            <p className="mt-0.5 font-mono text-sm font-semibold text-text-primary">
-              {form.minutoDoDia != null ? formatHora(form.minutoDoDia) : '—'}
-            </p>
-          </div>
+          <div className="min-w-0 bg-surface px-4 py-3"><p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Paciente</p><p className="mt-0.5 truncate text-sm font-medium text-text-primary">{pacienteNome}</p></div>
+          <div className="bg-surface px-4 py-3"><p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Data</p><p className="mt-0.5 font-mono text-sm font-semibold text-text-primary">{form.data ? format(parseISO(form.data), 'EEE, dd/MM', { locale: ptBR }) : '—'}</p></div>
+          <div className="bg-surface px-4 py-3"><p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Hora</p><p className="mt-0.5 font-mono text-sm font-semibold text-text-primary">{form.minutoDoDia != null ? formatHora(form.minutoDoDia) : '—'}</p></div>
         </div>
 
-        {/* Corpo: 2 colunas — grade à esquerda, inputs fixos à direita */}
         <div className="flex min-h-0 flex-col overflow-y-auto md:flex-row md:overflow-visible">
-          <div className="min-w-0 flex-1 p-4 md:max-h-[58vh] md:overflow-y-auto md:p-6">
+          <div className={`min-w-0 flex-1 p-4 md:max-h-[58vh] md:overflow-y-auto md:p-6 ${etapa === 'protetico' ? 'hidden md:block' : ''}`}>
             {precisaEscolherDentista && (
               <div className="mb-4 space-y-1">
                 <Label className="text-xs text-text-secondary">Dentista responsável *</Label>
-                <Select
-                  value={dentistaAlvoId ?? undefined}
-                  onValueChange={(id) => { if (id) onDentistaAlvoChange(id); }}
-                >
-                  <SelectTrigger className="rounded-xl bg-surface border-border text-text-primary">
-                    <SelectValue placeholder="Selecione o dentista..." />
-                  </SelectTrigger>
-                  <SelectContent className="bg-surface border-border">
-                    {dentistasClinica.map((dentista) => (
-                      <SelectItem key={dentista.id} value={dentista.id}>{dentista.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
+                <Select value={dentistaAlvoId ?? undefined} onValueChange={(id) => { if (id) onDentistaAlvoChange(id); }}>
+                  <SelectTrigger className="rounded-xl border-border bg-surface text-text-primary"><SelectValue placeholder="Selecione o dentista..." /></SelectTrigger>
+                  <SelectContent className="border-border bg-surface">{dentistasClinica.map((dentista) => <SelectItem key={dentista.id} value={dentista.id}>{dentista.nome}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             )}
-            <div className="space-y-4 md:hidden">
-              <div className="grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="retorno-data-mobile" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
-                    Data
-                  </Label>
-                  <Input
-                    id="retorno-data-mobile"
-                    type="date"
-                    disabled={dentistaAlvoId == null}
-                    value={form.data ?? ''}
-                    onChange={(e) => setForm((f) => ({ ...f, data: e.target.value || null }))}
-                    className="h-11 rounded-xl border-border bg-surface-alt text-text-primary disabled:opacity-50"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="retorno-hora-mobile" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
-                    Hora
-                  </Label>
-                  <Input
-                    id="retorno-hora-mobile"
-                    type="time"
-                    disabled={form.data == null}
-                    value={form.minutoDoDia != null ? formatHora(form.minutoDoDia) : ''}
-                    onChange={(e) => {
-                      const minuto = minutoDoInputHora(e.target.value);
-                      if (minuto != null) setForm((f) => ({ ...f, minutoDoDia: minuto }));
-                    }}
-                    className="h-11 rounded-xl border-border bg-surface-alt text-text-primary disabled:opacity-50"
-                  />
-                </div>
-              </div>
-              <p className="rounded-xl border border-border bg-surface-alt/60 px-3 py-2.5 text-xs leading-relaxed text-text-secondary">
-                Escolha a data e a hora. O sistema confere conflitos ao confirmar — não precisa arrastar na agenda.
-              </p>
-            </div>
-            <div className="hidden md:block">
-              <RetornoSemanaGrid
-                dentistaId={dentistaAlvoId}
-                duracaoMin={duracaoMin}
-                selecionado={podeConfirmar ? { data: form.data!, minutoDoDia: form.minutoDoDia! } : null}
-                onSelecionar={(data, minutoDoDia) => setForm((f) => ({ ...f, data, minutoDoDia }))}
-              />
-            </div>
-            {dentistaAlvoId != null && form.data == null && (
-              <p className="mt-3 hidden text-[11px] text-text-secondary md:block">
-                Clique um horário livre na semana acima — a data e a hora vêm do clique
-                (dá pra ajustar a hora exata ao lado).
-              </p>
-            )}
+            <RetornoMobileAgenda dentistaId={dentistaAlvoId} duracaoMin={duracaoMin} selecionado={selecionado} onSelecionar={(data, minutoDoDia) => setForm((atual) => ({ ...atual, data, minutoDoDia }))} onInvalidarSelecao={() => setForm((atual) => ({ ...atual, minutoDoDia: null }))} />
+            <div className="hidden md:block"><RetornoSemanaGrid dentistaId={dentistaAlvoId} duracaoMin={duracaoMin} selecionado={selecionado} onSelecionar={(data, minutoDoDia) => setForm((atual) => ({ ...atual, data, minutoDoDia }))} /></div>
           </div>
 
-          {/* Coluna fixa: Hora + Duração + Observações + ações — nunca rola */}
-          <div className="flex w-full flex-col border-t border-border md:w-80 md:shrink-0 md:border-t-0 md:border-l">
-            <div className="flex-1 space-y-4 p-4 md:p-5">
-              <div className="hidden space-y-2 md:block">
-                <Label htmlFor="retorno-hora" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
-                  Hora
-                </Label>
-                <Input
-                  id="retorno-hora"
-                  type="time"
-                  disabled={form.data == null}
-                  value={form.minutoDoDia != null ? formatHora(form.minutoDoDia) : ''}
-                  onChange={(e) => {
-                    const minuto = minutoDoInputHora(e.target.value);
-                    if (minuto != null) setForm((f) => ({ ...f, minutoDoDia: minuto }));
-                  }}
-                  className="rounded-xl bg-surface-alt border-border text-text-primary disabled:opacity-50"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">Duração</Label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {DURACAO_CHIPS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setForm((f) => ({ ...f, duracao: opt.value }))}
-                      className={`min-h-11 rounded-lg border py-2 text-xs font-bold transition-all ${
-                        form.duracao === opt.value
-                          ? 'border-teal bg-teal/10 text-teal-ink'
-                          : 'border-border bg-surface-alt text-text-secondary hover:border-teal/40 hover:text-teal-ink'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
+          <div className="flex w-full flex-col border-t border-border md:w-[296px] md:shrink-0 md:border-t-0 md:border-l">
+            {etapa === 'retorno' ? (
+              <motion.div key="retorno" initial={reduzirMotion ? false : { opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: reduzirMotion ? 0 : 0.16, ease: 'easeOut' }} className="flex-1 space-y-4 p-4 md:p-5">
+                <div className="hidden space-y-2 md:block">
+                  <Label htmlFor="retorno-hora" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">Hora</Label>
+                  <Input id="retorno-hora" type="time" disabled={form.data == null} value={form.minutoDoDia != null ? formatHora(form.minutoDoDia) : ''} onChange={(event) => { const minuto = minutoDoInputHora(event.target.value); if (minuto != null) setForm((atual) => ({ ...atual, minutoDoDia: minuto })); }} className="min-h-[42px] rounded-xl border-border bg-surface-alt text-text-primary disabled:opacity-50" />
                 </div>
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="retorno-duracao-livre" className="shrink-0 text-xs text-text-secondary">Ou:</Label>
-                  <Input
-                    id="retorno-duracao-livre"
-                    type="number"
-                    min={5}
-                    max={600}
-                    step={5}
-                    inputMode="numeric"
-                    value={form.duracao}
-                    onChange={(e) => setForm((f) => ({ ...f, duracao: e.target.value }))}
-                    className="h-8 rounded-lg bg-surface-alt border-border text-sm text-text-primary"
-                    aria-label="Duração personalizada em minutos"
-                  />
-                  <span className="shrink-0 text-xs text-text-secondary">min</span>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">Duração</Label>
+                  <div className="grid grid-cols-3 gap-1.5">{DURACAO_CHIPS.map((opcao) => <button key={opcao.value} type="button" onClick={() => setForm((atual) => ({ ...atual, duracao: opcao.value }))} className={`min-h-11 rounded-lg border py-2 text-xs font-bold transition-all ${form.duracao === opcao.value ? 'border-teal bg-teal/10 text-teal-ink' : 'border-border bg-surface-alt text-text-secondary hover:border-teal/40 hover:text-teal-ink'}`}>{opcao.label}</button>)}</div>
+                  <div className="flex items-center gap-2"><Label htmlFor="retorno-duracao-livre" className="shrink-0 text-xs text-text-secondary">Ou:</Label><Input id="retorno-duracao-livre" type="number" min={5} max={600} step={5} inputMode="numeric" value={form.duracao} onChange={(event) => setForm((atual) => ({ ...atual, duracao: event.target.value }))} className="h-8 rounded-lg border-border bg-surface-alt text-sm text-text-primary" aria-label="Duração personalizada em minutos" /><span className="shrink-0 text-xs text-text-secondary">min</span></div>
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="retorno-obs" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">
-                  Observações
-                </Label>
-                <textarea
-                  id="retorno-obs"
-                  value={form.observacoes}
-                  onChange={(e) => setForm((f) => ({ ...f, observacoes: e.target.value }))}
-                  placeholder="Ex: Consulta de rotina, limpeza..."
-                  className="min-h-[88px] w-full resize-none rounded-xl border border-border bg-surface-alt p-3.5 text-sm text-text-primary placeholder:text-text-secondary/40 outline-none transition-all focus:border-teal/30 focus:ring-2 focus:ring-teal/15"
-                />
-              </div>
-            </div>
+                <div className="space-y-2"><Label htmlFor="retorno-obs" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">Observações</Label><textarea id="retorno-obs" value={form.observacoes} onChange={(event) => setForm((atual) => ({ ...atual, observacoes: event.target.value }))} placeholder="Ex: Consulta de rotina, limpeza..." className="min-h-[88px] w-full resize-none rounded-xl border border-border bg-surface-alt p-3.5 text-sm text-text-primary placeholder:text-text-secondary/40 outline-none transition-all focus:border-teal/30 focus:ring-2 focus:ring-teal/15" /></div>
+              </motion.div>
+            ) : (
+              <motion.div key="protetico" initial={reduzirMotion ? false : { opacity: 0, x: 6 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: reduzirMotion ? 0 : 0.16, ease: 'easeOut' }} className="flex-1 space-y-4 p-4 md:p-5">
+                <div className="flex items-start gap-3 rounded-xl border border-teal/25 bg-teal/5 p-3"><Stethoscope className="mt-0.5 h-4 w-4 shrink-0 text-teal-ink" /><div><p className="text-sm font-semibold text-text-primary">Enviar ao protético</p><p className="mt-0.5 text-xs text-text-secondary">Retorno preservado: {form.data ? format(parseISO(form.data), 'dd/MM', { locale: ptBR }) : '—'} às {form.minutoDoDia != null ? formatHora(form.minutoDoDia) : '—'}.</p></div></div>
+                <div className="space-y-2"><Label className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">Protético *</Label><Select value={form.pedidoProtetico?.proteticoId || undefined} onValueChange={(id) => { if (id) atualizarPedido('proteticoId', id); }}><SelectTrigger className="min-h-[42px] rounded-xl border-border bg-surface-alt text-text-primary"><SelectValue placeholder="Selecione o protético" /></SelectTrigger><SelectContent className="border-border bg-surface">{proteticos?.map((protetico) => <SelectItem key={protetico.id} value={protetico.id}>{protetico.nome}</SelectItem>)}</SelectContent></Select></div>
+                <div className="space-y-2"><Label htmlFor="retorno-entrega" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">Entrega até *</Label><Input id="retorno-entrega" type="date" value={form.pedidoProtetico?.dataEntrega ?? ''} onChange={(event) => atualizarPedido('dataEntrega', event.target.value)} className="min-h-[42px] rounded-xl border-border bg-surface-alt text-text-primary" /></div>
+                <div className="space-y-2"><Label htmlFor="retorno-protetico-obs" className="text-[10px] font-bold uppercase tracking-widest text-teal-ink">O que precisa ser feito *</Label><textarea id="retorno-protetico-obs" value={form.pedidoProtetico?.observacao ?? ''} onChange={(event) => atualizarPedido('observacao', event.target.value)} placeholder="Ex: Cor, dente, material e observações..." className="min-h-[112px] w-full resize-none rounded-xl border border-border bg-surface-alt p-3.5 text-sm text-text-primary placeholder:text-text-secondary/40 outline-none transition-all focus:border-teal/30 focus:ring-2 focus:ring-teal/15" /></div>
+              </motion.div>
+            )}
 
             <div className="sticky bottom-0 z-10 space-y-2.5 border-t border-border bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:static md:p-5">
-              {error && (
-                <p className="rounded-lg bg-coral-pale p-2 text-xs text-coral-ink">{error}</p>
-              )}
-              {!error && !podeConfirmar && (
-                <p className="text-xs text-text-secondary">
-                  {dentistaAlvoId == null ? 'Escolha o dentista para ver a agenda.' : 'Escolha um dia e hora na grade pra habilitar.'}
-                </p>
-              )}
-              <Button
-                onClick={onMarcarRetorno}
-                disabled={saving || !podeConfirmar}
-                className="min-h-11 w-full rounded-xl bg-teal-dark font-bold text-white hover:opacity-90 disabled:opacity-40"
-              >
-                {saving ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</>
-                ) : (
-                  'Marcar retorno'
-                )}
-              </Button>
-              <button
-                onClick={fechar}
-                className="min-h-11 w-full py-1.5 text-sm font-medium text-text-secondary transition-colors hover:text-text-primary"
-              >
-                Cancelar
-              </button>
+              {error && <p className="rounded-lg bg-coral-pale p-2 text-xs text-coral-ink">{error}</p>}
+              {etapa === 'retorno' ? <>
+                {!error && !podeConfirmar && <p className="text-xs text-text-secondary">{dentistaAlvoId == null ? 'Escolha o dentista para ver a agenda.' : 'Escolha um horário livre para habilitar.'}</p>}
+                {proteticos?.length ? <Button type="button" variant="outline" onClick={incluirProtetico} disabled={saving || !podeConfirmar} className="min-h-11 w-full rounded-xl border-teal/40 text-teal-ink hover:bg-teal/5"><Stethoscope className="mr-2 h-4 w-4" />Incluir protético</Button> : null}
+                <Button onClick={onMarcarRetorno} disabled={saving || !podeConfirmar} className="min-h-11 w-full rounded-xl bg-teal-dark font-bold text-white hover:opacity-90 disabled:opacity-40">{saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</> : 'Marcar retorno'}</Button>
+                <button onClick={() => alterarAberto(false)} className="min-h-11 w-full py-1.5 text-sm font-medium text-text-secondary transition-colors hover:text-text-primary">Cancelar</button>
+              </> : <>
+                {pedidoPendente ? <Button onClick={onTentarEnviarPedido} disabled={saving} className="min-h-11 w-full rounded-xl bg-teal-dark font-bold text-white hover:opacity-90">{saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Enviando...</> : 'Tentar enviar novamente'}</Button> : <Button onClick={onMarcarRetorno} disabled={saving || !podeEnviar} className="min-h-11 w-full rounded-xl bg-teal-dark font-bold text-white hover:opacity-90 disabled:opacity-40">{saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</> : 'Marcar retorno e enviar'}</Button>}
+                <button type="button" onClick={() => setEtapa('retorno')} disabled={saving || pedidoPendente} className="flex min-h-11 w-full items-center justify-center gap-2 py-1.5 text-sm font-medium text-text-secondary transition-colors hover:text-text-primary disabled:opacity-40"><ArrowLeft className="h-4 w-4" />Voltar ao retorno</button>
+              </>}
             </div>
           </div>
         </div>
