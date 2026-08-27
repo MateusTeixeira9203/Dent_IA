@@ -17,6 +17,7 @@ Entregar uma PWA **instalável e online-first**:
 
 - manifest canônico, ícones PNG e metadados iOS;
 - abertura em modo `standalone`, iniciando em `/dashboard`;
+- introdução visual curta depois do splash nativo, exclusiva ao aplicativo instalado;
 - CTA de instalação no espaço já reservado na landing;
 - Chrome/Edge usam `beforeinstallprompt`; iPhone mostra instrução curta para Safari;
 - nenhum service worker com cache de dados nesta fase.
@@ -25,6 +26,10 @@ O corte sem cache é deliberado. Prontuários, agenda e financeiro não podem ab
 antiga ou aparentar estar atualizados quando não há rede. Instalar não será apresentado como
 “funciona offline”. Os critérios atuais do Chromium exigem HTTPS, manifest e ícones 192/512 para
 o prompt; service worker não é requisito atual. O iOS usa `apple-touch-icon` PNG e modo standalone.
+
+A tela nativa de abertura do sistema operacional não pode ser animada por uma PWA. A introdução
+começa logo depois: o símbolo central desloca 52 px à esquerda e revela “Odonto.IA”. Ela não
+espera dados nem roda em navegação interna.
 
 Referências: [Chrome/web.dev — critérios de instalação](https://web.dev/articles/install-criteria),
 [web.dev — manifest](https://web.dev/articles/add-manifest),
@@ -83,6 +88,19 @@ Campos fixos:
 `src/app/layout.tsx` referencia `/manifest.webmanifest`, o apple touch icon e declara
 `appleWebApp.capable = true`, título `Odonto.IA` e status bar `black-translucent`.
 
+### Introdução — `PwaLaunchIntro`
+
+`src/components/pwa/pwa-launch-intro.tsx` é um Client Component montado uma única vez no
+`RootLayout`. A sobreposição renderiza no HTML inicial, mas CSS a exibe somente com
+`display-mode: standalone`; a detecção em JavaScript também cobre `navigator.standalone` no iOS.
+
+- `OdontoIALogo` existente começa centralizado; após 90 ms move apenas `transform: translateX(-52px)`;
+- wordmark `Odonto.IA` entra com opacidade, deslocamento de 12 px e blur de 2 px → 0;
+- saída do overlay: 120 ms; janela total máxima: 420 ms; curva
+  `cubic-bezier(.22, 1, .36, 1)` e sem bounce;
+- `prefers-reduced-motion` exibe o estado final e remove a sobreposição sem animação;
+- nenhum timer depende de fetch, autenticação ou dados clínicos.
+
 ### UI — `InstallPwaCard`
 
 ```ts
@@ -121,6 +139,8 @@ banner no dashboard nem dependência nova.
    o CTA.
 5. Após `appinstalled`, limpar o evento e renderizar `installed`.
 6. Se o usuário dispensar o prompt, manter orientação manual; não insistir com popup.
+7. Ao abrir o PWA instalado, exibir a introdução uma vez no carregamento inicial; em seguida,
+   revelar a rota atual, mesmo que seus dados ainda estejam carregando.
 
 ## 6. Referência visual
 
@@ -132,6 +152,14 @@ Não há tela nova. O componente ocupa o slot PWA aprovado do R-121 na landing:
 - nenhuma métrica comercial dentro do card;
 - mobile empilha conteúdo e CTA, alvo de toque mínimo 44 px.
 
+### Abertura standalone
+
+- **Artefato aprovado:** `plans/artefatos/R-116-pwa-abertura.html`.
+- Fundo: `--color-brand-charcoal` (`#0d0d0d`); símbolo: `--color-teal` (`#2f9c85`);
+  wordmark: `--color-text-primary` (`#fafafa` no escuro).
+- Tipografia: `DM Serif Display` para “Odonto.IA”; não introduz fonte, cor ou logo novo.
+- Sem card, loader giratório, gradiente, pulso, escala, giro ou loop.
+
 ## 7. Invariantes
 
 - [ ] **I1** — instalar nunca grava nem altera paciente, prontuário, agenda ou financeiro.
@@ -141,6 +169,8 @@ Não há tela nova. O componente ocupa o slot PWA aprovado do R-121 na landing:
 - [ ] **I5** — CTA nunca aparece como instalável quando o app já está standalone.
 - [ ] **I6** — dispensa do prompt não gera repetição automática ou bloqueio da landing.
 - [ ] **I7** — zero dependência npm e zero mudança de banco, auth ou RLS.
+- [ ] **I8** — a abertura não bloqueia por mais de 420 ms e nunca depende da chegada de dados.
+- [ ] **I9** — navegador comum não renderiza nem reserva espaço para a introdução do PWA.
 
 ## 8. Gates de aceite
 
@@ -156,6 +186,9 @@ Não há tela nova. O componente ocupa o slot PWA aprovado do R-121 na landing:
 - [ ] **G9** — TypeScript, lint, build e teste dos assets passam.
 - [ ] **G10** — desligar a rede mostra o erro normal de conectividade; nenhum dado antigo é
   apresentado como atual.
+- [ ] **G11** — PWA Android e Safari/iPhone instalado exibem símbolo → wordmark uma vez ao abrir;
+  abrir telas internas não repete a animação.
+- [ ] **G12** — com `prefers-reduced-motion`, a rota fica disponível sem deslocamento, blur ou atraso.
 
 ## 9. Fora de escopo
 

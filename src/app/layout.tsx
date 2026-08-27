@@ -4,6 +4,7 @@ import './globals.css';
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { PwaLaunchIntro } from '@/components/pwa/pwa-launch-intro';
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist' });
 
@@ -52,6 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           disableTransitionOnChange
         >
           {children}
+          <PwaLaunchIntro />
           <Toaster />
         </ThemeProvider>
       </body>
