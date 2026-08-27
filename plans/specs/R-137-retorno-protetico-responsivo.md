@@ -37,6 +37,13 @@ abreviações fixas de três letras, não o nome longo retornado pelo locale. O 
 continua sendo o primeiro dia que tiver horário livre. O modal desktop usa quase toda a largura
 disponível, até `1180px`, para a grade e o painel não disputarem espaço.
 
+### Diagnóstico de agenda — 2026-08-27
+
+Consulta somente-leitura em produção: `Dentista01` tem grade ativa nos valores `1, 2, 3`
+(segunda a quarta) e não possui grade em quinta, sexta ou sábado. Portanto, “Sem expediente”
+nesses dias não é slot oculto nem erro do retorno; ativá-los é alteração deliberada em
+Configurações → Horários, fora deste patch visual.
+
 ## 2. Decisão e alternativas descartadas
 
 | Decisão | Alternativa descartada | Motivo |
@@ -222,7 +229,7 @@ abre Marcar retorno
 
 ## 6. Referência visual
 
-- **Artefato aprovado:** `plans/artefatos/R-137-retorno-protetico-responsivo-v5.html`
+- **Artefato aprovado:** `plans/artefatos/R-137-retorno-protetico-responsivo-v6.html`
 - **Rotas:** `/dashboard/pacientes/[id]` e `/dashboard/meu-dia`
 - **Componente:** `src/components/pacientes/marcar-retorno-modal.tsx`
 - **Temas:** light e dark obrigatórios; zero cor hardcoded na implementação.
@@ -248,12 +255,14 @@ Tokens extraídos por JavaScript do artefato servido em HTTP:
 
 - Desktop: semana à esquerda; painel à direita alterna sem aumentar a largura/altura. Casco de
   até `1180px` e `calc(100vw - 0.5rem)`, até `680px` de altura, com conteúdo rolável e ações
-  fora dele.
+  fora dele. O casco declara `sm:max-w-none`: sem isso, o `sm:max-w-2xl` do `DialogContent`
+  base vence a largura do retorno. Painel lateral e ações têm `250px`; assim a grade de `680px`
+  cabe inteira a partir de uma viewport desktop de `960px`.
 - Mobile: Paciente ocupa uma linha; Data e Hora dividem a linha seguinte; faixa de segunda a
   sábado, sem domingo, com rótulos `Seg`, `Ter`, `Qua`, `Qui`, `Sex`, `Sáb`; “Horários livres”;
   duração; observações. O casco preserva margem da viewport e o rodapé com Cancelar + CTA fica
   sempre visível.
-- Desktop: a grade semanal mostra segunda a sábado, com seis colunas mínimas de `120px`, sem o
+- Desktop: a grade semanal mostra segunda a sábado, com seis colunas mínimas de `106px`, sem o
   número da data no cabeçalho; a largura excedente usa rolagem horizontal controlada.
 - Etapa 2: “Enviar ao protético”, resumo “Retorno preservado”, Protético, Entrega até,
   O que precisa ser feito, Voltar ao retorno, Marcar retorno e enviar.
@@ -281,7 +290,7 @@ Tokens extraídos por JavaScript do artefato servido em HTTP:
 - [ ] Mobile 360, 390 e 412px: segunda a sábado e slots cabem sem corte/scroll horizontal,
   rótulos não se sobrepõem e CTA permanece alcançável.
 - [ ] Desktop: cabeçalho da semana tem somente segunda a sábado; cada coluna tem pelo menos
-  `120px` e a barra horizontal só aparece quando a região da agenda não comportar a grade.
+  `106px` e a barra horizontal só aparece quando a região da agenda não comportar a grade.
 - [ ] Alterar duração recalcula slots e remove seleção que deixou de caber.
 - [ ] Sem protético ativo, ação “Incluir protético” não renderiza e o retorno conclui normalmente.
 - [ ] Com protético, os dois registros compartilham paciente, dentista e `agendamento_id`.
