@@ -106,6 +106,8 @@ export type NovoOrcItem = {
   /** R-125b — fontes estruturadas que este item representa. Manual/legado ficam vazios. */
   eventoIds?: string[];
   origem?: 'evento' | 'manual' | 'legado';
+  /** R-135 — o card pode ficar visível, mas só entra no orçamento quando selecionado. */
+  selecionado?: boolean;
 };
 
 export type OrcEditItem = {

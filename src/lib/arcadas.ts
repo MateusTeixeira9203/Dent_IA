@@ -39,14 +39,20 @@ export const isQuadrante = (n: number): boolean =>
 /** Rótulo legível: nome da arcada/quadrante para sentinelas, o próprio número para dentes. */
 export const denteLabel = (n: number): string => ARCH_LABELS[n] ?? String(n);
 
+/** Nome canônico para o catálogo: espaços previsíveis e nunca o local clínico. */
+export const normalizarNomeProcedimento = (nome: string): string =>
+  nome.replace(/\s+/g, ' ').trim();
+
 /**
- * Remove a referência de dente de uma descrição de procedimento gerada a partir da ficha
- * (ex: "Dente 46 – Restauração", "D46 — Canal", "Canal (D14, D15)") — sobra só o nome do
- * procedimento, pra não cadastrar "Dente 46 – Restauração" como nome no catálogo.
+ * Remove a referência de dente de uma descrição de procedimento gerada a partir da ficha.
+ * Aceita tanto os formatos antigos quanto o atual (`Restauração — D16`). O item do orçamento
+ * mantém a localização; só o catálogo recebe este retorno canônico.
  */
 export const stripDenteDoNome = (descricao: string): string =>
-  descricao
+  normalizarNomeProcedimento(descricao)
     .replace(/^Dente\s+\d+\s*[–\-—]\s*/i, '')
     .replace(/^D\d+\s*[–\-—]\s*/i, '')
     .replace(/\s*\(D\d+(?:,\s*D\d+)*\)\s*$/i, '')
+    .replace(/\s*[–\-—]\s*D\d+(?:\s*,\s*D\d+)*\s*$/i, '')
+    .replace(/\s*[–\-—]\s*pilares?\s+D\d+(?:\s+e\s+D\d+|\s*,\s*D\d+)*(?:\s*·\s*pônticos?\s+D\d+(?:\s*,\s*D\d+)*)?\s*$/i, '')
     .trim();

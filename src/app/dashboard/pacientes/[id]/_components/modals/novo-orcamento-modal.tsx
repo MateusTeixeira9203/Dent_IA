@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Plus, Trash2, AlertTriangle, X, Loader2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Plus, Trash2, AlertTriangle, X, Loader2, Check, ChevronDown, MapPin } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -48,6 +48,7 @@ export interface NovoOrcamentoModalProps {
   novoOrcValorFinal: number | null;
   setNovoOrcValorFinal: React.Dispatch<React.SetStateAction<number | null>>;
   orcSaving: boolean;
+  modoPersistencia: 'novo' | 'adicionar';
   onCriarOrcamento: () => void;
   onSelecionarFicha: (fichaId: string | null) => void;
   onCadastrarProcedimento: (idx: number) => void;
@@ -82,6 +83,7 @@ export function NovoOrcamentoModal({
   novoOrcValorFinal,
   setNovoOrcValorFinal,
   orcSaving,
+  modoPersistencia,
   onCriarOrcamento,
   onSelecionarFicha,
   onCadastrarProcedimento,
@@ -102,28 +104,39 @@ export function NovoOrcamentoModal({
   const [valorFinalTexto, setValorFinalTexto] = useState(
     novoOrcValorFinal !== null ? formatValorBR(novoOrcValorFinal) : ''
   );
+  const [mostrarAjusteFinal, setMostrarAjusteFinal] = useState(false);
+  const [mostrarPagamento, setMostrarPagamento] = useState(false);
+  useEffect(() => {
+    // O valor em formato brasileiro é estado de apresentação: sincroniza uma mudança externa
+    // (abrir outro orçamento, limpar modal) sem sobrescrever a digitação em andamento.
+    const timer = window.setTimeout(() => {
+      setValorFinalTexto(novoOrcValorFinal !== null ? formatValorBR(novoOrcValorFinal) : '');
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [novoOrcValorFinal]);
   const temDesconto = novoOrcValorFinal !== null && novoOrcSubtotal > 0 && novoOrcValorFinal < novoOrcSubtotal;
   const pctDesconto = temDesconto
     ? Math.round(((novoOrcSubtotal - novoOrcValorFinal!) / novoOrcSubtotal) * 100 * 10) / 10
     : 0;
 
-  // R-39a — campo único: digitar e escolher da sugestão do catálogo (datalist nativo)
-  // substitui o par Select + Input de antes. Mesmo dado, mesma capacidade — ver spec §3.
-  function handleDescricaoChange(idx: number, valorDigitado: string) {
-    const match = procedimentosClinica.find((p) => p.nome === valorDigitado);
-    setNovoOrcItens((prev) =>
-      prev.map((it, i) => {
-        if (i !== idx) return it;
-        if (!match) return { ...it, descricao: valorDigitado, procedimentoId: '' };
-        return {
-          ...it,
-          descricao: valorDigitado,
-          procedimentoId: match.id,
-          // Só pré-preenche se ainda não tem preço — não sobrescreve valor já digitado.
-          preco: it.preco ? it.preco : (match.preco_padrao != null ? formatValorBR(match.preco_padrao) : it.preco),
-        };
-      })
-    );
+  const separarDescricao = (descricao: string): { procedimento: string; local: string | null } => {
+    const marcador = descricao.indexOf(' — ');
+    if (marcador < 0) return { procedimento: descricao, local: null };
+    return { procedimento: descricao.slice(0, marcador), local: descricao.slice(marcador + 3) || null };
+  };
+
+  function atualizarItemManual(idx: number, procedimento: string, local: string) {
+    const match = procedimentosClinica.find((item) => item.nome === procedimento);
+    const descricao = local.trim() ? `${procedimento} — ${local.trim()}` : procedimento;
+    setNovoOrcItens((prev) => prev.map((item, index) => {
+      if (index !== idx) return item;
+      return {
+        ...item,
+        descricao,
+        procedimentoId: match?.id ?? '',
+        preco: item.preco || (match?.preco_padrao != null ? formatValorBR(match.preco_padrao) : item.preco),
+      };
+    }));
   }
 
   return (
@@ -137,12 +150,18 @@ export function NovoOrcamentoModal({
         <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-border shrink-0">
           <div className="min-w-0">
             <DialogTitle className="font-heading font-semibold text-xl text-text-primary leading-tight">
-              {etapaNovoOrc === 'selecionar' ? 'Selecionar Ficha' : 'Novo Orçamento'}
+              {etapaNovoOrc === 'selecionar'
+                ? 'Selecionar ficha'
+                : modoPersistencia === 'adicionar'
+                  ? 'Atualizar orçamento'
+                  : 'Montar orçamento'}
             </DialogTitle>
             <DialogDescription className="text-text-muted text-xs truncate">
               {etapaNovoOrc === 'selecionar'
                 ? 'Escolha qual registro clínico vai gerar o orçamento.'
-                : 'Selecione procedimentos e defina os valores.'}
+                : modoPersistencia === 'adicionar'
+                  ? 'Revise os novos procedimentos antes de incluí-los na proposta atual.'
+                  : 'Selecione os procedimentos e ajuste os valores antes de criar.'}
             </DialogDescription>
           </div>
           <button
@@ -163,7 +182,7 @@ export function NovoOrcamentoModal({
               return (
                 <button
                   key={ficha.id}
-                  onClick={() => onSelecionarFicha(ficha.id)}
+                  onClick={() => void onSelecionarFicha(ficha.id)}
                   className="min-h-11 w-full text-left p-4 rounded-xl border border-border bg-surface-alt hover:border-teal/40 hover:bg-teal/5 transition-all group"
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -183,7 +202,7 @@ export function NovoOrcamentoModal({
               );
             })}
             <button
-              onClick={() => onSelecionarFicha(null)}
+              onClick={() => void onSelecionarFicha(null)}
               className="min-h-11 w-full py-3 border border-dashed border-border rounded-xl text-sm text-text-secondary hover:bg-surface-alt hover:text-text-primary transition-colors flex items-center justify-center gap-2"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -218,83 +237,74 @@ export function NovoOrcamentoModal({
                 {procedimentosClinica.map((p) => <option key={p.id} value={p.nome} />)}
               </datalist>
 
-              <div className="rounded-2xl border border-border overflow-hidden">
-                {novoOrcItens.map((item, idx) => (
-                  <div key={idx}>
-                    <div className={`grid grid-cols-[24px_minmax(0,1fr)_28px] items-start gap-2 px-3 py-2.5 md:grid-cols-[24px_minmax(0,1fr)_64px_112px_28px] md:items-center ${idx > 0 ? 'border-t border-border/60' : ''}`}>
-                      <span className="w-6 h-6 rounded-lg bg-teal/10 text-teal text-xs font-bold flex items-center justify-center shrink-0">
-                        {idx + 1}
-                      </span>
-                      <div className="min-w-0 space-y-2 md:contents">
-                        <Input
-                          list="catalogo-procedimentos"
-                          placeholder="Nome do procedimento *"
-                          value={item.descricao}
-                          onChange={(e) => handleDescricaoChange(idx, e.target.value)}
-                          className="h-10 rounded-lg border-border bg-surface-alt text-sm text-text-primary md:h-9"
-                        />
-                        <div className="grid grid-cols-2 gap-2 md:contents">
-                          <Input
-                            type="number"
-                            min="1"
-                            value={item.quantidade}
-                            onChange={(e) => setNovoOrcItens((prev) => prev.map((it, i) => i === idx ? { ...it, quantidade: parseInt(e.target.value) || 1 } : it))}
-                            aria-label="Quantidade"
-                            className="h-10 rounded-lg border-border bg-surface-alt text-center font-mono text-sm text-text-primary md:h-9"
-                          />
-                          <Input
-                            type="text"
-                            inputMode="decimal"
-                            placeholder="Preço 0,00"
-                            value={item.preco}
-                            onChange={(e) => setNovoOrcItens((prev) => prev.map((it, i) => i === idx ? { ...it, preco: e.target.value } : it))}
-                            onBlur={(e) => {
-                              const parsed = parseValorBR(e.target.value);
-                              setNovoOrcItens((prev) => prev.map((it, i) => i === idx ? { ...it, preco: parsed > 0 ? formatValorBR(parsed) : it.preco } : it));
-                            }}
-                            aria-label="Preço"
-                            className="h-10 rounded-lg border-border bg-surface-alt font-mono text-sm text-text-primary md:h-9"
-                          />
-                        </div>
-                      </div>
-                      {novoOrcItens.length > 1 ? (
-                        <button
-                          onClick={() => setNovoOrcItens((prev) => prev.filter((_, i) => i !== idx))}
-                          className="h-11 w-11 rounded-lg hover:bg-coral-pale text-coral-ink transition-colors"
-                          aria-label="Remover procedimento"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      ) : <span />}
-                    </div>
-
-                    {!item.procedimentoId && item.descricao.trim() && (
-                      <div className="mx-3 mb-2.5 flex items-center justify-between gap-2 rounded-lg bg-warning-pale border border-warning/30 px-2.5 py-1.5">
-                        <span className="flex items-center gap-1.5 text-[11px] font-medium text-warning-ink">
-                          <AlertTriangle className="w-3 h-3 shrink-0" />
-                          Fora do catálogo
-                        </span>
-                        <button
-                          onClick={() => onCadastrarProcedimento(idx)}
-                          disabled={registeringProcIdx === idx}
-                          className="text-[11px] font-bold text-warning-ink hover:underline disabled:opacity-50 shrink-0"
-                        >
-                          {registeringProcIdx === idx
-                            ? 'Cadastrando...'
-                            : `Cadastrar "${stripDenteDoNome(item.descricao)}"${parseValorBR(item.preco) > 0 ? ` a R$ ${formatValorBR(parseValorBR(item.preco))}` : ''}`}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-text-secondary">Procedimentos</p>
+                  <p className="mt-1 text-sm text-text-muted">
+                    {modoPersistencia === 'adicionar'
+                      ? 'Novos procedimentos desta ficha. O orçamento atual não muda até você confirmar.'
+                      : 'Itens encontrados na ficha. Revise valores antes de criar.'}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full bg-teal/10 px-2.5 py-1 text-xs font-semibold text-teal-ink">
+                  {novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length} selecionado{novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length === 1 ? '' : 's'}
+                </span>
               </div>
 
-              <button
-                onClick={() => setNovoOrcItens((prev) => [...prev, { procedimentoId: '', descricao: '', quantidade: 1, preco: '' }])}
-                className="min-h-11 w-full py-3 border border-dashed border-border rounded-xl text-sm text-text-secondary hover:bg-surface-alt hover:text-text-primary transition-colors flex items-center justify-center gap-2"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Adicionar Procedimento
+              <div className="space-y-2">
+                {novoOrcItens.map((item, idx) => {
+                  const { procedimento, local } = separarDescricao(item.descricao);
+                  const selecionado = item.selecionado !== false;
+                  const manual = item.origem === 'manual' || !item.descricao;
+                  return (
+                    <div
+                      key={idx}
+                      className={`rounded-2xl border p-3 transition-colors ${selecionado ? 'border-teal/40 bg-teal/[0.05]' : 'border-border bg-surface-alt/50 opacity-70'}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <button
+                          type="button"
+                          aria-pressed={selecionado}
+                          aria-label={`${selecionado ? 'Remover' : 'Adicionar'} ${procedimento || 'procedimento'} do orçamento`}
+                          onClick={() => setNovoOrcItens((prev) => prev.map((it, i) => i === idx ? { ...it, selecionado: !selecionado } : it))}
+                          className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition-colors ${selecionado ? 'border-teal bg-teal text-white' : 'border-border text-transparent hover:border-teal/50'}`}
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                        <div className="min-w-0 flex-1 space-y-2">
+                          {manual ? (
+                            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(150px,0.55fr)]">
+                              <Input list="catalogo-procedimentos" placeholder="Procedimento" value={procedimento} onChange={(e) => atualizarItemManual(idx, e.target.value, local ?? '')} className="h-11 rounded-xl border-border bg-surface text-text-primary" />
+                              <Input placeholder="Localização opcional" aria-label="Localização clínica" value={local ?? ''} onChange={(e) => atualizarItemManual(idx, procedimento, e.target.value)} className="h-11 rounded-xl border-border bg-surface text-text-primary" />
+                            </div>
+                          ) : (
+                            <div>
+                              <p className="truncate text-sm font-semibold text-text-primary">{procedimento}</p>
+                              {local && <p className="mt-0.5 flex items-center gap-1 text-xs text-text-secondary"><MapPin className="h-3 w-3" />{local}</p>}
+                            </div>
+                          )}
+                          <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-2 sm:max-w-sm">
+                            <Input type="number" min="1" value={item.quantidade} onChange={(e) => setNovoOrcItens((prev) => prev.map((it, i) => i === idx ? { ...it, quantidade: parseInt(e.target.value) || 1 } : it))} aria-label="Quantidade" className="h-11 rounded-xl border-border bg-surface text-center font-mono text-text-primary" />
+                            <Input type="text" inputMode="decimal" placeholder="Preço" value={item.preco} onChange={(e) => setNovoOrcItens((prev) => prev.map((it, i) => i === idx ? { ...it, preco: e.target.value } : it))} onBlur={(e) => { const valor = parseValorBR(e.target.value); setNovoOrcItens((prev) => prev.map((it, i) => i === idx ? { ...it, preco: valor > 0 ? formatValorBR(valor) : it.preco } : it)); }} aria-label="Preço" className="h-11 rounded-xl border-border bg-surface font-mono text-text-primary" />
+                          </div>
+                        </div>
+                        <button type="button" onClick={() => setNovoOrcItens((prev) => prev.filter((_, i) => i !== idx))} className="h-11 w-11 shrink-0 rounded-xl text-text-secondary transition-colors hover:bg-coral-pale hover:text-coral-ink" aria-label="Remover procedimento"><Trash2 className="mx-auto h-4 w-4" /></button>
+                      </div>
+                      {!item.procedimentoId && item.descricao.trim() && (
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warning/30 bg-warning-pale px-3 py-2">
+                          <span className="flex items-center gap-1.5 text-xs font-medium text-warning-ink"><AlertTriangle className="h-3.5 w-3.5" />Fora do catálogo</span>
+                          <button type="button" onClick={() => onCadastrarProcedimento(idx)} disabled={registeringProcIdx === idx} className="text-xs font-bold text-warning-ink hover:underline disabled:opacity-50">
+                            {registeringProcIdx === idx ? 'Cadastrando...' : `Cadastrar “${stripDenteDoNome(item.descricao)}”`}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button type="button" onClick={() => setNovoOrcItens((prev) => [...prev, { procedimentoId: '', descricao: '', quantidade: 1, preco: '', eventoIds: [], origem: 'manual', selecionado: true }])} className="min-h-11 w-full rounded-xl border border-dashed border-border py-3 text-sm text-text-secondary transition-colors hover:bg-surface-alt hover:text-text-primary">
+                <Plus className="mr-2 inline h-4 w-4" />Adicionar procedimento manual
               </button>
             </div>
 
@@ -310,34 +320,6 @@ export function NovoOrcamentoModal({
                   <p className="font-mono text-lg font-semibold text-text-primary">
                     R$ {novoOrcSubtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">
-                    Valor final negociado (R$)
-                  </Label>
-                  <Input
-                    type="text" inputMode="decimal"
-                    placeholder={novoOrcSubtotal.toFixed(2)}
-                    value={valorFinalTexto}
-                    onChange={(e) => setValorFinalTexto(e.target.value)}
-                    onBlur={(e) => {
-                      const parsed = parseValorBR(e.target.value);
-                      setNovoOrcValorFinal(parsed > 0 ? parsed : null);
-                      setValorFinalTexto(parsed > 0 ? formatValorBR(parsed) : '');
-                    }}
-                    className="rounded-xl bg-surface border-border text-text-primary font-mono"
-                  />
-                  {temDesconto && (
-                    <p className="text-[11px] font-semibold text-teal-ink">
-                      Desconto de {pctDesconto}% aplicado
-                    </p>
-                  )}
-                  {novoOrcValorFinal !== null && novoOrcValorFinal > novoOrcSubtotal && (
-                    <p className="text-[11px] text-warning-ink">
-                      Valor maior que o total
-                    </p>
-                  )}
                 </div>
 
                 <div className="rounded-2xl p-4 space-y-2 border border-teal/15 bg-teal/[0.07]">
@@ -363,42 +345,33 @@ export function NovoOrcamentoModal({
                     R$ {novoOrcTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </p>
                   <p className="text-[10px] text-text-secondary font-mono">
-                    {novoOrcItens.filter(i => i.descricao.trim()).length} item(s)
+                    {novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length} item(s) selecionado(s)
                   </p>
                 </div>
 
-                {/* R-34 — forma de pagamento, opcional, direto na criação. Sem escolher
-                    nada aqui, o orçamento nasce exatamente como hoje (sem plano). */}
-                <div className="space-y-1.5 pt-1">
-                  <Label className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">
-                    Forma de pagamento <span className="normal-case font-normal text-text-muted">(opcional)</span>
-                  </Label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setPlanoForma(planoForma === 'avista' ? null : 'avista')}
-                      className={`py-2 rounded-xl text-xs font-semibold border transition-colors ${
-                        planoForma === 'avista'
-                          ? 'bg-teal/10 border-teal/40 text-teal-ink'
-                          : 'border-border text-text-secondary hover:border-teal/30 hover:text-teal-ink'
-                      }`}
-                    >
-                      À vista
+                {modoPersistencia === 'novo' ? (
+                  <>
+                    <button type="button" onClick={() => setMostrarAjusteFinal((value) => !value)} className="flex min-h-11 w-full items-center justify-between rounded-xl px-1 text-left text-sm font-semibold text-text-primary hover:text-teal-ink">
+                      Ajustar valor final <ChevronDown className={`h-4 w-4 transition-transform ${mostrarAjusteFinal ? 'rotate-180' : ''}`} />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setPlanoForma(planoForma === 'parcelado' ? null : 'parcelado')}
-                      className={`py-2 rounded-xl text-xs font-semibold border transition-colors ${
-                        planoForma === 'parcelado'
-                          ? 'bg-teal/10 border-teal/40 text-teal-ink'
-                          : 'border-border text-text-secondary hover:border-teal/30 hover:text-teal-ink'
-                      }`}
-                    >
-                      Parcelado
+                    {mostrarAjusteFinal && (
+                      <div className="space-y-1.5 rounded-xl border border-border bg-surface p-3">
+                        <Label className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Valor final negociado (R$)</Label>
+                        <Input type="text" inputMode="decimal" placeholder={novoOrcSubtotal.toFixed(2)} value={valorFinalTexto} onChange={(e) => setValorFinalTexto(e.target.value)} onBlur={(e) => { const parsed = parseValorBR(e.target.value); setNovoOrcValorFinal(parsed > 0 ? parsed : null); setValorFinalTexto(parsed > 0 ? formatValorBR(parsed) : ''); }} className="h-11 rounded-xl border-border bg-surface-alt font-mono text-text-primary" />
+                        {temDesconto && <p className="text-[11px] font-semibold text-teal-ink">Desconto de {pctDesconto}% aplicado</p>}
+                        {novoOrcValorFinal !== null && novoOrcValorFinal > novoOrcSubtotal && <p className="text-[11px] text-warning-ink">Valor maior que o total</p>}
+                      </div>
+                    )}
+                    <button type="button" onClick={() => setMostrarPagamento((value) => !value)} className="flex min-h-11 w-full items-center justify-between rounded-xl px-1 text-left text-sm font-semibold text-text-primary hover:text-teal-ink">
+                      Definir forma de pagamento <span className="text-xs font-normal text-text-muted">opcional</span><ChevronDown className={`h-4 w-4 transition-transform ${mostrarPagamento ? 'rotate-180' : ''}`} />
                     </button>
-                  </div>
-
-                  {planoForma === 'parcelado' && (
+                    {mostrarPagamento && (
+                      <div className="space-y-1.5 rounded-xl border border-border bg-surface p-3">
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button type="button" onClick={() => setPlanoForma(planoForma === 'avista' ? null : 'avista')} className={`min-h-11 rounded-xl border text-xs font-semibold transition-colors ${planoForma === 'avista' ? 'border-teal/40 bg-teal/10 text-teal-ink' : 'border-border text-text-secondary hover:border-teal/30 hover:text-teal-ink'}`}>À vista</button>
+                          <button type="button" onClick={() => setPlanoForma(planoForma === 'parcelado' ? null : 'parcelado')} className={`min-h-11 rounded-xl border text-xs font-semibold transition-colors ${planoForma === 'parcelado' ? 'border-teal/40 bg-teal/10 text-teal-ink' : 'border-border text-text-secondary hover:border-teal/30 hover:text-teal-ink'}`}>Parcelado</button>
+                        </div>
+                        {planoForma === 'parcelado' && (
                     <div className="space-y-1.5 pt-0.5">
                       <div className="grid grid-cols-2 gap-1.5">
                         <div className="space-y-1">
@@ -443,8 +416,13 @@ export function NovoOrcamentoModal({
                         );
                       })()}
                     </div>
-                  )}
-                </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="rounded-xl border border-border bg-surface px-3 py-3 text-xs leading-relaxed text-text-secondary">Os recebimentos e o valor final continuam no orçamento atual. Estes novos itens entram como pendentes de aprovação.</p>
+                )}
               </div>
 
               {/* ── Ação fixa no pé da coluna (R-39a) ── */}
@@ -454,10 +432,10 @@ export function NovoOrcamentoModal({
                 )}
                 <Button
                   onClick={onCriarOrcamento}
-                  disabled={orcSaving}
+                  disabled={orcSaving || novoOrcItens.every((item) => item.selecionado === false || !item.descricao.trim())}
                   className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl disabled:opacity-50 font-bold"
                 >
-                  {orcSaving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</> : 'Criar Orçamento'}
+                  {orcSaving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</> : modoPersistencia === 'adicionar' ? `Adicionar ${novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length} procedimento${novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length === 1 ? '' : 's'}` : 'Criar orçamento'}
                 </Button>
                 {podeTrocarFicha && (
                   <Button

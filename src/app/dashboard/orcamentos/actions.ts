@@ -10,6 +10,7 @@ import { deriveEstadoOrcamento, orcamentoAceitaPagamento, type EstadoOrcamento }
 import { hojeBRT } from "@/lib/hora-brt";
 import { ERRO_ORCAMENTO_SEM_APROVACAO } from "@/server/orcamentos/pagamento-guards";
 import { criarDocumentoAceiteOrcamento } from '@/server/legal/documentos-aceite';
+import { normalizarNomeProcedimento } from '@/lib/arcadas';
 
 export type FormaPagamento =
   | "dinheiro"
@@ -925,6 +926,79 @@ export async function excluirPagamento(
   return {};
 }
 
+const adicionarItensAoOrcamentoSchema = z.object({
+  orcamentoId: z.string().uuid(),
+  itens: z.array(z.object({
+    procedimentoId: z.string().uuid().nullable(),
+    descricao: z.string().trim().min(1).max(500),
+    quantidade: z.number().int().min(1).max(99),
+    precoUnitario: z.number().finite().min(0),
+    eventoIds: z.array(z.string().uuid()).max(100).default([]),
+  })).min(1).max(100),
+});
+
+/**
+ * R-135 — inclui explicitamente procedimentos novos no orçamento que já nasceu da mesma ficha.
+ * A RPC faz a validação e os vínculos na mesma transação; pagamentos/aceites nunca passam por
+ * aqui. Itens acrescentados começam não aprovados por default do banco.
+ */
+export async function adicionarItensAoOrcamento(
+  dados: z.input<typeof adicionarItensAoOrcamentoSchema>,
+): Promise<{ error?: string; valorAdicionado?: number }> {
+  const { supabase, clinicId, dentistaId } = await requireClinicContext();
+  const parsed = adicionarItensAoOrcamentoSchema.safeParse(dados);
+  if (!parsed.success) return { error: 'Revise os novos procedimentos e seus valores.' };
+
+  const entrada = parsed.data;
+  const { data: orcamento } = await supabase
+    .from('orcamentos')
+    .select('id, paciente_id')
+    .eq('id', entrada.orcamentoId)
+    .eq('clinica_id', clinicId)
+    .maybeSingle();
+  if (!orcamento) return { error: 'Orçamento não encontrado.' };
+
+  const { data: valorAdicionado, error } = await supabase.rpc('adicionar_itens_orcamento_com_eventos', {
+    p_orcamento_id: entrada.orcamentoId,
+    p_itens: entrada.itens.map((item) => ({
+      procedimento_id: item.procedimentoId,
+      descricao: item.descricao,
+      quantidade: item.quantidade,
+      preco_unitario: item.precoUnitario,
+      evento_ids: item.eventoIds,
+    })),
+  });
+
+  if (error) {
+    const mensagem = error.message ?? '';
+    if (error.code === '23505' || mensagem.includes('orcamento_evento_ja_orcado') || mensagem.includes('orcamento_evento_duplicado')) {
+      return { error: 'Um dos procedimentos já entrou em um orçamento. Recarregue a ficha antes de continuar.' };
+    }
+    if (mensagem.includes('orcamento_evento_invalido')) {
+      return { error: 'Um dos procedimentos não está mais disponível para este orçamento. Recarregue a ficha.' };
+    }
+    if (mensagem.includes('orcamento_sem_permissao')) {
+      return { error: 'Você não tem permissão para alterar este orçamento.' };
+    }
+    console.error('[adicionarItensAoOrcamento]', mensagem);
+    return { error: 'Não foi possível adicionar os procedimentos. Nenhuma alteração foi salva.' };
+  }
+
+  registrarLog(supabase, {
+    clinicaId: clinicId,
+    actorId: dentistaId,
+    pacienteId: orcamento.paciente_id,
+    entityType: 'orcamento',
+    entityId: entrada.orcamentoId,
+    action: 'orcamento.editado',
+    metadata: { alteracao: 'itens_adicionados', itens_count: entrada.itens.length, valor_adicionado: valorAdicionado ?? 0 },
+  });
+
+  revalidatePath(`/dashboard/pacientes/${orcamento.paciente_id}`);
+  revalidatePath('/dashboard/orcamentos');
+  return { valorAdicionado: Number(valorAdicionado ?? 0) };
+}
+
 /**
  * R-130 — corrige somente o valor que foi negociado com o paciente. `total` continua sendo a
  * proposta (soma dos itens) e nunca é reescrito aqui. Planos/parcelas são uma fotografia do
@@ -1314,8 +1388,9 @@ export async function criarProcedimentoRapido(dados: {
 }): Promise<{ error?: string; id?: string }> {
   const { supabase, user, clinicId } = await requireClinicContext();
 
-  const nome = dados.nome.trim();
+  const nome = normalizarNomeProcedimento(dados.nome);
   if (!nome) return { error: "Informe o nome do procedimento." };
+  if (nome.length > 160) return { error: "O nome do procedimento está longo demais." };
 
   const { data: dentistaPerfil } = await supabase
     .from("dentistas")
@@ -1346,6 +1421,22 @@ export async function criarProcedimentoRapido(dados: {
   }
 
   const dentistaAlvoId = dados.dentistaId ?? dentistaPerfil.id;
+
+  // R-135 — o catálogo é uma lista de nomes canônicos. Antes de inserir, reutiliza a mesma
+  // entrada do dentista ignorando diferença de maiúsculas/espaços, para não criar duplicata.
+  const { data: existentes, error: existentesError } = await supabase
+    .from('procedimentos')
+    .select('id, nome')
+    .eq('clinica_id', clinicId)
+    .eq('dentista_id', dentistaAlvoId);
+  if (existentesError) {
+    return { error: 'Não foi possível consultar o catálogo de procedimentos.' };
+  }
+  const chaveNome = nome.toLocaleLowerCase('pt-BR');
+  const existente = (existentes ?? []).find(
+    (procedimento) => normalizarNomeProcedimento(procedimento.nome).toLocaleLowerCase('pt-BR') === chaveNome,
+  );
+  if (existente) return { id: existente.id };
 
   const { data, error } = await supabase
     .from("procedimentos")
