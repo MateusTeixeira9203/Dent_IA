@@ -28,13 +28,14 @@ manter as ações sempre visíveis no rodapé.
 
 ### Validação visual de produção — 2026-08-27
 
-Os prints mostram que a API retorna a semana completa, mas `RetornoMobileAgenda` filtra a faixa
-para mostrar apenas dias com grade/ocupação. Isso aparenta saltos de data (ex.: 31/08–02/09,
-depois 07/09–09/09) e o título “30 de ago” não deixa claro o intervalo completo. A correção deve
-manter os sete dias na ordem cronológica, com dia sem expediente visível e estado vazio; o padrão
-de seleção continua sendo o primeiro dia que tiver horário livre. No desktop, a grade permite que
-as sete colunas encolham abaixo da largura de leitura e concatena os nomes dos dias; ela precisa
-ter largura mínima e rolagem horizontal só quando a viewport não couber.
+Os prints mostram que a API retorna a semana completa, mas `RetornoMobileAgenda` filtrava a faixa
+para mostrar apenas dias com grade/ocupação. Isso aparentava saltos de data (ex.: 31/08–02/09,
+depois 07/09–09/09). A faixa mobile agora mostra a semana de trabalho completa — segunda a
+sábado — em ordem cronológica, inclusive dia sem expediente. Domingo fica fora para os seis
+cartões caberem sem rolagem horizontal; os rótulos são abreviações fixas de três letras, não o
+nome longo retornado pelo locale. O padrão de seleção continua sendo o primeiro dia que tiver
+horário livre. No desktop, a grade recebe colunas mais largas e mostra apenas o nome do dia;
+mantém rolagem horizontal controlada quando a viewport não couber.
 
 ## 2. Decisão e alternativas descartadas
 
@@ -162,9 +163,9 @@ reimplementa a regra de colisão. Para cada bloco livre, enumera pelo `intervalo
 filtra pela duração escolhida. Mudança de duração recalcula os slots e limpa a seleção se ela
 deixar de estar livre.
 
-A faixa mobile mostra os dias configurados da semana; sábado/domingo aparecem quando houver
-expediente. Dia sem slot mostra estado vazio e continua navegável. O servidor permanece a decisão
-final, porque a agenda pode mudar entre carregar e confirmar.
+A faixa mobile mostra segunda a sábado da semana, com os seis cartões visíveis na largura móvel;
+domingo não é um destino móvel. Dia sem slot mostra estado vazio e continua navegável. O servidor
+permanece a decisão final, porque a agenda pode mudar entre carregar e confirmar.
 
 ### 4.4 Dados e segurança
 
@@ -220,7 +221,7 @@ abre Marcar retorno
 
 ## 6. Referência visual
 
-- **Artefato aprovado:** `plans/artefatos/R-137-retorno-protetico-responsivo-v3.html`
+- **Artefato aprovado:** `plans/artefatos/R-137-retorno-protetico-responsivo-v4.html`
 - **Rotas:** `/dashboard/pacientes/[id]` e `/dashboard/meu-dia`
 - **Componente:** `src/components/pacientes/marcar-retorno-modal.tsx`
 - **Temas:** light e dark obrigatórios; zero cor hardcoded na implementação.
@@ -245,10 +246,14 @@ Tokens extraídos por JavaScript do artefato servido em HTTP:
 **Estrutura e microcópia obrigatórias:**
 
 - Desktop: semana à esquerda; painel à direita alterna sem aumentar a largura/altura. Casco de
-  `960px` e até `680px` de altura, com conteúdo rolável e ações fora dele.
-- Mobile: Paciente ocupa uma linha; Data e Hora dividem a linha seguinte; faixa da semana;
-  “Horários livres”; duração; observações. O casco preserva margem da viewport e o rodapé com
-  Cancelar + CTA fica sempre visível.
+  até `1080px` e `calc(100vw - 1.5rem)`, até `680px` de altura, com conteúdo rolável e ações
+  fora dele.
+- Mobile: Paciente ocupa uma linha; Data e Hora dividem a linha seguinte; faixa de segunda a
+  sábado, sem domingo, com rótulos `Seg`, `Ter`, `Qua`, `Qui`, `Sex`, `Sáb`; “Horários livres”;
+  duração; observações. O casco preserva margem da viewport e o rodapé com Cancelar + CTA fica
+  sempre visível.
+- Desktop: a grade semanal preserva os sete dias, com colunas mínimas de `96px`, sem o número da
+  data no cabeçalho; a largura excedente usa rolagem horizontal controlada.
 - Etapa 2: “Enviar ao protético”, resumo “Retorno preservado”, Protético, Entrega até,
   O que precisa ser feito, Voltar ao retorno, Marcar retorno e enviar.
 - Depois de preenchido, voltar preserva os valores. Motion de troca 150–200 ms, sem fade solto,
@@ -259,7 +264,8 @@ Tokens extraídos por JavaScript do artefato servido em HTTP:
 - [ ] Perfil do paciente e Meu Dia usam o mesmo modal, tipos e fluxo de submit/retry.
 - [ ] Nenhuma query ou insert novo existe sem `clinica_id = active clinic`.
 - [ ] Desktop conserva grade semanal, ajuste de hora, duração livre e observações atuais.
-- [ ] Mobile nunca exige scroll horizontal; alvos tocáveis têm no mínimo 44px.
+- [ ] Mobile nunca exige scroll horizontal; os seis dias da semana de trabalho e os slots têm no
+  mínimo 44px.
 - [ ] Slots mobile vêm de `buscarDisponibilidadeSemana` + `slotEstaLivre`, nunca de cálculo paralelo.
 - [ ] O servidor continua decidindo conflito e fora do expediente no momento do submit.
 - [ ] Falha do pedido nunca desfaz silenciosamente o retorno nem exibe sucesso completo.
@@ -271,8 +277,10 @@ Tokens extraídos por JavaScript do artefato servido em HTTP:
 
 - [ ] Desktop 1280px: semana permanece visível ao alternar Retorno ↔ Protético; zero scroll novo
   causado pela etapa 2; voltar preserva todos os campos.
-- [ ] Mobile 360, 390 e 412px: dias e slots cabem sem corte/scroll horizontal; sábado/domingo
-  aparecem quando configurados; CTA permanece alcançável.
+- [ ] Mobile 360, 390 e 412px: segunda a sábado e slots cabem sem corte/scroll horizontal,
+  rótulos não se sobrepõem e CTA permanece alcançável.
+- [ ] Desktop: cabeçalho da semana tem somente os nomes dos dias; cada coluna tem pelo menos
+  `96px` e a barra horizontal só aparece quando a região da agenda não comportar a grade.
 - [ ] Alterar duração recalcula slots e remove seleção que deixou de caber.
 - [ ] Sem protético ativo, ação “Incluir protético” não renderiza e o retorno conclui normalmente.
 - [ ] Com protético, os dois registros compartilham paciente, dentista e `agendamento_id`.
