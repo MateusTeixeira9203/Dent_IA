@@ -103,22 +103,22 @@ export function MarcarRetornoModal({
 
   return (
     <Dialog open={open} onOpenChange={alterarAberto}>
-      <DialogContent showCloseButton={false} className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none gap-0 overflow-hidden rounded-[26px] border-border bg-surface p-0 md:max-h-[90vh] md:w-auto md:max-w-[1120px] md:rounded-2xl">
+      <DialogContent showCloseButton={false} className="flex h-[min(680px,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-none flex-col gap-0 overflow-hidden rounded-2xl border-border bg-surface p-0 md:h-[min(680px,calc(100dvh-3rem))] md:w-[min(960px,calc(100vw-3rem))] md:rounded-2xl">
         <DialogDescription className="sr-only">Agende o retorno de {pacienteNome}.</DialogDescription>
 
-        <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-4 md:px-6">
-          <DialogTitle className="font-heading text-xl font-semibold leading-tight text-text-primary">Marcar retorno</DialogTitle>
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-4 py-3 md:px-5">
+          <DialogTitle className="font-heading text-lg font-semibold leading-tight text-text-primary md:text-xl">Marcar retorno</DialogTitle>
           <button onClick={() => alterarAberto(false)} aria-label="Fechar" className="rounded-lg p-1.5 text-text-secondary transition-colors hover:bg-surface-alt hover:text-text-primary"><X className="h-4 w-4" /></button>
         </div>
 
-        <div className="grid grid-cols-1 gap-px border-b border-border bg-border md:grid-cols-3">
-          <div className="min-w-0 bg-surface px-4 py-3"><p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Paciente</p><p className="mt-0.5 truncate text-sm font-medium text-text-primary">{pacienteNome}</p></div>
-          <div className="bg-surface px-4 py-3"><p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Data</p><p className="mt-0.5 font-mono text-sm font-semibold text-text-primary">{form.data ? format(parseISO(form.data), 'EEE, dd/MM', { locale: ptBR }) : '—'}</p></div>
-          <div className="bg-surface px-4 py-3"><p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Hora</p><p className="mt-0.5 font-mono text-sm font-semibold text-text-primary">{form.minutoDoDia != null ? formatHora(form.minutoDoDia) : '—'}</p></div>
+        <div className="grid shrink-0 grid-cols-2 gap-px border-b border-border bg-border md:grid-cols-[minmax(0,1fr)_150px_100px]">
+          <div className="col-span-2 min-w-0 bg-surface px-4 py-2.5 md:col-span-1 md:px-5"><p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Paciente</p><p className="mt-0.5 truncate text-sm font-medium text-text-primary">{pacienteNome}</p></div>
+          <div className="bg-surface px-4 py-2.5"><p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Data</p><p className="mt-0.5 font-mono text-sm font-semibold text-text-primary">{form.data ? format(parseISO(form.data), 'EEE, dd/MM', { locale: ptBR }) : '—'}</p></div>
+          <div className="bg-surface px-4 py-2.5"><p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Hora</p><p className="mt-0.5 font-mono text-sm font-semibold text-text-primary">{form.minutoDoDia != null ? formatHora(form.minutoDoDia) : '—'}</p></div>
         </div>
 
-        <div className="flex min-h-0 flex-col overflow-y-auto md:flex-row md:overflow-visible">
-          <div className={`min-w-0 flex-1 p-4 md:max-h-[58vh] md:overflow-y-auto md:p-6 ${etapa === 'protetico' ? 'hidden md:block' : ''}`}>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
+          <div className={`min-w-0 flex-1 p-4 md:overflow-y-auto md:p-5 ${etapa === 'protetico' ? 'hidden md:block' : ''}`}>
             {precisaEscolherDentista && (
               <div className="mb-4 space-y-1">
                 <Label className="text-xs text-text-secondary">Dentista responsável *</Label>
@@ -132,7 +132,7 @@ export function MarcarRetornoModal({
             <div className="hidden md:block"><RetornoSemanaGrid dentistaId={dentistaAlvoId} duracaoMin={duracaoMin} selecionado={selecionado} onSelecionar={(data, minutoDoDia) => setForm((atual) => ({ ...atual, data, minutoDoDia }))} /></div>
           </div>
 
-          <div className="flex w-full flex-col border-t border-border md:w-[296px] md:shrink-0 md:border-t-0 md:border-l">
+          <div className="flex min-h-0 w-full flex-col border-t border-border md:w-[280px] md:shrink-0 md:overflow-y-auto md:border-t-0 md:border-l">
             {etapa === 'retorno' ? (
               <motion.div key="retorno" initial={reduzirMotion ? false : { opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: reduzirMotion ? 0 : 0.16, ease: 'easeOut' }} className="flex-1 space-y-4 p-4 md:p-5">
                 <div className="hidden space-y-2 md:block">
@@ -155,19 +155,24 @@ export function MarcarRetornoModal({
               </motion.div>
             )}
 
-            <div className="sticky bottom-0 z-10 space-y-2.5 border-t border-border bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:static md:p-5">
-              {error && <p className="rounded-lg bg-coral-pale p-2 text-xs text-coral-ink">{error}</p>}
-              {etapa === 'retorno' ? <>
-                {!error && !podeConfirmar && <p className="text-xs text-text-secondary">{dentistaAlvoId == null ? 'Escolha o dentista para ver a agenda.' : 'Escolha um horário livre para habilitar.'}</p>}
-                {proteticos?.length ? <Button type="button" variant="outline" onClick={incluirProtetico} disabled={saving || !podeConfirmar} className="min-h-11 w-full rounded-xl border-teal/40 text-teal-ink hover:bg-teal/5"><Stethoscope className="mr-2 h-4 w-4" />Incluir protético</Button> : null}
-                <Button onClick={onMarcarRetorno} disabled={saving || !podeConfirmar} className="min-h-11 w-full rounded-xl bg-teal-dark font-bold text-white hover:opacity-90 disabled:opacity-40">{saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</> : 'Marcar retorno'}</Button>
-                <button onClick={() => alterarAberto(false)} className="min-h-11 w-full py-1.5 text-sm font-medium text-text-secondary transition-colors hover:text-text-primary">Cancelar</button>
-              </> : <>
-                {pedidoPendente ? <Button onClick={onTentarEnviarPedido} disabled={saving} className="min-h-11 w-full rounded-xl bg-teal-dark font-bold text-white hover:opacity-90">{saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Enviando...</> : 'Tentar enviar novamente'}</Button> : <Button onClick={onMarcarRetorno} disabled={saving || !podeEnviar} className="min-h-11 w-full rounded-xl bg-teal-dark font-bold text-white hover:opacity-90 disabled:opacity-40">{saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</> : 'Marcar retorno e enviar'}</Button>}
-                <button type="button" onClick={() => setEtapa('retorno')} disabled={saving || pedidoPendente} className="flex min-h-11 w-full items-center justify-center gap-2 py-1.5 text-sm font-medium text-text-secondary transition-colors hover:text-text-primary disabled:opacity-40"><ArrowLeft className="h-4 w-4" />Voltar ao retorno</button>
-              </>}
-            </div>
           </div>
+        </div>
+        <div className="shrink-0 space-y-2.5 border-t border-border bg-surface p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:ml-auto md:w-[280px] md:border-l md:p-4">
+          {error && <p className="rounded-lg bg-coral-pale p-2 text-xs text-coral-ink">{error}</p>}
+          {etapa === 'retorno' ? <>
+            {!error && !podeConfirmar && <p className="text-xs text-text-secondary">{dentistaAlvoId == null ? 'Escolha o dentista para ver a agenda.' : 'Escolha um horário livre para habilitar.'}</p>}
+            {proteticos?.length ? <Button type="button" variant="outline" onClick={incluirProtetico} disabled={saving || !podeConfirmar} className="min-h-11 w-full rounded-xl border-teal/40 text-teal-ink hover:bg-teal/5"><Stethoscope className="mr-2 h-4 w-4" />Incluir protético</Button> : null}
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" variant="outline" onClick={() => alterarAberto(false)} disabled={saving} className="min-h-11 rounded-xl text-text-secondary hover:text-text-primary">Cancelar</Button>
+              <Button onClick={onMarcarRetorno} disabled={saving || !podeConfirmar} className="min-h-11 rounded-xl bg-teal-dark font-bold text-white hover:opacity-90 disabled:opacity-40">{saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</> : 'Marcar retorno'}</Button>
+            </div>
+          </> : <>
+            {pedidoPendente ? <Button onClick={onTentarEnviarPedido} disabled={saving} className="min-h-11 w-full rounded-xl bg-teal-dark font-bold text-white hover:opacity-90">{saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Enviando...</> : 'Tentar enviar novamente'}</Button> : <Button onClick={onMarcarRetorno} disabled={saving || !podeEnviar} className="min-h-11 w-full rounded-xl bg-teal-dark font-bold text-white hover:opacity-90 disabled:opacity-40">{saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</> : 'Marcar retorno e enviar'}</Button>}
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" variant="outline" onClick={() => alterarAberto(false)} disabled={saving || pedidoPendente} className="min-h-11 rounded-xl text-text-secondary hover:text-text-primary">Cancelar</Button>
+              <Button type="button" variant="outline" onClick={() => setEtapa('retorno')} disabled={saving || pedidoPendente} className="min-h-11 rounded-xl text-text-secondary hover:text-text-primary"><ArrowLeft className="mr-1.5 h-4 w-4" />Voltar</Button>
+            </div>
+          </>}
         </div>
       </DialogContent>
     </Dialog>
