@@ -26,6 +26,16 @@ com “Cancelar” fica fora da área alcançável. A direção aprovada inicial
 pontos: o próximo artefato precisa compactar o resumo para Paciente + Data/Hora lado a lado e
 manter as ações sempre visíveis no rodapé.
 
+### Validação visual de produção — 2026-08-27
+
+Os prints mostram que a API retorna a semana completa, mas `RetornoMobileAgenda` filtra a faixa
+para mostrar apenas dias com grade/ocupação. Isso aparenta saltos de data (ex.: 31/08–02/09,
+depois 07/09–09/09) e o título “30 de ago” não deixa claro o intervalo completo. A correção deve
+manter os sete dias na ordem cronológica, com dia sem expediente visível e estado vazio; o padrão
+de seleção continua sendo o primeiro dia que tiver horário livre. No desktop, a grade permite que
+as sete colunas encolham abaixo da largura de leitura e concatena os nomes dos dias; ela precisa
+ter largura mínima e rolagem horizontal só quando a viewport não couber.
+
 ## 2. Decisão e alternativas descartadas
 
 | Decisão | Alternativa descartada | Motivo |
@@ -210,7 +220,7 @@ abre Marcar retorno
 
 ## 6. Referência visual
 
-- **Artefato aprovado:** `plans/artefatos/R-137-retorno-protetico-responsivo-v2.html`
+- **Artefato aprovado:** `plans/artefatos/R-137-retorno-protetico-responsivo-v3.html`
 - **Rotas:** `/dashboard/pacientes/[id]` e `/dashboard/meu-dia`
 - **Componente:** `src/components/pacientes/marcar-retorno-modal.tsx`
 - **Temas:** light e dark obrigatórios; zero cor hardcoded na implementação.
