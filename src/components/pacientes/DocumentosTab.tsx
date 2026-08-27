@@ -463,8 +463,8 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
       />
 
       {/* Filtros e ações */}
-      <div className="flex flex-wrap items-center justify-between gap-4 bg-surface p-4 rounded-2xl border border-border shadow-sm">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:gap-4">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4">
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-text-secondary" />
             <span className="text-sm font-semibold text-text-primary">Filtrar por:</span>
@@ -473,7 +473,7 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
           <select
             value={filterMonth}
             onChange={(e) => setFilterMonth(e.target.value)}
-            className="bg-surface-alt border border-border rounded-lg px-3 py-1.5 text-xs font-bold text-text-primary outline-none focus:border-teal transition-colors"
+            className="min-h-11 flex-1 rounded-lg border border-border bg-surface-alt px-3 py-1.5 text-xs font-bold text-text-primary outline-none transition-colors focus:border-teal sm:min-h-0 sm:flex-none"
           >
             <option value="">Todos os Meses</option>
             {months.map(m => <option key={m} value={m}>{m}</option>)}
@@ -482,7 +482,7 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
           <select
             value={filterYear}
             onChange={(e) => setFilterYear(e.target.value)}
-            className="bg-surface-alt border border-border rounded-lg px-3 py-1.5 text-xs font-bold text-text-primary outline-none focus:border-teal transition-colors"
+            className="min-h-11 flex-1 rounded-lg border border-border bg-surface-alt px-3 py-1.5 text-xs font-bold text-text-primary outline-none transition-colors focus:border-teal sm:min-h-0 sm:flex-none"
           >
             <option value="">Todos os Anos</option>
             {years.map(y => <option key={y} value={y}>{y}</option>)}
@@ -491,18 +491,18 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
           {(filterMonth || filterYear) && (
             <button
               onClick={() => { setFilterMonth(''); setFilterYear(''); }}
-              className="text-xs font-bold text-red-500 hover:text-red-600 transition-colors"
+              className="min-h-11 px-1 text-xs font-bold text-red-500 transition-colors hover:text-red-600 sm:min-h-0"
             >
               Limpar Filtros
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:gap-3">
           {/* Botão de modo seleção */}
           <button
             onClick={() => setSoEmitidos((s) => !s)}
-            className={`text-xs px-3 py-1.5 rounded-lg font-bold transition-colors ${
+            className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors sm:min-h-0 ${
               soEmitidos
                 ? 'bg-teal text-white'
                 : 'bg-surface-alt text-text-secondary hover:bg-border'
@@ -513,7 +513,7 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
 
           <button
             onClick={() => { setModoSelecao(!modoSelecao); if (modoSelecao) setSelecionados([]); }}
-            className={`text-xs px-3 py-1.5 rounded-lg font-bold transition-colors ${
+            className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors sm:min-h-0 ${
               modoSelecao
                 ? 'bg-teal text-white'
                 : 'bg-surface-alt text-text-secondary hover:bg-border'
@@ -522,44 +522,40 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
             {modoSelecao ? `${selecionados.length} selecionado(s)` : 'Selecionar'}
           </button>
 
-          <div className="relative">
+          <div className="relative order-first w-full basis-full sm:order-none sm:basis-auto sm:w-64">
             <Search className="w-4 h-4 text-text-secondary absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => handleSearchChange(e.target.value)}
               placeholder="Buscar arquivo..."
-              className="bg-surface-alt border border-border rounded-lg pl-9 pr-4 py-1.5 text-xs font-medium text-text-primary outline-none focus:border-teal transition-colors w-64"
+              className="min-h-11 w-full rounded-lg border border-border bg-surface-alt py-1.5 pl-9 pr-4 text-xs font-medium text-text-primary outline-none transition-colors focus:border-teal sm:min-h-0"
             />
           </div>
 
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading || fotosNaFila.length > 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-teal text-white rounded-lg text-xs font-bold hover:bg-teal-lt transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isUploading && uploadProgress ? (
-              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {uploadProgress.current}/{uploadProgress.total}</>
-            ) : isUploading ? (
-              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Enviando...</>
-            ) : (
-              <><Plus className="w-3.5 h-3.5" /> Adicionar</>
-            )}
-          </button>
-          <button
-            onClick={() => cameraInputRef.current?.click()}
-            disabled={isUploading || fotosNaFila.length > 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-teal/30 text-teal-ink rounded-lg text-xs font-bold hover:bg-teal/10 transition-colors disabled:opacity-50"
-          >
-            <Camera className="w-3.5 h-3.5" /> Tirar foto
-          </button>
-          <button
-            onClick={() => fotosInputRef.current?.click()}
-            disabled={isUploading || fotosNaFila.length > 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-teal/30 text-teal-ink rounded-lg text-xs font-bold hover:bg-teal/10 transition-colors disabled:opacity-50"
-          >
-            <Images className="w-3.5 h-3.5" /> Selecionar fotos
-          </button>
+          <div className="grid w-full basis-full grid-cols-3 gap-2 sm:w-auto sm:basis-auto sm:flex sm:gap-3">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading || fotosNaFila.length > 0}
+              className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-teal px-2 py-1.5 text-center text-xs font-bold text-white transition-colors hover:bg-teal-lt disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0 sm:px-3"
+            >
+              {isUploading && uploadProgress ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> {uploadProgress.current}/{uploadProgress.total}</> : isUploading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Enviando...</> : <><Plus className="h-3.5 w-3.5 shrink-0" /> Adicionar</>}
+            </button>
+            <button
+              onClick={() => cameraInputRef.current?.click()}
+              disabled={isUploading || fotosNaFila.length > 0}
+              className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-teal/30 px-2 py-1.5 text-center text-xs font-bold text-teal-ink transition-colors hover:bg-teal/10 disabled:opacity-50 sm:min-h-0 sm:px-3"
+            >
+              <Camera className="h-3.5 w-3.5 shrink-0" /> Tirar foto
+            </button>
+            <button
+              onClick={() => fotosInputRef.current?.click()}
+              disabled={isUploading || fotosNaFila.length > 0}
+              className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-teal/30 px-2 py-1.5 text-center text-xs font-bold text-teal-ink transition-colors hover:bg-teal/10 disabled:opacity-50 sm:min-h-0 sm:px-3"
+            >
+              <Images className="h-3.5 w-3.5 shrink-0" /> Selecionar fotos
+            </button>
+          </div>
         </div>
       </div>
 
