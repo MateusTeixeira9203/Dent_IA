@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { addWeeks, endOfWeek, format, startOfWeek, subWeeks } from 'date-fns';
+import { addDays, addWeeks, endOfWeek, format, startOfWeek, subWeeks } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { buscarDisponibilidadeSemana } from '@/server/agenda/buscar-disponibilidade';
@@ -28,6 +28,15 @@ function diaTemHorarioLivre(dia: DisponibilidadeDia, duracaoMin: number): boolea
     return false;
   });
 }
+
+const DIA_LABEL_MOBILE: Record<number, string> = {
+  1: 'Seg',
+  2: 'Ter',
+  3: 'Qua',
+  4: 'Qui',
+  5: 'Sex',
+  6: 'Sáb',
+};
 
 export function RetornoMobileAgenda({
   dentistaId,
@@ -60,7 +69,13 @@ export function RetornoMobileAgenda({
     return () => { cancelado = true; };
   }, [dentistaId, semanaInicioISO]);
 
-  const diasSemana = dias ?? [];
+  // A API continua retornando domingo–sábado para manter o contrato compartilhado com
+  // a grade desktop. No mobile, domingo não entra na faixa: seis cartões de 44px cabem
+  // inteiros na viewport e a semana de trabalho fica legível sem rolagem horizontal.
+  const diasSemana = useMemo(
+    () => (dias ?? []).filter((dia) => dia.diaSemana !== 0),
+    [dias],
+  );
   const diaAtivo = diasSemana.find((dia) => dia.data === diaAberto)
     ?? diasSemana.find((dia) => dia.data === selecionado?.data)
     ?? diasSemana.find((dia) => dia.data === hojeISO() && diaTemHorarioLivre(dia, duracaoMin))
@@ -101,7 +116,7 @@ export function RetornoMobileAgenda({
           <ChevronLeft className="h-4 w-4" />
         </button>
         <p className="min-w-0 truncate text-center text-xs font-semibold text-text-primary">
-          {format(semanaInicio, 'd MMM', { locale: ptBR })} – {format(endOfWeek(semanaInicio, { weekStartsOn: 0 }), 'd MMM', { locale: ptBR })}
+          {format(addDays(semanaInicio, 1), 'd MMM', { locale: ptBR })} – {format(endOfWeek(semanaInicio, { weekStartsOn: 0 }), 'd MMM', { locale: ptBR })}
         </p>
         <button
           type="button"
@@ -118,10 +133,10 @@ export function RetornoMobileAgenda({
       ) : !dias ? (
         <div className="flex h-20 items-center justify-center rounded-xl border border-border bg-surface-alt/40"><Loader2 className="h-5 w-5 animate-spin text-text-secondary" /></div>
       ) : diasSemana.length === 0 ? (
-        <p className="rounded-xl border border-border bg-surface-alt/50 px-3 py-4 text-center text-sm text-text-secondary">Sem expediente nesta semana.</p>
+        <p className="rounded-xl border border-border bg-surface-alt/50 px-3 py-4 text-center text-sm text-text-secondary">Sem expediente de segunda a sábado.</p>
       ) : (
         <>
-          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+          <div className="grid grid-cols-6 gap-2">
             {diasSemana.map((dia) => {
               const ativo = dia.data === diaAtivo?.data;
               const semExpediente = dia.livres.length === 0;
@@ -131,11 +146,11 @@ export function RetornoMobileAgenda({
                   type="button"
                   onClick={() => setDiaAberto(dia.data)}
                   aria-pressed={ativo}
-                  className={`min-h-[52px] w-11 shrink-0 rounded-xl border px-1 py-1.5 text-center transition-colors ${
+                  className={`min-h-[52px] min-w-0 rounded-xl border px-1 py-1.5 text-center transition-colors ${
                     ativo ? 'border-teal bg-teal/10 text-teal-ink' : semExpediente ? 'border-border bg-surface-alt/30 text-text-secondary/60' : 'border-border bg-surface-alt/50 text-text-secondary hover:border-teal/40'
                   }`}
                 >
-                  <span className="block text-[10px] font-bold uppercase tracking-wide">{format(new Date(`${dia.data}T12:00:00`), 'EEE', { locale: ptBR })}</span>
+                  <span className="block text-[10px] font-bold uppercase tracking-normal">{DIA_LABEL_MOBILE[dia.diaSemana]}</span>
                   <span className="mt-0.5 block text-base font-bold leading-none">{format(new Date(`${dia.data}T12:00:00`), 'd')}</span>
                 </button>
               );

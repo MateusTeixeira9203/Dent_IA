@@ -103,7 +103,7 @@ export function MarcarRetornoModal({
 
   return (
     <Dialog open={open} onOpenChange={alterarAberto}>
-      <DialogContent showCloseButton={false} className="flex h-[min(680px,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-none flex-col gap-0 overflow-hidden rounded-2xl border-border bg-surface p-0 md:h-[min(680px,calc(100dvh-3rem))] md:w-[min(960px,calc(100vw-3rem))] md:rounded-2xl">
+      <DialogContent showCloseButton={false} className="flex h-[min(680px,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-none flex-col gap-0 overflow-hidden rounded-2xl border-border bg-surface p-0 md:h-[min(680px,calc(100dvh-3rem))] md:w-[min(1080px,calc(100vw-1.5rem))] md:rounded-2xl">
         <DialogDescription className="sr-only">Agende o retorno de {pacienteNome}.</DialogDescription>
 
         <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-4 py-3 md:px-5">
