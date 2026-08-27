@@ -8,9 +8,13 @@ interface NavigatorWithStandalone extends Navigator {
   standalone?: boolean;
 }
 
-function estaEmStandalone(): boolean {
-  return window.matchMedia('(display-mode: standalone)').matches
-    || (window.navigator as NavigatorWithStandalone).standalone === true;
+function estaEmPwaInstalado(): boolean {
+  const emModoAplicativo = ['standalone', 'fullscreen', 'minimal-ui']
+    .some((modo) => window.matchMedia(`(display-mode: ${modo})`).matches);
+
+  return emModoAplicativo
+    || (window.navigator as NavigatorWithStandalone).standalone === true
+    || document.referrer.startsWith('android-app://');
 }
 
 /**
@@ -20,25 +24,22 @@ function estaEmStandalone(): boolean {
  */
 export function PwaLaunchIntro(): React.JSX.Element | null {
   const [visivel, setVisivel] = useState(true);
+  const [pwaAtivo, setPwaAtivo] = useState(false);
   const [wordmarkVisivel, setWordmarkVisivel] = useState(false);
   const reduzirMotion = useReducedMotion();
 
   useEffect(() => {
-    if (!estaEmStandalone()) {
-      const esconderNoNavegador = window.setTimeout(() => setVisivel(false), 0);
-      return () => window.clearTimeout(esconderNoNavegador);
-    }
+    if (!estaEmPwaInstalado() || reduzirMotion) return;
 
-    if (reduzirMotion) {
-      const removerImediato = window.setTimeout(() => setVisivel(false), 0);
-      return () => window.clearTimeout(removerImediato);
-    }
-
+    // A ativação só acontece no cliente. Assim a proteção do CSS não pode esconder a
+    // abertura no WebAPK Android depois da splash nativa.
+    const ativar = window.setTimeout(() => setPwaAtivo(true), 0);
     // O símbolo precisa repousar antes de revelar a marca; sem isso a transição parece um flash.
     const revelarWordmark = window.setTimeout(() => setWordmarkVisivel(true), 180);
     // 820 ms de composição + saída de 180 ms = cerca de 1 s sobre o conteúdo, sem esperar dados.
     const fechar = window.setTimeout(() => setVisivel(false), 820);
     return () => {
+      window.clearTimeout(ativar);
       window.clearTimeout(revelarWordmark);
       window.clearTimeout(fechar);
     };
@@ -48,10 +49,10 @@ export function PwaLaunchIntro(): React.JSX.Element | null {
 
   return (
     <AnimatePresence>
-      {visivel && (
+      {visivel && pwaAtivo && (
         <motion.div
           aria-hidden="true"
-          className="pwa-launch-intro fixed inset-0 z-[100] items-center justify-center overflow-hidden bg-brand-charcoal"
+          className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-brand-charcoal"
           initial={false}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

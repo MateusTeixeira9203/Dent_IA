@@ -91,8 +91,9 @@ Campos fixos:
 ### Introdução — `PwaLaunchIntro`
 
 `src/components/pwa/pwa-launch-intro.tsx` é um Client Component montado uma única vez no
-`RootLayout`. A sobreposição renderiza no HTML inicial, mas CSS a exibe somente com
-`display-mode: standalone`; a detecção em JavaScript também cobre `navigator.standalone` no iOS.
+`RootLayout`. A sobreposição só é montada pelo cliente após detectar um modo de aplicativo
+(`standalone`, `fullscreen` ou `minimal-ui`), `navigator.standalone` no iOS ou o lançamento
+`android-app://` no Android. Assim a regra CSS não pode suprimir a abertura após a splash nativa.
 
 - `OdontoIALogo` existente começa centralizado; após 180 ms move apenas `transform: translateX(-52px)`;
 - wordmark `Odonto.IA` entra com opacidade, deslocamento de 12 px e blur de 2 px → 0;
@@ -155,6 +156,9 @@ Não há tela nova. O componente ocupa o slot PWA aprovado do R-121 na landing:
 ### Abertura standalone
 
 - **Artefato aprovado:** `plans/artefatos/R-116-pwa-abertura.html`.
+- **Observação de validação (27/08, Android):** vídeo do PWA instalado mostrou apenas a splash
+  nativa do Android com o símbolo central; a composição símbolo → wordmark não ficou visível.
+  A detecção passou a cobrir os modos alternativos e o lançamento `android-app://`.
 - Fundo: `--color-brand-charcoal` (`#0d0d0d`); símbolo: `--color-teal` (`#2f9c85`);
   wordmark: `--color-text-primary` (`#fafafa` no escuro).
 - Tipografia: `DM Serif Display` para “Odonto.IA”; não introduz fonte, cor ou logo novo.

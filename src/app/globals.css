@@ -316,17 +316,6 @@
 body.has-dock { --dock-inset: 0px; }
 @media (min-width: 768px) { body.has-dock { --dock-inset: 112px; } }
 
-/* R-116 — a introdução precisa existir desde o primeiro paint do PWA, mas nunca pode piscar
-   no navegador comum. O componente ainda confirma `navigator.standalone` para o Safari iOS. */
-.pwa-launch-intro { display: none; }
-@media (display-mode: standalone) {
-  .pwa-launch-intro { display: flex; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .pwa-launch-intro { display: none !important; }
-}
-
-
 /* ── Legibilidade mínima — texto micro (ambos os modos) ────────── */
 @layer utilities {
   .text-\[8px\]    { font-size: 10px; }
