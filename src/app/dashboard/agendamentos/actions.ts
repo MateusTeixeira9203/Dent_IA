@@ -772,7 +772,7 @@ export async function criarEncaixe(dados: {
 }
 
 // R-94 — pedido solto pro protético (sem vínculo com procedimento/orçamento, spec §2).
-export const criarPedidoProteticoSchema = z.object({
+const criarPedidoProteticoSchema = z.object({
   pacienteId:    z.string().uuid(),
   proteticoId:   z.string().uuid(),
   observacao:    z.string().trim().min(1, "Descreva o que o protético precisa saber."),
