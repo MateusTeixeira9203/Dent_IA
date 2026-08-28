@@ -214,9 +214,9 @@ export function WeekView({
 
   return (
     <>
-      {/* Celular: resumo navegável por dia. A grade de 7×13 horas continua no desktop,
-          mas no toque ela escondia dias e deixava o usuário sem uma ação clara. */}
-      <div className="space-y-3 p-3 md:hidden">
+      {/* A lista abaixo foi substituída pela própria grade no celular. Mantemos o bloco
+          temporariamente escondido para não duplicar a regra de agendamento em duas UIs. */}
+      <div className="hidden">
         <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-surface px-2 py-2">
           <button
             type="button"
@@ -307,54 +307,45 @@ export function WeekView({
         })}
       </div>
 
-      <div className="hidden flex-col md:flex">
+      <div className="flex flex-col">
       {/* Week navigation header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-alt/40 shrink-0">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between px-2 py-2 border-b border-border bg-surface-alt/40 shrink-0 md:px-4 md:py-3">
+        <div className="flex min-w-0 items-center gap-1 md:gap-2">
           <button
             onClick={() => onWeekChange(subWeeks(selectedWeek, 1))}
-            className="h-11 w-11 shrink-0 hover:bg-surface rounded-lg transition-colors border border-border flex items-center justify-center"
+            className="h-10 w-10 shrink-0 hover:bg-surface rounded-lg transition-colors border border-border flex items-center justify-center md:h-11 md:w-11"
           >
             <ChevronLeft className="w-4 h-4 text-text-secondary" />
           </button>
-          <span className="text-sm font-semibold text-text-primary">
+          <span className="min-w-0 text-center text-xs font-semibold text-text-primary md:text-sm">
             {format(weekStart, "d 'de' MMM", { locale: ptBR })} –{' '}
-            {format(weekEnd, "d 'de' MMM yyyy", { locale: ptBR })}
+            {format(weekEnd, "d 'de' MMM", { locale: ptBR })}<span className="hidden md:inline"> {format(weekEnd, 'yyyy')}</span>
           </span>
           <button
             onClick={() => onWeekChange(addWeeks(selectedWeek, 1))}
-            className="h-11 w-11 shrink-0 hover:bg-surface rounded-lg transition-colors border border-border flex items-center justify-center"
+            className="h-10 w-10 shrink-0 hover:bg-surface rounded-lg transition-colors border border-border flex items-center justify-center md:h-11 md:w-11"
           >
             <ChevronRight className="w-4 h-4 text-text-secondary" />
           </button>
         </div>
         <button
           onClick={() => onWeekChange(new Date())}
-          className="min-h-11 text-xs font-semibold text-teal hover:opacity-80 transition-colors px-3 py-1.5 rounded-lg bg-teal/5 hover:bg-teal/10"
+          className="min-h-10 shrink-0 text-xs font-semibold text-teal hover:opacity-80 transition-colors px-2 py-1.5 rounded-lg bg-teal/5 hover:bg-teal/10 md:min-h-11 md:px-3"
         >
           Hoje
         </button>
       </div>
 
-      {/* R-111 §4.3 — a semana ROLA na horizontal em vez de cortar. Medido em 14/08 no celular:
-          504px de conteúdo em 342px visíveis, sem scroll nenhum — quinta, sexta e sábado eram
-          inalcançáveis, e a coluna de HOJE caía justamente no pedaço cortado.
-
-          O scroll começa aqui e não no topo do componente de propósito: a barra de navegação da
-          semana (‹ 9 de ago – 15 de ago › Hoje) tem que ficar parada. São as 3 faixas alinhadas
-          — cabeçalho de dias, mapa de carga e grade cheia — que precisam andar juntas, e por
-          isso o `min-w` vai no wrapper que abraça as três, nunca em cada uma.
-
-          600px = os 144px do gutter `w-36` + 7 colunas de ~65px. Inerte no desktop, onde o
-          container já passa disso. */}
+      {/* No celular as sete colunas cabem juntas: 28px de horas + 7×44px de dia.
+          A mesma grade continua rolando apenas quando houver mais largura de conteúdo no desktop. */}
       <div className="relative">
         <div className="overflow-x-auto">
-          <div className="min-w-[600px]">
+          <div className="min-w-[336px] md:min-w-[600px]">
       {/* Day headers — vale nos dois estados; é o atalho pro Dia daquela data.
           w-36 tem que bater com a coluna de nome do mapa de carga logo abaixo e com o
           gutter de hora da grade cheia — as 3 faixas alinham as mesmas 7 colunas. */}
       <div className="flex border-b border-border shrink-0 bg-surface-alt/30">
-        <div className="w-36 shrink-0" />
+        <div className="w-7 shrink-0 md:w-36" />
         {days.map(day => {
           const isToday = isDateToday(day);
           const key     = format(day, 'yyyy-MM-dd');
@@ -363,18 +354,18 @@ export function WeekView({
             <div
               key={key}
               onClick={() => onDayClick(day)}
-              className="flex-1 text-center py-2.5 cursor-pointer hover:bg-surface-alt transition-colors"
+              className="flex-1 min-w-0 cursor-pointer py-2 text-center transition-colors hover:bg-surface-alt md:py-2.5"
             >
-              <div className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${isToday ? 'text-teal' : 'text-text-secondary'}`}>
+              <div className={`mb-1 text-[8px] font-bold uppercase leading-none tracking-normal md:text-[10px] md:tracking-widest ${isToday ? 'text-teal' : 'text-text-secondary'}`}>
                 {format(day, 'EEE', { locale: ptBR })}
               </div>
-              <div className={`text-lg font-bold leading-none rounded-full w-8 h-8 flex items-center justify-center mx-auto ${
+              <div className={`mx-auto flex h-6 w-6 items-center justify-center rounded-full text-base font-bold leading-none md:h-8 md:w-8 md:text-lg ${
                 isToday ? 'bg-teal text-white' : 'text-text-primary'
               }`}>
                 {format(day, 'd')}
               </div>
               {count > 0 && (
-                <div className="text-[10px] text-teal font-semibold mt-0.5">{count}x</div>
+                <div className="mt-0.5 hidden text-[10px] font-semibold text-teal md:block">{count}x</div>
               )}
             </div>
           );
@@ -402,12 +393,12 @@ export function WeekView({
                 {/* pl-3: respiro do nome contra a borda arredondada do painel (achado pelo
                     Mateus no print). Só o padding INTERNO muda — a largura w-36 continua a
                     mesma, então isto não mexe no alinhamento das 7 colunas de dia. */}
-                <div className="w-36 shrink-0 flex items-center gap-2 h-[62px] min-w-0 pl-3 pr-2">
+                <div className="flex h-[62px] w-7 shrink-0 items-center gap-2 overflow-hidden md:w-36 md:min-w-0 md:pl-3 md:pr-2">
                   <span
-                    className="w-2 h-2 rounded-full shrink-0"
+                    className="hidden h-2 w-2 shrink-0 rounded-full md:block"
                     style={{ background: corDoDentista(d.slot) }}
                   />
-                  <span className="text-xs font-semibold text-text-primary truncate">{d.nome}</span>
+                  <span className="hidden truncate text-xs font-semibold text-text-primary md:block">{d.nome}</span>
                 </div>
                 {days.map((day, i) => {
                   const count = cargaPorDentistaDia.get(d.id)?.[i] ?? 0;
@@ -451,11 +442,11 @@ export function WeekView({
           <div className="flex" style={{ height: `${totalHeight}px` }}>
             {/* Time gutter — w-36 pra bater com o cabeçalho de dias e o mapa de carga acima
                 (mesma faixa esquerda nos 3); "07h" continua colado à direita do próprio texto. */}
-            <div className="w-36 shrink-0 relative">
+            <div className="relative w-7 shrink-0 md:w-36">
               {hours.map(h => (
                 <div
                   key={h}
-                  className="absolute w-full flex items-start justify-end pr-2 pt-0.5"
+                  className="absolute flex w-full items-start justify-end pr-1 pt-0.5 md:pr-2"
                   style={{ top: `${(h - HOUR_START) * SLOT_HEIGHT}px`, height: `${SLOT_HEIGHT}px` }}
                 >
                   <span className="text-[10px] font-mono text-text-secondary/50">
@@ -573,13 +564,6 @@ export function WeekView({
       )}
           </div>
         </div>
-        {/* Dica de que tem mais semana pra direita. Só no celular — no desktop a semana cabe
-            inteira e a faixa seria sujeira. `pointer-events-none` pra não roubar o clique da
-            coluna de sábado, que fica bem embaixo dela. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface to-transparent md:hidden"
-        />
       </div>
       </div>
     </>

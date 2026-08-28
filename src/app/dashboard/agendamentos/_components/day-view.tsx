@@ -165,9 +165,8 @@ export function DayView({
 
   return (
     <>
-      {/* No celular, a agenda do dia é uma lista de atendimento — não uma miniatura
-          da grade. A grade continua intacta a partir de sm. */}
-      <div className="flex flex-col gap-3 p-3 md:hidden">
+      {/* A lista foi substituída pela grade no celular para preservar o panorama do dia. */}
+      <div className="hidden">
         <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-surface px-2 py-2">
           <button
             type="button"
@@ -252,18 +251,18 @@ export function DayView({
         </div>
       </div>
 
-      <div className="hidden h-full flex-col md:flex">
+      <div className="flex h-full flex-col">
       {/* Navigation header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-alt/40 shrink-0">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between px-2 py-2 border-b border-border bg-surface-alt/40 shrink-0 md:px-4 md:py-3">
+        <div className="flex min-w-0 items-center gap-1 md:gap-2">
           <button
             onClick={() => onDateChange(subDays(selectedDate, 1))}
-            className="h-11 w-11 shrink-0 hover:bg-surface rounded-lg transition-colors border border-border flex items-center justify-center"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border transition-colors hover:bg-surface md:h-11 md:w-11"
           >
             <ChevronLeft className="w-4 h-4 text-text-secondary" />
           </button>
-          <div className="text-center px-2">
-            <div className={`text-base font-bold capitalize ${isToday ? 'text-teal' : 'text-text-primary'}`}>
+          <div className="min-w-0 px-1 text-center md:px-2">
+            <div className={`truncate text-sm font-bold capitalize md:text-base ${isToday ? 'text-teal' : 'text-text-primary'}`}>
               {format(selectedDate, "EEEE, d 'de' MMMM", { locale: ptBR })}
             </div>
             {isToday && (
@@ -274,22 +273,22 @@ export function DayView({
           </div>
           <button
             onClick={() => onDateChange(addDays(selectedDate, 1))}
-            className="h-11 w-11 shrink-0 hover:bg-surface rounded-lg transition-colors border border-border flex items-center justify-center"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border transition-colors hover:bg-surface md:h-11 md:w-11"
           >
             <ChevronRight className="w-4 h-4 text-text-secondary" />
           </button>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-text-secondary font-medium">
+        <div className="flex shrink-0 items-center gap-1 md:gap-3">
+          <span className="hidden text-sm font-medium text-text-secondary sm:inline">
             {dayApts.length} consulta{dayApts.length !== 1 ? 's' : ''}
           </span>
           <button
             onClick={() => onDateChange(new Date())}
-            className="min-h-11 text-xs font-semibold text-teal hover:opacity-80 transition-colors px-3 py-1.5 rounded-lg bg-teal/5 hover:bg-teal/10 flex items-center gap-1.5"
+          className="flex min-h-10 items-center gap-1.5 rounded-lg bg-teal/5 px-2 py-1.5 text-xs font-semibold text-teal transition-colors hover:bg-teal/10 hover:opacity-80 md:min-h-11 md:px-3"
           >
             Hoje
-            <kbd className="font-mono text-[10px] bg-teal/10 rounded px-1 py-0.5 leading-none text-teal/60">T</kbd>
+            <kbd className="hidden rounded bg-teal/10 px-1 py-0.5 font-mono text-[10px] leading-none text-teal/60 md:block">T</kbd>
           </button>
         </div>
       </div>
@@ -299,11 +298,11 @@ export function DayView({
       <div className="flex-1 overflow-auto">
         <div className="flex" style={{ height: `${totalHeight}px` }}>
           {/* Time gutter */}
-          <div className="w-16 shrink-0 relative border-r border-border/40 sticky left-0 bg-surface z-10">
+          <div className="sticky left-0 z-10 relative w-10 shrink-0 border-r border-border/40 bg-surface md:w-16">
             {hours.map(h => (
               <div
                 key={h}
-                className="absolute w-full flex items-start justify-end pr-3 pt-0.5"
+                  className="absolute flex w-full items-start justify-end pr-1 pt-0.5 md:pr-3"
                 style={{ top: `${(h - HOUR_START) * SLOT_HEIGHT}px`, height: `${SLOT_HEIGHT}px` }}
               >
                 <span className="text-[11px] font-mono text-text-secondary/50">

@@ -2065,7 +2065,7 @@ export function AgendamentosClient({
         */}
         <DialogContent
           showCloseButton={false}
-          className="max-w-lg sm:max-w-[720px] rounded-2xl bg-surface border-border p-0 gap-0 overflow-hidden"
+          className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-lg flex-col gap-0 overflow-hidden rounded-2xl border-border bg-surface p-0 sm:max-h-[calc(100dvh-2rem)] sm:w-auto sm:max-w-[720px]"
         >
           {selectedApt && (
             <AnimatePresence mode="wait">
@@ -2078,24 +2078,25 @@ export function AgendamentosClient({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.15 }}
+                  className="flex min-h-0 flex-1 flex-col overflow-y-auto"
                 >
                   {/* ── Cabeçalho (R-27b) ─────────────────────────────────
                       Canto direito reservado: Ver Ficha + ✕ nunca colidem — X próprio no
                       layout, não o absolute do DialogContent (showCloseButton={false}
                       acima). Antes, os dois disputavam o mesmo canto por construção. */}
-                  <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-border">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <DialogTitle className="font-heading font-semibold text-xl text-text-primary leading-tight truncate">
+                  <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
+                    <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                      <DialogTitle className="truncate font-heading text-lg font-semibold leading-tight text-text-primary sm:text-xl">
                         {selectedApt.paciente?.nome ?? '—'}
                       </DialogTitle>
                       <StatusBadge status={selectedApt.status as AgendamentoStatus} />
                       <DialogDescription className="sr-only">Detalhes do agendamento clínico.</DialogDescription>
                     </div>
-                    <div className="flex items-center gap-4 shrink-0">
+                    <div className="flex shrink-0 items-center gap-2 sm:gap-4">
                       {selectedApt.paciente && (
                         <button
                           onClick={() => router.push(`/dashboard/pacientes/${selectedApt.paciente?.id}`)}
-                          className="text-teal-ink text-xs font-semibold flex items-center gap-1 hover:opacity-80 transition-opacity"
+                          className="hidden items-center gap-1 text-xs font-semibold text-teal-ink transition-opacity hover:opacity-80 sm:flex"
                         >
                           Ver Ficha <ExternalLink className="w-3 h-3" />
                         </button>
@@ -2116,24 +2117,24 @@ export function AgendamentosClient({
                   <div className={`grid gap-px border-b border-border bg-border ${
                     isSecretaria && selectedApt.dentista ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'
                   }`}>
-                    <div className="bg-surface px-4 py-3">
+                    <div className="bg-surface px-3 py-3 sm:px-4">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Data</p>
                       <p className="font-mono text-sm font-semibold text-text-primary mt-0.5">
                         {format(parseISO(selectedApt.data_hora), 'dd/MM/yyyy')}
                       </p>
                     </div>
-                    <div className="bg-surface px-4 py-3">
+                    <div className="bg-surface px-3 py-3 sm:px-4">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Hora</p>
                       <p className="font-mono text-sm font-semibold text-text-primary mt-0.5">
                         {format(parseISO(selectedApt.data_hora), 'HH:mm')}
                       </p>
                     </div>
-                    <div className="bg-surface px-4 py-3">
+                    <div className="bg-surface px-3 py-3 sm:px-4">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Duração</p>
                       <p className="font-mono text-sm font-semibold text-text-primary mt-0.5">{selectedApt.duracao_minutos} min</p>
                     </div>
                     {isSecretaria && selectedApt.dentista && (
-                      <div className="bg-surface px-4 py-3">
+                      <div className="bg-surface px-3 py-3 sm:px-4">
                         <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Dentista</p>
                         <p className="text-sm font-medium text-text-primary mt-0.5 truncate">{selectedApt.dentista.nome}</p>
                       </div>
@@ -2142,7 +2143,7 @@ export function AgendamentosClient({
 
                   {/* ── Corpo: 2 colunas ──────────────────────────────────── */}
                   <div className="flex flex-col sm:flex-row">
-                    <div className="flex-1 min-w-0 p-6 space-y-4">
+                    <div className="min-w-0 flex-1 space-y-4 p-4 sm:p-6">
                       {selectedApt.observacoes && (
                         <div>
                           <p className="text-xs font-bold uppercase tracking-widest text-teal-ink mb-1.5">Observações</p>
@@ -2226,7 +2227,7 @@ export function AgendamentosClient({
                     </div>
 
                     {/* ── Coluna de ação — Assinatura, IA, Consulta ────────── */}
-                    <div className="w-full sm:w-64 sm:shrink-0 border-t sm:border-t-0 sm:border-l border-border p-5 space-y-2.5">
+                    <div className="w-full space-y-2.5 border-t border-border p-4 sm:w-64 sm:shrink-0 sm:border-t-0 sm:border-l sm:p-5">
                       {isSecretaria && (selectedApt.status === 'checked_in' || selectedApt.status === 'in_progress' || selectedApt.status === 'completed') && selectedApt.paciente && (
                         assinadosLocal.has(selectedApt.id) ? (
                           <div className="flex items-center gap-2 text-sm font-semibold text-teal-ink bg-teal/10 rounded-xl px-4 py-3 border border-teal/20">
@@ -2270,7 +2271,7 @@ export function AgendamentosClient({
                   </div>
 
                   {/* ── Rodapé único ──────────────────────────────────────── */}
-                  <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-border">
+                  <div className="sticky bottom-0 flex items-center justify-between gap-2 border-t border-border bg-surface px-4 py-3 sm:px-6 sm:py-4">
                     <button
                       onClick={() => setDetailMode('confirm-delete')}
                       className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-coral-ink hover:bg-coral-pale rounded-xl transition-colors"
