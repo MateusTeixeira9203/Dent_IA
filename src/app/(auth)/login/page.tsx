@@ -2,7 +2,7 @@
 
 import { useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -38,7 +38,6 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>;
 
 function LoginFormContent(): React.JSX.Element {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const requestedNext = searchParams.get("next") ?? searchParams.get("redirectTo");
   const redirectTo = safeReturnPath(requestedNext);
@@ -104,8 +103,9 @@ function LoginFormContent(): React.JSX.Element {
             ? "/dashboard/protetico"
             : "/dashboard";
       toast.success("Login realizado com sucesso!");
-      router.push(destination);
-      router.refresh();
+      // A sessão acabou de ser gravada pelo cliente Supabase. Navegação completa evita que
+      // um refresh do App Router interrompa o push antes de o Dashboard receber o cookie novo.
+      window.location.assign(destination);
     } catch {
       setAuthError("Erro ao fazer login. Tente novamente.");
     } finally {
