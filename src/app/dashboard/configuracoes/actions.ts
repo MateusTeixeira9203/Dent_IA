@@ -6,6 +6,8 @@ import { requireRole } from "@/server/auth/roles";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { sairDaClinica } from "@/server/services/team";
+import { z } from "zod";
+import { normalizarNomeProcedimento } from "@/lib/arcadas";
 
 export async function salvarPerfil(data: {
   nome: string;
@@ -131,13 +133,37 @@ export interface ProcedimentoUpdateData {
   duracao_minutos: number;
 }
 
+const procedimentoIdSchema = z.string().uuid();
+
+export type AlterarVisibilidadeProcedimentoResult =
+  | { ok: true; id: string; ativo: boolean }
+  | { ok: false; codigo: 'ID_INVALIDO' | 'NAO_ENCONTRADO' | 'BANCO'; erro: string };
+
+export type CriarProcedimentoResult =
+  | { ok: true; id: string; restaurado: boolean }
+  | { ok: false; erro: string };
+
+async function obterDentistaDoCatalogo() {
+  const { supabase, user, clinicId } = await requirePermission('configuracoes');
+  const { data: dentistaPerfil, error } = await supabase
+    .from('dentistas')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('clinica_id', clinicId)
+    .maybeSingle();
+
+  if (error || !dentistaPerfil) return null;
+  return { supabase, clinicId, dentistaId: dentistaPerfil.id };
+}
+
 export async function atualizarProcedimento(
   id: string,
   data: ProcedimentoUpdateData
 ): Promise<{ error?: string }> {
-  const { supabase, clinicId } = await requirePermission('configuracoes');
+  const contexto = await obterDentistaDoCatalogo();
+  if (!contexto) return { error: 'Perfil de dentista não encontrado.' };
 
-  const { error } = await supabase
+  const { error } = await contexto.supabase
     .from("procedimentos")
     .update({
       nome:            data.nome,
@@ -145,7 +171,8 @@ export async function atualizarProcedimento(
       duracao_minutos: data.duracao_minutos,
     })
     .eq("id", id)
-    .eq("clinica_id", clinicId);
+    .eq("clinica_id", contexto.clinicId)
+    .eq('dentista_id', contexto.dentistaId);
 
   if (error) {
     console.error("Erro ao atualizar procedimento:", error);
@@ -153,29 +180,56 @@ export async function atualizarProcedimento(
   }
 
   // Configurou procedimentos → limpa a pendência (some o alerta âmbar)
-  await supabase.from("clinicas").update({ procedimentos_pendente: false }).eq("id", clinicId);
+  await contexto.supabase.from("clinicas").update({ procedimentos_pendente: false }).eq("id", contexto.clinicId);
 
   return {};
 }
 
-export async function toggleProcedimento(
+async function alterarVisibilidadeProcedimento(
   id: string,
-  ativo: boolean
-): Promise<{ error?: string }> {
-  const { supabase, clinicId } = await requirePermission('configuracoes');
-
-  const { error } = await supabase
-    .from("procedimentos")
-    .update({ ativo })
-    .eq("id", id)
-    .eq("clinica_id", clinicId);
-
-  if (error) {
-    console.error("Erro ao togglear procedimento:", error);
-    return { error: error.message };
+  ativo: boolean,
+): Promise<AlterarVisibilidadeProcedimentoResult> {
+  const parsed = procedimentoIdSchema.safeParse(id);
+  if (!parsed.success) {
+    return { ok: false, codigo: 'ID_INVALIDO', erro: 'Procedimento inválido.' };
   }
 
-  return {};
+  const contexto = await obterDentistaDoCatalogo();
+  if (!contexto) {
+    return { ok: false, codigo: 'BANCO', erro: 'Perfil de dentista não encontrado.' };
+  }
+
+  const { data, error } = await contexto.supabase
+    .from('procedimentos')
+    .update({ ativo })
+    .eq('id', parsed.data)
+    .eq('clinica_id', contexto.clinicId)
+    .eq('dentista_id', contexto.dentistaId)
+    .select('id, ativo')
+    .maybeSingle();
+
+  if (error) {
+    console.error('[procedimentos] erro ao alterar visibilidade:', error);
+    return { ok: false, codigo: 'BANCO', erro: 'Não foi possível atualizar o catálogo. Tente novamente.' };
+  }
+  if (!data) {
+    return { ok: false, codigo: 'NAO_ENCONTRADO', erro: 'Procedimento não encontrado. Atualize a página.' };
+  }
+
+  revalidatePath('/dashboard/configuracoes');
+  return { ok: true, id: data.id, ativo: data.ativo };
+}
+
+export async function removerProcedimentoDoCatalogo(
+  id: string,
+): Promise<AlterarVisibilidadeProcedimentoResult> {
+  return alterarVisibilidadeProcedimento(id, false);
+}
+
+export async function restaurarProcedimentoNoCatalogo(
+  id: string,
+): Promise<AlterarVisibilidadeProcedimentoResult> {
+  return alterarVisibilidadeProcedimento(id, true);
 }
 
 export interface NovoProcedimentoData {
@@ -188,32 +242,61 @@ export interface NovoProcedimentoData {
 
 export async function criarProcedimento(
   data: NovoProcedimentoData
-): Promise<{ error?: string }> {
-  const { supabase, user, clinicId } = await requirePermission('configuracoes');
+): Promise<CriarProcedimentoResult> {
+  const contexto = await obterDentistaDoCatalogo();
+  if (!contexto) return { ok: false, erro: 'Perfil de dentista não encontrado.' };
 
-  // Catálogo é privado por dentista (migration 084) — cadastra pro admin que está criando.
-  const { data: dentistaPerfil } = await supabase
-    .from("dentistas")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("clinica_id", clinicId)
-    .maybeSingle();
+  const nome = normalizarNomeProcedimento(data.nome);
+  if (!nome) return { ok: false, erro: 'Informe o nome do procedimento.' };
 
-  if (!dentistaPerfil) return { error: "Perfil de dentista não encontrado." };
+  const { data: existentes, error: existentesError } = await contexto.supabase
+    .from('procedimentos')
+    .select('id, nome, ativo')
+    .eq('clinica_id', contexto.clinicId)
+    .eq('dentista_id', contexto.dentistaId);
+  if (existentesError) {
+    console.error('[procedimentos] erro ao consultar catálogo:', existentesError);
+    return { ok: false, erro: 'Não foi possível consultar o catálogo. Tente novamente.' };
+  }
 
-  const { error } = await supabase
-    .from("procedimentos")
-    .insert({ ...data, clinica_id: clinicId, dentista_id: dentistaPerfil.id, ativo: true });
+  const chaveNome = nome.toLocaleLowerCase('pt-BR');
+  const existente = (existentes ?? []).find(
+    (procedimento) => normalizarNomeProcedimento(procedimento.nome).toLocaleLowerCase('pt-BR') === chaveNome,
+  );
 
-  if (error) {
-    console.error("Erro ao criar procedimento:", error);
-    return { error: error.message };
+  if (existente?.ativo) return { ok: false, erro: 'Já existe um procedimento com esse nome no catálogo.' };
+
+  if (existente) {
+    const { error } = await contexto.supabase
+      .from('procedimentos')
+      .update({ ...data, nome, ativo: true })
+      .eq('id', existente.id)
+      .eq('clinica_id', contexto.clinicId)
+      .eq('dentista_id', contexto.dentistaId);
+    if (error) {
+      console.error('[procedimentos] erro ao restaurar cadastro:', error);
+      return { ok: false, erro: 'Não foi possível restaurar o procedimento. Tente novamente.' };
+    }
+    await contexto.supabase.from('clinicas').update({ procedimentos_pendente: false }).eq('id', contexto.clinicId);
+    revalidatePath('/dashboard/configuracoes');
+    return { ok: true, id: existente.id, restaurado: true };
+  }
+
+  const { data: criado, error } = await contexto.supabase
+    .from('procedimentos')
+    .insert({ ...data, nome, clinica_id: contexto.clinicId, dentista_id: contexto.dentistaId, ativo: true })
+    .select('id')
+    .single();
+
+  if (error || !criado) {
+    console.error('[procedimentos] erro ao criar:', error);
+    return { ok: false, erro: 'Não foi possível criar o procedimento. Tente novamente.' };
   }
 
   // Configurou procedimentos → limpa a pendência (some o alerta âmbar)
-  await supabase.from("clinicas").update({ procedimentos_pendente: false }).eq("id", clinicId);
-
-  return {};
+  await contexto.supabase.from('clinicas').update({ procedimentos_pendente: false }).eq('id', contexto.clinicId);
+  revalidatePath('/dashboard/configuracoes');
+  return { ok: true, id: criado.id, restaurado: false };
 }
 
 // logo_url guarda o caminho no storage (bucket privado desde a migration 117), não mais

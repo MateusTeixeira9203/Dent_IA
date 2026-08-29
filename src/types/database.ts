@@ -114,6 +114,7 @@ export interface Ficha {
 export interface Procedimento {
   id: string;
   clinica_id: string;
+  dentista_id: string;
   nome: string;
   descricao: string | null;
   codigo_tuss: string | null;

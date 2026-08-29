@@ -34,7 +34,7 @@ export default async function ConfiguracoesPage({
   ] = await Promise.all([
     supabase.from('configuracoes_clinica').select('*').eq('clinica_id', clinicId).maybeSingle(),
     supabase.from('horarios_disponiveis').select('*').eq('dentista_id', dentistaPerfil?.id ?? '').order('dia_semana', { ascending: true }),
-    supabase.from('procedimentos').select('*').eq('clinica_id', clinicId).order('categoria', { ascending: true }),
+    supabase.from('procedimentos').select('*').eq('clinica_id', clinicId).eq('dentista_id', dentistaPerfil?.id ?? '').order('categoria', { ascending: true }),
     supabase.from('dentistas').select('id, nome, email, role, ativo, created_at').eq('clinica_id', clinicId).order('created_at', { ascending: true }),
     supabase.from('convites').select('id, email, role, expires_at, created_at').eq('clinica_id', clinicId).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),
     supabase.from('clinicas').select('limite_dentistas, plano, status_assinatura, trial_ends_at, procedimentos_pendente').eq('id', clinicId).single(),

@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Building2, Clock, Stethoscope, Check, Plus, Loader2, Pencil, X, UserCircle, LogOut, AlertTriangle, ImageIcon, FileUp, CreditCard, Gift, ArrowUpRight, Sparkles, MessageCircle } from 'lucide-react';
+import { Building2, Clock, Stethoscope, Check, Plus, Loader2, Pencil, X, UserCircle, LogOut, AlertTriangle, ImageIcon, FileUp, CreditCard, Gift, ArrowUpRight, Sparkles, MessageCircle, RotateCcw, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { ImportarProcedimentosModal } from './importar-procedimentos-modal';
 import { MigrarClinicaModal } from './migrar-clinica-modal';
@@ -15,6 +15,16 @@ import { motion } from 'motion/react';
 import { PageContainer } from '@/components/layout/page-container';
 import type { ConfiguracaoClinica, HorarioDisponivel, Procedimento, DentistaRole } from '@/types/database';
 import { HelpTooltip } from '@/components/ui/help-tooltip';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { UsuariosClient } from '../usuarios/_components/usuarios-client';
 import {
   salvarClinica,
@@ -22,7 +32,8 @@ import {
   salvarPerfil,
   salvarLogoUrl,
   atualizarProcedimento,
-  toggleProcedimento,
+  removerProcedimentoDoCatalogo,
+  restaurarProcedimentoNoCatalogo,
   criarProcedimento,
   sairDaClinicaAction,
   type HorarioDia,
@@ -292,6 +303,8 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
   const [editForm, setEditForm] = useState({ nome: '', preco_padrao: '', duracao_minutos: 0 });
   const [showNovoProcedimento, setShowNovoProcedimento] = useState(false);
   const [showImportar, setShowImportar] = useState(false);
+  const [mostrarRemovidos, setMostrarRemovidos] = useState(false);
+  const [procedimentoParaRemover, setProcedimentoParaRemover] = useState<Procedimento | null>(null);
   const [novoProc, setNovoProc] = useState({
     nome: '',
     descricao: '',
@@ -330,14 +343,39 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
     });
   };
 
-  const handleToggleProcedimento = (id: string, ativo: boolean) => {
+  const handleRemoverProcedimento = () => {
+    const procedimento = procedimentoParaRemover;
+    if (!procedimento) return;
+
     startTransition(async () => {
-      const result = await toggleProcedimento(id, !ativo);
-      if (!result.error) {
-        setProcedimentos((prev) =>
-          prev.map((p) => (p.id === id ? { ...p, ativo: !ativo } : p))
-        );
+      setErrorMsg(null);
+      const result = await removerProcedimentoDoCatalogo(procedimento.id);
+      if (!result.ok) {
+        setErrorMsg(result.erro);
+        return;
       }
+
+      setProcedimentos((prev) => prev.map((p) => (
+        p.id === result.id ? { ...p, ativo: false } : p
+      )));
+      setProcedimentoParaRemover(null);
+      setSuccessMsg(`"${procedimento.nome}" foi removido do catálogo.`);
+    });
+  };
+
+  const handleRestaurarProcedimento = (id: string) => {
+    startTransition(async () => {
+      setErrorMsg(null);
+      const result = await restaurarProcedimentoNoCatalogo(id);
+      if (!result.ok) {
+        setErrorMsg(result.erro);
+        return;
+      }
+
+      setProcedimentos((prev) => prev.map((p) => (
+        p.id === result.id ? { ...p, ativo: true } : p
+      )));
+      setSuccessMsg('Procedimento restaurado no catálogo.');
     });
   };
 
@@ -351,17 +389,42 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
         preco_padrao: parseValorBR(novoProc.preco_padrao),
         duracao_minutos: parseInt(novoProc.duracao_minutos, 10) || 30,
       });
-      if (!result.error) {
-        // Refresh da lista após criar
-        setShowNovoProcedimento(false);
-        setNovoProc({ nome: '', descricao: '', categoria: '', preco_padrao: '', duracao_minutos: '30' });
-        setSuccessMsg('Procedimento criado! Recarregue a página para ver a lista atualizada.');
+      if (!result.ok) {
+        setErrorMsg(result.erro);
+        return;
       }
+
+      const agora = new Date().toISOString();
+      const procedimentoCriado: Procedimento = {
+        id: result.id,
+        clinica_id: clinicId ?? '',
+        dentista_id: dentista.id,
+        nome: novoProc.nome.trim(),
+        descricao: novoProc.descricao.trim() || null,
+        codigo_tuss: null,
+        categoria: novoProc.categoria.trim() || 'Geral',
+        preco_padrao: parseValorBR(novoProc.preco_padrao),
+        duracao_minutos: parseInt(novoProc.duracao_minutos, 10) || 30,
+        ativo: true,
+        created_at: agora,
+        updated_at: agora,
+      };
+      setProcedimentos((prev) => {
+        const jaExiste = prev.some((procedimento) => procedimento.id === result.id);
+        return jaExiste
+          ? prev.map((procedimento) => (procedimento.id === result.id ? procedimentoCriado : procedimento))
+          : [...prev, procedimentoCriado];
+      });
+      setShowNovoProcedimento(false);
+      setNovoProc({ nome: '', descricao: '', categoria: '', preco_padrao: '', duracao_minutos: '30' });
+      setSuccessMsg(result.restaurado ? 'Procedimento restaurado no catálogo.' : 'Procedimento criado!');
     });
   };
 
   // Agrupa procedimentos por categoria
-  const categorias = Array.from(new Set(procedimentos.map((p) => p.categoria)));
+  const procedimentosAtivos = procedimentos.filter((procedimento) => procedimento.ativo);
+  const procedimentosRemovidos = procedimentos.filter((procedimento) => !procedimento.ativo);
+  const categorias = Array.from(new Set(procedimentosAtivos.map((procedimento) => procedimento.categoria)));
 
   return (
     <>
@@ -878,6 +941,16 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                   </div>
                 </div>
 
+                <button
+                  type="button"
+                  onClick={() => setMostrarRemovidos((visivel) => !visivel)}
+                  className="mb-5 text-xs font-semibold text-text-secondary underline-offset-4 hover:text-text-primary hover:underline"
+                >
+                  {mostrarRemovidos
+                    ? 'Ocultar removidos'
+                    : `Ver removidos (${procedimentosRemovidos.length})`}
+                </button>
+
                 {/* Formulário novo procedimento */}
                 {showNovoProcedimento && (
                   <div className="mb-6 p-4 border border-teal/20 bg-teal/5 rounded-xl space-y-3">
@@ -942,7 +1015,7 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                 {/* Lista por categoria */}
                 {categorias.length === 0 && (
                   <p className="text-sm text-text-secondary text-center py-8">
-                    Nenhum procedimento cadastrado ainda.
+                    Nenhum procedimento ativo. Crie um novo ou restaure um item removido.
                   </p>
                 )}
 
@@ -958,13 +1031,11 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
 
                     <div className="space-y-2">
                       {procedimentos
-                        .filter((p) => p.categoria === categoria)
+                        .filter((p) => p.ativo && p.categoria === categoria)
                         .map((proc) => (
                           <div
                             key={proc.id}
-                            className={`p-4 rounded-xl border transition-colors ${
-                              proc.ativo ? 'border-border bg-surface' : 'border-border bg-surface-alt/30 opacity-60'
-                            }`}
+                            className="p-4 rounded-xl border border-border bg-surface transition-colors"
                           >
                             {editandoId === proc.id ? (
                               // Modo edição
@@ -1053,15 +1124,14 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                                     <Pencil className="w-3.5 h-3.5" />
                                   </button>
                                   <button
-                                    onClick={() => handleToggleProcedimento(proc.id, proc.ativo)}
+                                    type="button"
+                                    onClick={() => setProcedimentoParaRemover(proc)}
                                     disabled={isPending}
-                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                                      proc.ativo
-                                        ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
-                                        : 'bg-teal/10 text-teal hover:bg-teal/20'
-                                    }`}
+                                    aria-label={`Remover ${proc.nome} do catálogo`}
+                                    title="Remover do catálogo"
+                                    className="rounded-lg p-1.5 text-coral transition-colors hover:bg-coral/10 disabled:opacity-50"
                                   >
-                                    {proc.ativo ? 'Desativar' : 'Ativar'}
+                                    <Trash2 className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               </div>
@@ -1071,6 +1141,47 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
                     </div>
                   </div>
                 ))}
+
+                {mostrarRemovidos && (
+                  <section className="mt-8 border-t border-border pt-6" aria-labelledby="procedimentos-removidos-titulo">
+                    <div className="mb-3 flex items-start justify-between gap-4">
+                      <div>
+                        <h3 id="procedimentos-removidos-titulo" className="font-heading text-base font-bold text-text-primary">
+                          Removidos ({procedimentosRemovidos.length})
+                        </h3>
+                        <p className="mt-1 text-xs text-text-secondary">
+                          Fora das novas escolhas. O histórico clínico continua preservado.
+                        </p>
+                      </div>
+                    </div>
+
+                    {procedimentosRemovidos.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-border px-4 py-5 text-center text-sm text-text-secondary">
+                        Nenhum procedimento removido.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {procedimentosRemovidos.map((procedimento) => (
+                          <div key={procedimento.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface-alt/50 p-4">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-text-primary">{procedimento.nome}</p>
+                              <p className="mt-0.5 text-xs text-text-secondary">{procedimento.categoria}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRestaurarProcedimento(procedimento.id)}
+                              disabled={isPending}
+                              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-teal/30 bg-teal/10 px-3 text-xs font-bold text-teal transition-colors hover:bg-teal/15 disabled:opacity-50"
+                            >
+                              {isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />}
+                              Restaurar
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
               </div>
             </div>
           )}
@@ -1282,6 +1393,35 @@ export function ConfiguracoesClient({ plano, dentista, config, horarios, procedi
         onOpenChange={setShowImportar}
         onSaved={() => router.refresh()}
       />
+
+      <AlertDialog
+        open={procedimentoParaRemover !== null}
+        onOpenChange={(aberto) => {
+          if (!aberto) setProcedimentoParaRemover(null);
+        }}
+      >
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover do catálogo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {procedimentoParaRemover
+                ? `“${procedimentoParaRemover.nome}” deixará de aparecer nas novas escolhas. O histórico clínico e os orçamentos anteriores serão preservados.`
+                : 'O procedimento deixará de aparecer nas novas escolhas.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isPending}
+              onClick={() => handleRemoverProcedimento()}
+              className="bg-coral text-white hover:bg-coral/90"
+            >
+              {isPending && <Loader2 className="size-4 animate-spin" />}
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Dialog de confirmação — sair da clínica */}
       {showSairDialog && (

@@ -1426,7 +1426,7 @@ export async function criarProcedimentoRapido(dados: {
   // entrada do dentista ignorando diferença de maiúsculas/espaços, para não criar duplicata.
   const { data: existentes, error: existentesError } = await supabase
     .from('procedimentos')
-    .select('id, nome')
+    .select('id, nome, ativo')
     .eq('clinica_id', clinicId)
     .eq('dentista_id', dentistaAlvoId);
   if (existentesError) {
@@ -1436,7 +1436,21 @@ export async function criarProcedimentoRapido(dados: {
   const existente = (existentes ?? []).find(
     (procedimento) => normalizarNomeProcedimento(procedimento.nome).toLocaleLowerCase('pt-BR') === chaveNome,
   );
-  if (existente) return { id: existente.id };
+  if (existente) {
+    if (!existente.ativo) {
+      const { error: restaurarError } = await supabase
+        .from('procedimentos')
+        .update({ ativo: true, preco_padrao: dados.precoPadrao })
+        .eq('id', existente.id)
+        .eq('clinica_id', clinicId)
+        .eq('dentista_id', dentistaAlvoId);
+      if (restaurarError) {
+        return { error: 'Não foi possível restaurar o procedimento no catálogo.' };
+      }
+      revalidatePath('/dashboard/configuracoes');
+    }
+    return { id: existente.id };
+  }
 
   const { data, error } = await supabase
     .from("procedimentos")

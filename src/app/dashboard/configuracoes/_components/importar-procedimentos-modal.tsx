@@ -104,13 +104,18 @@ export function ImportarProcedimentosModal({ open, onOpenChange, onSaved }: Prop
     setSavedCount(0);
     let count = 0;
     for (const row of validRows) {
-      await criarProcedimento({
+      const result = await criarProcedimento({
         nome: row.nome.trim(),
         descricao: '',
         categoria: row.categoria.trim() || 'Geral',
         preco_padrao: parseValorBR(row.preco_padrao),
         duracao_minutos: parseInt(row.duracao_minutos, 10) || 30,
       });
+      if (!result.ok) {
+        setError(result.erro);
+        setStage('review');
+        return;
+      }
       count++;
       setSavedCount(count);
     }
