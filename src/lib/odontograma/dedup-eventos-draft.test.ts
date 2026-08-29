@@ -80,6 +80,37 @@ test('mesclarEventosSemPerda: realizado_em só entra pra realizado+clinica (§1.
   assert.equal(porDente(13)?.realizado_em, null);
 });
 
+test('mesclarEventosSemPerda: contexto da captura não sobrescreve status heterogêneo do Dex', () => {
+  const realizado = input({
+    status: 'realizado',
+    origem: 'clinica',
+    momento_planejado: 'sessao_atual',
+    evidencia_status: 'execucao_explicita',
+    ancora: { nivel: 'dente', dente: 14 },
+  });
+  const indicado = input({
+    status: 'indicado',
+    origem: 'clinica',
+    momento_planejado: 'sessao_atual',
+    evidencia_status: 'indicacao_explicita',
+    ancora: { nivel: 'dente', dente: 46 },
+  });
+
+  const r = mesclarEventosSemPerda([], [realizado, indicado], '2026-08-28', {
+    capturaId: 'captura-1',
+  });
+  const porDente = (d: number) => r.find((e) => e.ancora.dente === d);
+
+  assert.equal(porDente(14)?.status, 'realizado');
+  assert.equal(porDente(14)?.realizado_em, '2026-08-28');
+  assert.equal(porDente(14)?.evidencia_status, 'execucao_explicita');
+  assert.equal(porDente(46)?.status, 'indicado');
+  assert.equal(porDente(46)?.realizado_em, null);
+  assert.equal(porDente(46)?.evidencia_status, 'indicacao_explicita');
+  assert.ok(porDente(14)?.chaveCaptura?.startsWith('captura-1:'));
+  assert.ok(porDente(46)?.chaveCaptura?.startsWith('captura-1:'));
+});
+
 test('chaveDedupEvento: faces em ordem diferente geram a MESMA chave (sort interno)', () => {
   const e1 = draft({ id: 'a', ancora: { nivel: 'face', dente: 15, faces: ['O', 'M'] } });
   const e2 = draft({ id: 'b', ancora: { nivel: 'face', dente: 15, faces: ['M', 'O'] } });

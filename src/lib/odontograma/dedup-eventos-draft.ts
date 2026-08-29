@@ -4,8 +4,12 @@
  * Behavior-preserving: mesma lógica, mesmo comportamento — só muda de casa.
  */
 import type { OdontogramaEventoDraft, OdontogramaEventoInput } from '@/types/odontograma';
-import type { ContextoLancamento } from '@/lib/odontograma/criar-eventos-contextuais';
-import { camposDoModoLancamento } from '@/lib/odontograma/criar-eventos-contextuais';
+
+/** Metadados da captura por IA. Não inclui modo manual: o Dex já classifica cada evento. */
+export interface ContextoMesclaIA {
+  capturaId: string;
+  encaminharParaId?: string | null;
+}
 
 /**
  * Chave semântica — mesmo tipo/status/origem/âncora/papel, mesmo com id diferente.
@@ -54,6 +58,9 @@ export function dedupEventosDraft(eventos: OdontogramaEventoDraft[]): Odontogram
  * (reextrair é no-op, não upgrade automático). `dedupEventosDraft` só limpa duplicata DENTRO
  * da extração nova (seu propósito original — a IA emitir o mesmo evento 2x na mesma leitura).
  *
+ * R-139c — contexto só identifica a captura/destino; nunca aplica `camposDoModoLancamento`.
+ * O modo manual pertence exclusivamente a `criarEventosContextuais` e aos lançamentos diretos.
+ *
  * Trade-off aceito e documentado (herdado do R-47): se a IA extrai o MESMO procedimento com
  * status diferente (ex.: indicado → realizado), a chave muda (status entra na chave) e os
  * dois convivem como cards visíveis — duplicata visível antes de salvar, não perda silenciosa.
@@ -62,14 +69,12 @@ export function mesclarEventosSemPerda(
   draftAtual: OdontogramaEventoDraft[],
   novosDaIA: OdontogramaEventoInput[],
   realizadoEmPadrao: string,
-  contexto?: ContextoLancamento,
+  contexto?: ContextoMesclaIA,
 ): OdontogramaEventoDraft[] {
   const chavesExistentes = new Set(draftAtual.map(chaveDedupEvento));
   const novos: OdontogramaEventoDraft[] = novosDaIA.map((ev) => ({
     ...ev,
-    ...(contexto ? camposDoModoLancamento(contexto.modo, realizadoEmPadrao) : {
-      realizado_em: ev.status === 'realizado' && ev.origem === 'clinica' ? realizadoEmPadrao : null,
-    }),
+    realizado_em: ev.status === 'realizado' && ev.origem === 'clinica' ? realizadoEmPadrao : null,
     id: crypto.randomUUID(), // R-01 — id estável nasce aqui, na entrada do rascunho
     fonteFluxo: 'novo',
     encaminhadoParaId: contexto?.encaminharParaId,
