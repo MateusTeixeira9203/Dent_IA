@@ -296,6 +296,7 @@ export function useRegistrarPainel({
     setAlertaNovo(null);
     setOnde(null);
     setEscopoRegional(null);
+    setModoLancamento('a_fazer');
     setCatalogoPendente(null);
     setTipoPendente(null);
     setOrtoChipAberto(false);
@@ -522,7 +523,6 @@ export function useRegistrarPainel({
       anexarTexto={anexarTexto}
       catalogoProcedimentos={catalogoProcedimentos}
       onAplicarSugestao={aplicarSugestaoLocal}
-      modoLancamento={modoLancamento}
       realce={realceCampoMagico}
       dica={dicaCampoMagico}
       compacto
