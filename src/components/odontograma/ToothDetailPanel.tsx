@@ -525,23 +525,26 @@ export function ToothDetailPanel({
       return;
     }
     setSalvandoCatalogo(true);
-    let res: { error?: string };
     try {
-      res = await criarProcedimento({
+      const res = await criarProcedimento({
         nome: ultimoAvulso,
         descricao: '',
         categoria: 'Outros',
         preco_padrao: preco,
         duracao_minutos: 30,
       });
+      if (!res.ok) {
+        toast.error(res.erro);
+        return;
+      }
+      toast.success(`"${ultimoAvulso}" salvo no seu catálogo.`);
+      setUltimoAvulso(null);
+      setPrecoCatalogo(null);
     } catch {
-      res = { error: 'Falha de conexão. Tente novamente.' };
+      toast.error('Falha de conexão. Tente novamente.');
+    } finally {
+      setSalvandoCatalogo(false);
     }
-    setSalvandoCatalogo(false);
-    if (res.error) { toast.error(res.error); return; }
-    toast.success(`"${ultimoAvulso}" salvo no seu catálogo.`);
-    setUltimoAvulso(null);
-    setPrecoCatalogo(null);
   }
 
   function setData(evento: OdontogramaEventoDraft, data: string) {
