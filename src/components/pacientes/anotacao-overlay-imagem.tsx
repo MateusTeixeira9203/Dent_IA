@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { Minus, Plus, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { usePalcoImagemClinica } from '@/components/imagens/visualizador-imagem-clinica';
 import { AnotacaoIcone } from './anotacao-simbolos';
 import type { AnotacaoOverlay, FormaDesenho, TipoAnotacaoRadiografia } from '@/hooks/usePlanejamentoPaciente';
 
@@ -21,6 +23,8 @@ export type FerramentaAnotacao =
   | { modo: 'icone'; tipo: TipoAnotacaoRadiografia }
   | { modo: 'forma'; tipo: FormaDesenho }
   | { modo: 'traco' };
+
+export type ModoInteracaoImagem = 'navegar' | 'anotar';
 
 const TAMANHO_BASE_PX = 36; // ícone em tamanho=1
 const TAMANHO_MIN = 0.6;
@@ -86,7 +90,7 @@ function FormaSvg({
   if (a.forma === 'circulo') {
     const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
     const r = Math.hypot(x2 - x1, y2 - y1) / 2;
-    return <circle cx={cx} cy={cy} r={r} fill="none" {...common} />;
+    return <circle cx={cx} cy={cy} r={r} fill="none" vectorEffect="non-scaling-stroke" {...common} />;
   }
 
   if (a.forma === 'seta') {
@@ -96,14 +100,14 @@ function FormaSvg({
     const p2x = x2 - tam * Math.cos(ang + Math.PI / 7), p2y = y2 - tam * Math.sin(ang + Math.PI / 7);
     return (
       <>
-        <line x1={x1} y1={y1} x2={x2} y2={y2} {...common} />
-        <line x1={x2} y1={y2} x2={p1x} y2={p1y} {...common} />
-        <line x1={x2} y1={y2} x2={p2x} y2={p2y} {...common} />
+        <line x1={x1} y1={y1} x2={x2} y2={y2} vectorEffect="non-scaling-stroke" {...common} />
+        <line x1={x2} y1={y2} x2={p1x} y2={p1y} vectorEffect="non-scaling-stroke" {...common} />
+        <line x1={x2} y1={y2} x2={p2x} y2={p2y} vectorEffect="non-scaling-stroke" {...common} />
       </>
     );
   }
 
-  return <line x1={x1} y1={y1} x2={x2} y2={y2} {...common} />;
+  return <line x1={x1} y1={y1} x2={x2} y2={y2} vectorEffect="non-scaling-stroke" {...common} />;
 }
 
 function TracoSvg({
@@ -126,6 +130,7 @@ function TracoSvg({
       strokeWidth={selecionado ? 4 : 2.6}
       strokeLinecap="round"
       strokeLinejoin="round"
+      vectorEffect="non-scaling-stroke"
       strokeDasharray={preview ? '5 4' : undefined}
       style={{ pointerEvents: interativo ? 'stroke' : 'none', cursor: interativo ? 'pointer' : 'default' }}
       onClick={onSelect ? (e) => { e.stopPropagation(); onSelect(); } : undefined}
@@ -133,30 +138,25 @@ function TracoSvg({
   );
 }
 
-export function AnotacaoOverlayImagem({
+export function CamadaAnotacaoImagem({
   // D17 (10/08) — ciano fixo, não mais o token coral: escolhido numa comparação de 5
   // cores num fundo simulando panorâmica, coral lia mal contra o cinza do raio-x (D5
   // mantém — 1 cor só pros 5 símbolos, só mudou qual).
-  src, alt, anotacoes, onChange, ferramenta, interativo, cor = '#22d3ee', className, onFerramentaUsada,
+  anotacoes, onChange, ferramenta, interativo, cor = '#22d3ee', onFerramentaUsada,
 }: {
-  src: string;
-  alt: string;
   anotacoes: AnotacaoOverlay[];
   onChange: (anotacoes: AnotacaoOverlay[]) => void;
   ferramenta: FerramentaAnotacao | null;
   /** false = puro display (apresentação com a marcação fechada) — sem clique, sem seleção. */
   interativo: boolean;
   cor?: string;
-  /** Dimensiona o espaço disponível pro palco (ex: "max-h-[440px]" no editor, "w-full h-full" na apresentação). */
-  className?: string;
   /** D18 (10/08) — chamado depois de UM ícone/forma criado, pro pai desarmar a ferramenta.
    *  Sem isso ela ficava armada pro próximo clique indefinidamente (sticky). */
   onFerramentaUsada?: () => void;
 }) {
-  const wrapperRef = useRef<HTMLDivElement>(null);
   const palcoRef = useRef<HTMLDivElement>(null);
-  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
-  const [containerSize, setContainerSize] = useState<{ width: number; height: number } | null>(null);
+  const contextoPalco = usePalcoImagemClinica();
+  const [tamanhoPalco, setTamanhoPalco] = useState<{ width: number; height: number } | null>(null);
   const [selecionadoId, setSelecionadoId] = useState<string | null>(null);
   const [desenhoEmCurso, setDesenhoEmCurso] = useState<DesenhoEmCurso | null>(null);
   // D15 — posição/rotação LIVE durante o arrasto (o ícone segue o dedo); só vira
@@ -166,42 +166,26 @@ export function AnotacaoOverlayImagem({
   const gestoRef = useRef<GestoIcone | null>(null);
 
   useEffect(() => {
-    const el = wrapperRef.current;
+    const el = palcoRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       const entry = entries[0];
-      if (entry) setContainerSize({ width: entry.contentRect.width, height: entry.contentRect.height });
+      if (entry) setTamanhoPalco({ width: entry.contentRect.width, height: entry.contentRect.height });
     });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  // Ajuste durante o render (não useEffect, mesma razão do R-99 em ApresentarPanel.tsx):
-  // trocar de imagem invalida a medida antiga sem esperar um ciclo extra de efeito.
-  const [srcMedido, setSrcMedido] = useState(src);
-  if (srcMedido !== src) {
-    setSrcMedido(src);
-    setNaturalSize(null);
-    setSelecionadoId(null);
-    setDesenhoEmCurso(null);
-  }
+  // A camada é montada DENTRO do retângulo contido do VisualizadorImagemClinica. Assim,
+  // seu 0,0 nunca inclui as barras de letterbox e acompanha o mesmo transform da imagem.
+  const fittedRect = tamanhoPalco && tamanhoPalco.width > 0 && tamanhoPalco.height > 0
+    ? { width: tamanhoPalco.width, height: tamanhoPalco.height }
+    : null;
 
-  // Palco = retângulo exato onde a imagem aparece dentro do espaço disponível, sem
-  // letterbox — mesma matemática do object-fit:contain, calculada pra poder ancorar
-  // ícone/forma nele (CSS sozinho não expõe essa caixa pra elementos-filho de um <img>).
-  const fittedRect = useMemo(() => {
-    if (!naturalSize || !containerSize || containerSize.width === 0 || containerSize.height === 0) return null;
-    const containerAspect = containerSize.width / containerSize.height;
-    const imgAspect = naturalSize.width / naturalSize.height;
-    if (imgAspect > containerAspect) {
-      const width = containerSize.width;
-      const height = width / imgAspect;
-      return { left: 0, top: (containerSize.height - height) / 2, width, height };
-    }
-    const height = containerSize.height;
-    const width = height * imgAspect;
-    return { left: (containerSize.width - width) / 2, top: 0, width, height };
-  }, [naturalSize, containerSize]);
+  function pontoDoEvento(e: { clientX: number; clientY: number }, el: Element): { x: number; y: number } {
+    if (contextoPalco) return contextoPalco.pontoClienteParaPercentual(e.clientX, e.clientY);
+    return pontoPercentual(e, el);
+  }
 
   const icones = anotacoes.filter((a): a is Icone => a.forma === 'icone');
   const formas = anotacoes.filter((a): a is Forma => a.forma === 'linha' || a.forma === 'circulo' || a.forma === 'seta');
@@ -224,7 +208,7 @@ export function AnotacaoOverlayImagem({
   function handleClickPalco(e: ReactMouseEvent<HTMLDivElement>): void {
     if (!interativo) return;
     if (!ferramenta || ferramenta.modo !== 'icone') { setSelecionadoId(null); return; }
-    const p = pontoPercentual(e, e.currentTarget);
+    const p = pontoDoEvento(e, e.currentTarget);
     const novo: Icone = { id: crypto.randomUUID(), forma: 'icone', tipo: ferramenta.tipo, x: p.x, y: p.y, tamanho: 1, rotacao: 0 };
     onChange([...anotacoes, novo]);
     // D18 — desarma sozinha depois de UM uso e já seleciona o que acabou de nascer (mostra
@@ -259,15 +243,18 @@ export function AnotacaoOverlayImagem({
       const dx = e.clientX - g.startClientX, dy = e.clientY - g.startClientY;
       if (!g.moveu && Math.hypot(dx, dy) > 4) g.moveu = true; // limiar — abaixo disso é clique, não arrasto
       if (!g.moveu) return;
-      setArrastoIcone({ id: g.id, ...pontoPercentual(e, palcoRef.current) });
+      setArrastoIcone({ id: g.id, ...pontoDoEvento(e, palcoRef.current) });
       return;
     }
     if (!fittedRect) return;
     const icone = icones.find((i) => i.id === g.id);
     if (!icone) return;
-    const rect = palcoRef.current.getBoundingClientRect();
     const centroPx = { x: toPx(icone.x, fittedRect.width), y: toPx(icone.y, fittedRect.height) };
-    const ponteiroPx = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const pontoPercentualNaImagem = pontoDoEvento(e, palcoRef.current);
+    const ponteiroPx = {
+      x: toPx(pontoPercentualNaImagem.x, fittedRect.width),
+      y: toPx(pontoPercentualNaImagem.y, fittedRect.height),
+    };
     // atan2 + 90°: ponteiro reto ACIMA do centro = 0° (ícone na orientação natural, sem giro).
     const graus = Math.atan2(ponteiroPx.y - centroPx.y, ponteiroPx.x - centroPx.x) * (180 / Math.PI) + 90;
     setRotacaoIcone({ id: g.id, graus: Math.round(graus) });
@@ -296,14 +283,18 @@ export function AnotacaoOverlayImagem({
 
   function handlePointerDown(e: ReactPointerEvent<HTMLDivElement>): void {
     if (!interativo || !ferramenta || ferramenta.modo === 'icone') return;
+    if (!e.isPrimary) {
+      setDesenhoEmCurso(null);
+      return;
+    }
     e.currentTarget.setPointerCapture(e.pointerId);
-    const p = pontoPercentual(e, e.currentTarget);
+    const p = pontoDoEvento(e, e.currentTarget);
     setDesenhoEmCurso(ferramenta.modo === 'traco' ? { forma: 'traco', pontos: [p] } : { forma: ferramenta.tipo, x1: p.x, y1: p.y, x2: p.x, y2: p.y });
   }
 
   function handlePointerMove(e: ReactPointerEvent<HTMLDivElement>): void {
     if (!desenhoEmCurso) return;
-    const p = pontoPercentual(e, e.currentTarget);
+    const p = pontoDoEvento(e, e.currentTarget);
     setDesenhoEmCurso((prev) => {
       if (!prev) return prev;
       if (prev.forma === 'traco') {
@@ -339,32 +330,20 @@ export function AnotacaoOverlayImagem({
     : 14;
 
   return (
-    <div ref={wrapperRef} className={`relative flex items-center justify-center ${className ?? ''}`}>
-      {/* Achado ao vivo (10/08): a imagem estava DENTRO do `fittedRect &&` — mas fittedRect só
-          existe DEPOIS que naturalSize é conhecido, e só o onLoad desta própria imagem seta
-          naturalSize. Impasse: a imagem nunca montava, onLoad nunca disparava, ficava em
-          branco pra sempre. Agora ela é sempre montada (oculta até medir), fora do palco. */}
-      {/* eslint-disable-next-line @next/next/no-img-element -- tamanho natural medido em runtime (naturalWidth/Height), sem isso não dá pra calcular o palco sem letterbox */}
-      <img
-        src={src}
-        alt={alt}
-        draggable={false}
-        referrerPolicy="no-referrer"
-        onLoad={(e) => setNaturalSize({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })}
-        style={fittedRect
-          ? { position: 'absolute', left: fittedRect.left, top: fittedRect.top, width: fittedRect.width, height: fittedRect.height, display: 'block' }
-          : { position: 'absolute', width: 1, height: 1, visibility: 'hidden' }}
-      />
+    <div
+      ref={palcoRef}
+      className={cn(
+        'absolute inset-0',
+        interativo ? (ferramenta ? 'cursor-crosshair' : 'cursor-default') : 'pointer-events-none',
+      )}
+      onClick={handleClickPalco}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+    >
       {fittedRect && (
-        <div
-          ref={palcoRef}
-          className={`absolute ${interativo && ferramenta ? 'cursor-crosshair' : ''}`}
-          style={{ left: fittedRect.left, top: fittedRect.top, width: fittedRect.width, height: fittedRect.height }}
-          onClick={handleClickPalco}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-        >
+        <>
           <svg width={fittedRect.width} height={fittedRect.height} viewBox={`0 0 ${fittedRect.width} ${fittedRect.height}`} className="absolute inset-0" style={{ pointerEvents: 'none' }}>
             {formas.map((a) => (
               <FormaSvg key={a.id} a={a} fittedRect={fittedRect} cor={cor} interativo={interativo} selecionado={a.id === selecionadoId} onSelect={() => setSelecionadoId(a.id)} />
@@ -462,7 +441,7 @@ export function AnotacaoOverlayImagem({
               </button>
             </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );

@@ -180,6 +180,25 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
     }
   }, [patientId, fetchDocuments]);
 
+  const renovarUrlImagem = useCallback(async (documentoId: string): Promise<string | null> => {
+    const documento = documents.find((item) => item.id === documentoId);
+    if (!documento) return null;
+
+    const supabase = createClient();
+    const { data, error } = await supabase.storage
+      .from('fichas')
+      .createSignedUrl(documento.storagePath, 3600);
+
+    if (error || !data?.signedUrl) {
+      throw error ?? new Error('Não foi possível renovar a URL assinada da imagem.');
+    }
+
+    setDocuments((atuais) => atuais.map((item) => (
+      item.id === documentoId ? { ...item, url: data.signedUrl } : item
+    )));
+    return data.signedUrl;
+  }, [documents]);
+
   const fotoEmRevisao = fotosNaFila[indiceFotoRevisada] ?? null;
 
   useEffect(() => {
@@ -623,6 +642,7 @@ export function DocumentosTab({ patientId, clinicaId, dentistaId }: DocumentosTa
                 onSelecionar={setSelecionados}
                 modoSelecao={modoSelecao}
                 onDelete={handleDeleteDoc}
+                onRetryImagem={renovarUrlImagem}
               />
             </div>
           );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -14,6 +14,7 @@ import {
   FileImage,
   Trash2,
 } from "lucide-react";
+import { VisualizadorImagemClinica } from "@/components/imagens/visualizador-imagem-clinica";
 
 interface Documento {
   id: string;
@@ -30,6 +31,7 @@ interface GaleriaImagensProps {
   onSelecionar?: (ids: string[]) => void;
   modoSelecao?: boolean;
   onDelete?: (id: string, e: React.MouseEvent) => void;
+  onRetryImagem?: (id: string) => Promise<string | null>;
 }
 
 function getFileIcon(tipo: string): React.ElementType {
@@ -51,8 +53,18 @@ export function GaleriaImagens({
   onSelecionar,
   modoSelecao = false,
   onDelete,
+  onRetryImagem,
 }: GaleriaImagensProps): React.JSX.Element {
   const [imagemAmpliada, setImagemAmpliada] = useState<Documento | null>(null);
+
+  useEffect(() => {
+    if (!imagemAmpliada) return;
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setImagemAmpliada(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [imagemAmpliada]);
 
   function toggleSelecao(id: string): void {
     if (!onSelecionar) return;
@@ -176,6 +188,9 @@ export function GaleriaImagens({
           <div
             className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8"
             onClick={() => setImagemAmpliada(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Visualizador de ${imagemAmpliada.nome}`}
           >
             <motion.div
               initial={{ opacity: 0 }}
@@ -184,7 +199,9 @@ export function GaleriaImagens({
               className="absolute inset-0 bg-black/90 backdrop-blur-sm"
             />
             <button
-              className="absolute top-4 right-4 z-10 p-2 rounded-xl bg-black/50 text-white hover:bg-black/70 transition-colors"
+              type="button"
+              aria-label="Fechar visualizador"
+              className="absolute right-4 top-4 z-10 flex size-11 items-center justify-center rounded-xl bg-black/50 text-white transition-colors hover:bg-black/70"
               onClick={() => setImagemAmpliada(null)}
             >
               <X className="w-6 h-6" />
@@ -197,14 +214,18 @@ export function GaleriaImagens({
               style={{ minHeight: 400 }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="relative w-full" style={{ minHeight: 400, height: "70vh" }}>
-                <Image
+              <div className="w-full" style={{ minHeight: 400, height: "70vh" }}>
+                <VisualizadorImagemClinica
                   src={imagemAmpliada.url}
                   alt={imagemAmpliada.nome}
-                  fill
-                  className="object-contain"
-                  referrerPolicy="no-referrer"
-                  sizes="100vw"
+                  contexto="arquivos"
+                  onRetry={onRetryImagem
+                    ? async () => {
+                      const url = await onRetryImagem(imagemAmpliada.id);
+                      if (!url) throw new Error("Não foi possível renovar o acesso à imagem.");
+                      setImagemAmpliada((atual) => atual?.id === imagemAmpliada.id ? { ...atual, url } : atual);
+                    }
+                    : undefined}
                 />
               </div>
             </motion.div>

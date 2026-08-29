@@ -104,6 +104,13 @@ html[data-pwa-launch='pending'] .pwa-launch-intro {
   --color-text-secondary: #4b5563; /* era #71717a — contraste 7:1 em branco (WCAG AA) */
   --color-text-muted: #6b7280;     /* era #b4b4b8 — contraste 4.6:1 em branco */
 
+  /* Palco dedicado a radiografias/fotos: escuro em ambos os temas para preservar leitura clínica. */
+  --color-clinical-stage: #080c0b;
+  --color-clinical-stage-raised: #141817;
+  --color-clinical-stage-border: #31403b;
+  --color-clinical-stage-foreground: #f3f8f5;
+  --color-clinical-stage-muted: #c2ccc6;
+
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -147,6 +154,11 @@ html[data-pwa-launch='pending'] .pwa-launch-intro {
   --color-text-primary: #fafafa;
   --color-text-secondary: #a1a1aa;
   --color-text-muted: #8d948d;   /* R-12: era #404040 (1,82:1 — reprova AA feio). #8d948d = ~6:1 vs --surface (valor canônico da spec R-01) */
+  --color-clinical-stage: #080c0b;
+  --color-clinical-stage-raised: #141817;
+  --color-clinical-stage-border: #31403b;
+  --color-clinical-stage-foreground: #f3f8f5;
+  --color-clinical-stage-muted: #c2ccc6;
   --color-teal-pale: #1e3a35;
   /* Coral mais claro em dark mode */
   --color-coral: #ef9a9a;
@@ -240,6 +252,11 @@ html[data-pwa-launch='pending'] .pwa-launch-intro {
   --color-text-primary: var(--color-text-primary);
   --color-text-secondary: var(--color-text-secondary);
   --color-text-muted: var(--color-text-muted);
+  --color-clinical-stage: var(--color-clinical-stage);
+  --color-clinical-stage-raised: var(--color-clinical-stage-raised);
+  --color-clinical-stage-border: var(--color-clinical-stage-border);
+  --color-clinical-stage-foreground: var(--color-clinical-stage-foreground);
+  --color-clinical-stage-muted: var(--color-clinical-stage-muted);
 
   --font-heading: var(--font-dm-serif);
   --font-sans: var(--font-outfit);

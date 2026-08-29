@@ -32,7 +32,8 @@ import type { SectionTipo, AnotacaoOverlay, FormaDesenho } from '@/hooks/usePlan
 import { Odontograma } from '@/components/odontograma/Odontograma';
 import type { OdontogramaEventoDraft } from '@/types/odontograma';
 import { ANOTACAO_TIPOS, AnotacaoIcone } from './anotacao-simbolos';
-import { AnotacaoOverlayImagem, type FerramentaAnotacao } from './anotacao-overlay-imagem';
+import { CamadaAnotacaoImagem, type FerramentaAnotacao, type ModoInteracaoImagem } from './anotacao-overlay-imagem';
+import { VisualizadorImagemClinica } from '@/components/imagens/visualizador-imagem-clinica';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
@@ -152,14 +153,34 @@ function ImagemSectionBody({
   onOpenPicker: () => void;
 }) {
   const doc = documents.find(d => d.id === section.imageIds[0]);
-  // R-99 — ferramenta armada da paleta; null = nenhuma, clique na imagem não faz nada (§4).
+  // R-99 — ferramenta armada da paleta; null mantém seleção de anotações, sem criar outra.
   const [ferramenta, setFerramenta] = useState<FerramentaAnotacao | null>(null);
+  const [modoInteracao, setModoInteracao] = useState<ModoInteracaoImagem>('navegar');
 
   return (
     <div className="p-8 space-y-4">
       {doc ? (
         <>
           <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-border/60 bg-surface-alt/40 p-1.5 w-fit">
+            <button
+              type="button"
+              onClick={() => { setModoInteracao('navegar'); setFerramenta(null); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
+                modoInteracao === 'navegar' ? 'border-teal/50 bg-teal/15 text-teal-ink' : 'border-transparent text-text-secondary hover:bg-surface-alt hover:text-text-primary'
+              }`}
+            >
+              Navegar
+            </button>
+            <button
+              type="button"
+              onClick={() => setModoInteracao('anotar')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
+                modoInteracao === 'anotar' ? 'border-teal/50 bg-teal/15 text-teal-ink' : 'border-transparent text-text-secondary hover:bg-surface-alt hover:text-text-primary'
+              }`}
+            >
+              Anotar
+            </button>
+            <div className="mx-1 h-5 w-px bg-border" />
             {ANOTACAO_TIPOS.map(({ tipo, label }) => {
               const f: FerramentaAnotacao = { modo: 'icone', tipo };
               const ativa = ferramentaEhIgual(ferramenta, f);
@@ -167,7 +188,7 @@ function ImagemSectionBody({
                 <button
                   key={tipo}
                   type="button"
-                  onClick={() => setFerramenta(ativa ? null : f)}
+                  onClick={() => { setModoInteracao('anotar'); setFerramenta(ativa ? null : f); }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
                     ativa ? 'border-teal/50 bg-teal/15 text-teal-ink' : 'border-transparent text-text-secondary hover:bg-surface-alt hover:text-text-primary'
                   }`}
@@ -185,7 +206,7 @@ function ImagemSectionBody({
                 <button
                   key={modo}
                   type="button"
-                  onClick={() => setFerramenta(ativa ? null : f)}
+                  onClick={() => { setModoInteracao('anotar'); setFerramenta(ativa ? null : f); }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
                     ativa ? 'border-teal/50 bg-teal/15 text-teal-ink' : 'border-transparent text-text-secondary hover:bg-surface-alt hover:text-text-primary'
                   }`}
@@ -196,24 +217,33 @@ function ImagemSectionBody({
               );
             })}
           </div>
-          <div className="group/img relative w-full overflow-hidden rounded-2xl border border-border/60">
-            <AnotacaoOverlayImagem
+          <div className="space-y-2">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={onOpenPicker}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs font-bold text-text-secondary transition-colors hover:bg-surface-alt hover:text-text-primary"
+              >
+                Trocar imagem
+              </button>
+            </div>
+            <VisualizadorImagemClinica
               src={doc.thumbnail}
               alt={doc.name}
-              anotacoes={section.anotacoes}
-              onChange={(anotacoes) => onUpdateSection(section.id, 'anotacoes', anotacoes)}
-              ferramenta={ferramenta}
-              interativo
-              cor="#22d3ee"
-              onFerramentaUsada={() => setFerramenta(null)}
+              contexto="editor_apresentacao"
               className="h-[420px] w-full"
+              overlay={(
+                <CamadaAnotacaoImagem
+                  key={doc.id}
+                  anotacoes={section.anotacoes}
+                  onChange={(anotacoes) => onUpdateSection(section.id, 'anotacoes', anotacoes)}
+                  ferramenta={ferramenta}
+                  interativo={modoInteracao === 'anotar'}
+                  cor="#22d3ee"
+                  onFerramentaUsada={() => setFerramenta(null)}
+                />
+              )}
             />
-            <button
-              onClick={(e) => { e.stopPropagation(); onOpenPicker(); }}
-              className="absolute top-3 right-3 z-10 px-3 py-1.5 rounded-lg bg-black/60 text-white text-xs font-bold opacity-0 group-hover/img:opacity-100 transition-opacity"
-            >
-              Trocar imagem
-            </button>
           </div>
         </>
       ) : (
@@ -850,21 +880,24 @@ export function ApresentarPanel({
                             const doc = documents.find(d => d.id === currentSection.imageIds[0]);
                             return (
                               <>
-                                <div className="absolute inset-0 flex items-center justify-center overflow-hidden p-6 sm:p-10">
+                                <div className="absolute inset-0 p-6 sm:p-10">
                                   {doc ? (
-                                    // R-99 (10/08) — mesmo componente do editor: o "palco" (retângulo exato
-                                    // sem letterbox) garante que a imagem ocupa o máximo do espaço disponível
-                                    // E que a coordenada da anotação bate igual nos dois lugares.
-                                    <AnotacaoOverlayImagem
+                                    <VisualizadorImagemClinica
                                       src={doc.thumbnail}
                                       alt={doc.name}
-                                      anotacoes={currentSection.anotacoes}
-                                      onChange={(anotacoes) => onUpdateSection(currentSection.id, 'anotacoes', anotacoes)}
-                                      ferramenta={marcarFerramenta}
-                                      interativo={marcarAberto}
-                                      cor="#22d3ee"
-                                      onFerramentaUsada={() => setMarcarFerramenta(null)}
                                       className="h-full w-full"
+                                      contexto="apresentacao"
+                                      overlay={(
+                                        <CamadaAnotacaoImagem
+                                          key={doc.id}
+                                          anotacoes={currentSection.anotacoes}
+                                          onChange={(anotacoes) => onUpdateSection(currentSection.id, 'anotacoes', anotacoes)}
+                                          ferramenta={marcarFerramenta}
+                                          interativo={marcarAberto}
+                                          cor="#22d3ee"
+                                          onFerramentaUsada={() => setMarcarFerramenta(null)}
+                                        />
+                                      )}
                                     />
                                   ) : (
                                     <p className="text-white/40 italic">Nenhuma imagem selecionada.</p>
