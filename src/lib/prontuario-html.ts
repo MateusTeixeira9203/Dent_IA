@@ -2,6 +2,7 @@
 
 import { formatarDataFicha } from './format-data-ficha';
 import { deriveEstadoOrcamento, rotuloEstado } from './orcamentos/estado';
+import { faceAbreviacao, type FaceDental } from '@/types/odontograma';
 
 export type PacienteExport = {
   nome: string;
@@ -42,7 +43,7 @@ export type EventoFichaPdf = {
   nivel: string | null;
   quadrante: number | null;
   dente: number | null;
-  faces: string[] | null;
+  faces: FaceDental[] | null;
   observacao: string | null;
   realizado_em: string | null;   // date 'YYYY-MM-DD'
   registrado_em: string;         // date 'YYYY-MM-DD'
@@ -119,7 +120,7 @@ function renderEventosOdontograma(eventos: EventoFichaPdf[]): string {
   const rows = eventos.map((ev) => {
     const label = TIPO_EVENTO_PDF[ev.tipo] ?? ev.tipo;
     const onde = ev.dente != null
-      ? `Dente ${ev.dente}${(ev.faces ?? []).length ? ` · faces ${(ev.faces ?? []).join(', ')}` : ''}`
+      ? `Dente ${ev.dente}${(ev.faces ?? []).length ? ` · faces ${(ev.faces ?? []).map((face) => faceAbreviacao(face, ev.dente!)).join(', ')}` : ''}`
       : ev.nivel === 'boca' ? 'Boca toda'
       : ev.nivel === 'quadrante' && ev.quadrante != null ? `Quadrante ${ev.quadrante}`
       : '—';

@@ -22,6 +22,22 @@ export type QuadranteFDI = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 /** Face dental — 5 canônicas. Palatina é 'L' com rótulo contextual (ver faceLabel). */
 export type FaceDental = 'O' | 'M' | 'D' | 'V' | 'L';
 
+/** Abreviação exibida. `I` só existe na interface; persistência e IA continuam usando `O`. */
+export type FaceDentalVisual = 'O' | 'I' | 'M' | 'D' | 'V' | 'L';
+
+/** Incisivos e caninos FDI são dentes anteriores, permanentes ou decíduos. */
+export function ehDenteAnteriorFDI(dente: number): boolean {
+  const quadrante = Math.trunc(dente / 10);
+  const posicao = dente % 10;
+  const maxPosicao = quadrante >= 1 && quadrante <= 4 ? 8 : quadrante >= 5 && quadrante <= 8 ? 5 : 0;
+  return posicao >= 1 && posicao <= 3 && posicao <= maxPosicao;
+}
+
+/** `O` é a região central canônica; em anteriores sua leitura clínica abreviada é `I`. */
+export function faceAbreviacao(face: FaceDental, dente: number): FaceDentalVisual {
+  return face === 'O' && ehDenteAnteriorFDI(dente) ? 'I' : face;
+}
+
 export interface AncoraClinica {
   nivel: NivelAncora;
   arcada?: Arcada;

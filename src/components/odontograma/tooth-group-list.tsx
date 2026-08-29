@@ -8,6 +8,7 @@ import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import {
   corDoRegistro,
+  faceAbreviacao,
   TIPO_LABEL,
   type OdontogramaEventoDraft,
 } from '@/types/odontograma';
@@ -106,7 +107,7 @@ export function ToothGroupList({ eventos, onDenteClick, className }: ToothGroupL
                   </span>
                   {(ev.ancora.faces ?? []).length > 0 && (
                     <span className="font-mono text-[10.5px]" style={{ color: 'var(--color-text-muted)' }}>
-                      · {(ev.ancora.faces ?? []).join(' ')}
+                      · {(ev.ancora.faces ?? []).map((face) => faceAbreviacao(face, dente)).join(' ')}
                     </span>
                   )}
                   {ev.observacao && (

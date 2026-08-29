@@ -9,7 +9,7 @@
 // histórico primeiro).
 
 import { AlertCircle } from 'lucide-react';
-import { corDoRegistro, TIPO_LABEL, type OdontogramaEventoDraft } from '@/types/odontograma';
+import { corDoRegistro, faceAbreviacao, TIPO_LABEL, type FaceDental, type OdontogramaEventoDraft } from '@/types/odontograma';
 import { TOOTH_NAMES, getQuadrantLabel } from '@/components/odontograma/Odontograma';
 import type { GrupoAberto } from '@/lib/odontograma/grupos-abertos';
 import type { MeuDiaVisita, MeuDiaEventoVisita } from '@/server/dashboard/get-meu-dia';
@@ -29,9 +29,9 @@ interface Linha {
   cor: CorClinica;
 }
 
-/** "Restauração (O)" — mesmo formato de `ondeLabel`, só a parte da face. */
-function comFace(label: string, faces: readonly string[] | undefined): string {
-  return faces && faces.length > 0 ? `${label} (${faces.join(',')})` : label;
+/** "Restauração (I)" — mesmo formato de `ondeLabel`, só a parte da face. */
+function comFace(label: string, faces: readonly FaceDental[] | undefined, dente: number): string {
+  return faces && faces.length > 0 ? `${label} (${faces.map((face) => faceAbreviacao(face, dente)).join(',')})` : label;
 }
 
 /** Linhas de hoje — o rascunho não-salvo desta sessão, sempre no topo. */
@@ -40,7 +40,7 @@ function linhasHoje(dente: number, eventosDraft: OdontogramaEventoDraft[]): Linh
     .filter((e) => e.ancora.dente === dente)
     .map((e) => ({
       data: 'hoje',
-      tipo: comFace(TIPO_LABEL[e.tipo], e.ancora.faces),
+      tipo: comFace(TIPO_LABEL[e.tipo], e.ancora.faces, dente),
       antes: false,
       cor: corDoRegistro(e.status, e.origem, e.momento_planejado),
     }));
@@ -60,7 +60,7 @@ function linhasAntes(dente: number, visitas: MeuDiaVisita[]): Linha[] {
       const data = e.status === 'realizado' && e.realizadoEm ? e.realizadoEm : v.data;
       porId.set(e.id, {
         data: fmtData(data),
-        tipo: comFace(TIPO_LABEL[e.tipo], e.faces),
+        tipo: comFace(TIPO_LABEL[e.tipo], e.faces, dente),
         antes: true,
         cor: corDoRegistro(e.status, e.origem, e.momento_planejado),
       });

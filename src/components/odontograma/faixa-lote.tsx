@@ -11,7 +11,7 @@ import {
 } from '@/lib/odontograma/lote-multidente';
 import type { ContextoLancamento } from '@/lib/odontograma/criar-eventos-contextuais';
 import type { MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
-import { TIPO_LABEL, type FaceDental, type ModoLancamento, type OdontogramaEventoDraft, type TipoRegistroOdontograma } from '@/types/odontograma';
+import { ehDenteAnteriorFDI, faceAbreviacao, faceLabel, TIPO_LABEL, type FaceDental, type ModoLancamento, type OdontogramaEventoDraft, type TipoRegistroOdontograma } from '@/types/odontograma';
 
 const MODOS: Array<{ id: ModoLancamento; label: string }> = [
   { id: 'a_fazer', label: 'A fazer' },
@@ -76,6 +76,22 @@ export function FaixaLote({
    *  vira pergunta de tipo). Restauração nunca vem por aqui — o chip dela é o único caminho
    *  pro seletor de face. */
   const sugestoesUteis = sugestoes.filter((s) => s.catalogo || (s.tipo && CHIPS_LOTE.includes(s.tipo)));
+
+  function faceLabelLote(face: FaceDental): string {
+    if (face !== 'O') return face;
+    const temAnterior = dentes.some(ehDenteAnteriorFDI);
+    const temPosterior = dentes.some((dente) => !ehDenteAnteriorFDI(dente));
+    if (temAnterior && temPosterior) return 'I/O';
+    return faceAbreviacao(face, dentes[0]);
+  }
+
+  function faceAriaLabelLote(face: FaceDental): string {
+    if (face !== 'O') return `Face ${face}`;
+    const temAnterior = dentes.some(ehDenteAnteriorFDI);
+    const temPosterior = dentes.some((dente) => !ehDenteAnteriorFDI(dente));
+    if (temAnterior && temPosterior) return 'Face incisal ou oclusal';
+    return `Face ${faceLabel(face, dentes[0])}`;
+  }
 
   if (dentes.length === 0) return null;
 
@@ -224,6 +240,7 @@ export function FaixaLote({
             <button
               key={face}
               type="button"
+              aria-label={faceAriaLabelLote(face)}
               aria-pressed={facesSelecionadas.includes(face)}
               onClick={() => alternarFaceRestauracao(face)}
               className={`rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors ${
@@ -232,7 +249,7 @@ export function FaixaLote({
                   : 'border-teal/30 bg-surface text-teal-ink hover:bg-teal/10'
               }`}
             >
-              {face}
+              {faceLabelLote(face)}
             </button>
           ))}
           <button

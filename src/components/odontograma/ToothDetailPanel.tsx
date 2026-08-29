@@ -14,6 +14,7 @@ import { ChevronRight, ChevronLeft, X, Forward, Clock, Search } from 'lucide-rea
 import { cn } from '@/lib/utils';
 import type { GrupoAberto } from '@/lib/odontograma/grupos-abertos';
 import {
+  faceAbreviacao,
   faceLabel,
   corDoRegistro,
   TIPO_LABEL,
@@ -723,7 +724,7 @@ export function ToothDetailPanel({
                       pointerEvents: 'none',
                     }}
                   >
-                    {f}
+                    {faceAbreviacao(face, dente)}
                   </text>
                 );
               })}
@@ -1121,7 +1122,7 @@ export function ToothDetailPanel({
                   </span>
                   {(ev.ancora.faces ?? []).length > 0 && (
                     <span className="font-mono text-[10.5px]" style={{ color: 'var(--color-text-muted)' }}>
-                      {(ev.ancora.faces ?? []).join(' ')}
+                      {(ev.ancora.faces ?? []).map((face) => faceAbreviacao(face, dente)).join(' ')}
                     </span>
                   )}
                   {readOnly && ev.observacao && (

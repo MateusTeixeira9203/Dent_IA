@@ -16,6 +16,7 @@ import { TextoExpansivel } from './texto-expansivel';
 import {
   TIPO_LABEL,
   corDoRegistro,
+  faceAbreviacao,
   type TipoRegistroOdontograma,
   type StatusRegistro,
   type OrigemRegistro,
@@ -142,7 +143,9 @@ function ajustarAlturaObservacao(textarea: HTMLTextAreaElement, expandirVazio = 
  * (o Dex emite 1 evento por face; a UI junta — feedback 21/07).
  */
 function facesTitulo(ancoras: AncoraClinica[]): string {
-  return [...new Set(ancoras.flatMap((a) => a.faces ?? []))].join('');
+  return [...new Set(ancoras.flatMap((a) => (
+    (a.faces ?? []).map((face) => a.dente == null ? face : faceAbreviacao(face, a.dente))
+  )))].join('');
 }
 
 /** Resumo da âncora pro título: "dente 36" · "dentes 31 · 41 · 42" · "arcada superior" · "quadrante 3" · "boca toda". */
