@@ -1,10 +1,11 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado em 28/08/2026
+> **ESTADO** · atualizado em 29/08/2026
 
 ## Agora
 
-🔵 **R-139d/e — Visualizador clínico de imagens** está em execução contra
+🟡 **R-139d/e — Visualizador clínico de imagens** está no ar, aguardando validação manual,
+contra
 `plans/specs/R-139d-visualizador-clinico-arquivos.md` e
 `plans/specs/R-139e-visualizador-apresentacao-anotacoes.md`.
 
@@ -26,14 +27,12 @@ produto — isso exige viewer próprio e não entra por inferência no mesmo mot
 no fluxo atual, porque exigem viewer próprio. Implementar primeiro R-139d em Arquivos e, sobre
 o mesmo palco, integrar R-139e sem mudar os slides nem símbolos do odontograma.
 
-**Implementado localmente:** lightbox de Arquivos, renovação de URL assinada no retry, zoom/pan/
+**Publicado em produção:** lightbox de Arquivos, renovação de URL assinada no retry, zoom/pan/
 rotação/filtros temporários, e o mesmo palco em imagem do editor + apresentação ao vivo. A camada
 ciano agora recebe a transformação inversa ao escrever e usa traço de espessura constante.
-`typecheck`, lint focado, 6 testes do motor e build de produção passaram.
+O CI remoto passou com typecheck, testes, lint e build; a rota pública de login respondeu `200`.
 
-**Gate restante:** validação manual autenticada de Arquivos e Apresentação. O navegador de QA
-local redireciona para login, portanto nenhuma ficha/documento clínico foi usado para contornar o
-gate.
+**Gate restante:** validação manual autenticada de Arquivos e Apresentação em produção.
 
 ## Travado
 
@@ -43,7 +42,7 @@ Nada travado.
 
 1. Validação manual da Agenda R-138 em Android/iPhone e desktop (🟡 em `main`).
 2. Resultado do teste manual do R-136 em produção.
-3. Testar depois o Dex R-139c, catálogo R-139a e face incisal R-139b antes de publicar.
+3. Testar em produção o Dex R-139c, catálogo R-139a e face incisal R-139b.
 
 **Observação da demonstração (28/08):** na revisão da consulta, o dentista não consegue
 trocar/corrigir o procedimento que o Dex extraiu; também foi relatado que saídas do Dex ainda
