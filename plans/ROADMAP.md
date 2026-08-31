@@ -28,7 +28,7 @@
 
 | ID | Item | Estado |
 |---|---|---|
-| [**R-140**](specs/R-140-prontuario-atendimento-rastreabilidade.md) | **Prontuário longitudinal, Atendimento e rastreabilidade** — reorganiza Meu Dia/Ficha sem quebrar tratamento, orçamento e assinatura; prepara etiquetas e estoque | 🔵 R-140a em validação local (schema/RLS e dual-write); produção continua bloqueada até R-139c/R-133/R-143 passarem o gate clínico do Dex. |
+| [**R-140**](specs/R-140-prontuario-atendimento-rastreabilidade.md) | **Prontuário longitudinal, Atendimento e rastreabilidade** — reorganiza Meu Dia/Ficha sem quebrar tratamento, orçamento e assinatura; prepara etiquetas e estoque | 🔵 R-140a/R-140b validados apenas localmente; código segue na branch de transferência, nunca em `main` enquanto as migrations e o gate clínico Dex não forem liberados. |
 | **R-138** | **Agenda com calendário mobile** — Dia e Semana preservam a grade de horários do desktop no celular | 🟡 enviada à `main`; falta validação manual em Android/iPhone e desktop. |
 | [**R-139a**](specs/R-139a-remover-procedimento-catalogo.md) | **Remover procedimento do catálogo** — o dentista tira o item das escolhas novas sem apagar histórico financeiro | 🟡 no ar; aprovado pelo usuário em produção em 29/08, pendente de auditoria completa para ✅. |
 | [**R-139b**](specs/R-139b-face-incisal-i.md) | **Face incisal como I** — dentes anteriores mostram a abreviação clínica correta sem migrar o código canônico `O` | 🟡 no ar; aprovado pelo usuário em produção em 29/08, pendente de auditoria completa para ✅. |
