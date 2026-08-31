@@ -13,6 +13,8 @@ export interface ContextoLancamento {
 
 export interface CriarEventosContextuaisInput {
   tipo: TipoRegistroOdontograma;
+  procedimentoId?: string | null;
+  procedimentoNome?: string | null;
   ancoras: AncoraClinica[];
   contexto: ContextoLancamento;
   dataPadrao: string;
@@ -26,6 +28,8 @@ export interface CriarEventosContextuaisInput {
  */
 export function criarEventosContextuais({
   tipo,
+  procedimentoId = null,
+  procedimentoNome = null,
   ancoras,
   contexto,
   dataPadrao,
@@ -39,6 +43,8 @@ export function criarEventosContextuais({
     return {
       id: crypto.randomUUID(),
       tipo,
+      procedimentoId,
+      procedimentoNome,
       ancora,
       grupo_id: null,
       papel_no_grupo: null,

@@ -79,7 +79,7 @@ const CAMPOS_FICHA_ORC =
   'id, created_at, data_atendimento, queixa_principal, dentes_afetados, dentes_observacoes, ' +
   'dentista_id, dentista:dentistas(nome)';
 const CAMPOS_EVENTO_ORC =
-  'id, tipo, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, assinatura_id, observacao, ' +
+  'id, tipo, procedimento_id, procedimento_nome, status, origem, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, assinatura_id, observacao, ' +
   'encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(nome)';
 const SELECT_FICHA_PARA_ORC = `${CAMPOS_FICHA_ORC}, odontograma_eventos(${CAMPOS_EVENTO_ORC})`;
 // R-130 — !inner mantém o agregado enxuto, mas a elegibilidade financeira não depende mais
@@ -235,10 +235,13 @@ export function useOrcamentoModal({
 
     return Array.from(grupos.values()).map((grupoEventos) => {
       const primeiro = grupoEventos[0];
-      const match = matchProcedimentoPorTipo(primeiro.tipo);
-      const rotulo = primeiro.tipo === 'outro' && primeiro.observacao?.trim()
-        ? primeiro.observacao.trim()
-        : TIPO_LABEL[primeiro.tipo];
+      const catalogoVinculado = primeiro.procedimento_id
+        ? procedimentosClinica.find((procedimento) => procedimento.id === primeiro.procedimento_id)
+        : undefined;
+      const match = catalogoVinculado ?? matchProcedimentoPorTipo(primeiro.tipo);
+      const rotulo = primeiro.procedimento_nome?.trim()
+        || (primeiro.tipo === 'outro' ? primeiro.observacao?.trim() : null)
+        || TIPO_LABEL[primeiro.tipo];
 
       const dentesDistintos = [
         ...new Set(grupoEventos.map((ev) => ev.dente).filter((d): d is number => d != null)),
@@ -264,8 +267,8 @@ export function useOrcamentoModal({
         : null;
 
       return {
-        procedimentoId: match?.id ?? '',
-        descricao: descricaoPonte ?? (alcance ? `${match?.nome ?? rotulo} — ${alcance}` : (match?.nome ?? rotulo)),
+        procedimentoId: primeiro.procedimento_id ?? match?.id ?? '',
+        descricao: descricaoPonte ?? (alcance ? `${rotulo} — ${alcance}` : rotulo),
         quantidade,
         preco: match?.preco_padrao != null ? formatValorBR(match.preco_padrao) : '',
         eventoIds: grupoEventos.map((evento) => evento.id),

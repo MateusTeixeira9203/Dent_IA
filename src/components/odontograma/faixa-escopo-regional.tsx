@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { criarEventosContextuais } from '@/lib/odontograma/criar-eventos-contextuais';
 import {
   ESCOPOS_REGIONAIS,
@@ -36,6 +37,8 @@ interface FaixaEscopoRegionalProps {
   onModoLancamentoChange: (modo: ModoLancamento) => void;
   manutencaoOrtodonticaAtiva: boolean;
   onManutencaoOrtodontica: () => void;
+  /** Meu Dia usa uma grade sem rolagem; a ficha completa mantém a faixa horizontal atual. */
+  layout?: 'linha' | 'grade';
 }
 
 export function FaixaEscopoRegional({
@@ -49,6 +52,7 @@ export function FaixaEscopoRegional({
   onModoLancamentoChange,
   manutencaoOrtodonticaAtiva,
   onManutencaoOrtodontica,
+  layout = 'linha',
 }: FaixaEscopoRegionalProps) {
   const [busca, setBusca] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -66,14 +70,20 @@ export function FaixaEscopoRegional({
     onEscopoChange(escopo === novoEscopo ? null : novoEscopo);
   }
 
-  function adicionar(label: string, tipo: TipoRegistroOdontograma | null) {
+  function adicionar(
+    label: string,
+    tipo: TipoRegistroOdontograma | null,
+    procedimentoId: string | null = null,
+  ) {
     if (!escopo) return;
     const novos = criarEventosContextuais({
       tipo: tipo ?? 'outro',
+      procedimentoId,
+      procedimentoNome: tipo && procedimentoId == null ? null : label,
       ancoras: [ancoraDoEscopoRegional(escopo)],
       contexto: { capturaId: crypto.randomUUID(), modo: modoLancamento },
       dataPadrao,
-      observacao: tipo ? '' : label,
+      observacao: '',
     });
     onEventosDraftChange([...eventosDraft, ...novos]);
     setBusca('');
@@ -81,7 +91,7 @@ export function FaixaEscopoRegional({
   }
 
   function adicionarOpcao(opcao: OpcaoProcedimentoRegional) {
-    adicionar(opcao.label, opcao.tipo);
+    adicionar(opcao.label, opcao.tipo, opcao.procedimentoId);
   }
 
   function adicionarTextoLivre() {
@@ -89,38 +99,73 @@ export function FaixaEscopoRegional({
     if (texto) adicionar(texto, null);
   }
 
+  function botaoEscopo(item: typeof ESCOPOS_REGIONAIS[number], className?: string) {
+    return (
+      <button
+        key={item.id}
+        type="button"
+        aria-pressed={escopo === item.id}
+        onClick={() => selecionarEscopo(item.id)}
+        className={cn(
+          'rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors',
+          escopo === item.id
+            ? 'border-teal bg-teal/15 text-teal-ink'
+            : 'border-border bg-surface-alt text-text-secondary hover:border-teal/40 hover:text-teal-ink',
+          className,
+        )}
+      >
+        {item.label}
+      </button>
+    );
+  }
+
+  const escoposPrincipais = ESCOPOS_REGIONAIS.filter((item) => item.id === 'geral' || item.id === 'boca');
+  const escoposPorArcada = ESCOPOS_REGIONAIS.filter((item) => item.id !== 'geral' && item.id !== 'boca');
+
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {ESCOPOS_REGIONAIS.map((item) => (
+      {layout === 'grade' ? (
+        <div className="flex flex-col gap-1.5">
+          <div className="grid grid-cols-3 gap-1.5">
+            {botaoEscopo(escoposPrincipais[0], 'min-h-9 whitespace-normal leading-tight')}
+            <button
+              type="button"
+              aria-pressed={manutencaoOrtodonticaAtiva}
+              onClick={onManutencaoOrtodontica}
+              className={cn(
+                'min-h-9 rounded-full border px-2.5 text-[11px] font-semibold leading-tight transition-colors',
+                manutencaoOrtodonticaAtiva
+                  ? 'border-teal bg-teal/10 text-teal-ink'
+                  : 'border-border bg-surface-alt text-text-secondary hover:border-teal/40 hover:text-teal-ink',
+              )}
+            >
+              Manutenção ortodôntica
+            </button>
+            {botaoEscopo(escoposPrincipais[1], 'min-h-9 whitespace-normal leading-tight')}
+          </div>
+          <div className="grid grid-cols-6 gap-1.5">
+            {escoposPorArcada.map((item) => botaoEscopo(item, 'min-h-9 whitespace-normal px-1.5 text-[10px] leading-tight'))}
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {ESCOPOS_REGIONAIS.map((item) => botaoEscopo(item, 'shrink-0'))}
+          <span className="mx-0.5 h-5 w-px shrink-0 bg-border" aria-hidden />
           <button
-            key={item.id}
             type="button"
-            aria-pressed={escopo === item.id}
-            onClick={() => selecionarEscopo(item.id)}
-            className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-              escopo === item.id
-                ? 'border-teal bg-teal/15 text-teal-ink'
-                : 'border-border bg-surface-alt text-text-secondary hover:border-teal/40 hover:text-teal-ink'
-            }`}
+            aria-pressed={manutencaoOrtodonticaAtiva}
+            onClick={onManutencaoOrtodontica}
+            className={cn(
+              'shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors',
+              manutencaoOrtodonticaAtiva
+                ? 'border-teal bg-teal/10 text-teal-ink'
+                : 'border-border bg-surface-alt text-text-secondary hover:border-teal/40 hover:text-teal-ink',
+            )}
           >
-            {item.label}
+            Manutenção ortodôntica
           </button>
-        ))}
-        <span className="mx-0.5 h-5 w-px shrink-0 bg-border" aria-hidden />
-        <button
-          type="button"
-          aria-pressed={manutencaoOrtodonticaAtiva}
-          onClick={onManutencaoOrtodontica}
-          className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-            manutencaoOrtodonticaAtiva
-              ? 'border-teal bg-teal/10 text-teal-ink'
-              : 'border-border bg-surface-alt text-text-secondary hover:border-teal/40 hover:text-teal-ink'
-          }`}
-        >
-          Manutenção ortodôntica
-        </button>
-      </div>
+        </div>
+      )}
 
       {escopo && (
         <div className="flex flex-col gap-1.5 rounded-lg border border-teal/30 bg-teal/5 px-3 py-2">

@@ -99,8 +99,18 @@ export function FaixaLote({
     return { capturaId: crypto.randomUUID(), modo };
   }
 
-  function aplicar(tipo: TipoRegistroOdontograma) {
-    const novos = eventosDoLote(tipo, dentes, eventosDraft, dataPadrao, contexto());
+  function aplicar(
+    tipo: TipoRegistroOdontograma,
+    procedimento?: { id: string | null; nome: string | null },
+  ) {
+    const novos = eventosDoLote(
+      tipo,
+      dentes,
+      eventosDraft,
+      dataPadrao,
+      contexto(),
+      procedimento,
+    );
     if (novos.length > 0) onEventosDraftChange([...eventosDraft, ...novos]);
     onModoMultidenteChange(false);
   }
@@ -336,7 +346,11 @@ export function FaixaLote({
                 <button
                   key={tipo}
                   type="button"
-                  onClick={() => { aplicar(tipo); setBusca(''); setCatalogoPendente(null); }}
+                  onClick={() => {
+                    aplicar(tipo, { id: catalogoPendente.id, nome: catalogoPendente.nome });
+                    setBusca('');
+                    setCatalogoPendente(null);
+                  }}
                   className="rounded-full border border-teal/30 bg-surface px-2 py-0.5 text-[10px] font-semibold text-teal-ink"
                 >
                   {TIPO_LABEL[tipo]}

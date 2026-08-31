@@ -28,6 +28,8 @@ export function montarRowsEventos(
     ficha_id:       ctx.fichaId,
     grupo_id:       ev.grupo_id,
     tipo:           ev.tipo,
+    procedimento_id: ev.procedimentoId ?? null,
+    procedimento_nome: ev.procedimentoNome?.trim() || null,
     status:         ev.status,
     origem:         ev.origem,
     // R-101 — sem isso, todo save reseta silenciosamente pro default da RPC (sessao_atual),

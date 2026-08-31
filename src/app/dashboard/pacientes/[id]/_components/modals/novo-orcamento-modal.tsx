@@ -165,9 +165,10 @@ export function NovoOrcamentoModal({
             </DialogDescription>
           </div>
           <button
+            type="button"
             onClick={() => onOpenChange(false)}
             aria-label="Fechar"
-            className="h-11 w-11 rounded-lg text-text-secondary hover:bg-surface-alt hover:text-text-primary transition-colors shrink-0"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-surface-alt hover:text-text-primary"
           >
             <X className="w-4 h-4" />
           </button>

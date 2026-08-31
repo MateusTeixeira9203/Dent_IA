@@ -38,10 +38,13 @@ export function eventosDoLote(
   eventosDraft: OdontogramaEventoDraft[],
   dataPadrao: string,
   contexto: ContextoLancamento,
+  procedimento?: { id: string | null; nome: string | null },
 ): OdontogramaEventoDraft[] {
   const modo = contexto.modo;
   return criarEventosContextuais({
     tipo,
+    procedimentoId: procedimento?.id ?? null,
+    procedimentoNome: procedimento?.nome ?? null,
     dataPadrao,
     contexto,
     ancoras: dentes
@@ -105,9 +108,12 @@ export function eventosDoLoteAvulso(
   dentes: number[],
   dataPadrao: string,
   contexto: ContextoLancamento,
+  procedimentoId: string | null = null,
 ): OdontogramaEventoDraft[] {
   return criarEventosContextuais({
     tipo: 'outro',
+    procedimentoId,
+    procedimentoNome: texto.trim(),
     dataPadrao,
     contexto,
     observacao: texto,

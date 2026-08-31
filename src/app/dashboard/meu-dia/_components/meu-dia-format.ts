@@ -1,7 +1,7 @@
 // C1 — helpers compartilhados por historico-bloco/a-fazer-bloco. Migrados de
 // contexto-coluna.tsx (SAI nesta fatia, vira os blocos da coluna direita/esquerda).
 
-import { faceAbreviacao, type Arcada, type FaceDental, type QuadranteFDI } from '@/types/odontograma';
+import { faceAbreviacao, type Arcada, type FaceDental, type NivelAncora, type QuadranteFDI } from '@/types/odontograma';
 
 /** 'YYYY-MM-DD' → 'DD/MM/AAAA' sem `new Date()` — mesmo cuidado de fuso do resto da casa. */
 export function fmtData(iso: string): string {
@@ -11,7 +11,7 @@ export function fmtData(iso: string): string {
 
 /** R-55 — `faces` é opcional pra não quebrar chamador nenhum; quando presente e há dente,
  *  distingue "dente 15 (O)" de "dente 15 (M)" — antes os dois renderizavam a linha idêntica. */
-export function ondeLabel(p: { dente: number | null; arcada: Arcada | null; quadrante: QuadranteFDI | null; faces?: FaceDental[] }): string {
+export function ondeLabel(p: { nivel?: NivelAncora; dente: number | null; arcada: Arcada | null; quadrante: QuadranteFDI | null; faces?: FaceDental[] }): string {
   if (p.dente != null) {
     const dente = p.dente;
     const faces = p.faces && p.faces.length > 0 ? ` (${p.faces.map((face) => faceAbreviacao(face, dente)).join(',')})` : '';
@@ -19,5 +19,6 @@ export function ondeLabel(p: { dente: number | null; arcada: Arcada | null; quad
   }
   if (p.arcada != null) return p.arcada === 'superior' ? 'arcada sup.' : 'arcada inf.';
   if (p.quadrante != null) return `Q${p.quadrante}`;
+  if (p.nivel === 'geral') return 'sem localização';
   return 'boca';
 }

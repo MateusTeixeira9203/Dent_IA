@@ -42,7 +42,7 @@ export function FaixaGavetas({
 
   const gavetas: { id: GavetaId; label: string; icon: typeof History; count?: number }[] = [
     { id: 'historico', label: 'Histórico', icon: History, count: historicoCount },
-    { id: 'afazer', label: 'A fazer', icon: Hourglass, count: aFazerCount },
+    { id: 'afazer', label: 'Pendências', icon: Hourglass, count: aFazerCount },
     { id: 'anexos', label: 'Anexos', icon: Paperclip },
   ];
 
@@ -70,7 +70,7 @@ export function FaixaGavetas({
             }`}
           >
             <Stethoscope className="h-3.5 w-3.5" />
-            Odontograma
+            Boca
           </button>
         )}
         {gavetas.map(({ id, label, icon: Icon, count }) => (

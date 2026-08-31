@@ -18,6 +18,7 @@ import {
   faceLabel,
   corDoRegistro,
   TIPO_LABEL,
+  rotuloProcedimento,
   type FaceDental,
   type OdontogramaEventoDraft,
   type TipoRegistroOdontograma,
@@ -394,11 +395,20 @@ export function ToothDetailPanel({
   }
 
   /** Cria o evento de um tipo no dente. grupoId != null amarra a um trabalho aberto (R-02 F3). */
-  function criarDenteTipo(tipo: TipoRegistroOdontograma, modos: StatusRegistro[], grupoId: string | null) {
+  function criarDenteTipo(
+    tipo: TipoRegistroOdontograma,
+    modos: StatusRegistro[],
+    grupoId: string | null,
+    procedimento?: { id: string | null; nome: string | null },
+  ) {
     const all = [...eventos];
     const ancora: AncoraClinica =
       tipo === 'selante' ? { nivel: 'face', dente, faces: ['O'] } : { nivel: 'dente', dente };
-    const ev = novo(tipo, modos[0], ancora);
+    const ev = {
+      ...novo(tipo, modos[0], ancora),
+      procedimentoId: procedimento?.id ?? null,
+      procedimentoNome: procedimento?.nome ?? null,
+    };
     all.push(grupoId ? { ...ev, grupo_id: grupoId } : ev);
     // Endo/implante acabaram de ganhar tabela (migration 106) — abre sozinha na criação,
     // senão o dentista nunca descobre que ela existe (é o "preciso que apareça" de 21/07).
@@ -499,13 +509,15 @@ export function ToothDetailPanel({
     onChange([...eventos, {
       id: crypto.randomUUID(),
       tipo: 'outro',
+      procedimentoId: null,
+      procedimentoNome: texto,
       status: 'realizado',
       origem: 'clinica',
       momento_planejado: 'sessao_atual',
       ancora: { nivel: 'dente', dente },
       grupo_id: null,
       papel_no_grupo: null,
-      observacao: texto,
+      observacao: '',
       realizado_em: dataPadrao,
     }]);
     // O registro já aconteceu. `ultimoAvulso` só habilita a ação SECUNDÁRIA de salvar no
@@ -883,7 +895,15 @@ export function ToothDetailPanel({
                   <button
                     key={tipo}
                     type="button"
-                    onClick={() => { cycleDenteTipo(tipo, modos); limparBusca(); }}
+                    onClick={() => {
+                      criarDenteTipo(
+                        tipo,
+                        modos,
+                        null,
+                        { id: catalogoPendente.id, nome: catalogoPendente.nome },
+                      );
+                      limparBusca();
+                    }}
                     className="rounded-full px-2 py-0.5 text-[10px] font-semibold outline-none focus-visible:ring-1 focus-visible:ring-teal"
                     style={{
                       background: 'var(--color-surface)',
@@ -1118,7 +1138,7 @@ export function ToothDetailPanel({
                 <div className="flex items-center gap-2 py-1.5 text-[12px]">
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ background: COR_TOKEN[cor] }} aria-hidden="true" />
                   <span className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                    {TIPO_LABEL[ev.tipo]}
+                    {rotuloProcedimento(ev)}
                   </span>
                   {(ev.ancora.faces ?? []).length > 0 && (
                     <span className="font-mono text-[10.5px]" style={{ color: 'var(--color-text-muted)' }}>
@@ -1180,7 +1200,7 @@ export function ToothDetailPanel({
                         border: '1px solid var(--color-border)',
                         color: 'var(--color-text-secondary)',
                       }}
-                      aria-label={`Data do procedimento — ${TIPO_LABEL[ev.tipo]}`}
+                      aria-label={`Data do procedimento — ${rotuloProcedimento(ev)}`}
                     />
                   )}
                   {temDetalhe && (
@@ -1200,7 +1220,7 @@ export function ToothDetailPanel({
                       onClick={() => remover(ev)}
                       className="p-0.5 rounded outline-none focus-visible:ring-1 focus-visible:ring-teal shrink-0"
                       style={{ color: 'var(--color-text-muted)' }}
-                      aria-label={`Remover ${TIPO_LABEL[ev.tipo]}`}
+                      aria-label={`Remover ${rotuloProcedimento(ev)}`}
                     >
                       <X size={12} strokeWidth={2.4} />
                     </button>
@@ -1221,7 +1241,7 @@ export function ToothDetailPanel({
                         border: '1px solid var(--color-border)',
                         color: 'var(--color-text-secondary)',
                       }}
-                      aria-label={`Observação — ${TIPO_LABEL[ev.tipo]}`}
+                      aria-label={`Observação — ${rotuloProcedimento(ev)}`}
                     />
                   </div>
                 )}

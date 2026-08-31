@@ -46,6 +46,7 @@ function paraCard(e: MeuDiaEventoVisita): EventoParaCard {
     id: e.id,
     grupoId: e.grupoId,
     tipo: e.tipo,
+    procedimentoNome: e.procedimentoNome,
     status: e.status,
     ancora: {
       nivel: e.nivel,

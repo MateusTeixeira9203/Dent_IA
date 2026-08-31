@@ -60,7 +60,7 @@ function PendenciaLinha({
   const textoLinha = (
     <div className="min-w-0 flex-1">
       <p className="truncate text-xs font-semibold text-text-primary">
-        {TIPO_LABEL[p.tipo]} <span className="font-mono font-normal text-text-secondary">{ondeLabel(p)}</span>
+        {p.procedimentoNome?.trim() || TIPO_LABEL[p.tipo]} <span className="font-mono font-normal text-text-secondary">{ondeLabel(p)}</span>
       </p>
       <p className="text-[11px] font-mono text-text-secondary">
         desde {fmtData(p.registradoEm)} · {p.dentistaNome}

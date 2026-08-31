@@ -9,7 +9,7 @@
 // histórico primeiro).
 
 import { AlertCircle } from 'lucide-react';
-import { corDoRegistro, faceAbreviacao, TIPO_LABEL, type FaceDental, type OdontogramaEventoDraft } from '@/types/odontograma';
+import { corDoRegistro, faceAbreviacao, rotuloProcedimento, TIPO_LABEL, type FaceDental, type OdontogramaEventoDraft } from '@/types/odontograma';
 import { TOOTH_NAMES, getQuadrantLabel } from '@/components/odontograma/Odontograma';
 import type { GrupoAberto } from '@/lib/odontograma/grupos-abertos';
 import type { MeuDiaVisita, MeuDiaEventoVisita } from '@/server/dashboard/get-meu-dia';
@@ -40,7 +40,7 @@ function linhasHoje(dente: number, eventosDraft: OdontogramaEventoDraft[]): Linh
     .filter((e) => e.ancora.dente === dente)
     .map((e) => ({
       data: 'hoje',
-      tipo: comFace(TIPO_LABEL[e.tipo], e.ancora.faces, dente),
+      tipo: comFace(rotuloProcedimento(e), e.ancora.faces, dente),
       antes: false,
       cor: corDoRegistro(e.status, e.origem, e.momento_planejado),
     }));
@@ -60,7 +60,7 @@ function linhasAntes(dente: number, visitas: MeuDiaVisita[]): Linha[] {
       const data = e.status === 'realizado' && e.realizadoEm ? e.realizadoEm : v.data;
       porId.set(e.id, {
         data: fmtData(data),
-        tipo: comFace(TIPO_LABEL[e.tipo], e.faces, dente),
+        tipo: comFace(rotuloProcedimento(e), e.faces, dente),
         antes: true,
         cor: corDoRegistro(e.status, e.origem, e.momento_planejado),
       });

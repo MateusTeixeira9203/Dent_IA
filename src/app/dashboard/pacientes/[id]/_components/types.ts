@@ -58,6 +58,8 @@ export type OrcamentoComItens = {
 export type EventoOdontogramaParaOrc = {
   id: string;
   tipo: TipoRegistroOdontograma;
+  procedimento_id: string | null;
+  procedimento_nome: string | null;
   status: StatusRegistro;
   origem: OrigemRegistro;
   nivel: NivelAncora;

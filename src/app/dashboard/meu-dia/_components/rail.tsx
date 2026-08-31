@@ -220,7 +220,7 @@ export function Rail({ slots, selecionadoId, onSelecionar, onEncaixe, onMudarSta
       >
         {slots.map((slot) => {
           const selecionado = slot.agendamentoId === selecionadoId;
-          const semRegistro = slot.statusAgendamento === 'completed' && !slot.temFichaHoje;
+          const semRegistro = slot.statusAgendamento === 'completed' && !slot.atendimentoRegistrado;
 
           return (
             <div
@@ -252,14 +252,14 @@ export function Rail({ slots, selecionadoId, onSelecionar, onEncaixe, onMudarSta
                     {STATUS_LABEL[slot.statusAgendamento] ?? slot.statusAgendamento}
                   </span>
                 </div>
-                {slot.temFichaHoje && (
+                {slot.atendimentoRegistrado && (
                   <p className="mt-1 text-[10px] font-semibold text-teal">✓ registrado</p>
                 )}
                 {semRegistro && (
                   <p className="mt-1 text-[10px] font-semibold text-coral">⚠ sem registro</p>
                 )}
               </button>
-              {selecionado && (
+              {selecionado && !slot.atendimentoRegistrado && (
                 <select
                   aria-label="Mudar status do atendimento"
                   value={slot.statusAgendamento}

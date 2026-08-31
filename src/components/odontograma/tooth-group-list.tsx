@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import {
   corDoRegistro,
   faceAbreviacao,
-  TIPO_LABEL,
+  rotuloProcedimento,
   type OdontogramaEventoDraft,
 } from '@/types/odontograma';
 import { TOOTH_NAMES } from '@/components/odontograma/Odontograma';
@@ -103,7 +103,7 @@ export function ToothGroupList({ eventos, onDenteClick, className }: ToothGroupL
                   style={i > 0 ? { borderTop: '1px solid var(--color-border)' } : undefined}
                 >
                   <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                    {TIPO_LABEL[ev.tipo]}
+                    {rotuloProcedimento(ev)}
                   </span>
                   {(ev.ancora.faces ?? []).length > 0 && (
                     <span className="font-mono text-[10.5px]" style={{ color: 'var(--color-text-muted)' }}>
@@ -146,7 +146,7 @@ export function ToothGroupList({ eventos, onDenteClick, className }: ToothGroupL
             return (
               <div key={i} className="flex items-center gap-2 py-1 text-[12px]">
                 <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                  {TIPO_LABEL[ev.tipo]}
+                  {rotuloProcedimento(ev)}
                 </span>
                 <span className="text-[11px]" style={{ color: 'var(--color-text-secondary)' }}>
                   {ev.ancora.nivel === 'arcada' ? `arcada ${ev.ancora.arcada}`
