@@ -14,7 +14,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown, ChevronRight, Maximize2, Forward, Check, X, Clock } from 'lucide-react';
 import { TextoExpansivel } from './texto-expansivel';
 import {
-  TIPO_LABEL,
+  rotuloProcedimento,
   corDoRegistro,
   faceAbreviacao,
   type TipoRegistroOdontograma,
@@ -27,6 +27,8 @@ import {
 /** View-model do card — a ficha (Fase 4) mapeia os eventos crus pra cá. */
 export interface RegistroCardData {
   tipo: TipoRegistroOdontograma;
+  /** R-140b — snapshot do nome escolhido/digitado; vence o rótulo estrutural. */
+  procedimentoNome?: string | null;
   status: StatusRegistro;
   origem: OrigemRegistro;
   /** R-101 — ver corDoRegistro. Default 'sessao_atual'. */
@@ -50,6 +52,8 @@ export interface RegistroCardData {
   encaminhadoPara: { id: string; nome: string } | null;
   /** R-106 — proposta ambígua do campo mágico; só existe no rascunho editável. */
   revisarStatus?: boolean;
+  /** Grupo contém eventos com status diferentes; não pode herdar o status do primeiro. */
+  statusMisto?: boolean;
 }
 
 export interface RegistroCardProps {
@@ -112,11 +116,12 @@ export interface RegistroCardProps {
   onAbertoChange?: (aberto: boolean) => void;
 }
 
-const PILL: Record<'coral' | 'teal' | 'slate' | 'warning', { label: string; wrap: string; dot: string }> = {
+const PILL: Record<'coral' | 'teal' | 'slate' | 'warning' | 'misto', { label: string; wrap: string; dot: string }> = {
   teal:    { label: 'Realizado',      wrap: 'bg-teal-pale text-teal-ink',       dot: 'bg-teal' },
   coral:   { label: 'Planejado',      wrap: 'bg-coral-pale text-coral-ink',     dot: 'bg-coral' },
   slate:   { label: 'Pré-existente',  wrap: 'bg-slate-pale text-slate-ink',     dot: 'bg-slate' },
   warning: { label: 'Próxima seção',  wrap: 'bg-warning-pale text-warning-ink', dot: 'bg-warning' },
+  misto:   { label: 'Status misto',   wrap: 'bg-surface-alt text-text-secondary border border-border', dot: 'bg-text-secondary' },
 };
 
 /** DD/MM/AAAA de um 'YYYY-MM-DD' SEM new Date() — evita o shift de fuso (UTC) que a casa já corrigiu. */
@@ -152,6 +157,7 @@ function facesTitulo(ancoras: AncoraClinica[]): string {
 function resumoAncora(ancoras: AncoraClinica[]): string {
   const primeiro = ancoras[0];
   if (!primeiro) return '';
+  if (primeiro.nivel === 'geral') return 'sem localização';
   if (primeiro.nivel === 'boca') return 'boca toda'; // R-07: rotina sem dente âncora
   if (primeiro.nivel === 'arcada') return `arcada ${primeiro.arcada ?? ''}`.trim();
   if (primeiro.nivel === 'quadrante') return `quadrante ${primeiro.quadrante ?? ''}`.trim();
@@ -173,10 +179,11 @@ export function RegistroCard({
     onAbertoChange?.(proximo);
   };
   const cor = corDoRegistro(data.status, data.origem, data.momentoPlanejado);
-  const pill = PILL[cor];
+  const pill = data.statusMisto ? PILL.misto : PILL[cor];
 
   const faces = facesTitulo(data.ancoras);
-  const titulo = `${TIPO_LABEL[data.tipo]}${faces ? ` ${faces}` : ''} · ${resumoAncora(data.ancoras)}`;
+  const rotulo = rotuloProcedimento(data);
+  const titulo = `${rotulo}${faces ? ` ${faces}` : ''} · ${resumoAncora(data.ancoras)}`;
 
   const retroativo = data.realizadoEm != null && dataBRT(data.registradoEm) > data.realizadoEm;
   // Fora do modo compacto, `onAbrirGrande` redireciona o card inteiro. Na bancada compacta,
@@ -187,7 +194,7 @@ export function RegistroCard({
   // Modo seleção (variante B): o clique no card marca/desmarca em vez de expandir; o
   // pill e o × ficam inertes (a ação da vez é escolher o que encaminhar).
   const emSelecao = selecionavel;
-  const pillClicavel = !emSelecao && onToggleStatus;
+  const pillClicavel = !emSelecao && !data.statusMisto && onToggleStatus;
   const containerInterativo = emSelecao || temCorpo || abreFora;
   const aoClicar = emSelecao
     ? onToggleSelecao

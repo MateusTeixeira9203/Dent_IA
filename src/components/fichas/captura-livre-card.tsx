@@ -16,13 +16,21 @@ import { DexAvatar } from '@/components/ui/dex-avatar';
 import type { EvolucaoFormatada } from '@/app/api/dex/formatar-evolucao/route';
 import type { MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
 
-// Etapas do feedback progressivo — mesmo texto/timing do modo consulta (§8).
-const ETAPAS = [
-  { ms: 0,    label: 'Analisando queixa...' },
-  { ms: 1800, label: 'Identificando dentes...' },
-  { ms: 3800, label: 'Gerando conduta...' },
-  { ms: 6500, label: 'Finalizando ficha...' },
-] as const;
+export type CapturaDexFase =
+  | 'idle'
+  | 'recording'
+  | 'transcribing'
+  | 'processing_file'
+  | 'organizing'
+  | 'transcription_error'
+  | 'organizing_error';
+
+export interface CapturaDexState {
+  fase: CapturaDexFase;
+  busy: boolean;
+  impedeSalvar: boolean;
+  audioParaRetry: boolean;
+}
 
 export interface CapturaLivreCardProps {
   pacienteNome: string;
@@ -44,11 +52,13 @@ export interface CapturaLivreCardProps {
   compact?: boolean;
   /** R-123 — devolve o foco ao relato no atendimento rápido. */
   autoFocus?: boolean;
+  /** Permite que o dono do rascunho bloqueie save/troca enquanto a captura é recuperável. */
+  onCapturaStateChange?: (state: CapturaDexState) => void;
 }
 
 export function CapturaLivreCard({
   pacienteNome, formDirty, onOrganizado, anexarTexto, catalogoProcedimentos, onAplicarSugestao,
-  compact = false, autoFocus = false,
+  compact = false, autoFocus = false, onCapturaStateChange,
 }: CapturaLivreCardProps) {
   const {
     texto,
@@ -58,6 +68,12 @@ export function CapturaLivreCard({
     isTranscribing,
     liveTranscript,
     elapsedSeconds,
+    retryTranscription,
+    discardPendingAudio,
+    hasPendingAudio,
+    transcriptionError,
+    silenceWarning,
+    continueRecording,
   } = useCapturaLivre({ pacienteNome });
 
   // R-62 — puro e síncrono: roda a cada tecla, sem debounce, sem rede (I1/I6). Ausência de
@@ -87,12 +103,35 @@ export function CapturaLivreCard({
   }, [anexarTexto, setTexto]);
 
   const [isOrganizando, setIsOrganizando] = useState(false);
-  const [organizarLabel, setOrganizarLabel] = useState('Organizar com Dex');
+  const [organizarError, setOrganizarError] = useState(false);
   const [processandoArquivo, setProcessandoArquivo] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const ocupado = micStatus === 'recording' || isTranscribing || isOrganizando || processandoArquivo !== null;
+  const fase: CapturaDexFase = micStatus === 'recording'
+    ? 'recording'
+    : isTranscribing
+      ? 'transcribing'
+      : processandoArquivo !== null
+        ? 'processing_file'
+        : isOrganizando
+          ? 'organizing'
+          : transcriptionError
+            ? 'transcription_error'
+            : organizarError
+              ? 'organizing_error'
+              : 'idle';
+
+  useEffect(() => {
+    onCapturaStateChange?.({
+      fase,
+      busy: ocupado,
+      impedeSalvar: ocupado || hasPendingAudio,
+      audioParaRetry: hasPendingAudio,
+    });
+  }, [fase, hasPendingAudio, ocupado, onCapturaStateChange]);
 
   const handleOrganizar = async () => {
+    if (ocupado) return;
     const relato = texto.trim();
     if (!relato) return;
     // §8 passo 4 — form já preenchido pede confirmação antes de sobrescrever.
@@ -110,9 +149,7 @@ export function CapturaLivreCard({
     }
 
     setIsOrganizando(true);
-    setOrganizarLabel(ETAPAS[0].label);
-    timersRef.current.forEach(clearTimeout);
-    timersRef.current = ETAPAS.slice(1).map(({ ms, label }) => setTimeout(() => setOrganizarLabel(label), ms));
+    setOrganizarError(false);
 
     try {
       const res = await fetch('/api/dex/formatar-evolucao', {
@@ -129,16 +166,15 @@ export function CapturaLivreCard({
       onOrganizado(data, relato);
     } catch (err) {
       console.error('[captura-livre] formatar-evolucao:', err);
+      setOrganizarError(true);
       toast.error('O Dex não conseguiu organizar as anotações. Tente novamente.');
     } finally {
-      timersRef.current.forEach(clearTimeout);
-      timersRef.current = [];
       setIsOrganizando(false);
-      setOrganizarLabel('Organizar com Dex');
     }
   };
 
   const handleArquivo = async (file: File) => {
+    if (ocupado) return;
     setProcessandoArquivo(file.name);
     try {
       const resultado = await extrairTextoDeArquivo(file);
@@ -155,6 +191,14 @@ export function CapturaLivreCard({
       setProcessandoArquivo(null);
     }
   };
+
+  async function handleToggleVoz() {
+    if (micStatus !== 'recording' && hasPendingAudio) {
+      if (!window.confirm('Há um áudio que ainda não foi transcrito. Descartar esse áudio e iniciar uma nova gravação?')) return;
+      discardPendingAudio();
+    }
+    await toggleVoz();
+  }
 
   return (
     <div className="overflow-hidden rounded-2xl border border-teal/30 bg-surface-alt/40">
@@ -212,13 +256,22 @@ export function CapturaLivreCard({
           Processando {processandoArquivo}...
         </div>
       )}
+      {transcriptionError && hasPendingAudio && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-2 text-xs text-warning-ink" role="status">
+          <span>O áudio não foi transcrito e continua disponível.</span>
+          <span className="flex gap-1">
+            <button type="button" onClick={() => void retryTranscription()} className="min-h-11 rounded-lg px-3 font-bold hover:bg-warning-pale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal">Tentar novamente</button>
+            <button type="button" onClick={discardPendingAudio} className="min-h-11 rounded-lg px-3 font-bold text-text-secondary hover:bg-surface-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal">Descartar áudio</button>
+          </span>
+        </div>
+      )}
 
       <div className={`flex items-center justify-between gap-2 border-t border-border/50 ${compact ? 'px-3 py-2' : 'px-4 py-3'}`}>
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => void toggleVoz()}
-            disabled={isTranscribing}
+            onClick={() => void handleToggleVoz()}
+            disabled={isTranscribing || isOrganizando || processandoArquivo !== null}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
               micStatus === 'recording'
                 ? 'bg-coral/10 text-coral-ink hover:bg-coral/20 animate-pulse'
@@ -243,7 +296,7 @@ export function CapturaLivreCard({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={processandoArquivo !== null}
+            disabled={ocupado}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-text-secondary hover:text-text-primary hover:bg-surface-alt transition-colors disabled:opacity-50"
           >
             <Paperclip className="w-3.5 h-3.5" />
@@ -254,11 +307,11 @@ export function CapturaLivreCard({
         <button
           type="button"
           onClick={() => void handleOrganizar()}
-          disabled={!texto.trim() || isOrganizando}
+          disabled={!texto.trim() || ocupado}
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-ink hover:opacity-90 text-surface text-sm font-bold transition-all disabled:opacity-50 shadow-[0_0_15px_rgba(47,156,133,0.3)]"
         >
           {isOrganizando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
-          {isOrganizando ? organizarLabel : <>Organizar com Dex{compact && <span className="hidden text-[10px] opacity-70 sm:inline">Ctrl ↵</span>}</>}
+          {isOrganizando ? 'Organizando ficha...' : <>Organizar com Dex{compact && <span className="hidden text-[10px] opacity-70 sm:inline">Ctrl ↵</span>}</>}
         </button>
       </div>
 
@@ -268,6 +321,8 @@ export function CapturaLivreCard({
         liveTranscript={liveTranscript}
         elapsedSeconds={elapsedSeconds}
         onStop={() => void toggleVoz()}
+        silenceWarning={silenceWarning}
+        onContinue={continueRecording}
       />
     </div>
   );

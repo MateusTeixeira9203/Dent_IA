@@ -19,6 +19,7 @@ import { TIPO_LABEL, type TipoRegistroOdontograma } from '@/types/odontograma';
 export function derivarV2DosEventos(
   eventos: readonly {
     tipo: TipoRegistroOdontograma;
+    procedimentoNome?: string | null;
     observacao?: string | null;
     ancora: { dente?: number | null };
   }[],
@@ -32,8 +33,11 @@ export function derivarV2DosEventos(
   for (const ev of eventos) {
     // R-10: sem " - planejado" — o status é jargão redundante (vive em procedimentos_status) e
     // poluía o orçamento/PDF que o paciente lê.
-    const rotulo = TIPO_LABEL[ev.tipo];
-    const linha = ev.observacao ? `${rotulo} (${ev.observacao})` : rotulo;
+    const rotulo = ev.procedimentoNome?.trim()
+      || (ev.tipo === 'outro' ? ev.observacao?.trim() : null)
+      || TIPO_LABEL[ev.tipo];
+    const observacao = ev.observacao?.trim();
+    const linha = observacao && observacao !== rotulo ? `${rotulo} (${observacao})` : rotulo;
     const d = ev.ancora.dente;
     if (d != null) {
       const arr = porDente.get(d);

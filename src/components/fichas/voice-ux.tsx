@@ -20,9 +20,11 @@ interface VoiceUXProps {
   liveTranscript: string;
   elapsedSeconds: number;
   onStop: () => void;
+  silenceWarning: boolean;
+  onContinue: () => void;
 }
 
-export function VoiceUX({ isRecording, isTranscribing, liveTranscript, elapsedSeconds, onStop }: VoiceUXProps) {
+export function VoiceUX({ isRecording, isTranscribing, liveTranscript, elapsedSeconds, onStop, silenceWarning, onContinue }: VoiceUXProps) {
   const fmt = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
@@ -81,6 +83,13 @@ export function VoiceUX({ isRecording, isTranscribing, liveTranscript, elapsedSe
                 <span className="text-[11px] font-bold text-red-500 uppercase tracking-widest">
                   Escutando
                 </span>
+              </div>
+            )}
+
+            {isRecording && silenceWarning && (
+              <div className="mb-3 rounded-xl border border-warning bg-warning-pale px-3 py-2 text-xs text-warning-ink" role="status">
+                <p className="font-semibold">Pausa detectada — encerrando em breve.</p>
+                <button type="button" onClick={onContinue} className="mt-1 min-h-11 font-bold underline underline-offset-2">Continuar gravando</button>
               </div>
             )}
 

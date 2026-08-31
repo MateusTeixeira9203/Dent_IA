@@ -3,20 +3,36 @@ import Groq from 'groq-sdk';
 import { createClient } from '@/lib/supabase/server';
 import { withRateLimit } from '@/lib/rate-limit';
 import { WHISPER_DENTAL_PROMPT } from '@/lib/odonto-dictionary';
+import { MAX_AUDIO_BYTES, MIME_AUDIO_ACEITOS } from '@/lib/dex/schemas';
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const rateLimitResponse = await withRateLimit(req, 'transcrever', 20, 60_000);
+  const rateLimitResponse = await withRateLimit(req, 'transcrever', 60, 60_000);
   if (rateLimitResponse) return rateLimitResponse;
 
   // Verifica autenticação
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
-    return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
+    return NextResponse.json({ error: 'Não autenticado.', code: 'UNAUTHORIZED' }, { status: 401 });
   }
 
+  const { data: dentista } = await supabase
+    .from('dentistas')
+    .select('id, clinica_id')
+    .eq('usuario_id', user.id)
+    .maybeSingle();
+  if (!dentista) return NextResponse.json({ error: 'Não autenticado.', code: 'UNAUTHORIZED' }, { status: 401 });
+  const identityLimit = await withRateLimit(req, 'transcrever', 20, 60_000, `${dentista.clinica_id}:${dentista.id}`);
+  if (identityLimit) return identityLimit;
+
   if (!process.env.GROQ_API_KEY) {
-    return NextResponse.json({ error: 'GROQ_API_KEY não configurada.' }, { status: 500 });
+    console.error('[transcrever] Groq não configurado');
+    return NextResponse.json({ error: 'Serviço de IA indisponível.', code: 'AI_PROVIDER_FAILED' }, { status: 502 });
+  }
+
+  const contentLength = Number(req.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > MAX_AUDIO_BYTES + 256_000) {
+    return NextResponse.json({ error: 'Áudio grande demais.', code: 'PAYLOAD_TOO_LARGE' }, { status: 413 });
   }
 
   let audioFile: File;
@@ -24,11 +40,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const formData = await req.formData();
     const audio = formData.get('audio');
     if (!audio || !(audio instanceof File)) {
-      return NextResponse.json({ error: 'Campo "audio" é obrigatório.' }, { status: 400 });
+      return NextResponse.json({ error: 'Dados inválidos.', code: 'INVALID_INPUT' }, { status: 400 });
     }
     audioFile = audio;
   } catch {
-    return NextResponse.json({ error: 'Erro ao processar o áudio.' }, { status: 400 });
+    return NextResponse.json({ error: 'Dados inválidos.', code: 'INVALID_INPUT' }, { status: 400 });
+  }
+
+  if (audioFile.size > MAX_AUDIO_BYTES) {
+    return NextResponse.json({ error: 'Áudio grande demais.', code: 'PAYLOAD_TOO_LARGE' }, { status: 413 });
+  }
+  if (!MIME_AUDIO_ACEITOS.has(audioFile.type.toLowerCase())) {
+    return NextResponse.json({ error: 'Formato de áudio não suportado.', code: 'UNSUPPORTED_MEDIA' }, { status: 415 });
   }
 
   try {
@@ -50,6 +73,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ transcricao });
   } catch (err) {
     console.error('Erro na transcrição (Groq):', err);
-    return NextResponse.json({ error: 'Erro ao transcrever o áudio.' }, { status: 500 });
+    return NextResponse.json({ error: 'Não foi possível transcrever o áudio. Tente novamente.', code: 'AI_PROVIDER_FAILED' }, { status: 502 });
   }
 }

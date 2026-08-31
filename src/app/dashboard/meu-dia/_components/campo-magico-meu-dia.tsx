@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Bot, ChevronUp } from 'lucide-react';
-import { CapturaLivreCard } from '@/components/fichas/captura-livre-card';
+import { CapturaLivreCard, type CapturaDexState } from '@/components/fichas/captura-livre-card';
 import { DicaZona } from './dica-zona';
 import { mesclarEventosSemPerda } from '@/lib/odontograma/dedup-eventos-draft';
 import { hojeBRT } from '@/lib/hora-brt';
@@ -57,12 +57,13 @@ export interface CampoMagicoMeuDiaProps {
   dica?: boolean;
   /** R-123 — Meu Dia deixa a captura pronta para digitar, sem mudar a ficha completa. */
   compacto?: boolean;
+  onCapturaStateChange?: (state: CapturaDexState) => void;
 }
 
 export function CampoMagicoMeuDia({
   pacienteNome, eventosDraft, onEventosDraftChange, textoVisita, onTextoVisitaChange,
   onAlertaNovoChange, onOrtoDetectado, onEndoDetectado, anexarTexto, catalogoProcedimentos, onAplicarSugestao,
-  realce, dica, compacto = false,
+  realce, dica, compacto = false, onCapturaStateChange,
 }: CampoMagicoMeuDiaProps) {
   const [aberto, setAberto] = useState(compacto);
   const [jaAbriu, setJaAbriu] = useState(false);
@@ -200,6 +201,7 @@ export function CampoMagicoMeuDia({
           anexarTexto={anexarTexto}
           catalogoProcedimentos={catalogoProcedimentos}
           onAplicarSugestao={onAplicarSugestao}
+          onCapturaStateChange={onCapturaStateChange}
           compact={compacto}
           autoFocus={compacto}
         />

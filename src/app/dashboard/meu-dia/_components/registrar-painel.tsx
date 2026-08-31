@@ -55,10 +55,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { Check, AlertTriangle, ChevronDown, Loader2, X } from 'lucide-react';
+import { Check, AlertTriangle, CalendarPlus, FileText, Loader2, ScanLine, X } from 'lucide-react';
 import { Odontograma } from '@/components/odontograma/Odontograma';
 import { salvarEventosOdontograma } from '@/server/patients/registro-actions';
 import { CampoMagicoMeuDia } from './campo-magico-meu-dia';
+import type { CapturaDexState } from '@/components/fichas/captura-livre-card';
 import { OrtoForm } from '@/components/fichas/orto-form';
 import { hojeBRT } from '@/lib/hora-brt';
 import { salvarVisitaMeuDia } from '../actions';
@@ -99,6 +100,8 @@ const TIPOS_NIVEL_BOCA = new Set<TipoRegistroOdontograma>(['profilaxia', 'clarea
 type OndeValor = { dentes: number[] } | null;
 
 interface RegistrarPainelProps {
+  /** R-140a — a mesma chave cobre orçamento antecipado, salvar e retry da visita atual. */
+  visitaKey: string;
   pacienteId: string;
   agendamentoId: string;
   /** NOVO (D1) — só pro campo mágico (`CapturaLivreCard` precisa pro prompt da IA). */
@@ -172,6 +175,8 @@ export function pendenciaParaDraft(p: MeuDiaPendencia, dataPadrao: string): Odon
   return {
     id: p.id,
     tipo: p.tipo,
+    procedimentoId: p.procedimentoId,
+    procedimentoNome: p.procedimentoNome,
     status: 'realizado',
     origem: p.origem,
     // R-101 — vira 'realizado' aqui mesmo; a constraint do banco exige sessao_atual
@@ -195,18 +200,22 @@ export interface RegistrarPainelSlots {
   campoMagico: ReactNode;
   /** Controles manuais que acompanham o odontograma (rotina, lote e observação). */
   controlesOdontograma: ReactNode;
+  /** Ações independentes do save clínico, exibidas no cabeçalho da revisão. */
+  acoesSecundarias: ReactNode;
   /** Ocupante default da coluna direita (~555px): mapa espelho ou OrtoForm — nunca os
    *  dois. Quando `denteAberto` está setado, o pai (`meu-dia-client`) mostra o
    *  `ToothDetailPanel` no lugar deste slot inteiro (mesma prioridade de sempre: orto
    *  vence — ver `slot` abaixo). */
   slotCentral: ReactNode;
-  /** Linha de rodapé (Marcar retorno / Gerar orçamento / Salvar) + aviso de eventos
-   *  pendentes de regravar + o modal de Marcar retorno (portal, posição irrelevante). */
+  /** Rodapé com um único CTA primário + aviso de eventos pendentes. */
   rodape: ReactNode;
+  /** Manutenção é estado estruturado da visita, mas precisa ser revisável antes do save. */
+  ortoManutencao: OrtoManutencaoDetalhe | null;
+  abrirManutencao: () => void;
 }
 
 export function useRegistrarPainel({
-  pacienteId, agendamentoId, pacienteNome, dentistaId, catalogoProcedimentos,
+  visitaKey, pacienteId, agendamentoId, pacienteNome, dentistaId, catalogoProcedimentos,
   eventosDraft, onEventosDraftChange: setEventosDraft,
   denteAberto, onDenteAbertoChange: setDenteAberto,
   textoVisita, onTextoVisitaChange: setTextoVisita,
@@ -224,8 +233,13 @@ export function useRegistrarPainel({
   realceCampoMagico,
   dicaCampoMagico,
 }: RegistrarPainelProps): RegistrarPainelSlots {
+  const [capturaDex, setCapturaDex] = useState<CapturaDexState>({
+    fase: 'idle', busy: false, impedeSalvar: false, audioParaRetry: false,
+  });
   const [textoAberto, setTextoAberto] = useState(false);
-  const [controlesAbertos, setControlesAbertos] = useState(true);
+  const [controlesAbertos, setControlesAbertos] = useState(false);
+  /** Entrada visual do R-140d: a captura real de etiquetas ainda não existe nesta fatia. */
+  const [materiaisAberto, setMateriaisAberto] = useState(false);
   const [quantidadeAoRenderizar, setQuantidadeAoRenderizar] = useState(eventosDraft.length);
   /** D1 — só escrita pro campo mágico; quem lê é `handleSalvar` abaixo (I3). */
   const [alertaNovo, setAlertaNovo] = useState<string | null>(null);
@@ -239,7 +253,11 @@ export function useRegistrarPainel({
   // vazio ou de outro dente), mesmo bug de prioridade que `registrar()` tinha.
   const [catalogoPendente, setCatalogoPendente] = useState<{ item: MeuDiaCatalogoProcedimento; dentes: number[] } | null>(null);
   /** 03/08 — procedimento escolhido antes de haver "onde". Some assim que o onde chegar. */
-  const [tipoPendente, setTipoPendente] = useState<{ tipo: TipoRegistroOdontograma; observacao: string } | null>(null);
+  const [tipoPendente, setTipoPendente] = useState<{
+    tipo: TipoRegistroOdontograma;
+    observacao: string;
+    procedimento?: { id: string | null; nome: string | null };
+  } | null>(null);
 
   // R-107d/R-109 — a faixa de lote virou <FaixaLote>, e o estado interno dela (busca,
   // face pendente, catálogo, preço) mora lá dentro. Aqui sobrou só o `onde`, que é a
@@ -291,7 +309,8 @@ export function useRegistrarPainel({
   if (agendamentoId !== agendamentoIdAoResetar) {
     setAgendamentoIdAoResetar(agendamentoId);
     setTextoAberto(false);
-    setControlesAbertos(true);
+    setControlesAbertos(false);
+    setMateriaisAberto(false);
     setQuantidadeAoRenderizar(eventosDraft.length);
     setAlertaNovo(null);
     setOnde(null);
@@ -328,12 +347,19 @@ export function useRegistrarPainel({
   }
 
   /** R-125a — todos os caminhos manuais criam o mesmo draft contextual. */
-  function criarEventos(tipo: TipoRegistroOdontograma, observacaoDoCatalogo: string, ancoras: AncoraClinica[]): OdontogramaEventoDraft[] {
+  function criarEventos(
+    tipo: TipoRegistroOdontograma,
+    observacao: string,
+    ancoras: AncoraClinica[],
+    procedimento?: { id: string | null; nome: string | null },
+  ): OdontogramaEventoDraft[] {
     return criarEventosContextuais({
       tipo,
+      procedimentoId: procedimento?.id ?? null,
+      procedimentoNome: procedimento?.nome ?? null,
       ancoras,
       dataPadrao,
-      observacao: observacaoDoCatalogo,
+      observacao,
       contexto: { capturaId: crypto.randomUUID(), modo: modoLancamento },
     });
   }
@@ -349,7 +375,12 @@ export function useRegistrarPainel({
   // 2º chip com dente diferente no texto (ex.: "canal 18" depois de "restauração 34") lia o
   // `onde` velho (ainda [34]) e o evento nascia no dente ERRADO — achado ao vivo, não por
   // leitura de código (dois cliques seguidos foram parar os dois no mesmo dente).
-  function registrar(tipo: TipoRegistroOdontograma, observacaoDoCatalogo = '', dentesSugeridos: number[] = []) {
+  function registrar(
+    tipo: TipoRegistroOdontograma,
+    observacao = '',
+    dentesSugeridos: number[] = [],
+    procedimento?: { id: string | null; nome: string | null },
+  ) {
     // 03/08 — profilaxia/clareamento/flúor/exame periodontal não têm "onde": a âncora é
     // SEMPRE boca, e nenhum dente clicado antes se aplica aqui — não é esquecido, é ignorado
     // de propósito (D5 do R-06-07: nível boca nunca pinta dente).
@@ -358,7 +389,7 @@ export function useRegistrarPainel({
     // o modo manual ativo. Digitar o mesmo tipo 2x no campo mágico ainda cria 2 eventos —
     // comportamento pré-existente, fora de escopo desta fatia (spec R-107a §6).
     if (TIPOS_NIVEL_BOCA.has(tipo)) {
-      setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacaoDoCatalogo, [{ nivel: 'boca' }])]);
+      setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacao, [{ nivel: 'boca' }], procedimento)]);
       setTipoPendente(null);
       setCatalogoPendente(null);
       return;
@@ -375,7 +406,7 @@ export function useRegistrarPainel({
       // o registro assim que um dente for clicado, em qualquer ordem. A observação digitada
       // (state, não este parâmetro) fica como está — `criarEventos` lê ela ao vivo quando o
       // registro finalmente acontecer, não precisa viajar dentro de `tipoPendente`.
-      setTipoPendente({ tipo, observacao: observacaoDoCatalogo });
+      setTipoPendente({ tipo, observacao, procedimento });
       setCatalogoPendente(null);
       return;
     }
@@ -387,7 +418,7 @@ export function useRegistrarPainel({
       const primeiroDente = ancoras.map((a) => a.dente).find((d): d is number => d != null);
       if (primeiroDente != null) setDenteAberto(primeiroDente);
     }
-    setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacaoDoCatalogo, ancoras)]);
+    setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacao, ancoras, procedimento)]);
     setTipoPendente(null);
     setCatalogoPendente(null);
   }
@@ -397,7 +428,15 @@ export function useRegistrarPainel({
     if (!tipoPendente) return;
     const ancoras = ancorasDoOnde(novoOnde);
     if (ancoras.length === 0) return;
-    setEventosDraft([...eventosDraft, ...criarEventos(tipoPendente.tipo, tipoPendente.observacao, ancoras)]);
+    setEventosDraft([
+      ...eventosDraft,
+      ...criarEventos(
+        tipoPendente.tipo,
+        tipoPendente.observacao,
+        ancoras,
+        tipoPendente.procedimento,
+      ),
+    ]);
     setTipoPendente(null);
   }
 
@@ -452,6 +491,16 @@ export function useRegistrarPainel({
   // I1 — 1 clique = 1 ficha: `salvarFicha` não é idempotente por agendamentoId, o `disabled`
   // abaixo é a única proteção contra duplo clique/duplo submit (mesmo padrão de consulta-client).
   async function handleSalvar() {
+    if (capturaDex.impedeSalvar) {
+      toast.error(capturaDex.audioParaRetry
+        ? 'Há um áudio aguardando transcrição. Tente novamente ou descarte o áudio antes de salvar.'
+        : 'A captura do Dex ainda está em andamento. Aguarde antes de salvar.');
+      return;
+    }
+    if (eventosDraft.some((evento) => evento.revisar_status)) {
+      toast.error('Revise os procedimentos marcados com “Confira o status” antes de salvar.');
+      return;
+    }
     setIsSaving(true);
     // R-86 — achado pela auditoria de 08/08: sem o try/catch (mesmo padrão que
     // `handleRegravarEventos`, logo abaixo, já usa), uma falha de rede/servidor (503 visto ao
@@ -464,6 +513,7 @@ export function useRegistrarPainel({
         // R-85 — se "Gerar orçamento" já criou a ficha (fichaRascunhoId), EDITA em vez de criar
         // uma 2ª: mesmos eventos por id (upsert), sem duplicar o que o orçamento já gravou.
         // finalizarAtendimento omitido (default true) — É este clique que fecha o atendimento.
+        visitaKey,
         fichaId: fichaRascunhoId ?? undefined,
         pacienteId, agendamentoId, textoVisita, eventosDraft, alertaNovo, ortoManutencao: ortoParaSalvar,
         // R-108b — só governa o que NASCEU nesta sessão. A pendência concluída volta pra ficha
@@ -497,12 +547,34 @@ export function useRegistrarPainel({
     } catch {
       res = { ok: false, error: 'Falha de conexão. Tente novamente.' };
     }
-    setIsRegravando(false);
     if (res.ok) {
+      let resultado: SalvarFichaResult;
+      try {
+        resultado = await salvarVisitaMeuDia({
+          visitaKey,
+          fichaId: savedFichaId,
+          pacienteId,
+          agendamentoId,
+          textoVisita,
+          eventosDraft,
+          alertaNovo,
+          ortoManutencao: ortoParaSalvar,
+          destinoNovos: { fichaId: destinoNovos },
+        });
+      } catch {
+        resultado = { ok: false, error: 'Falha de conexão. Tente novamente.' };
+      }
+      if (!resultado.ok || resultado.eventosFalharam) {
+        setIsRegravando(false);
+        toast.error(resultado.ok ? 'Não foi possível concluir a visita. Tente novamente.' : resultado.error);
+        return;
+      }
       setEventosPendentes(null);
+      setIsRegravando(false);
       toast.success('Odontograma gravado.');
       onSalvo();
     } else {
+      setIsRegravando(false);
       toast.error(res.error ?? 'Não foi possível regravar o odontograma.');
     }
   }
@@ -523,6 +595,7 @@ export function useRegistrarPainel({
       anexarTexto={anexarTexto}
       catalogoProcedimentos={catalogoProcedimentos}
       onAplicarSugestao={aplicarSugestaoLocal}
+      onCapturaStateChange={setCapturaDex}
       realce={realceCampoMagico}
       dica={dicaCampoMagico}
       compacto
@@ -530,159 +603,124 @@ export function useRegistrarPainel({
   );
 
   const controlesOdontograma = (
-    <>
-      {/* R-62 — o que sobra do antigo painel "sem IA": catálogo-pendente/orto/rotina sempre
-       * foram controles à parte, então vira faixa sempre visível, sem toggle. R-107a tirou
-       * Status e Observação globais (redundantes com os pills/textareas por-evento que já
-       * existem em `ToothDetailPanel`/`NestaSessaoBloco`) e trouxe os chips de rotina que já
-       * existiam em `FichasTab.tsx`. "+ Observação" fica de propósito (não é redundante: é o
-       * único jeito de salvar uma nota pura sem passar pelo Dex — I1, IA fora do ar). */}
-      <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface-alt/25">
-        <button
-          type="button"
-          onClick={() => setControlesAbertos((aberto) => !aberto)}
-          aria-expanded={controlesAbertos}
-          className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left outline-none transition-colors hover:bg-surface-alt focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal"
-        >
-          <span>
-            <span className="block text-xs font-bold text-text-primary">Registrar procedimento</span>
-            {!controlesAbertos && (
-              <span className="mt-0.5 block text-[11px] text-text-secondary">
-                {onde?.dentes.length
-                  ? `${onde.dentes.length === 1 ? `Dente ${onde.dentes[0]}` : `${onde.dentes.length} dentes`} selecionado${onde.dentes.length === 1 ? '' : 's'}`
-                  : escopoRegional
-                    ? 'Região selecionada para registrar'
-                    : 'Selecione um dente ou uma região'}
-              </span>
-            )}
-          </span>
-          <ChevronDown
-            className={`h-4 w-4 shrink-0 text-text-secondary transition-transform ${controlesAbertos ? 'rotate-180' : ''}`}
-            aria-hidden
-          />
-        </button>
-        <AnimatePresence initial={false}>
-          {controlesAbertos && (
-            <motion.div
-              key="controles-registro"
-              initial={reduceMotion ? false : { opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={reduceMotion ? undefined : { opacity: 0, height: 0 }}
-              transition={{ duration: reduceMotion ? 0 : 0.16, ease: 'easeOut' }}
-              className="overflow-hidden"
-            >
-              <div className="flex flex-col gap-2.5 border-t border-border px-3 pb-3 pt-2.5">
-        {catalogoPendente && (
-          <div className="rounded-lg border border-teal/30 bg-teal/5 px-3 py-2">
-            <div className="mb-1.5 flex items-center justify-between gap-2">
-              <p className="text-[11px] font-semibold text-text-primary">
-                &ldquo;{catalogoPendente.item.nome}&rdquo; — qual tipo clínico?
-              </p>
-              <button
-                type="button"
-                onClick={() => setCatalogoPendente(null)}
-                aria-label="Cancelar"
-                className="text-text-secondary hover:text-coral"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {TIPOS.map(([tipo, label]) => (
-                <button
-                  key={tipo}
-                  type="button"
-                  onClick={() => registrar(tipo, catalogoPendente.item.nome, catalogoPendente.dentes)}
-                  className="rounded-full border border-teal/30 bg-surface px-2.5 py-1 text-[11px] font-semibold text-teal-ink hover:bg-teal/10"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+    <div className="flex min-h-[126px] flex-col justify-center">
+      {!onde && escopoRegional == null && !controlesAbertos && !catalogoPendente ? (
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold text-text-primary">Selecione um ou mais dentes</p>
+            <p className="mt-0.5 text-[11px] text-text-secondary">
+              Para boca, arcada, quadrante ou manutenção, use a aba Regiões acima.
+            </p>
           </div>
-        )}
-
-        <FaixaEscopoRegional
-          escopo={escopoRegional}
-          onEscopoChange={selecionarEscopoRegional}
-          eventosDraft={eventosDraft}
-          onEventosDraftChange={setEventosDraft}
-          catalogoProcedimentos={catalogoProcedimentos}
-          dataPadrao={dataPadrao}
-          modoLancamento={modoLancamento}
-          onModoLancamentoChange={setModoLancamento}
-          manutencaoOrtodonticaAtiva={ortoChipAberto || ortoValor != null}
-          onManutencaoOrtodontica={() => setOrtoChipAberto((aberto) => !aberto)}
-        />
-
-        {/* R-122 — seleção única e múltipla usam a mesma faixa. */}
-        {onde && (
-          <FaixaLote
-            dentes={onde.dentes}
-            eventosDraft={eventosDraft}
-            onEventosDraftChange={setEventosDraft}
-            catalogoProcedimentos={catalogoProcedimentos}
-            dataPadrao={dataPadrao}
-            modoLancamento={modoLancamento}
-            onModoLancamentoChange={setModoLancamento}
-            onLimpar={limparLote}
-            onModoMultidenteChange={() => {}}
-            onAbrirDetalheDental={onAbrirDetalheDental}
-            onIniciarPonte={onIniciarPonte}
-          />
-        )}
-
-        {tipoPendente && (
-          <p className="text-[11px] font-semibold text-teal-ink">
-            {TIPO_LABEL[tipoPendente.tipo]} aguardando onde — clique no dente no odontograma.
-          </p>
-        )}
-
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-        <div className="border-t border-border px-3 py-2.5">
-          {textoAberto ? (
-            <div className="rounded-lg border border-border bg-surface-alt p-2.5">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">
-                  Observação da visita
+          <button
+            type="button"
+            onClick={() => setTextoAberto(true)}
+            className="min-h-9 shrink-0 rounded-lg px-2.5 text-[11px] font-bold text-teal-ink transition-colors hover:bg-teal-pale"
+          >
+            + Evolução
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {catalogoPendente && (
+            <div className="rounded-lg border border-teal/30 bg-teal/5 px-3 py-2">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold text-text-primary">
+                  &ldquo;{catalogoPendente.item.nome}&rdquo; — qual tipo clínico?
                 </p>
                 <button
                   type="button"
-                  onClick={() => setTextoAberto(false)}
-                  className="text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
+                  onClick={() => setCatalogoPendente(null)}
+                  aria-label="Cancelar"
+                  className="text-text-secondary hover:text-coral"
                 >
-                  Recolher
+                  <X className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <textarea
-                value={textoVisita}
-                onChange={(e) => setTextoVisita(e.target.value)}
-                placeholder="Observação da visita (opcional)"
-                rows={3}
-                autoFocus
-                className="w-full resize-y rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-teal"
-              />
+              <div className="flex flex-wrap gap-1.5">
+                {TIPOS.map(([tipo, label]) => (
+                  <button
+                    key={tipo}
+                    type="button"
+                    onClick={() => registrar(
+                      tipo,
+                      '',
+                      catalogoPendente.dentes,
+                      { id: catalogoPendente.item.id, nome: catalogoPendente.item.nome },
+                    )}
+                    className="rounded-full border border-teal/30 bg-surface px-2.5 py-1 text-[11px] font-semibold text-teal-ink hover:bg-teal/10"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
-          ) : (
+          )}
+
+          {!onde && (
+            <FaixaEscopoRegional
+              escopo={escopoRegional}
+              onEscopoChange={selecionarEscopoRegional}
+              eventosDraft={eventosDraft}
+              onEventosDraftChange={setEventosDraft}
+              catalogoProcedimentos={catalogoProcedimentos}
+              dataPadrao={dataPadrao}
+              modoLancamento={modoLancamento}
+              onModoLancamentoChange={setModoLancamento}
+              manutencaoOrtodonticaAtiva={ortoChipAberto || ortoValor != null}
+              onManutencaoOrtodontica={() => setOrtoChipAberto((aberto) => !aberto)}
+              layout="grade"
+            />
+          )}
+
+          {onde && (
+            <FaixaLote
+              dentes={onde.dentes}
+              eventosDraft={eventosDraft}
+              onEventosDraftChange={setEventosDraft}
+              catalogoProcedimentos={catalogoProcedimentos}
+              dataPadrao={dataPadrao}
+              modoLancamento={modoLancamento}
+              onModoLancamentoChange={setModoLancamento}
+              onLimpar={limparLote}
+              onModoMultidenteChange={() => {}}
+              onAbrirDetalheDental={onAbrirDetalheDental}
+              onIniciarPonte={onIniciarPonte}
+            />
+          )}
+
+          {tipoPendente && (
+            <p className="text-[11px] font-semibold text-teal-ink">
+              {TIPO_LABEL[tipoPendente.tipo]} aguardando onde — clique no dente no odontograma.
+            </p>
+          )}
+
+        </div>
+      )}
+
+      {textoAberto && (
+        <div className="mt-2 rounded-lg border border-border bg-surface-alt p-2.5">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Evolução clínica</p>
             <button
               type="button"
-              onClick={() => setTextoAberto(true)}
-              className="flex w-full items-center justify-between gap-3 rounded-lg text-left text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
+              onClick={() => setTextoAberto(false)}
+              className="text-[11px] font-semibold text-text-secondary hover:text-teal-ink"
             >
-              <span>{textoVisita.trim() ? 'Observação da visita' : '+ Observação'}</span>
-              {textoVisita.trim() && (
-                <span className="max-w-[70%] truncate font-normal italic text-text-secondary">
-                  {textoVisita.trim()}
-                </span>
-              )}
+              Recolher
             </button>
-          )}
+          </div>
+          <textarea
+            value={textoVisita}
+            onChange={(event) => setTextoVisita(event.target.value)}
+            placeholder="Curativo, sutura, orientação ou evolução da consulta"
+            rows={3}
+            autoFocus
+            className="w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-teal"
+          />
         </div>
-      </div>
-    </>
+      )}
+    </div>
   );
 
   // R-63 §4.1 — 1 ocupante por vez: mapa OU orto (troca CONDICIONAL, orto vence — mesma
@@ -707,18 +745,63 @@ export function useRegistrarPainel({
             // literalmente a mesma cor (confirmado: rgb(218,218,222) nos dois, medido ao
             // vivo). FichasTab.tsx, o outro lugar que monta o OrtoForm, nunca teve esse
             // wrapper — por isso só aparecia aqui.
-            <div className="rounded-lg border border-border bg-surface px-3 py-3">
+            <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface px-3 py-3">
+              <div className="flex items-center justify-between gap-3 border-b border-border pb-2">
+                <div>
+                  <p className="text-sm font-bold text-text-primary">Manutenção ortodôntica</p>
+                  <p className="text-[11px] text-text-secondary">Preencha o necessário e volte para revisar antes de salvar.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={voltarParaBoca}
+                  className="min-h-9 shrink-0 rounded-lg border border-border px-2.5 text-[11px] font-bold text-text-secondary transition-colors hover:border-teal/40 hover:text-teal-ink"
+                >
+                  Voltar à boca
+                </button>
+              </div>
               <OrtoForm valor={ortoValor} onChange={setOrtoValor} />
             </div>
           ) : (
             <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  aria-pressed={!controlesAbertos || onde != null}
+                  onClick={() => {
+                    setControlesAbertos(false);
+                    setEscopoRegional(null);
+                  }}
+                  className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                    !controlesAbertos || onde != null
+                      ? 'bg-teal/10 text-teal-ink'
+                      : 'text-text-secondary hover:bg-surface-alt'
+                  }`}
+                >
+                  Dentes/faces
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={controlesAbertos && onde == null}
+                  onClick={() => {
+                    setOnde(null);
+                    setControlesAbertos(true);
+                  }}
+                  className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                    controlesAbertos && onde == null
+                      ? 'bg-teal/10 text-teal-ink'
+                      : 'text-text-secondary hover:bg-surface-alt'
+                  }`}
+                >
+                  Regiões
+                </button>
+              </div>
               <Odontograma
                 eventos={eventosDraft}
                 eventosPersistidos={boca}
                 selectedTeeth={onde?.dentes ?? []}
                 onToothToggle={onToothToggle}
                 compact
-                zoom={0.74}
+                zoom={0.85}
                 hideFilters
               />
             </div>
@@ -726,6 +809,27 @@ export function useRegistrarPainel({
         </motion.div>
       )}
     </AnimatePresence>
+  );
+
+  const acoesSecundarias = (
+    <div className="flex flex-wrap justify-end gap-2">
+      <button
+        type="button"
+        onClick={() => setRetornoModalAberto(true)}
+        className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border bg-surface-alt px-3 text-xs font-bold text-text-secondary transition-colors hover:border-teal/40 hover:text-teal-ink"
+      >
+        <CalendarPlus className="h-3.5 w-3.5" aria-hidden />
+        Marcar retorno
+      </button>
+      <button
+        type="button"
+        onClick={onAbrirPickerOrcamento}
+        className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border bg-surface-alt px-3 text-xs font-bold text-text-secondary transition-colors hover:border-teal/40 hover:text-teal-ink"
+      >
+        <FileText className="h-3.5 w-3.5" aria-hidden />
+        Gerar orçamento
+      </button>
+    </div>
   );
 
   const rodape = (
@@ -755,33 +859,45 @@ export function useRegistrarPainel({
       {temFichaHoje && semRascunho && (
         <p className="mb-2 text-xs font-bold text-teal-ink">✓ 1 ficha hoje</p>
       )}
-      <div className="flex items-center gap-2">
+      {materiaisAberto && (
+        <section className="mb-3 flex items-start gap-3 rounded-xl border border-border bg-surface-alt px-3 py-2.5" aria-label="Materiais e etiquetas">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal/10 text-teal-ink">
+            <ScanLine className="h-4 w-4" aria-hidden />
+          </span>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs font-bold text-text-primary">Materiais e etiquetas</p>
+              <span className="rounded-full border border-border bg-surface px-2 py-0.5 text-[10px] font-bold text-text-secondary">0 etiquetas</span>
+            </div>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-text-secondary">
+              A leitura será feita aqui na etapa de rastreabilidade. Salvar o atendimento continuará possível sem etiquetas.
+            </p>
+          </div>
+        </section>
+      )}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <button
           type="button"
-          onClick={() => setRetornoModalAberto(true)}
-          className="flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm font-bold text-text-secondary transition-colors hover:border-teal/40 hover:text-teal-ink"
+          onClick={() => setMateriaisAberto((aberto) => !aberto)}
+          aria-expanded={materiaisAberto}
+          className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-surface-alt px-3 text-xs font-bold text-text-secondary transition-colors hover:border-teal/40 hover:text-teal-ink"
         >
-          Marcar retorno
-        </button>
-        <button
-          type="button"
-          onClick={onAbrirPickerOrcamento}
-          className="flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm font-bold text-text-secondary transition-colors hover:border-teal/40 hover:text-teal-ink"
-        >
-          Gerar orçamento
+          <ScanLine className="h-4 w-4" aria-hidden />
+          Materiais / etiquetas
+          <span className="rounded-full bg-surface px-1.5 py-0.5 font-mono text-[10px] text-text-secondary">0</span>
         </button>
         <button
           type="button"
           onClick={() => void handleSalvar()}
-          disabled={isSaving || eventosPendentes != null || semRascunho}
-          className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-teal-dark px-5 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          disabled={isSaving || capturaDex.impedeSalvar || eventosPendentes != null || semRascunho}
+          className="flex min-h-11 min-w-[190px] items-center justify-center gap-2 rounded-xl bg-teal-dark px-5 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {isSaving
             ? <><Loader2 className="h-4 w-4 animate-spin" /> Salvando…</>
             // R-85 — com fichaRascunhoId, este clique EDITA a ficha que "Gerar orçamento" já
             // criou (fecha o atendimento agora, pela 1ª vez) — não é uma 2ª ficha de verdade,
             // mesmo com temFichaHoje=true (o servidor já vê a ficha que acabou de nascer).
-            : <><Check className="h-4 w-4" /> {temFichaHoje && !fichaRascunhoId ? 'Salvar 2ª ficha' : 'Salvar e passar'}</>
+            : <><Check className="h-4 w-4" /> Salvar atendimento</>
           }
         </button>
       </div>
@@ -820,5 +936,26 @@ export function useRegistrarPainel({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [eventosPendentes, handleSalvar, isSaving, semRascunho]);
 
-  return { campoMagico, controlesOdontograma, slotCentral, rodape };
+  function voltarParaBoca() {
+    setOrtoChipAberto(false);
+    setEscopoRegional(null);
+    setControlesAbertos(false);
+  }
+
+  function abrirManutencao() {
+    setOnde(null);
+    voltarParaBoca();
+    setDenteAberto(null);
+    setOrtoChipAberto(true);
+  }
+
+  return {
+    campoMagico,
+    controlesOdontograma,
+    acoesSecundarias,
+    slotCentral,
+    rodape,
+    ortoManutencao: ortoParaSalvar,
+    abrirManutencao,
+  };
 }

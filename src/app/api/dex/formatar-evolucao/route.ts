@@ -6,6 +6,9 @@ import { generateStructuredGemini } from '@/lib/ai/provider';
 import { logAICall } from '@/lib/ai/logger';
 import { buildDentalContext } from '@/lib/odonto-dictionary';
 import { isArch } from '@/lib/arcadas';
+import { classificarStatusDex } from '@/lib/dex/classificar-status';
+import { reconciliarProcedimentosDex } from '@/lib/dex/reconciliar-procedimentos';
+import { formatarEvolucaoRequestSchema } from '@/lib/dex/schemas';
 import type {
   OdontogramaEventoInput,
   TipoRegistroOdontograma,
@@ -31,6 +34,16 @@ export interface EvolucaoFormatada {
   // Camada visual v3 (odontograma) — aditiva. Contrato v2 acima permanece intacto.
   odontograma_eventos: OdontogramaEventoInput[];
   orto_manutencao:     OrtoManutencaoInfo | null;
+}
+
+const DEX_PROMPT_VERSION = 'r142-2026-08-31';
+
+function contarPor<T extends object, K extends keyof T>(itens: readonly T[], campo: K): Record<string, number> {
+  return itens.reduce<Record<string, number>>((contagens, item) => {
+    const valor = item[campo];
+    if (typeof valor === 'string') contagens[valor] = (contagens[valor] ?? 0) + 1;
+    return contagens;
+  }, {});
 }
 
 // Formato que o MODELO devolve (spec fase1-5 §C2): schema estrito não aceita chaves
@@ -91,7 +104,8 @@ const ODONTOGRAMA_EVENTO_SCHEMA: Schema = {
       type: Type.STRING,
       enum: ['carie_restauracao', 'exodontia', 'endodontia', 'lesao_periapical',
              'implante', 'coroa', 'selante', 'inclusao', 'fratura', 'pino_nucleo',
-             'ponte', 'esfoliacao', 'profilaxia', 'raspagem', 'clareamento', 'fluor'],
+             'ponte', 'esfoliacao', 'profilaxia', 'raspagem', 'clareamento', 'fluor',
+             'exame_periodontal', 'outro'],
     },
     status:    { type: Type.STRING, enum: ['indicado', 'realizado'] },
     evidencia_status: { type: Type.STRING, enum: ['execucao_explicita', 'indicacao_explicita', 'negacao', 'historico', 'ambiguo'] },
@@ -163,6 +177,7 @@ const TIPOS_ACEITOS = new Set<TipoRegistroOdontograma>([
   'implante', 'coroa', 'selante', 'inclusao', 'fratura', 'pino_nucleo',
   // R-06/R-07 — abertos com a UI pronta (Fases 1-3 da spec R-06-07):
   'ponte', 'esfoliacao', 'profilaxia', 'raspagem', 'clareamento', 'fluor',
+  'exame_periodontal', 'outro',
 ]);
 const FACES_VALIDAS = new Set<FaceDental>(['O', 'M', 'D', 'V', 'L']);
 
@@ -188,6 +203,7 @@ function parseEventos(wire: unknown, modo: 'consulta' | 'exame_inicial'): Odonto
     if (!['boca', 'arcada', 'quadrante', 'dente', 'face'].includes(w.nivel)) continue;
 
     const nivel = w.nivel as NivelAncora;
+    if (w.tipo === 'outro' && (typeof w.observacao !== 'string' || !w.observacao.trim())) continue;
     const dente = w.dente != null ? Number(w.dente) : undefined;
     const faces = (Array.isArray(w.faces) ? w.faces : []).filter((f): f is FaceDental => FACES_VALIDAS.has(f as FaceDental));
 
@@ -215,10 +231,11 @@ function parseEventos(wire: unknown, modo: 'consulta' | 'exame_inicial'): Odonto
     const evidencia = w.evidencia_status as EvidenciaStatus;
     // R-106 — no relato da consulta, só verbo explícito de execução permite "realizado".
     // Histórico importado preserva a regra própria do prompt/exame inicial.
-    const status: StatusRegistro = modo === 'consulta'
-      ? evidencia === 'execucao_explicita' ? 'realizado' : 'indicado'
-      : w.status as StatusRegistro;
-    const revisarStatus = modo === 'consulta' && (evidencia === 'ambiguo' || evidencia === 'historico');
+    const { status, revisarStatus } = classificarStatusDex(
+      evidencia,
+      modo,
+      w.status as StatusRegistro,
+    );
 
     if (w.tipo === 'esfoliacao' && (dente == null || dente < 51 || status !== 'realizado')) continue;
 
@@ -282,27 +299,34 @@ function parseOrto(wire: unknown): OrtoManutencaoInfo | null {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const limited = await withRateLimit(req, 'dex:formatar-evolucao', 20, 60_000);
+  const limited = await withRateLimit(req, 'dex:formatar-evolucao', 60, 60_000);
   if (limited) return limited;
 
   try {
     const dentista = await getDentistaCached();
-    if (!dentista) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
+    if (!dentista) return NextResponse.json({ error: 'Não autenticado.', code: 'UNAUTHORIZED' }, { status: 401 });
+
+    const limitedIdentity = await withRateLimit(
+      req, 'dex:formatar-evolucao', 20, 60_000, `${dentista.clinica_id}:${dentista.id}`,
+    );
+    if (limitedIdentity) return limitedIdentity;
 
     if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: 'GEMINI_API_KEY não configurada' }, { status: 500 });
+      console.error('[dex/formatar-evolucao] Gemini não configurado');
+      return NextResponse.json({ error: 'Serviço de IA indisponível.', code: 'AI_PROVIDER_FAILED' }, { status: 502 });
     }
 
-    let body: { texto: string; pacienteNome?: string; modo?: 'consulta' | 'exame_inicial' };
+    let body: unknown;
     try {
-      body = (await req.json()) as { texto: string; pacienteNome?: string; modo?: 'consulta' | 'exame_inicial' };
+      body = await req.json();
     } catch {
-      return NextResponse.json({ error: 'Body inválido' }, { status: 400 });
+      return NextResponse.json({ error: 'Dados inválidos.', code: 'INVALID_INPUT' }, { status: 400 });
     }
 
-    if (!body.texto?.trim()) return NextResponse.json({ error: 'Texto vazio' }, { status: 400 });
+    const entrada = formatarEvolucaoRequestSchema.safeParse(body);
+    if (!entrada.success) return NextResponse.json({ error: 'Dados inválidos.', code: 'INVALID_INPUT' }, { status: 400 });
 
-    const modo: 'consulta' | 'exame_inicial' = body.modo === 'exame_inicial' ? 'exame_inicial' : 'consulta';
+    const modo: 'consulta' | 'exame_inicial' = entrada.data.modo === 'exame_inicial' ? 'exame_inicial' : 'consulta';
 
     const prompt = `Você é um assistente clínico odontológico especializado em documentação.
 Analise o relato livre do dentista e extraia SOMENTE o que é clinicamente relevante — sinal, não ruído.
@@ -310,23 +334,28 @@ Analise o relato livre do dentista e extraia SOMENTE o que é clinicamente relev
 ${buildDentalContext()}
 
 RELATO DO DENTISTA:
-"${body.texto}"
+"${entrada.data.texto}"
 
 CONTEXTO:
-- Paciente: ${body.pacienteNome ?? 'não informado'}
 - Data: ${new Date().toLocaleDateString('pt-BR')}
 ${modo === 'exame_inicial' ? '- Origem do texto: HISTÓRICO/REFERÊNCIA — documento anexado ou colado pelo dentista, não é ele narrando o que fez nesta sessão. Ver regra de status no bloco ODONTOGRAMA abaixo — ela muda pra este modo.' : ''}
 
+CLASSIFICAÇÃO CLÍNICA DO STATUS — aplique antes de montar o JSON:
+- Em relato de consulta, "realizado" só existe quando o dentista declarou que EXECUTOU aquele procedimento. "Fiz profilaxia" → realizado + execucao_explicita.
+- Indicação, necessidade, plano, negação, histórico ou procedimento citado sem verbo de execução nunca viram "realizado": "precisa de canal", "vou extrair", "não fiz o canal", "já fez há anos" e "canal no 46" → indicado, com evidencia_status correspondente.
+- Nunca use o verbo no passado de outro profissional ou de outra data como prova de execução nesta sessão.
+- Se houver dúvida entre indicado e realizado, escolha indicado. O dentista poderá confirmar na revisão.
+
 Retorne SOMENTE um JSON válido, sem markdown, com exatamente esta estrutura:
 {
-  "queixa_principal": "título objetivo do procedimento principal (ex: Endodontia dente 26, Restauração dentes 14 e 15)",
-  "anotacoes": "evolução clínica em linguagem técnica — procedimento realizado, técnica usada, intercorrências relevantes. 2-3 frases (caso extenso: até 6, cobrindo os principais diagnósticos), sem repetição, sem encher linguiça.",
+  "queixa_principal": "título objetivo da consulta ou do procedimento principal (ex: Endodontia dente 26, planejamento de restauração 14 e 15)",
+  "anotacoes": "evolução clínica em linguagem técnica — fatos relatados, técnica usada se executada, indicações e intercorrências relevantes. 2-3 frases (caso extenso: até 6), sem repetição.",
   "dentes_afetados": [26, 36],
   "dentes_observacoes": [{"dente": "13", "observacao": "Tratamento de canal\\nPino\\nProvisório\\nCoroa de porcelana"}, {"dente": "98", "observacao": "PPR (prótese parcial removível)"}],
-  "procedimentos": ["lista resumida dos procedimentos realizados — ex: Tratamento endodôntico, Radiografia periapical"],
+  "procedimentos": ["lista resumida dos procedimentos executados ou indicados — ex: Tratamento endodôntico, Radiografia periapical"],
   "conduta": "orientações ao paciente, cuidados pós-procedimento, prescrições mencionadas. String vazia se não mencionado.",
   "alerta_novo": "se o dentista mencionar nova alergia ou medicamento novo do paciente, registrar aqui. null se nenhum",
-  "odontograma_eventos": [{"tipo": "carie_restauracao", "status": "realizado", "evidencia_status": "execucao_explicita", "nivel": "face", "dente": 14, "faces": ["O"], "grupo_id": null, "papel_no_grupo": null, "observacao": "resina composta"}],
+  "odontograma_eventos": [{"tipo": "carie_restauracao", "status": "realizado", "evidencia_status": "execucao_explicita", "nivel": "face", "dente": 14, "faces": ["O"], "grupo_id": null, "papel_no_grupo": null, "observacao": "resina composta"}, {"tipo": "endodontia", "status": "indicado", "evidencia_status": "indicacao_explicita", "nivel": "dente", "dente": 26, "faces": [], "grupo_id": null, "papel_no_grupo": null, "observacao": "canal indicado"}],
   "orto_manutencao": null
 }
 
@@ -351,7 +380,8 @@ Regras críticas:
 
 ODONTOGRAMA (camada visual — além dos campos acima):
 Para CADA achado/procedimento que você registrou em dentes_observacoes, emita TAMBÉM o(s) evento(s) visual(is) correspondente(s) em "odontograma_eventos". Um evento descreve o estado clínico de um dente ou face.
-- tipo (escolha o mais específico): "carie_restauracao" (cárie a restaurar OU restauração feita — ancora em FACE), "endodontia" (canal), "exodontia" (extração), "coroa" (coroa total protética UNITÁRIA), "ponte" (prótese fixa multi-dente — ver regra PONTE), "implante", "selante" (sempre face O), "lesao_periapical" (achado radiográfico no ápice), "inclusao" (dente incluso/impactado), "fratura" (trauma dentário), "pino_nucleo" (pino/núcleo intrarradicular), "esfoliacao" (decíduo que caiu naturalmente — SÓ dentes 51-85, sempre "realizado"), "profilaxia" (limpeza — nível boca), "raspagem" (raspagem/alisamento periodontal — nível quadrante; sem quadrante citado, boca), "clareamento" (nível boca), "fluor" (aplicação de flúor — nível boca).
+- tipo (escolha o mais específico): "carie_restauracao" (cárie a restaurar OU restauração feita — ancora em FACE), "endodontia" (canal), "exodontia" (extração), "coroa" (coroa total protética UNITÁRIA), "ponte" (prótese fixa multi-dente — ver regra PONTE), "implante", "selante" (sempre face O), "lesao_periapical" (achado radiográfico no ápice), "inclusao" (dente incluso/impactado), "fratura" (trauma dentário), "pino_nucleo" (pino/núcleo intrarradicular), "esfoliacao" (decíduo que caiu naturalmente — SÓ dentes 51-85, sempre "realizado"), "profilaxia" (limpeza — nível boca), "raspagem" (raspagem/alisamento periodontal — nível quadrante; sem quadrante citado, boca), "clareamento" (nível boca), "fluor" (aplicação de flúor — nível boca), "exame_periodontal" (nível boca, distinto de raspagem) e "outro".
+- Use "outro" para uma INTERVENÇÃO explícita sem tipo específico acima. A observacao deve conter obrigatoriamente o nome clínico real (ex.: "gengivoplastia", "mantenedor de espaço"); nunca escreva apenas "outro". Não use "outro" para achado, diagnóstico, material isolado, conversa ou procedimento negado.
 - evidencia_status é OBRIGATÓRIA e explica a frase: "execucao_explicita" (só quando o dentista declarou que executou o procedimento), "indicacao_explicita" (indicou/precisa/vai fazer), "negacao" (declarou que NÃO fez), "historico" (feito em outro momento/por outro profissional) ou "ambiguo" (nome do procedimento sem verbo de execução).
 - status: em relato de consulta, use "realizado" APENAS com evidencia_status="execucao_explicita". Nos demais casos use "indicado". Exemplos: "fiz profilaxia" → realizado + execucao_explicita; "paciente precisa de profilaxia" → indicado + indicacao_explicita; "canal no 46" → indicado + ambiguo; "não fiz o canal" → nunca realizado + negacao; "já fez canal há anos" → indicado + historico.
 ${modo === 'exame_inicial' ? `- ⛔⛔ MODO HISTÓRICO/REFERÊNCIA — a regra de status ACIMA NÃO VALE aqui, esta a substitui: o texto é
@@ -416,17 +446,25 @@ Se o relato for APENAS manutenção de aparelho (troca de arco, ativação, borr
       }
     }
 
+    const procedimentos = Array.isArray(wire.procedimentos)
+      ? (wire.procedimentos as unknown[]).filter((p): p is string => typeof p === 'string')
+      : [];
+    const odontogramaEventos = reconciliarProcedimentosDex({
+      procedimentos,
+      eventos: parseEventos(wire.odontograma_eventos, modo),
+      dentesObservacoes,
+      modo,
+    }).eventos;
+
     const parsed: EvolucaoFormatada = {
       queixa_principal:   typeof wire.queixa_principal === 'string' ? wire.queixa_principal : '',
       anotacoes:          typeof wire.anotacoes === 'string' ? wire.anotacoes : '',
       dentes_afetados:    dentesAfetados,
       dentes_observacoes: dentesObservacoes,
-      procedimentos: Array.isArray(wire.procedimentos)
-        ? (wire.procedimentos as unknown[]).filter((p): p is string => typeof p === 'string')
-        : [],
+      procedimentos,
       conduta:            typeof wire.conduta === 'string' ? wire.conduta : '',
       alerta_novo:        typeof wire.alerta_novo === 'string' ? wire.alerta_novo : null,
-      odontograma_eventos: parseEventos(wire.odontograma_eventos, modo),
+      odontograma_eventos: odontogramaEventos,
       orto_manutencao:     parseOrto(wire.orto_manutencao),
     };
 
@@ -438,12 +476,26 @@ Se o relato for APENAS manutenção de aparelho (troca de arco, ativação, borr
       success:    true,
       dentistaId: dentista.id,
       clinicaId:  dentista.clinica_id,
+      promptVersion: DEX_PROMPT_VERSION,
+      inputSize: entrada.data.texto.length,
+      outputItems: parsed.odontograma_eventos.length,
+      statusCounts: contarPor(parsed.odontograma_eventos, 'status'),
+      evidenceCounts: contarPor(parsed.odontograma_eventos, 'evidencia_status'),
+      httpStatus: 200,
     });
 
     return NextResponse.json(parsed satisfies EvolucaoFormatada);
   } catch (err) {
     console.error('[dex/formatar-evolucao] Erro:', err);
-    const msg = err instanceof Error ? err.message : 'Erro interno';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const timeout = err instanceof Error && err.message.includes('AI timeout');
+    return NextResponse.json(
+      {
+        error: timeout
+          ? 'O Dex demorou demais para responder. Tente novamente.'
+          : 'O Dex não conseguiu organizar as anotações. Tente novamente.',
+        code: timeout ? 'AI_TIMEOUT' : 'AI_PROVIDER_FAILED',
+      },
+      { status: timeout ? 504 : 502 },
+    );
   }
 }

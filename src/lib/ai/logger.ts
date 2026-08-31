@@ -10,6 +10,13 @@ export interface AILogEntry {
   clinicaId?: string;
   pacienteId?: string;
   error?: string;
+  promptVersion?: string;
+  inputSize?: number;
+  outputItems?: number;
+  statusCounts?: Record<string, number>;
+  evidenceCounts?: Record<string, number>;
+  retryCount?: number;
+  httpStatus?: number;
 }
 
 export function logAICall(entry: AILogEntry): void {
@@ -21,7 +28,7 @@ export function logAICall(entry: AILogEntry): void {
 async function persistLog(entry: AILogEntry): Promise<void> {
   try {
     const supabase = createServiceClient();
-    await supabase.from('ai_usage_logs').insert({
+    const { error } = await supabase.from('ai_usage_logs').insert({
       feature:     entry.feature,
       provider:    entry.provider,
       model:       entry.model,
@@ -31,7 +38,15 @@ async function persistLog(entry: AILogEntry): Promise<void> {
       clinica_id:  entry.clinicaId ?? null,
       paciente_id: entry.pacienteId ?? null,
       error:       entry.error ?? null,
+      prompt_version: entry.promptVersion ?? null,
+      input_size: entry.inputSize ?? null,
+      output_items: entry.outputItems ?? null,
+      status_counts: entry.statusCounts ?? null,
+      evidence_counts: entry.evidenceCounts ?? null,
+      retry_count: entry.retryCount ?? null,
+      http_status: entry.httpStatus ?? null,
     });
+    if (error) console.error('[ai] Falha ao persistir métricas:', error.message);
   } catch {
     // Logging must never break the app
   }

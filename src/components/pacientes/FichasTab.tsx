@@ -39,7 +39,7 @@ import { ARCH_LABELS } from "@/lib/arcadas";
 import dynamic from 'next/dynamic';
 import type SignaturePadLib from 'signature_pad';
 import { formatarDataFicha } from '@/lib/format-data-ficha';
-import { CapturaLivreCard } from '@/components/fichas/captura-livre-card';
+import { CapturaLivreCard, type CapturaDexState } from '@/components/fichas/captura-livre-card';
 import { ColarDoWordDialog } from '@/components/pacientes/colar-do-word-dialog';
 import { OrtoCard } from '@/components/fichas/orto-card';
 import { OrtoForm, ORTO_VAZIO } from '@/components/fichas/orto-form';
@@ -120,6 +120,8 @@ interface EventoView {
    *  os papéis ao editar uma ficha com ponte. */
   papelNoGrupo: PapelNoGrupo | null;
   tipo: TipoRegistroOdontograma;
+  procedimentoId: string | null;
+  procedimentoNome: string | null;
   status: StatusRegistro;
   origem: OrigemRegistro;
   /** R-101 — ver corDoRegistro. Default 'sessao_atual'. */
@@ -152,6 +154,8 @@ type EventoRow = {
   grupo_id: string | null;
   papel_no_grupo: PapelNoGrupo | null;
   tipo: TipoRegistroOdontograma;
+  procedimento_id: string | null;
+  procedimento_nome: string | null;
   status: StatusRegistro;
   origem: OrigemRegistro;
   /** R-101 — ver corDoRegistro. Default 'sessao_atual'. */
@@ -342,6 +346,7 @@ function draftsParaCards(
       idxs: itens.map((it) => indicePorId.get(it.id)!),
       data: {
         tipo: primeiro.tipo,
+        procedimentoNome: primeiro.procedimentoNome,
         status: primeiro.status,
         origem: primeiro.origem,
         momentoPlanejado: primeiro.momento_planejado,
@@ -479,7 +484,8 @@ function renderSecoesPorDente<T extends { key: string; data: RegistroCardData }>
 function eventoViewParaDraft(e: EventoView): OdontogramaEventoDraft {
   return {
     id: e.id, // já existe no banco — o draft de EDIÇÃO reusa o id, nunca gera outro (R-01)
-    tipo: e.tipo, status: e.status, origem: e.origem, momento_planejado: e.momentoPlanejado, ancora: e.ancora,
+    tipo: e.tipo, procedimentoId: e.procedimentoId, procedimentoNome: e.procedimentoNome,
+    status: e.status, origem: e.origem, momento_planejado: e.momentoPlanejado, ancora: e.ancora,
     grupo_id: e.grupoId, papel_no_grupo: e.papelNoGrupo, observacao: e.observacao ?? '',
     detalhe: e.detalhe, realizado_em: e.realizadoEm,
     registrado_em: e.registradoEm, created_at: e.createdAt,
@@ -646,6 +652,9 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   // reusa a mesma RPC atômica da consulta por baixo. Vazio = save não toca a tabela de
   // eventos (edição sem reorganizar preserva os eventos existentes — no-opa em lista vazia).
   const [eventosDraft, setEventosDraft] = React.useState<OdontogramaEventoDraft[]>([]);
+  const [capturaDex, setCapturaDex] = React.useState<CapturaDexState>({
+    fase: 'idle', busy: false, impedeSalvar: false, audioParaRetry: false,
+  });
 
   const estadoEditavelAtual = React.useMemo<EstadoEditavelFicha>(() => ({
     formData,
@@ -933,7 +942,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       // antigas não têm eventos → recebem [] e seguem no display legado (fonte híbrida).
       const { data: evData, error: evError } = await supabase
         .from("odontograma_eventos")
-        .select("id, ficha_id, grupo_id, papel_no_grupo, tipo, status, origem, momento_planejado, nivel, arcada, quadrante, dente, faces, observacao, detalhe, realizado_em, registrado_em, created_at, encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(id, nome), assinatura_id")
+        .select("id, ficha_id, grupo_id, papel_no_grupo, tipo, procedimento_id, procedimento_nome, status, origem, momento_planejado, nivel, arcada, quadrante, dente, faces, observacao, detalhe, realizado_em, registrado_em, created_at, encaminhado_para, encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(id, nome), assinatura_id")
         .eq("paciente_id", patientId)
         .eq("clinica_id", clinicaId);
 
@@ -959,7 +968,9 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
           ...(e.faces && e.faces.length > 0 && { faces: e.faces }),
         };
         const view: EventoView = {
-          id: e.id, grupoId: e.grupo_id, papelNoGrupo: e.papel_no_grupo ?? null, tipo: e.tipo, status: e.status,
+          id: e.id, grupoId: e.grupo_id, papelNoGrupo: e.papel_no_grupo ?? null,
+          tipo: e.tipo, procedimentoId: e.procedimento_id, procedimentoNome: e.procedimento_nome,
+          status: e.status,
           origem: e.origem, momentoPlanejado: e.momento_planejado, ancora, observacao: e.observacao ?? null,
           realizadoEm: e.realizado_em, registradoEm: e.registrado_em, createdAt: e.created_at,
           detalhe: e.detalhe ?? null,
@@ -1461,6 +1472,12 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   };
 
   const handleSave = async () => {
+    if (capturaDex.impedeSalvar) {
+      toast.error(capturaDex.audioParaRetry
+        ? 'Há um áudio aguardando transcrição. Tente novamente ou descarte o áudio antes de salvar.'
+        : 'A captura do Dex ainda está em andamento. Aguarde antes de salvar.');
+      return;
+    }
     // R-30 Parte 5 — fail-closed: editar ficha existente sem os eventos reais carregados
     // apagaria tudo por omissão no save. Ficha nova (sem editingId) não tem nada a perder.
     if (editingId && eventosFalharamAoCarregar) {
@@ -1944,7 +1961,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                     <button
                       type="button"
                       onClick={() => void handleSave()}
-                      disabled={isSaving || !temAlteracoesPendentes}
+                      disabled={isSaving || !temAlteracoesPendentes || capturaDex.impedeSalvar}
                       className="min-h-11 flex-1 rounded-xl bg-teal px-4 text-sm font-bold text-white transition-colors hover:bg-teal-lt disabled:opacity-50 sm:flex-none"
                     >
                       {isSaving ? 'Salvando...' : 'Salvar alterações'}
@@ -1959,6 +1976,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                   pacienteNome={patientName ?? ''}
                   formDirty={formDirty}
                   onOrganizado={aplicarEvolucaoDoOrganizar}
+                  onCapturaStateChange={setCapturaDex}
                 />
               )}
 
@@ -2263,7 +2281,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
                 </button>
                 <button
                   onClick={() => void handleSave()}
-                  disabled={isSaving || (editingId !== null && !temAlteracoesPendentes)}
+                  disabled={isSaving || capturaDex.impedeSalvar || (editingId !== null && !temAlteracoesPendentes)}
                   className="bg-teal hover:bg-teal-lt text-white px-5 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-[0_0_15px_rgba(47,156,133,0.3)] disabled:opacity-50"
                 >
                   {isSaving ? (<Loader2 className="w-4 h-4 animate-spin" />) : (<Check className="w-4 h-4" />)}

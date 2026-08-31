@@ -25,14 +25,20 @@ import { useState } from 'react';
 import { Forward } from 'lucide-react';
 import type { OdontogramaEventoDraft } from '@/types/odontograma';
 import { RegistroCard } from '@/components/fichas/registro-card';
+import { OrtoCard } from '@/components/fichas/orto-card';
 import { EncaminharBar } from '@/components/fichas/encaminhar-bar';
 import { eventosParaCards, type EventoParaCard } from '@/lib/odontograma/eventos-para-cards';
 import { hojeBRT } from '@/lib/hora-brt';
+import type { OrtoManutencaoDetalhe } from '@/lib/especialidades/orto';
 
 export interface NestaSessaoBlocoProps {
   vazio: string;
   eventosDraft: OdontogramaEventoDraft[];
   onEventosDraftChange: (eventos: OdontogramaEventoDraft[]) => void;
+  textoVisita: string;
+  onTextoVisitaChange: (texto: string) => void;
+  ortoManutencao: OrtoManutencaoDetalhe | null;
+  onEditarOrto: () => void;
   /** R-78 — ⤢ num card com tabela de especialidade chama isto em vez de expandir aqui. */
   onAbrirDenteGrande: (dente: number, eventoId: string) => void;
   /** R-84 §3/§4 — ids que JÁ EXISTIAM no banco antes desta sessão (boca, R-61). Card com
@@ -60,6 +66,7 @@ function paraCard(
     id: e.id,
     grupoId: e.grupo_id,
     tipo: e.tipo,
+    procedimentoNome: e.procedimentoNome,
     status: e.status,
     ancora: e.ancora,
     origem: e.origem,
@@ -82,6 +89,10 @@ export function NestaSessaoBloco({
   vazio,
   eventosDraft,
   onEventosDraftChange,
+  textoVisita,
+  onTextoVisitaChange,
+  ortoManutencao,
+  onEditarOrto,
   onAbrirDenteGrande,
   idsDeAntes,
   destinosEncaminhar,
@@ -91,6 +102,8 @@ export function NestaSessaoBloco({
   const [selecionadosEncaminhar, setSelecionadosEncaminhar] = useState<Set<string>>(new Set());
   const [destinoEncaminhar, setDestinoEncaminhar] = useState<string | null>(null);
   const [cardAberto, setCardAberto] = useState<string | null>(null);
+  const [acaoEmMassa, setAcaoEmMassa] = useState<'indicado' | 'realizado' | null>(null);
+  const [eventosAntesDaAcao, setEventosAntesDaAcao] = useState<OdontogramaEventoDraft[] | null>(null);
 
   function sairModoEncaminhar() {
     setModoEncaminhar(false);
@@ -123,21 +136,31 @@ export function NestaSessaoBloco({
     onEventosDraftChange(eventosDraft.filter((e) => !ids.includes(e.id)));
     setCardAberto(null);
   }
-  /** "no alto fluxo o normal é ter feito tudo que ditou" (artefato) — 1 toque em vez de N. */
-  function marcarTudoFeito() {
-    onEventosDraftChange(eventosDraft.map((e) => (e.status === 'realizado' ? e : {
-      // R-101 — reseta momento_planejado junto (mesma razão do toggleStatus acima).
-      ...e, status: 'realizado', origem: 'clinica', momento_planejado: 'sessao_atual', revisar_status: false,
-      realizado_em: e.realizado_em ?? hojeBRT(),
-    })));
+  function confirmarAcaoEmMassa() {
+    if (acaoEmMassa == null) return;
+    setEventosAntesDaAcao(eventosDraft);
+    onEventosDraftChange(eventosDraft.map((e) => {
+      if (acaoEmMassa === 'realizado') {
+        return {
+          ...e,
+          status: 'realizado',
+          origem: 'clinica',
+          momento_planejado: 'sessao_atual',
+          revisar_status: false,
+          realizado_em: e.realizado_em ?? hojeBRT(),
+        };
+      }
+      return { ...e, status: 'indicado', realizado_em: null, revisar_status: false };
+    }));
+    setAcaoEmMassa(null);
   }
-  function marcarTudoIndicado() {
-    onEventosDraftChange(eventosDraft.map((e) => (e.status === 'indicado' ? { ...e, revisar_status: false } : {
-      ...e, status: 'indicado', realizado_em: null, revisar_status: false,
-    })));
+  function desfazerAcaoEmMassa() {
+    if (!eventosAntesDaAcao) return;
+    onEventosDraftChange(eventosAntesDaAcao);
+    setEventosAntesDaAcao(null);
   }
 
-  if (eventosDraft.length === 0) {
+  if (eventosDraft.length === 0 && !textoVisita.trim() && ortoManutencao == null) {
     return <p className="text-sm text-text-secondary">{vazio}</p>;
   }
 
@@ -148,15 +171,13 @@ export function NestaSessaoBloco({
   );
   const temIndicado = eventosDraft.some((e) => e.status === 'indicado');
   const temRealizado = eventosDraft.some((e) => e.status === 'realizado');
-  // R-125a — "planejado antes" descreve de onde o registro veio para esta consulta,
-  // não sua origem clínica. `fonteFluxo` cobre os drafts novos; `idsDeAntes` mantém
-  // compatibilidade com eventos carregados antes desse campo transitório existir.
-  const cardsPlanejados = cards.filter(({ ids }) =>
-    ids.some((id) => idsDeAntes.has(id))
-    || ids.every((id) => eventosDraft.find((evento) => evento.id === id)?.fonteFluxo === 'planejado'),
-  );
-  const cardsNovos = cards.filter(({ key }) => !cardsPlanejados.some((planejado) => planejado.key === key));
-  const cardsEncaminhaveis = cardsNovos.filter(({ ids, data }) =>
+  const totalRegistros = cards.length + (ortoManutencao ? 1 : 0);
+  // R-140b — a revisão é organizada pelo estado clínico; a origem da ficha anterior
+  // continua aparecendo como metadado do card, sem criar uma quarta seção.
+  const cardsFeitos = cards.filter(({ data }) => data.status === 'realizado' && data.origem === 'clinica');
+  const cardsAFazer = cards.filter(({ data }) => data.status === 'indicado');
+  const cardsCondicoes = cards.filter(({ data }) => data.status === 'realizado' && data.origem === 'preexistente');
+  const cardsEncaminhaveis = cards.filter(({ ids, data }) =>
     data.status === 'indicado'
     && data.encaminhadoPara == null
     && ids.every((id) => !idsDeAntes.has(id)),
@@ -249,7 +270,7 @@ export function NestaSessaoBloco({
       {(temIndicado || temRealizado) && (
         <div className="flex items-center justify-between gap-2 border-b border-border pb-2">
           <p className="text-[11px] font-semibold text-text-secondary">
-            {cards.length} {cards.length === 1 ? 'procedimento' : 'procedimentos'}
+            {totalRegistros} {totalRegistros === 1 ? 'registro' : 'registros'}
           </p>
           <div className="flex flex-wrap justify-end gap-2">
           {!modoEncaminhar && cardsEncaminhaveis.length > 0 && destinosEncaminhar.length > 0 && (
@@ -265,8 +286,8 @@ export function NestaSessaoBloco({
           {temRealizado && (
             <button
               type="button"
-              onClick={marcarTudoIndicado}
-              className="rounded-lg px-2 py-1 text-[11px] font-bold text-coral-ink transition-colors hover:bg-coral-pale"
+              onClick={() => setAcaoEmMassa('indicado')}
+              className="min-h-11 rounded-lg px-3 py-1 text-[11px] font-bold text-coral-ink transition-colors hover:bg-coral-pale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal"
             >
               Tudo indicado
             </button>
@@ -274,8 +295,8 @@ export function NestaSessaoBloco({
           {temIndicado && (
             <button
               type="button"
-              onClick={marcarTudoFeito}
-              className="rounded-lg px-2 py-1 text-[11px] font-bold text-teal-ink transition-colors hover:bg-teal-pale"
+              onClick={() => setAcaoEmMassa('realizado')}
+              className="min-h-11 rounded-lg px-3 py-1 text-[11px] font-bold text-teal-ink transition-colors hover:bg-teal-pale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal"
             >
               ✓ tudo feito
             </button>
@@ -283,21 +304,106 @@ export function NestaSessaoBloco({
           </div>
         </div>
       )}
-      <div className="flex max-h-[430px] flex-col gap-3 overflow-y-auto pr-1">
-        {cardsNovos.length > 0 && (
-          <section className="grid grid-cols-[repeat(auto-fit,minmax(360px,1fr))] gap-2" aria-label="Novo nesta consulta">
+      {acaoEmMassa && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="confirmar-acao-em-massa"
+          className="rounded-xl border border-warning bg-warning-pale p-3 text-sm text-foreground"
+        >
+          <p id="confirmar-acao-em-massa" className="font-semibold">
+            {acaoEmMassa === 'realizado'
+              ? 'Marcar todos os procedimentos como realizados?'
+              : 'Marcar todos os procedimentos como indicados?'}
+          </p>
+          <p className="mt-1 text-xs text-text-secondary">A ação limpa as pendências de revisão. Você poderá desfazer em seguida.</p>
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setAcaoEmMassa(null)}
+              className="min-h-11 rounded-lg border border-border px-3 text-xs font-bold text-foreground hover:bg-surface-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={confirmarAcaoEmMassa}
+              className="min-h-11 rounded-lg bg-warning px-3 text-xs font-bold text-warning-ink hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal"
+            >
+              Confirmar
+            </button>
+          </div>
+        </div>
+      )}
+      {eventosAntesDaAcao && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-alt px-3 py-2 text-xs text-text-secondary" role="status">
+          <span>Alteração em massa aplicada.</span>
+          <button
+            type="button"
+            onClick={desfazerAcaoEmMassa}
+            className="min-h-11 rounded-lg px-3 font-bold text-teal-ink hover:bg-teal-pale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal"
+          >
+            Desfazer
+          </button>
+        </div>
+      )}
+      <div className="flex flex-col gap-3 pr-1">
+        {(cardsFeitos.length > 0 || ortoManutencao != null) && (
+          <section className="grid grid-cols-1 gap-2" aria-label="Feito hoje">
             <p className="col-span-full px-1 text-[11px] font-bold uppercase tracking-widest text-text-secondary">
-              Novo nesta consulta
+              Feito hoje
             </p>
-            {renderCards(cardsNovos)}
+            {renderCards(cardsFeitos)}
+            {ortoManutencao && (
+              <article className="rounded-xl border border-border bg-surface px-4 py-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-text-primary">Manutenção ortodôntica</p>
+                    <p className="mt-0.5 text-xs text-text-secondary">Registro clínico da consulta</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onEditarOrto}
+                    className="min-h-9 shrink-0 rounded-lg border border-border px-2.5 text-[11px] font-bold text-text-secondary transition-colors hover:border-teal/40 hover:text-teal-ink"
+                  >
+                    Editar manutenção
+                  </button>
+                </div>
+                <OrtoCard valor={ortoManutencao} />
+              </article>
+            )}
           </section>
         )}
-        {cardsPlanejados.length > 0 && (
-          <section className="grid grid-cols-[repeat(auto-fit,minmax(360px,1fr))] gap-2" aria-label="Planejado antes">
+        {cardsAFazer.length > 0 && (
+          <section className="grid grid-cols-1 gap-2" aria-label="A fazer">
             <p className="col-span-full px-1 text-[11px] font-bold uppercase tracking-widest text-text-secondary">
-              Planejado antes
+              A fazer
             </p>
-            {renderCards(cardsPlanejados)}
+            {renderCards(cardsAFazer)}
+          </section>
+        )}
+        {cardsCondicoes.length > 0 && (
+          <section className="grid grid-cols-1 gap-2" aria-label="Condições existentes">
+            <p className="col-span-full px-1 text-[11px] font-bold uppercase tracking-widest text-text-secondary">
+              Condições existentes
+            </p>
+            {renderCards(cardsCondicoes)}
+          </section>
+        )}
+        {textoVisita.trim() && (
+          <section aria-label="Evolução clínica">
+            <p className="mb-2 px-1 text-[11px] font-bold uppercase tracking-widest text-text-secondary">
+              Evolução clínica
+            </p>
+            <div className="rounded-xl border border-border bg-surface-alt px-3 py-2.5">
+              <textarea
+                value={textoVisita}
+                onChange={(event) => onTextoVisitaChange(event.target.value)}
+                aria-label="Editar evolução clínica"
+                rows={3}
+                className="w-full resize-none bg-transparent text-sm leading-relaxed text-text-primary outline-none"
+              />
+            </div>
           </section>
         )}
       </div>

@@ -31,6 +31,14 @@ test('eventosParaCards: evento isolado vira 1 card com 1 âncora', () => {
   assert.equal(r[0].data.ancoras[0].dente, 15);
 });
 
+test('eventosParaCards: preserva o nome-snapshot do procedimento livre', () => {
+  const r = eventosParaCards([
+    evento({ id: 'livre', tipo: 'outro', procedimentoNome: 'Troca de curativo' }),
+  ], 'Dra. Ana', null);
+
+  assert.equal(r[0].data.procedimentoNome, 'Troca de curativo');
+});
+
 test('eventosParaCards: mesmo grupoId vira 1 card com N âncoras (multi-dente)', () => {
   const r = eventosParaCards(
     [
@@ -42,6 +50,18 @@ test('eventosParaCards: mesmo grupoId vira 1 card com N âncoras (multi-dente)',
   assert.equal(r.length, 1);
   assert.deepEqual(r[0].ids.sort(), ['a', 'b']);
   assert.equal(r[0].data.ancoras.length, 2);
+});
+
+test('eventosParaCards: grupo com status diferentes é explicitamente misto', () => {
+  const r = eventosParaCards(
+    [
+      evento({ id: 'a', grupoId: 'g1', status: 'indicado' }),
+      evento({ id: 'b', grupoId: 'g1', status: 'realizado' }),
+    ],
+    'Dra. Ana', null,
+  );
+
+  assert.equal(r[0].data.statusMisto, true);
 });
 
 test('eventosParaCards: assinada é true sse o PRIMEIRO do grupo tem assinaturaId', () => {

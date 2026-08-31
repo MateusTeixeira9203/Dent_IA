@@ -80,13 +80,14 @@ export async function withRateLimit(
   req: NextRequest,
   endpoint: string,
   limit: number,
-  windowMs: number
+  windowMs: number,
+  identity?: string,
 ): Promise<NextResponse | null> {
   const ip =
     req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
     req.headers.get('x-real-ip') ??
     'anonymous';
-  const key = `${endpoint}:${ip}`;
+  const key = `${endpoint}:${identity ?? ip}`;
 
   let result: { success: boolean; remaining: number; reset: number };
 

@@ -1,225 +1,162 @@
-# R-133 — Dex clínico sem perda e rápido
+# R-133 — Dex clínico sem perda
 
-> **SPEC** · **R-133** · 🔵 ativo
-> **Aberto:** 2026-08-26 · **Fechado:** — · **Fase:** contrato
-> **Baseia-se em:** R-106 (evidência de status) e R-125a (revisão manual). Compatível com R-129.
-> **Migration:** nenhuma.
+> **SPEC** · **R-133** · ⏳ fila P0
+> **Aberto:** 2026-08-26 · **Fechado:** — · **Fase:** aprovada para execução · **Revisão:** 2
 
 ## 1. Problema
 
-O Campo Mágico estrutura bem os tipos conhecidos, mas pode perder silenciosamente um procedimento
-clínico que não cabe no enum visual da IA. O sistema já aceita `tipo: 'outro'`, já salva esse
-evento, já o leva ao orçamento e já permite cadastrá-lo no catálogo; a rota do Dex é que ainda
-barra essa saída. `exame_periodontal` também existe no domínio e não está no enum da rota.
+O usuário confirmou que um procedimento não existente na “base” do Dex pode ser excluído ou
+ignorado. O problema real não é o catálogo financeiro da clínica: o schema estruturado da rota
+aceita apenas um enum visual fechado. O domínio TypeScript e o banco já aceitam `outro` e
+`exame_periodontal`, mas `ODONTOGRAMA_EVENTO_SCHEMA` e `TIPOS_ACEITOS` não. `parseEventos`
+descarta tipos fora da lista com `continue`.
 
-Consequência: o termo pode sobreviver em `procedimentos` ou no texto da evolução, mas não virar
-card revisável nem registro clínico. A correção não pode tornar o Dex mais lento, inventar
-procedimentos ou transformar citação/negação em procedimento realizado.
+O mesmo fato também é gerado em `procedimentos`, `dentes_observacoes` e
+`odontograma_eventos`. Essas estruturas podem divergir: o texto sobrevive, mas o evento/card que
+alimenta revisão, plano e orçamento desaparece. Perda silenciosa é o pior resultado possível.
 
 ## 2. Decisão e alternativas descartadas
 
 | Decisão | Alternativa descartada | Motivo |
 |---|---|---|
-| Abrir `outro` e `exame_periodontal` no schema atual | criar um novo modelo universal de procedimentos | o domínio e o banco já suportam os dois |
-| Procedimento desconhecido vira `outro` com nome em `observacao` | descartar evento e deixar só no texto | elimina a perda silenciosa e mantém revisão |
-| Reusar `RegistroCard`, edição e orçamento existentes | criar modal/tela de “não reconhecidos” | mais UI e mais cliques sem ganho clínico |
-| Uma chamada principal de IA | segunda chamada para classificar desconhecidos | latência e custo maiores no caminho comum |
-| Match local continua como atalho instantâneo | mandar o catálogo inteiro no prompt | aumenta tokens e mistura catálogo comercial com ontologia clínica |
-| Nome desconhecido não é salvo automaticamente no catálogo | aprendizagem automática por clínica | associação errada vira erro recorrente; o dentista confirma manualmente |
-| Status segue R-106 e permanece editável | IA confirmar o status sem revisão | decisão clínica continua sob controle humano |
+| Abrir `outro` e `exame_periodontal` | criar um tipo para cada procedimento | domínio e banco já suportam fallback |
+| Nome real fica em `observacao` | título genérico “Outro procedimento” | preserva o dado clínico útil |
+| Reconciliação determinística após o parser | confiar que três arrays da IA sempre concordam | elimina descarte silencioso |
+| Divergência vira indicado + revisão | inferir realizado pela frase genérica | visibilidade segura vence falso realizado |
+| Reusar os cards atuais | modal separado de “não reconhecidos” | reduz clique e duplicação de UI |
+| Catálogo não aprende sozinho | cadastrar todo desconhecido automaticamente | associação errada viraria erro recorrente |
+| Uma chamada de IA | segunda chamada para desconhecidos | menor latência/custo e menos pontos de falha |
+| Sem migration | novo modelo universal agora | a persistência atual já comporta a solução |
 
-## 3. Objetivo e funcionamento
+## 3. Objetivo e como funciona
 
-**Objetivo:** todo procedimento clínico explícito identificado pelo Dex deve chegar à revisão,
-mesmo quando não possuir símbolo/tipo estrutural próprio, sem adicionar uma chamada remota ao
-fluxo nem aumentar a latência observada além do orçamento definido nesta spec.
+**Objetivo:** toda intervenção odontológica explícita chega à revisão como tipo específico ou
+`outro` com nome preservado; nenhuma divergência entre as saídas da IA some silenciosamente.
 
 Fluxo:
 
-1. Enquanto o dentista digita, `casarProcedimentoLocal` continua sugerindo tipos e itens do
-   catálogo sem rede.
-2. Ao clicar **Organizar com Dex**, a rota realiza a mesma chamada estruturada de hoje.
-3. Tipo conhecido gera o evento específico. Procedimento explícito fora do vocabulário gera
-   `tipo: 'outro'`, preservando o nome clínico em `observacao`.
-4. O evento entra na mesma revisão e no mesmo odontograma dos demais. Nada é salvo antes da
-   revisão e do comando atual de salvar.
-5. O dentista pode editar descrição/status, remover ou manter. O fluxo manual existente continua
-   permitindo salvar o termo no catálogo para usos futuros.
+```text
+relato → 1 chamada Gemini → parse dos tipos conhecidos/outro
+  → reconciliação contra `procedimentos`
+    → coberto: mantém evento
+    → não coberto: cria `outro` indicado + precisa revisar
+      → cards atuais → dentista confirma/edita/remove → salvar
+```
 
 ## 4. Contrato técnico
 
-### 4.1 Contrato da rota
+### 4.1 Schema e parser
 
-`POST /api/dex/formatar-evolucao` mantém body, status HTTP e shape de resposta atuais. A mudança
-é aditiva dentro de `odontograma_eventos`:
+- `ODONTOGRAMA_EVENTO_SCHEMA.properties.tipo.enum` e `TIPOS_ACEITOS` ganham
+  `exame_periodontal` e `outro`.
+- O prompt define `outro` como escape obrigatório para **intervenção** sem tipo específico.
+- `outro.observacao` guarda nome clínico não vazio; nunca somente “outro”.
+- `exame_periodontal` usa nível `boca` e permanece distinto de `raspagem`.
+- `outro` aceita `dente`, `arcada`, `quadrante` ou `boca` conforme localização explicitamente
+  dita; nunca inventa dente/face.
+- `outro` com observação vazia é inválido e segue para a reconciliação, não é persistido vazio.
 
-```typescript
-export type TipoRegistroOdontograma =
-  // tipos existentes
-  | 'exame_periodontal'
-  | 'outro';
+### 4.2 Reconciliação sem perda
 
-export interface OdontogramaEventoInput {
-  tipo: TipoRegistroOdontograma;
-  status: 'indicado' | 'realizado';
-  origem: 'clinica' | 'preexistente';
-  momento_planejado: 'sessao_atual' | 'proxima_sessao';
-  ancora: AncoraClinica;
-  observacao: string;
-  evidencia_status?: EvidenciaStatus;
-  revisar_status?: boolean;
-  // demais campos atuais permanecem
+Novo módulo puro, sem rede e compartilhado pela rota:
+
+```ts
+interface ResultadoReconciliacaoDex {
+  eventos: OdontogramaEventoInput[];
+  adicionadosComoOutro: number;
+  procedimentosSemCobertura: string[]; // só retorno interno/teste; não logar texto
 }
+
+function reconciliarProcedimentosDex(input: {
+  procedimentos: readonly string[];
+  eventos: readonly OdontogramaEventoInput[];
+  dentesObservacoes: Readonly<Record<string, string>>;
+  modo: 'consulta' | 'exame_inicial';
+}): ResultadoReconciliacaoDex;
 ```
 
-Mudanças em `formatar-evolucao/route.ts`:
+Algoritmo obrigatório:
 
-- `ODONTOGRAMA_EVENTO_SCHEMA.properties.tipo.enum` ganha `exame_periodontal` e `outro`.
-- `TIPOS_ACEITOS` ganha os mesmos dois valores.
-- O prompt define `outro` como escape clínico obrigatório, nunca como categoria genérica para
-  diagnóstico, material, conversa, coordenação ou texto sem intervenção.
-- Em `outro`, `observacao` contém o nome clínico específico dito/corrigido pelo contexto, nunca
-  apenas “outro procedimento”.
-- Com dente explícito, a âncora é `dente`. Com arcada/quadrante/boca explícitos, preserva esse
-  escopo. Sem localização anatômica dita, usa `boca` como registro clínico geral, sem inventar
-  dentes.
-- `outro` com `observacao` vazia é inválido e não pode ser materializado.
+1. Remove strings vazias e duplicatas normalizadas de `procedimentos`.
+2. Um procedimento está coberto quando casa com `observacao` de `outro` ou com aliases
+   explícitos do tipo estrutural em `DEX_ALIASES_POR_TIPO`; substring solta não basta.
+3. Cada procedimento sem cobertura gera fallback `tipo: 'outro'`, `status: 'indicado'`,
+   `evidencia_status: 'ambiguo'`, `revisar_status: true` e `momento_planejado: 'sessao_atual'`.
+4. Se o nome casar de forma inequívoca com observações de dentes, gera um evento por dente com
+   o mesmo `grupo_id`; sem correspondência inequívoca, usa `ancora: { nivel: 'boca' }`.
+5. O fallback nunca infere realizado, face, preço, material, diagnóstico ou catálogo.
+6. A lista textual `procedimentosSemCobertura` só existe durante a request/teste. Logs recebem
+   apenas a contagem agregada.
 
-### 4.2 Regras clínicas do fallback
+O viés deliberado é visibilidade: um falso fallback revisável é aceitável no rascunho; perda
+silenciosa ou falso realizado não são. A R-143 impede salvar fallback sem decisão humana.
 
-O modelo só usa `outro` quando todas forem verdadeiras:
+### 4.3 Apresentação e campos derivados
 
-1. há intervenção odontológica explícita feita ou indicada;
-2. nenhum tipo específico do enum descreve corretamente a intervenção;
-3. o nome pode ser preservado sem inventar diagnóstico, localização, material ou técnica.
+- `RegistroCard` usa `observacao` como título quando `tipo === 'outro'`.
+- A edição continua alterando a observação; remover/status usam os controles atuais.
+- `derivarV2DosEventos` usa o nome de `outro`, não “Outro procedimento”, em `procedimentos` e
+  `dentes_observacoes`.
+- Orçamento mantém preço vazio quando não há item de catálogo correspondente.
+- O dentista pode cadastrar o termo manualmente no catálogo depois; nenhuma escrita automática.
 
-Exemplos:
+### 4.4 Compatibilidade e performance
 
-| Relato | Evento esperado |
-|---|---|
-| “fiz gengivoplastia no 11 e 21” | dois `outro`, observação `Gengivoplastia`, dentes 11/21 |
-| “instalei mantenedor de espaço no 75” | `outro`, dente 75 |
-| “fiz moldagem para estudo” | `outro`, nível boca, observação `Moldagem para estudo` |
-| “cárie no 16” | nenhum `outro`; achado permanece anotação/indicação específica |
-| “não fiz a gengivoplastia” | nunca `outro` realizado |
-| “usei resina Z350” | material não vira `outro` sozinho |
-
-### 4.3 Status e revisão
-
-- R-106 permanece a única regra da evidência de status da IA.
-- No Meu Dia, `modoLancamento` continua sobrescrevendo a sugestão da IA por meio de
-  `mesclarEventosSemPerda`; esta entrega não muda essa regra.
-- Na ficha, o status sugerido permanece editável antes de salvar.
-- `outro` não recebe tratamento privilegiado: pode ser removido, alterado, encaminhado e marcado
-  como indicado/realizado pelos mesmos controles do card atual.
-
-### 4.4 Apresentação e orçamento
-
-`RegistroCard` passa a derivar o título assim:
-
-```typescript
-const rotulo = data.tipo === 'outro' && data.observacao.trim()
-  ? data.observacao.trim()
-  : TIPO_LABEL[data.tipo];
-```
-
-O orçamento já usa a mesma regra em `use-orcamento-modal.ts`; ela é preservada. Sem casamento
-com um item do catálogo, o preço continua vazio para confirmação — o Dex nunca inventa valor.
-
-### 4.5 Velocidade
-
-- A mudança não adiciona fetch, chamada de IA, consulta ao banco nem catálogo no prompt.
-- O match local permanece síncrono e anterior à chamada remota.
-- O enriquecimento endodôntico existente continua assíncrono e não bloqueia a primeira revisão;
-  esta entrega não cria enriquecimento equivalente para `outro`.
-- `buildDentalContext()` pode ser materializado uma vez no escopo do módulo, desde que o teste
-  prove que a função não depende de usuário, clínica ou request.
-- Os rótulos de progresso continuam temporais e honestos; não fingem streaming de procedimentos.
-- Gate de performance: mediana e p95 da suíte depois não podem piorar mais de 10% contra o
-  baseline da mesma máquina/sessão. Se piorar, não sobe até remover a regressão.
-
-### 4.6 Arquivos previstos
-
-| Arquivo | Mudança |
-|---|---|
-| `src/app/api/dex/formatar-evolucao/route.ts` | enum, prompt, parser e contexto estático |
-| `src/components/fichas/registro-card.tsx` | título clínico de `outro` |
-| `evals/extracao-clinica/golden.json` | casos desconhecidos e adversariais |
-| `evals/extracao-clinica/run.cjs` | match de observação + métricas de fallback/latência |
-| testes unitários próximos do parser/card | enum, observação obrigatória e regressões |
-
-Nenhuma tabela, migration, RLS, server action ou RPC muda.
+- Body, status HTTP e `EvolucaoFormatada` permanecem compatíveis.
+- Nenhuma tabela, RPC, RLS ou Server Action muda.
+- Uma captura continua com uma chamada principal; reconciliação é síncrona local.
+- O mesmo resultado é entregue para Ficha e Meu Dia.
+- Mediana e p95 pós-mudança não podem piorar mais de 10% na mesma máquina/sessão.
 
 ## 5. Comportamento — alvo funcional
 
-| Estado | Resultado observável |
+| Situação | Resultado esperado |
 |---|---|
-| Texto vazio | botão continua desabilitado; nenhuma chamada |
-| Match local conhecido | chip aparece imediatamente; zero rede |
-| Conhecido pela IA | card estrutural atual, sem mudança visual |
-| Desconhecido com localização | card com o nome específico e âncora informada |
-| Desconhecido sem localização | card geral, sem dente inventado |
-| Ambíguo/histórico | card revisável conforme R-106; nunca realizado silenciosamente |
-| Negado | não gera procedimento realizado |
-| Resposta inválida/timeout | nenhum resultado parcial; relato permanece no campo e pode repetir |
-| Sucesso | todos os cards chegam à revisão; salvar continua sendo ação separada |
-
-```text
-texto/voz → match local instantâneo → Organizar com Dex (1 chamada)
-  → tipo específico OU `outro` com nome preservado
-  → cards editáveis → revisão humana → salvar
-```
+| Procedimento conhecido | card estrutural atual |
+| “Fiz gengivoplastia no 11 e 21” | dois `outro` agrupados, nome Gengivoplastia |
+| “Instalei mantenedor de espaço no 75” | `outro`, dente 75 |
+| “Fiz moldagem para estudo” | `outro`, nível boca |
+| Exame periodontal | `exame_periodontal`, não `outro` |
+| Procedimento textual sem evento | fallback `outro` indicado + revisão |
+| “Não fiz gengivoplastia” | nunca realizado; não pode salvar sem revisão se houver fallback |
+| Cárie/material/conversa isolados | não viram `outro` confirmável automaticamente |
+| Timeout/JSON inválido | relato permanece; nenhum evento parcial |
 
 ## 6. Referência visual
 
-Não há tela nova nem artefato novo. A implementação reutiliza o visual aprovado da ficha e do
-Meu Dia (R-122/R-123/R-125a) e o mesmo `RegistroCard`. A única diferença visível é que o título
-do tipo `outro` mostra o procedimento real em vez de “Outro procedimento”. Tokens, ordem dos
-blocos, tamanhos, motion, dark/light e responsividade permanecem inalterados.
+Sem tela nova nem artefato. Reutiliza o `RegistroCard` aprovado. A única mudança de conteúdo é o
+título clínico real e a sinalização “Confira o status”; layout, tokens e hierarquia permanecem.
 
 ## 7. Invariantes
 
-- [ ] Procedimento desconhecido identificado nunca é descartado por falta de enum.
-- [ ] `outro` sempre preserva uma descrição clínica não vazia.
-- [ ] Diagnóstico, material isolado, negação e conversa não viram procedimento por fallback.
-- [ ] Nenhum dente, face, status, diagnóstico, material ou preço é inventado.
-- [ ] A IA organiza; o dentista revisa e salva.
-- [ ] Uma entrada comum continua fazendo uma única chamada principal de estruturação.
-- [ ] Correções manuais e eventos já existentes nunca são sobrescritos pela nova extração.
-- [ ] R-106, R-49 e ortodontia não regridem.
-- [ ] Nenhum dado existente é migrado ou reclassificado.
+- [ ] Procedimento explícito não é descartado por falta de enum.
+- [ ] `outro` sempre tem descrição clínica não vazia.
+- [ ] Diagnóstico, material isolado, negação e conversa não viram realizado por fallback.
+- [ ] Nenhum dente, face, status, preço ou item de catálogo é inventado.
+- [ ] Divergência vira revisão visível, nunca perda silenciosa.
+- [ ] Correção humana e evento existente não são sobrescritos por reextração.
+- [ ] R-139c, ortodontia e eventos conhecidos não regridem.
+- [ ] Nenhum conteúdo clínico aparece em log operacional.
 
 ## 8. Gates de aceite
 
-- [ ] **G1 — baseline:** rodar `evals/extracao-clinica/run.cjs` antes da mudança e guardar o
-  JSON local de métricas/latência, sem payload real de paciente.
-- [ ] **G2 — conhecidos:** todos os casos `atual` mantêm o resultado baseline; zero aumento de
-  falsos procedimentos realizados e zero violação de negação.
-- [ ] **G3 — desconhecidos:** gengivoplastia 11/21, mantenedor 75 e moldagem geral chegam como
-  `outro` com observação e âncora esperadas.
-- [ ] **G4 — falso positivo:** achado, material isolado, conversa e planejamento sem intervenção
-  definida não geram `outro`.
-- [ ] **G5 — status:** “não fiz gengivoplastia” nunca gera realizado; frase ambígua fica para
-  revisão conforme R-106.
-- [ ] **G6 — exame periodontal:** o tipo existente passa pela rota e chega ao card sem virar
-  `outro`.
-- [ ] **G7 — título:** `outro` com observação “Gengivoplastia” mostra esse nome no card; vazio
-  degrada com segurança e não gera card clínico sem descrição.
-- [ ] **G8 — orçamento:** evento `outro` aparece com a observação como descrição, preço vazio e
-  editável; nenhum valor é inferido.
-- [ ] **G9 — falha:** simular 500/timeout mantém o relato e não adiciona metade dos eventos.
-- [ ] **G10 — desempenho:** uma organização comum faz um POST principal; p50 e p95 pós-mudança
-  ficam dentro de 10% do baseline da mesma suíte.
-- [ ] **G11 — paridade:** o mesmo relato produz os mesmos eventos na ficha e no Meu Dia, salvo a
-  regra manual de status já contratada no Meu Dia.
-- [ ] **G12 — regressão:** `npm run typecheck`, testes unitários e eval passam com a versão atual
-  de `@google/genai` antes de qualquer commit.
+- [ ] **G1:** schema/provider mockado aceita `outro` e `exame_periodontal`; parser preserva ambos.
+- [ ] **G2:** os três exemplos desconhecidos geram nome e âncora esperados, 3/3 execuções.
+- [ ] **G3:** caso misto conhecido + desconhecido mantém os dois sem duplicar o conhecido.
+- [ ] **G4:** procedimento presente no array e ausente dos eventos vira fallback revisável.
+- [ ] **G5:** negação, achado, material e conversa têm zero falso realizado e zero fallback
+  persistível sem confirmação.
+- [ ] **G6:** `outro` aparece no card, campos derivados e orçamento com nome real e preço vazio.
+- [ ] **G7:** Ficha e Meu Dia têm paridade antes do save e após reload.
+- [ ] **G8:** p50/p95 dentro de 10% do baseline; uma chamada principal por organização.
+- [ ] **G9:** eval anterior continua passando; novos casos medem recall de desconhecidos,
+  falsos fallbacks e procedimentos sem cobertura.
+- [ ] **G10:** typecheck, todos os 23 testes e eval passam antes de qualquer publicação.
 
 ## 9. Fora de escopo
 
-- Aprendizagem automática de sinônimos, tabela de aliases ou escrita automática no catálogo.
-- Novo símbolo odontológico para cada procedimento desconhecido.
-- Diagnóstico automático, sugestão terapêutica ou decisão clínica autônoma.
-- Streaming em tempo real/dente a dente (R-49b), modelo novo ou segundo provider.
-- Redesenho do Campo Mágico, dos cards, da ficha ou do Meu Dia.
-- Alterar preços, faturamento, permissões ou dados antigos.
+- Criar símbolo para cada procedimento ou ontologia universal.
+- Aprender aliases/catálogo automaticamente a partir das correções.
+- Inventar diagnóstico ou sugerir tratamento.
+- Alterar preço, faturamento, schema, RLS ou dados históricos.
+- Redesenhar Campo Mágico/cards; segurança da revisão pertence à R-143.

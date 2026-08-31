@@ -8,7 +8,9 @@ export type RecorderStatus = "idle" | "recording" | "processing" | "done" | "err
 // Depois de detectar fala, ~4s de silêncio contínuo param a gravação sozinhos
 // (dentista de luva não precisa tocar na tela). Nunca re-inicia sozinho — sem
 // microfone sempre-aberto por decisão de privacidade do consultório.
-const SILENCE_MS = 4_000;
+const SILENCE_WARNING_MS = 4_000;
+const SILENCE_STOP_MS = 7_000;
+const MAX_RECORDING_MS = 10 * 60_000;
 // RMS normalizado (0-1). Fala fica tipicamente em 0.05-0.3; ruído de sala ~0.005-0.02.
 // Calibrado empiricamente — consultório muito barulhento pode desligar via flag.
 const SILENCE_RMS_THRESHOLD = 0.02;
@@ -49,6 +51,8 @@ interface UseAudioRecorderReturn {
   resetError: () => void;
   /** R-48 (D) — o mimeType realmente negociado; quem faz upload nomeia o arquivo por ele. */
   mimeType: string | null;
+  silenceWarning: boolean;
+  continueRecording: () => void;
 }
 
 /** Primeiro candidato suportado vence; '' = default do browser (D1, I1). */
@@ -75,10 +79,12 @@ export function useAudioRecorder(options?: UseAudioRecorderOptions): UseAudioRec
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [timer, setTimer] = useState(0);
   const [mimeType, setMimeType] = useState<string | null>(null);
+  const [silenceWarning, setSilenceWarning] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const maxRecordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Resolve pendente que `stopRecording` aguarda
   const resolveStopRef = useRef<((blob: Blob | null) => void) | null>(null);
   // R-48 (I3, pós-verificação adversarial) — 'stop' e 'error' podem disparar os dois pra
@@ -86,6 +92,8 @@ export function useAudioRecorder(options?: UseAudioRecorderOptions): UseAudioRec
   // primeiro conta; sem essa trava o segundo reprocessaria com chunksRef já vazio e
   // reportaria "nada capturado" mesmo tendo capturado.
   const sessaoFinalizadaRef = useRef(false);
+  const houveFalaRef = useRef(false);
+  const ultimoSomEmRef = useRef(0);
   // Monitor de silêncio
   const audioContextRef = useRef<AudioContext | null>(null);
   const monitorIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -109,7 +117,8 @@ export function useAudioRecorder(options?: UseAudioRecorderOptions): UseAudioRec
   // Limpa intervalos e AudioContext ao desmontar
   useEffect(() => {
     return () => {
-      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (maxRecordingTimeoutRef.current) clearTimeout(maxRecordingTimeoutRef.current);
       limparMonitor();
     };
   }, [limparMonitor]);
@@ -166,6 +175,11 @@ export function useAudioRecorder(options?: UseAudioRecorderOptions): UseAudioRec
         clearInterval(timerIntervalRef.current);
         timerIntervalRef.current = null;
       }
+      if (maxRecordingTimeoutRef.current) {
+        clearTimeout(maxRecordingTimeoutRef.current);
+        maxRecordingTimeoutRef.current = null;
+      }
+      setSilenceWarning(false);
       setTimer(0);
 
       if (resolveStopRef.current) {
@@ -204,11 +218,21 @@ export function useAudioRecorder(options?: UseAudioRecorderOptions): UseAudioRec
     recorder.start(250); // coleta chunks a cada 250ms
     setStatus("recording");
     setTimer(0);
+    setSilenceWarning(false);
+    houveFalaRef.current = false;
+    ultimoSomEmRef.current = Date.now();
 
     // Timer em segundos
     timerIntervalRef.current = setInterval(() => {
       setTimer((prev) => prev + 1);
     }, 1000);
+
+    maxRecordingTimeoutRef.current = setTimeout(() => {
+      if (recorder.state !== 'recording') return;
+      resolveStopRef.current = (blob) => optionsRef.current?.onAutoStop?.(blob);
+      setStatus('processing');
+      recorder.stop();
+    }, MAX_RECORDING_MS);
 
     // ── Monitor de silêncio ──
     if (optionsRef.current?.silenceAutoStop !== false) {
@@ -219,9 +243,6 @@ export function useAudioRecorder(options?: UseAudioRecorderOptions): UseAudioRec
       analyser.fftSize = 2048;
       source.connect(analyser);
       const amostra = new Uint8Array(analyser.fftSize);
-
-      let houveFala = false;
-      let ultimoSomEm = Date.now();
 
       monitorIntervalRef.current = setInterval(() => {
         if (recorder.state !== "recording") return;
@@ -234,11 +255,14 @@ export function useAudioRecorder(options?: UseAudioRecorderOptions): UseAudioRec
         const rms = Math.sqrt(somaQuadrados / amostra.length);
 
         if (rms >= SILENCE_RMS_THRESHOLD) {
-          houveFala = true;
-          ultimoSomEm = Date.now();
+          houveFalaRef.current = true;
+          ultimoSomEmRef.current = Date.now();
+          setSilenceWarning(false);
           return;
         }
-        if (houveFala && Date.now() - ultimoSomEm >= SILENCE_MS) {
+        const silencioPor = Date.now() - ultimoSomEmRef.current;
+        if (houveFalaRef.current && silencioPor >= SILENCE_WARNING_MS) setSilenceWarning(true);
+        if (houveFalaRef.current && silencioPor >= SILENCE_STOP_MS) {
           // Auto-stop: reusa o mesmo caminho do stop manual; blob sai via onAutoStop.
           if (monitorIntervalRef.current) {
             clearInterval(monitorIntervalRef.current);
@@ -246,6 +270,7 @@ export function useAudioRecorder(options?: UseAudioRecorderOptions): UseAudioRec
           }
           resolveStopRef.current = (blob) => optionsRef.current?.onAutoStop?.(blob);
           setStatus("processing");
+          setSilenceWarning(false);
           recorder.stop();
         }
       }, MONITOR_INTERVAL_MS);
@@ -273,5 +298,11 @@ export function useAudioRecorder(options?: UseAudioRecorderOptions): UseAudioRec
     setStatus((s) => (s === "error" ? "idle" : s));
   }, []);
 
-  return { status, timer, startRecording, stopRecording, resetError, mimeType };
+  const continueRecording = useCallback(() => {
+    if (status !== 'recording') return;
+    ultimoSomEmRef.current = Date.now();
+    setSilenceWarning(false);
+  }, [status]);
+
+  return { status, timer, startRecording, stopRecording, resetError, mimeType, silenceWarning, continueRecording };
 }

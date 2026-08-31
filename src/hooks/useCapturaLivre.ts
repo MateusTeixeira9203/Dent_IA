@@ -32,6 +32,12 @@ export interface UseCapturaLivreReturn {
   isTranscribing: boolean;
   liveTranscript: string;
   elapsedSeconds: number;
+  retryTranscription: () => Promise<void>;
+  discardPendingAudio: () => void;
+  hasPendingAudio: boolean;
+  transcriptionError: boolean;
+  silenceWarning: boolean;
+  continueRecording: () => void;
 }
 
 export function useCapturaLivre(options: UseCapturaLivreOptions = {}): UseCapturaLivreReturn {
@@ -41,7 +47,11 @@ export function useCapturaLivre(options: UseCapturaLivreOptions = {}): UseCaptur
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [liveTranscript, setLiveTranscript] = useState('');
+  const [hasPendingAudio, setHasPendingAudio] = useState(false);
+  const [transcriptionError, setTranscriptionError] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingAudioRef = useRef<Blob | null>(null);
+  const transcriptionInFlightRef = useRef(false);
   // Latest-ref pro mimeType negociado pelo gravador — processarAudio precisa dele (I2),
   // mas é declarado antes de useAudioRecorder existir (evita ciclo de dependência).
   const mimeTypeRef = useRef<string | null>(null);
@@ -50,6 +60,11 @@ export function useCapturaLivre(options: UseCapturaLivreOptions = {}): UseCaptur
   const processarAudio = useCallback(async (blob: Blob | null) => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (!blob) { setIsTranscribing(false); return; }
+    if (transcriptionInFlightRef.current) return;
+    transcriptionInFlightRef.current = true;
+    pendingAudioRef.current = blob;
+    setHasPendingAudio(true);
+    setTranscriptionError(false);
     setIsTranscribing(true);
     try {
       const fd = new FormData();
@@ -60,17 +75,22 @@ export function useCapturaLivre(options: UseCapturaLivreOptions = {}): UseCaptur
       if (!res.ok) throw new Error(`Erro ${res.status}`);
       const data = await res.json() as { transcricao?: string };
       const novoTexto = data.transcricao?.trim();
-      if (novoTexto) {
-        setLiveTranscript(novoTexto);
-        setTexto(prev => prev ? `${prev}\n${novoTexto}` : novoTexto);
-      }
+      if (!novoTexto) throw new Error('Transcrição vazia');
+      setLiveTranscript(novoTexto);
+      setTexto(prev => prev ? `${prev}\n${novoTexto}` : novoTexto);
+      pendingAudioRef.current = null;
+      setHasPendingAudio(false);
     } catch (err) {
       console.error('[useCapturaLivre] transcrever:', err);
-      toast.error('Não foi possível transcrever o áudio. Tente novamente.');
-    } finally { setIsTranscribing(false); }
+      setTranscriptionError(true);
+      toast.error('Não foi possível transcrever o áudio. O áudio continua disponível para tentar novamente.');
+    } finally {
+      transcriptionInFlightRef.current = false;
+      setIsTranscribing(false);
+    }
   }, []);
 
-  const { status: micStatus, startRecording, stopRecording, resetError, mimeType } = useAudioRecorder({
+  const { status: micStatus, startRecording, stopRecording, resetError, mimeType, silenceWarning, continueRecording } = useAudioRecorder({
     onAutoStop: (blob) => { void processarAudio(blob); },
     onError: (motivo, blobParcial) => {
       // R-48 (C/D2/I3) — falha DURANTE a gravação: nunca mais silenciosa, e o áudio
@@ -115,6 +135,17 @@ export function useCapturaLivre(options: UseCapturaLivreOptions = {}): UseCaptur
     timerRef.current = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
   }, [micStatus, startRecording, stopRecording, processarAudio, resetError]);
 
+  const retryTranscription = useCallback(async () => {
+    await processarAudio(pendingAudioRef.current);
+  }, [processarAudio]);
+
+  const discardPendingAudio = useCallback(() => {
+    if (transcriptionInFlightRef.current) return;
+    pendingAudioRef.current = null;
+    setHasPendingAudio(false);
+    setTranscriptionError(false);
+  }, []);
+
   return {
     texto,
     setTexto,
@@ -123,5 +154,11 @@ export function useCapturaLivre(options: UseCapturaLivreOptions = {}): UseCaptur
     isTranscribing,
     liveTranscript,
     elapsedSeconds,
+    retryTranscription,
+    discardPendingAudio,
+    hasPendingAudio,
+    transcriptionError,
+    silenceWarning,
+    continueRecording,
   };
 }
