@@ -29,11 +29,20 @@ export async function finalizarAtendimentoSeAplicavel(
   if (ctx.finalizarAtendimento === false) return;
   if (ctx.origem !== 'modo_consulta' || !ctx.agendamentoId) return;
 
-  await supabase
+  const { data: encerrado, error } = await supabase
     .from('agendamentos')
     .update({ status: 'completed' })
     .eq('id', ctx.agendamentoId)
-    .eq('clinica_id', ctx.clinicId);
+    .eq('clinica_id', ctx.clinicId)
+    .neq('status', 'completed')
+    .select('id');
+
+  if (error) {
+    console.error('[finalizarAtendimentoSeAplicavel:agendamento]', error.message);
+    return;
+  }
+  // Retry da mesma visita não pode criar uma segunda notificação para a secretária.
+  if (!encerrado || encerrado.length === 0) return;
 
   const { data: paciente } = await supabase
     .from('pacientes')

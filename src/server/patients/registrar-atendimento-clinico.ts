@@ -1,0 +1,264 @@
+import { hojeBRT } from '@/lib/hora-brt';
+import { requireClinicContext } from '@/server/auth/clinic';
+import { finalizarAtendimentoSeAplicavel } from '@/server/patients/finalizar-atendimento';
+import { rotearVisitaMeuDia, type RotearVisitaInput } from '@/server/patients/rotear-visita';
+import type { OdontogramaEventoDraft } from '@/types/odontograma';
+
+export type RegistrarAtendimentoClinicoResult =
+  | {
+      ok: true;
+      fichaId: string;
+      atendimentoId: string;
+      eventosFalharam?: boolean;
+    }
+  | { ok: false; error: string };
+
+type AtendimentoRow = {
+  id: string;
+  paciente_id: string;
+  dentista_id: string;
+  agendamento_id: string | null;
+  estado: 'preparando' | 'finalizado' | 'falhou';
+};
+
+type AtendimentoEventoRow = {
+  atendimento_id: string;
+  evento_id: string;
+  papel: 'registrado' | 'realizado';
+};
+
+export interface RegistrarAtendimentoClinicoInput extends RotearVisitaInput {
+  /** UUID criado no navegador uma vez por visita; é reutilizado no orçamento antecipado e no salvar final. */
+  visitaKey: string;
+}
+
+/**
+ * R-140a — orquestra a âncora da visita sem reimplementar o roteamento de tratamentos.
+ *
+ * Não há transação entre as tabelas clínicas já existentes e o Atendimento. Por isso, qualquer
+ * falha posterior à criação fica em `preparando`: repetir a mesma chave reconcilia a visita,
+ * enquanto marcá-la como `falhou` poderia esconder uma ficha já gravada.
+ */
+export async function registrarAtendimentoClinico(
+  input: RegistrarAtendimentoClinicoInput,
+): Promise<RegistrarAtendimentoClinicoResult> {
+  const { supabase, clinicId, dentistaId, role, user } = await requireClinicContext();
+  if (role === 'secretaria') return { ok: false, error: 'Sem permissão.' };
+
+  const atendimento = await obterOuCriarAtendimento({
+    supabase,
+    clinicId,
+    dentistaId,
+    usuarioId: user.id,
+    visitaKey: input.visitaKey,
+    pacienteId: input.pacienteId,
+    agendamentoId: input.agendamentoId,
+  });
+
+  if (!atendimento.ok) return atendimento;
+
+  if (atendimento.row.estado === 'finalizado') {
+    const fichaId = await fichaDoAtendimento(supabase, clinicId, atendimento.row.id);
+    if (!fichaId) {
+      return { ok: false, error: 'Esta visita já foi finalizada, mas não foi possível recuperar a ficha. Atualize a página.' };
+    }
+    return { ok: true, fichaId, atendimentoId: atendimento.row.id };
+  }
+
+  const resultado = await rotearVisitaMeuDia({
+    ...input,
+    atendimentoId: atendimento.row.id,
+    // O fechamento de agenda é feito apenas depois que as relações da visita estiverem íntegras.
+    finalizarAtendimento: false,
+  });
+  if (!resultado.ok) return resultado;
+  if (resultado.eventosFalharam) {
+    return { ...resultado, atendimentoId: atendimento.row.id };
+  }
+
+  const eventos = await vincularEventosAoAtendimento({
+    supabase,
+    clinicId,
+    atendimentoId: atendimento.row.id,
+    eventos: input.eventosDraft,
+  });
+  if (!eventos.ok) return eventos;
+
+  // O orçamento pode salvar uma ficha antes de a consulta acabar. Nesse estágio a âncora e os
+  // vínculos já existem, mas ela continua recuperável até o clique final em "Salvar".
+  if (input.finalizarAtendimento === false) {
+    return { ...resultado, atendimentoId: atendimento.row.id };
+  }
+
+  const { data: finalizado, error: erroFinalizar } = await supabase
+    .from('atendimentos_clinicos')
+    .update({ estado: 'finalizado', finalizado_em: new Date().toISOString() })
+    .eq('id', atendimento.row.id)
+    .eq('clinica_id', clinicId)
+    .eq('dentista_id', dentistaId)
+    .select('id');
+
+  if (erroFinalizar || !finalizado || finalizado.length === 0) {
+    console.error('[registrarAtendimentoClinico:finalizar]', erroFinalizar?.message);
+    return { ok: false, error: 'A visita foi gravada, mas não pôde ser finalizada. Tente salvar novamente.' };
+  }
+
+  await finalizarAtendimentoSeAplicavel(supabase, {
+    clinicId,
+    dentistaId,
+    pacienteId: input.pacienteId,
+    origem: 'modo_consulta',
+    agendamentoId: input.agendamentoId,
+    finalizarAtendimento: input.finalizarAtendimento,
+  });
+
+  return { ...resultado, atendimentoId: atendimento.row.id };
+}
+
+async function obterOuCriarAtendimento(ctx: {
+  supabase: Awaited<ReturnType<typeof requireClinicContext>>['supabase'];
+  clinicId: string;
+  dentistaId: string;
+  usuarioId: string;
+  visitaKey: string;
+  pacienteId: string;
+  agendamentoId: string;
+}): Promise<{ ok: true; row: AtendimentoRow } | { ok: false; error: string }> {
+  const porChave = await buscarAtendimento(ctx.supabase, ctx.clinicId, 'chave_idempotencia', ctx.visitaKey);
+  if (porChave) return validarContextoAtendimento(porChave, ctx);
+
+  // A constraint por agendamento também protege um refresh que gere uma chave nova. Reusar a
+  // mesma visita é mais seguro do que falhar depois de uma ficha já ter sido criada.
+  const porAgendamento = await buscarAtendimento(ctx.supabase, ctx.clinicId, 'agendamento_id', ctx.agendamentoId);
+  if (porAgendamento) return validarContextoAtendimento(porAgendamento, ctx);
+
+  const { data: criado, error } = await ctx.supabase
+    .from('atendimentos_clinicos')
+    .insert({
+      clinica_id: ctx.clinicId,
+      paciente_id: ctx.pacienteId,
+      dentista_id: ctx.dentistaId,
+      agendamento_id: ctx.agendamentoId,
+      chave_idempotencia: ctx.visitaKey,
+      data_atendimento: hojeBRT(),
+      origem: 'meu_dia',
+      estado: 'preparando',
+      criado_por: ctx.usuarioId,
+    })
+    .select('id, paciente_id, dentista_id, agendamento_id, estado')
+    .maybeSingle<AtendimentoRow>();
+
+  if (criado) return { ok: true, row: criado };
+  if (error?.code !== '23505') {
+    console.error('[registrarAtendimentoClinico:criar]', error?.message);
+    return { ok: false, error: 'Não foi possível iniciar esta visita. Tente novamente.' };
+  }
+
+  const concorrente =
+    await buscarAtendimento(ctx.supabase, ctx.clinicId, 'chave_idempotencia', ctx.visitaKey)
+    ?? await buscarAtendimento(ctx.supabase, ctx.clinicId, 'agendamento_id', ctx.agendamentoId);
+  if (!concorrente) return { ok: false, error: 'Esta visita está sendo salva. Tente novamente em instantes.' };
+  return validarContextoAtendimento(concorrente, ctx);
+}
+
+async function buscarAtendimento(
+  supabase: Awaited<ReturnType<typeof requireClinicContext>>['supabase'],
+  clinicId: string,
+  campo: 'chave_idempotencia' | 'agendamento_id',
+  valor: string,
+): Promise<AtendimentoRow | null> {
+  const { data, error } = await supabase
+    .from('atendimentos_clinicos')
+    .select('id, paciente_id, dentista_id, agendamento_id, estado')
+    .eq('clinica_id', clinicId)
+    .eq(campo, valor)
+    .maybeSingle<AtendimentoRow>();
+
+  if (error) console.error('[registrarAtendimentoClinico:buscar]', error.message);
+  return data ?? null;
+}
+
+function validarContextoAtendimento(
+  row: AtendimentoRow,
+  ctx: { pacienteId: string; dentistaId: string; agendamentoId: string },
+): { ok: true; row: AtendimentoRow } | { ok: false; error: string } {
+  if (
+    row.paciente_id !== ctx.pacienteId
+    || row.dentista_id !== ctx.dentistaId
+    || row.agendamento_id !== ctx.agendamentoId
+  ) {
+    return { ok: false, error: 'Esta visita já pertence a outro contexto. Atualize a página antes de salvar.' };
+  }
+  return { ok: true, row };
+}
+
+async function fichaDoAtendimento(
+  supabase: Awaited<ReturnType<typeof requireClinicContext>>['supabase'],
+  clinicId: string,
+  atendimentoId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('ficha_evolucoes')
+    .select('ficha_id')
+    .eq('clinica_id', clinicId)
+    .eq('atendimento_id', atendimentoId)
+    .limit(1)
+    .maybeSingle<{ ficha_id: string }>();
+
+  if (error) console.error('[registrarAtendimentoClinico:ficha]', error.message);
+  return data?.ficha_id ?? null;
+}
+
+async function vincularEventosAoAtendimento(ctx: {
+  supabase: Awaited<ReturnType<typeof requireClinicContext>>['supabase'];
+  clinicId: string;
+  atendimentoId: string;
+  eventos: OdontogramaEventoDraft[];
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const desejados = [...new Map(
+    ctx.eventos.map((evento) => [
+      `${evento.id}:${evento.status === 'realizado' ? 'realizado' : 'registrado'}`,
+      {
+        evento_id: evento.id,
+        papel: evento.status === 'realizado' ? 'realizado' as const : 'registrado' as const,
+      },
+    ]),
+  ).values()];
+  if (desejados.length === 0) return { ok: true };
+
+  const { data: existentes, error: erroLeitura } = await ctx.supabase
+    .from('atendimento_eventos')
+    .select('atendimento_id, evento_id, papel')
+    .eq('clinica_id', ctx.clinicId)
+    .in('evento_id', [...new Set(desejados.map((evento) => evento.evento_id))]);
+  if (erroLeitura) {
+    console.error('[registrarAtendimentoClinico:eventos:leitura]', erroLeitura.message);
+    return { ok: false, error: 'Não foi possível vincular os procedimentos à visita. Tente novamente.' };
+  }
+
+  const porEventoEPapel = new Map(
+    ((existentes ?? []) as AtendimentoEventoRow[]).map((evento) => [`${evento.evento_id}:${evento.papel}`, evento]),
+  );
+  const novos = [] as Array<{ clinica_id: string; atendimento_id: string; evento_id: string; papel: 'registrado' | 'realizado' }>;
+  for (const evento of desejados) {
+    const existente = porEventoEPapel.get(`${evento.evento_id}:${evento.papel}`);
+    if (existente?.atendimento_id === ctx.atendimentoId) continue;
+    if (existente) {
+      return { ok: false, error: 'Um procedimento já está ligado a outra visita. Atualize a página antes de salvar.' };
+    }
+    novos.push({
+      clinica_id: ctx.clinicId,
+      atendimento_id: ctx.atendimentoId,
+      evento_id: evento.evento_id,
+      papel: evento.papel,
+    });
+  }
+
+  if (novos.length === 0) return { ok: true };
+  const { error: erroInserir } = await ctx.supabase.from('atendimento_eventos').insert(novos);
+  if (erroInserir) {
+    console.error('[registrarAtendimentoClinico:eventos:inserir]', erroInserir.message);
+    return { ok: false, error: 'Não foi possível vincular os procedimentos à visita. Tente novamente.' };
+  }
+  return { ok: true };
+}

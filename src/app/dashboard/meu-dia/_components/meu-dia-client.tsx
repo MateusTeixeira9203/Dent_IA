@@ -4,7 +4,7 @@
 // embaixo). R-46g (D5): a chave é agendamentoId, não pacienteId — 2 atendimentos do mesmo
 // paciente no mesmo dia (retorno) ficariam indistinguíveis por pacienteId. Precedência do
 // default: agendamentoInicialId (veio de ?ag=, se casar com um slot) > em atendimento
-// (in_progress/checked_in) > 1º slot.
+// (in_progress/checked_in) > próximo elegível > 1º slot encerrado (só quando o dia acabou).
 // R-76 (08/08) — `onSalvo` volta a avançar pro próximo slot elegível do rail: reverte a
 // decisão de C2 (P7, 03/08, "o dentista já troca de paciente clicando no rail"). `podeAtender`
 // mora aqui agora (só este arquivo usa — a versão antiga vivia em rail.tsx e foi apagada no
@@ -51,7 +51,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { AnimatePresence, motion } from 'motion/react';
-import { AlertCircle, Hourglass } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Hourglass } from 'lucide-react';
 import {
   atualizarStatusEncaminhado, encaminharProcedimento, getGruposAbertos,
 } from '@/server/patients/registro-actions';
@@ -74,7 +74,9 @@ import { useRegistrarPainel, pendenciaParaDraft } from './registrar-painel';
  *  bloco 8). Dente entra como número puro, do jeito que o artefato mostra; âncora de região
  *  cai no `ondeLabel` que o resto do Meu dia já usa; nível-boca fica só com o tipo. */
 function rotuloNovo(e: OdontogramaEventoDraft): string {
-  const label = TIPO_LABEL[e.tipo];
+  const label = e.procedimentoNome?.trim()
+    || (e.tipo === 'outro' ? e.observacao.trim() : '')
+    || TIPO_LABEL[e.tipo];
   if (e.ancora.dente != null) return `${label} ${e.ancora.dente}`;
   if (e.ancora.arcada != null || e.ancora.quadrante != null) {
     return `${label} · ${ondeLabel({
@@ -115,6 +117,8 @@ function draftParaEventoOrc(e: OdontogramaEventoDraft): EventoOdontogramaParaOrc
   return {
     id: e.id,
     tipo: e.tipo,
+    procedimento_id: e.procedimentoId ?? null,
+    procedimento_nome: e.procedimentoNome ?? null,
     observacao: e.observacao,
     status: e.status,
     origem: e.origem,
@@ -154,7 +158,10 @@ export function MeuDiaClient({
     const emAtendimento = slots.find(
       (s) => s.statusAgendamento === 'in_progress' || s.statusAgendamento === 'checked_in',
     );
-    return (emAtendimento ?? slots[0])?.agendamentoId ?? null;
+    const proximoElegivel = slots.find(
+      (s) => !['cancelled', 'no_show', 'completed'].includes(s.statusAgendamento),
+    );
+    return (emAtendimento ?? proximoElegivel ?? slots[0])?.agendamentoId ?? null;
   }, [slots, agendamentoInicialId]);
 
   const [selecionadoId, setSelecionadoId] = useState<string | null>(defaultAgendamentoId);
@@ -172,6 +179,8 @@ export function MeuDiaClient({
   }
 
   const [eventosDraft, setEventosDraft] = useState<OdontogramaEventoDraft[]>([]);
+  /** R-140a — não é refeito no orçamento antecipado; só quando muda o atendimento do rail. */
+  const [visitaKey, setVisitaKey] = useState(() => crypto.randomUUID());
   /** R-85 — quando "Gerar orçamento" precisa gravar a ficha cedo (ver `onAbrirPickerOrcamento`
    *  abaixo) pra não deixar o orçamento sem `ficha_id`. `null` até isso acontecer; o Salvar
    *  de verdade, depois, EDITA esta mesma ficha em vez de criar uma 2ª. */
@@ -235,6 +244,7 @@ export function MeuDiaClient({
   if (selecionadoId !== idAoResetar) {
     setIdAoResetar(selecionadoId);
     setEventosDraft([]);
+    setVisitaKey(crypto.randomUUID());
     setDestinoEscolhido(undefined); // R-108b — tratamento aberto é do paciente anterior
     setFichaRascunhoId(null); // R-85 — ficha do orçamento antecipado é do paciente anterior
     setDenteAberto(null);
@@ -261,6 +271,9 @@ export function MeuDiaClient({
 
   const slotSelecionado = selecionadoId ? (slots.find((s) => s.agendamentoId === selecionadoId) ?? null) : null;
   const contexto = slotSelecionado ? contextoPorPaciente[slotSelecionado.pacienteId] : null;
+  // Uma visita com âncora clínica finalizada é imutável neste cockpit. A revisão fica no perfil;
+  // uma nova consulta no mesmo dia nasce por novo encaixe, sem herdar esse estado.
+  const atendimentoJaRegistrado = slotSelecionado?.atendimentoRegistrado === true;
 
   // R-84 §3 — discriminador: id já existia no banco antes desta sessão (boca, R-61) vs.
   // indicação nova desta ficha. Derivado a cada render, nunca persistido — mesmo princípio de
@@ -338,6 +351,7 @@ export function MeuDiaClient({
   // ''/[]/null/false espelham o mesmo padrão que `useOrcamentoModal` acima já usa; a saída só
   // é RENDERIZADA dentro do `{slotSelecionado && contexto ? ... }` abaixo, nunca aparece vazia.
   const registrarPainel = useRegistrarPainel({
+    visitaKey,
     pacienteId: slotSelecionado?.pacienteId ?? '',
     agendamentoId: slotSelecionado?.agendamentoId ?? '',
     pacienteNome: slotSelecionado?.pacienteNome ?? '',
@@ -381,6 +395,7 @@ export function MeuDiaClient({
         let resultado: SalvarFichaResult;
         try {
           resultado = await salvarVisitaMeuDia({
+            visitaKey,
             fichaId: fichaRascunhoId ?? undefined,
             pacienteId: slotSelecionado.pacienteId,
             agendamentoId: slotSelecionado.agendamentoId,
@@ -661,9 +676,28 @@ export function MeuDiaClient({
               cadastro (alergia etc.) não têm mais um bloco próprio nesta fatia (o phead
               completo — avatar, idade, badges de orto/endo — fica pra fatia posterior),
               mas não podiam simplesmente sumir da tela. */}
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3">
-            <div className="flex items-center gap-3">
+          <div className="flex w-full flex-col gap-3 rounded-xl border border-border bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+              <span className="shrink-0 font-mono text-xs font-bold text-text-secondary">
+                {slotSelecionado.horario}
+              </span>
+              <span
+                aria-hidden
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-teal/20 text-[11px] font-bold text-teal-ink"
+              >
+                {slotSelecionado.pacienteNome
+                  .split(/\s+/)
+                  .slice(0, 2)
+                  .map((parte) => parte[0])
+                  .join('')
+                  .toUpperCase()}
+              </span>
               <h2 className="text-sm font-bold text-text-primary">{slotSelecionado.pacienteNome}</h2>
+              {slotSelecionado.pacienteIdade != null && (
+                <span className="shrink-0 rounded-full border border-border bg-surface-alt px-2 py-1 font-mono text-[10px] text-text-secondary">
+                  {slotSelecionado.pacienteIdade} anos
+                </span>
+              )}
               {contexto.alertas.map((alerta, i) => (
                 <span
                   key={i}
@@ -684,43 +718,55 @@ export function MeuDiaClient({
             </div>
             <Link
               href={`/dashboard/pacientes/${slotSelecionado.pacienteId}`}
-              className="shrink-0 text-xs font-semibold text-text-secondary transition-colors hover:text-text-primary"
+              className="shrink-0 self-end text-xs font-semibold text-text-secondary transition-colors hover:text-text-primary sm:self-auto"
             >
               Ver perfil completo →
             </Link>
           </div>
 
+          {atendimentoJaRegistrado ? (
+            <section
+              aria-label="Atendimento já registrado"
+              className="flex min-h-40 w-full flex-col items-center justify-center rounded-2xl border border-border bg-surface px-5 py-8 text-center"
+            >
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-teal/10 text-teal-ink">
+                <CheckCircle2 className="h-5 w-5" aria-hidden />
+              </span>
+              <p className="mt-3 text-sm font-bold text-text-primary">Atendimento já registrado</p>
+              <p className="mt-1 max-w-md text-xs leading-relaxed text-text-secondary">
+                Para uma nova consulta hoje, use Encaixe. O perfil do paciente continua disponível
+                quando você quiser revisar ou editar a ficha.
+              </p>
+            </section>
+          ) : (
+            <>
           {/* R-78 F0 — campo mágico, full-width, topo do fluxo (era o topo do card
               "Registrar" antigo — o card em si morreu, campo mágico ganha o próprio). */}
-          <div className="rounded-2xl border border-teal/30 bg-surface p-2.5 sm:p-3">
+          <div className="w-full rounded-2xl border border-teal/30 bg-surface p-2.5 sm:p-3">
             {registrarPainel.campoMagico}
           </div>
 
-          {/* R-123 — mesma bancada do artefato aprovado: registros crescem pelo conteúdo;
-              contexto clínico é a coluna de trabalho, não uma gaveta distante no fim da página. */}
-          <div className="grid grid-cols-1 items-stretch gap-3 xl:grid-cols-[minmax(0,1.18fr)_minmax(460px,0.96fr)]">
+          {/* R-140b — a bancada acompanha a largura da régua do dia. Revisão e contexto
+              preservam a mesma altura; a aba Boca inteira cabe sem rolagem interna. */}
+          <div className="grid w-full grid-cols-1 items-stretch gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(720px,0.95fr)]">
             <motion.div
               layout="size"
               transition={{ layout: { duration: 0.18, ease: 'easeOut' } }}
-              className="h-full rounded-2xl border border-border bg-surface p-4"
+              className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface p-4 xl:h-[760px]"
             >
               {dicas.nestaFicha && (
                 <DicaZona titulo="Revisão da consulta">
                   Tudo que o Dex entendeu cai aqui. Dá pra corrigir antes de salvar.
                 </DicaZona>
               )}
-              <div className="mb-2 flex items-center gap-1.5">
-                <p className="font-heading text-lg text-text-primary">Revisão da consulta</p>
-                <Contador n={eventosDraft.length} />
-              </div>
-              {/* R-125a — ações de registro ficam onde o resultado será revisado. O mapa à
-                  direita segue sendo só seleção/leitura; a seleção atualiza esta faixa sem
-                  duplicar estado ou criar um segundo formulário no painel dental. */}
-              {gavetaAberta === null && !denteAberto && !leituraGrande && (
-                <div className="mb-3">
-                  {registrarPainel.controlesOdontograma}
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <p className="font-heading text-lg text-text-primary">Revisão do atendimento</p>
+                  <Contador n={eventosDraft.length + (registrarPainel.ortoManutencao ? 1 : 0)} />
                 </div>
-              )}
+                {registrarPainel.acoesSecundarias}
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
               {/* F0+F1: "Hoje" + "Novos" fundidos numa lista só (todo `eventosDraft`, os 2
                   status juntos), `RegistroCard` editável — pill clicável, observação
                   inline, detalhe de especialidade colapsável (`nesta-sessao-bloco.tsx`). */}
@@ -732,6 +778,10 @@ export function MeuDiaClient({
                   : 'Nada registrado ainda nesta consulta.'}
                 eventosDraft={eventosDraft}
                 onEventosDraftChange={setEventosDraft}
+                textoVisita={textoVisita}
+                onTextoVisitaChange={setTextoVisita}
+                ortoManutencao={registrarPainel.ortoManutencao}
+                onEditarOrto={registrarPainel.abrirManutencao}
                 onAbrirDenteGrande={abrirDenteGrande}
                 idsDeAntes={idsDeAntes}
                 destinosEncaminhar={destinosEncaminhar}
@@ -788,14 +838,19 @@ export function MeuDiaClient({
                   </button>
                 </div>
               )}
+              </div>
             </motion.div>
 
-            {/* R-123 — contexto clínico lateral: a aba ativa é o rótulo do conteúdo, então o
-                mapa ganha espaço. Seleção no mapa continua não abrindo editor nem histórico. */}
+            {/* R-140b — contexto clínico lateral. Boca não rola; gavetas e formulários longos
+                podem rolar dentro da altura fixa sem deslocar o restante da página. */}
             <motion.div
               layout="size"
               transition={{ layout: { duration: 0.18, ease: 'easeOut' } }}
-              className="h-full rounded-2xl border border-border bg-surface p-4 xl:sticky xl:top-4"
+              className={`h-full rounded-2xl border border-border bg-surface p-4 xl:h-[760px] xl:sticky xl:top-4 ${
+                gavetaAberta === null && denteAberto == null && leituraGrande == null
+                  ? 'overflow-hidden'
+                  : 'overflow-y-auto'
+              }`}
             >
               <FaixaGavetas
                 aberta={gavetaAberta}
@@ -915,16 +970,18 @@ export function MeuDiaClient({
                       </DicaZona>
                     )}
                     {registrarPainel.slotCentral}
+                    <div className="mt-2 border-t border-border pt-2">
+                      {registrarPainel.controlesOdontograma}
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>}
             </motion.div>
           </div>
 
-          {/* R-78 F0 — rodapé (Marcar retorno / Gerar orçamento / Salvar), era o fundo do
-              card "Registrar" antigo. Sem card próprio no artefato — mas mantém 1 aqui
-              (consistência com campo-mágico/miolo) até a auditoria visual dizer o contrário. */}
-          <div className="rounded-2xl border border-border bg-surface p-3 sm:p-4 xl:sticky xl:bottom-3 xl:z-20">
+          {/* R-140b — rodapé da bancada: retorno e orçamento ficam na revisão; aqui permanece
+              apenas o estado da ficha e o CTA primário de salvar o atendimento. */}
+          <div className="min-h-[70px] w-full rounded-2xl border border-border bg-surface p-3 sm:p-4 xl:sticky xl:bottom-3 xl:z-20">
             {dicas.rodape && (
               <DicaZona titulo="O que sai daqui">
                 Da ficha salva saem o orçamento e o retorno, sem redigitar nada.
@@ -950,6 +1007,8 @@ export function MeuDiaClient({
               />
             )}
           </AnimatePresence>
+            </>
+          )}
         </>
       ) : slots.length > 0 ? (
         <div className="rounded-2xl border border-border bg-surface px-5 py-10 text-center">

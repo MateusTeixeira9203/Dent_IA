@@ -36,6 +36,12 @@ function tipoDominante(porDente: { tipo: TipoRegistroOdontograma }[]): TipoRegis
  * uma reabilitação).
  */
 export function nomeTratamentoDerivado(eventos: OdontogramaEventoDraft[]): string {
+  const rotulo = (evento: OdontogramaEventoDraft): string => (
+    evento.procedimentoNome?.trim()
+    || (evento.tipo === 'outro' ? evento.observacao.trim() : '')
+    || TIPO_LABEL[evento.tipo]
+  );
+  if (eventos.length === 0) return 'Tratamento';
   const porDente = eventos
     .filter((e): e is typeof e & { ancora: { dente: number } } => e.ancora.dente != null)
     .map((e) => ({ tipo: e.tipo, dente: e.ancora.dente }));
@@ -44,16 +50,16 @@ export function nomeTratamentoDerivado(eventos: OdontogramaEventoDraft[]): strin
 
   // Só nível-boca (profilaxia/flúor/exame periodontal/…) — nenhum evento ancorado em dente.
   if (porDente.length === 0) {
-    return TIPO_LABEL[tiposUnicos[0]];
+    return rotulo(eventos[0]);
   }
 
   const dentes = [...new Set(porDente.map((e) => e.dente))];
 
   if (tiposUnicos.length === 1 && dentes.length === 1) {
-    return `${TIPO_LABEL[tiposUnicos[0]]} · ${dentes[0]}`;
+    return `${rotulo(eventos[0])} · ${dentes[0]}`;
   }
 
-  const label = tiposUnicos.length === 1 ? TIPO_LABEL[tiposUnicos[0]] : 'Reabilitação';
+  const label = tiposUnicos.length === 1 ? rotulo(eventos[0]) : 'Reabilitação';
   const quadrantes = new Set(dentes.map(quadranteDoDente));
 
   if (quadrantes.size === 1) {
@@ -67,7 +73,7 @@ export function nomeTratamentoDerivado(eventos: OdontogramaEventoDraft[]): strin
 
   // Espalhados — dentes em mais de um arco.
   if (tiposUnicos.length === 1) {
-    return `${TIPO_LABEL[tiposUnicos[0]]} · vários dentes`;
+    return `${rotulo(eventos[0])} · vários dentes`;
   }
   return `${TIPO_LABEL[tipoDominante(porDente)]} + ${tiposUnicos.length - 1} · vários dentes`;
 }

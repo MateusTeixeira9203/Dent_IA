@@ -1,6 +1,8 @@
 /** R-108 §4.2 — evolução de uma visita dentro de uma ficha de tratamento. */
 export interface FichaEvolucao {
   id: string;
+  /** R-140a — null em legado até o backfill; não altera a dona da evolução. */
+  atendimentoId?: string | null;
   fichaId: string;
   dentistaId: string;
   dentistaNome: string;

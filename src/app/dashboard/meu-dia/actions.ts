@@ -10,11 +10,15 @@
 // (CLAUDE.md §Regras de código).
 
 import { z } from 'zod';
-import { rotearVisitaMeuDia } from '@/server/patients/rotear-visita';
-import type { SalvarFichaResult } from '@/server/patients/salvar-ficha';
+import { revalidatePath } from 'next/cache';
+import {
+  registrarAtendimentoClinico,
+  type RegistrarAtendimentoClinicoResult,
+} from '@/server/patients/registrar-atendimento-clinico';
 import type { OdontogramaEventoDraft, OrtoManutencaoInfo } from '@/types/odontograma';
 
 const salvarVisitaMeuDiaSchema = z.object({
+  visitaKey: z.string().uuid(),
   pacienteId: z.string().uuid(),
   agendamentoId: z.string().uuid(),
   textoVisita: z.string().trim().max(5000),
@@ -32,6 +36,8 @@ const salvarVisitaMeuDiaSchema = z.object({
 });
 
 export async function salvarVisitaMeuDia(dados: {
+  /** R-140a — chave estável por visita; é criada no cliente e reutilizada nos retries. */
+  visitaKey: string;
   pacienteId: string;
   agendamentoId: string;
   textoVisita: string;
@@ -50,19 +56,27 @@ export async function salvarVisitaMeuDia(dados: {
   finalizarAtendimento?: boolean;
   /** R-108b — destino escolhido no seletor "o novo vai para". */
   destinoNovos?: { fichaId: string | null };
-}): Promise<SalvarFichaResult> {
+}): Promise<RegistrarAtendimentoClinicoResult> {
   const parsed = salvarVisitaMeuDiaSchema.safeParse(dados);
   if (!parsed.success) return { ok: false, error: 'Dados inválidos.' };
 
-  return rotearVisitaMeuDia({
-    pacienteId: dados.pacienteId,
-    agendamentoId: dados.agendamentoId,
-    textoVisita: dados.textoVisita,
+  const resultado = await registrarAtendimentoClinico({
+    visitaKey: parsed.data.visitaKey,
+    pacienteId: parsed.data.pacienteId,
+    agendamentoId: parsed.data.agendamentoId,
+    textoVisita: parsed.data.textoVisita,
     eventosDraft: dados.eventosDraft,
-    alertaNovo: dados.alertaNovo ?? null,
+    alertaNovo: parsed.data.alertaNovo ?? null,
     ortoManutencao: dados.ortoManutencao ?? null,
-    fichaId: dados.fichaId,
-    finalizarAtendimento: dados.finalizarAtendimento,
-    destinoNovos: dados.destinoNovos,
+    fichaId: parsed.data.fichaId,
+    finalizarAtendimento: parsed.data.finalizarAtendimento,
+    destinoNovos: parsed.data.destinoNovos,
   });
+
+  if (resultado.ok && !resultado.eventosFalharam) {
+    revalidatePath('/dashboard/meu-dia');
+    revalidatePath(`/dashboard/pacientes/${parsed.data.pacienteId}`);
+  }
+
+  return resultado;
 }

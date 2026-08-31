@@ -12,7 +12,7 @@
 
 /** Nível da âncora. 'boca' = procedimento de boca toda (R-07: profilaxia/clareamento/fluor) —
  *  sem dente/arcada/quadrante; NUNCA pinta o odontograma, vira card "Boca" (D5 da spec R-06-07). */
-export type NivelAncora = 'boca' | 'arcada' | 'quadrante' | 'dente' | 'face';
+export type NivelAncora = 'geral' | 'boca' | 'arcada' | 'quadrante' | 'dente' | 'face';
 
 export type Arcada = 'superior' | 'inferior';
 
@@ -166,6 +166,17 @@ export const TIPO_LABEL: Record<TipoRegistroOdontograma, string> = {
   outro:             'Outro procedimento',
 };
 
+/** Nome clínico estável de leitura. O snapshot vence; `observacao` só nomeia legado `outro`. */
+export function rotuloProcedimento(evento: {
+  tipo: TipoRegistroOdontograma;
+  procedimentoNome?: string | null;
+  observacao?: string | null;
+}): string {
+  return evento.procedimentoNome?.trim()
+    || (evento.tipo === 'outro' ? evento.observacao?.trim() : null)
+    || TIPO_LABEL[evento.tipo];
+}
+
 // ── Evento (event-log) e estado reduzido (§1.4) ──────────────────────────
 
 export interface OdontogramaEvento {
@@ -182,6 +193,10 @@ export interface OdontogramaEvento {
   ficha_id: string | null;
   grupo_id: string | null;
   tipo: TipoRegistroOdontograma;
+  /** Vínculo opcional com o catálogo da clínica. `null` em registro livre/legado. */
+  procedimentoId: string | null;
+  /** Nome congelado no atendimento; não muda se o catálogo for renomeado. */
+  procedimentoNome: string | null;
   status: StatusRegistro;
   origem: OrigemRegistro;
   /** R-101 — ver corDoRegistro. Default 'sessao_atual'. */
@@ -283,6 +298,10 @@ export interface OrtoManutencaoInfo {
 /** Evento proposto pelo Motor A — grupo_id já resolvido pra uuid real pela rota. */
 export interface OdontogramaEventoInput {
   tipo: TipoRegistroOdontograma;
+  /** R-140b — catálogo é opcional; nunca define sozinho a localização clínica. */
+  procedimentoId?: string | null;
+  /** R-140b — snapshot obrigatório nos novos eventos `outro`. */
+  procedimentoNome?: string | null;
   status: StatusRegistro;
   origem: OrigemRegistro;
   /** R-101 — ver corDoRegistro. Default 'sessao_atual'. Só o dentista seta; a IA nunca preenche. */

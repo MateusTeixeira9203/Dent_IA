@@ -65,12 +65,27 @@ insert into auth.users (id, email) values
   ('a0000000-0000-4000-8000-00000000000b', '__matriz_test_dentista_b__@example.invalid'),
   ('a0000000-0000-4000-8000-00000000000c', '__matriz_test_secretaria__@example.invalid');
 
+-- Em produção, o trigger de auth cria estes espelhos. O dump local deliberadamente
+-- traz apenas o schema public, então o harness os declara também e continua
+-- portátil para os dois ambientes.
+insert into users (id, email) values
+  ('a0000000-0000-4000-8000-00000000000a', '__matriz_test_dentista_a__@example.invalid'),
+  ('a0000000-0000-4000-8000-00000000000b', '__matriz_test_dentista_b__@example.invalid'),
+  ('a0000000-0000-4000-8000-00000000000c', '__matriz_test_secretaria__@example.invalid')
+on conflict (id) do nothing;
+
 insert into dentistas (id, clinica_id, user_id, nome, role, ativo) values
   ('a0000000-0000-4000-8000-0000000000a1', 'a0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-00000000000a', '__MATRIZ_DENTISTA_A__', 'dentista', true),
   ('a0000000-0000-4000-8000-0000000000b1', 'a0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-00000000000b', '__MATRIZ_DENTISTA_B__', 'dentista', true);
 
+-- As policies atuais partem da clínica ativa; sem ela, um dentista perde até
+-- a leitura do próprio prontuário e testes de bloqueio viram falso positivo.
 update users set active_clinica_id = 'a0000000-0000-4000-8000-000000000001'
-where id = 'a0000000-0000-4000-8000-00000000000c';
+where id in (
+  'a0000000-0000-4000-8000-00000000000a',
+  'a0000000-0000-4000-8000-00000000000b',
+  'a0000000-0000-4000-8000-00000000000c'
+);
 
 insert into clinica_usuarios (usuario_id, clinica_id, role, status)
 values ('a0000000-0000-4000-8000-00000000000c', 'a0000000-0000-4000-8000-000000000001', 'secretaria', 'ativo');
@@ -157,6 +172,37 @@ insert into odontograma_eventos (id, clinica_id, paciente_id, dentista_id, ficha
   ('a0000000-0000-4000-8000-0000000000d1', 'a0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-0000000000a2', 'a0000000-0000-4000-8000-0000000000a1', 'a0000000-0000-4000-8000-0000000000a3', 'carie_restauracao', 'realizado', 'clinica', 'face',  11, '{O}', current_date),
   ('a0000000-0000-4000-8000-0000000000d2', 'a0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-0000000000a2', 'a0000000-0000-4000-8000-0000000000b1', null,                                   'endodontia',        'realizado', 'clinica', 'dente', 46, '{}',  current_date);
 
+-- R-140a — âncora de atendimento do dentista A. O vínculo com evolução/evento é
+-- semântico: mesma clínica, paciente e autor. As triggers da migration recusam
+-- qualquer travessia desses três limites.
+insert into atendimentos_clinicos (
+  id, clinica_id, paciente_id, dentista_id, chave_idempotencia, data_atendimento,
+  origem, estado, criado_por, finalizado_em
+) values (
+  'a0000000-0000-4000-8000-0000000000e1',
+  'a0000000-0000-4000-8000-000000000001',
+  'a0000000-0000-4000-8000-0000000000a2',
+  'a0000000-0000-4000-8000-0000000000a1',
+  'a0000000-0000-4000-8000-0000000000e1', current_date,
+  'meu_dia', 'finalizado',
+  'a0000000-0000-4000-8000-00000000000a', now()
+);
+
+insert into ficha_evolucoes (clinica_id, ficha_id, dentista_id, data, texto, atendimento_id)
+values (
+  'a0000000-0000-4000-8000-000000000001',
+  'a0000000-0000-4000-8000-0000000000a3',
+  'a0000000-0000-4000-8000-0000000000a1', current_date,
+  '__MATRIZ_EVOLUCAO_ATENDIMENTO_A__', 'a0000000-0000-4000-8000-0000000000e1'
+);
+
+insert into atendimento_eventos (clinica_id, atendimento_id, evento_id, papel)
+values (
+  'a0000000-0000-4000-8000-000000000001',
+  'a0000000-0000-4000-8000-0000000000e1',
+  'a0000000-0000-4000-8000-0000000000d1', 'realizado'
+);
+
 -- tabela de resultados: acumula TODAS as assertivas (não para no primeiro erro)
 create temp table matriz_results (
   id      serial primary key,
@@ -200,7 +246,8 @@ set local role authenticated;
 set local request.jwt.claims = '{"sub":"a0000000-0000-4000-8000-00000000000a","role":"authenticated"}';
 
 do $$
-declare v_n bigint;
+declare
+  v_n bigint;
 begin
   -- ══ REGISTRO CLÍNICO — leitura ABERTA (o que a spec 2026-07-16 mudou) ══
   select count(*) into v_n from fichas where dentista_id = 'a0000000-0000-4000-8000-0000000000a1';
@@ -392,7 +439,84 @@ begin
   exception when others then
     v_rejeitado := true;
   end;
-  perform pg_temp.matriz_assert_bool('dentista_a', 'INSERT 5º proc. no dente 26 que B já usou → PERMITIDO', false, v_rejeitado);
+perform pg_temp.matriz_assert_bool('dentista_a', 'INSERT 5º proc. no dente 26 que B já usou → PERMITIDO', false, v_rejeitado);
+end $$;
+
+-- R-140a: A lê/escreve apenas o Atendimento de que é autor. A criação de um
+-- Atendimento de B precisa falhar pelo WITH CHECK, mesmo na mesma clínica.
+do $$
+declare
+  v_n bigint;
+  v_affected bigint;
+  v_rejeitado boolean;
+begin
+  select count(*) into v_n from atendimentos_clinicos
+   where id = 'a0000000-0000-4000-8000-0000000000e1';
+  perform pg_temp.matriz_assert('dentista_a', 'atendimentos: vê o próprio', '1', v_n, v_n = 1);
+
+  update atendimentos_clinicos set data_atendimento = current_date
+   where id = 'a0000000-0000-4000-8000-0000000000e1';
+  get diagnostics v_affected = row_count;
+  perform pg_temp.matriz_assert('dentista_a', 'UPDATE atendimento próprio → 1 linha', '1', v_affected, v_affected = 1);
+
+  begin
+    insert into atendimentos_clinicos (
+      clinica_id, paciente_id, dentista_id, chave_idempotencia, data_atendimento, origem, estado
+    ) values (
+      'a0000000-0000-4000-8000-000000000001',
+      'a0000000-0000-4000-8000-0000000000a2',
+      'a0000000-0000-4000-8000-0000000000b1', gen_random_uuid(), current_date, 'meu_dia', 'preparando'
+    );
+    v_rejeitado := false;
+  exception when insufficient_privilege or check_violation then
+    v_rejeitado := true;
+  end;
+  perform pg_temp.matriz_assert_bool('dentista_a', 'INSERT atendimento com dentista_id de B → rejeitado', true, v_rejeitado);
+
+  select count(*) into v_n from atendimento_eventos
+   where atendimento_id = 'a0000000-0000-4000-8000-0000000000e1';
+  perform pg_temp.matriz_assert('dentista_a', 'atendimento_eventos: vê a relação própria', '1', v_n, v_n = 1);
+
+  -- Duas visitas reais no mesmo dia não podem se fundir pela data. O retry da MESMA visita,
+  -- por outro lado, é barrado pela unicidade (ficha_id, atendimento_id).
+  insert into atendimentos_clinicos (
+    id, clinica_id, paciente_id, dentista_id, chave_idempotencia, data_atendimento, origem, estado, criado_por
+  ) values (
+    'a0000000-0000-4000-8000-0000000000e2',
+    'a0000000-0000-4000-8000-000000000001',
+    'a0000000-0000-4000-8000-0000000000a2',
+    'a0000000-0000-4000-8000-0000000000a1',
+    'a0000000-0000-4000-8000-0000000000e2', current_date,
+    'meu_dia', 'preparando', 'a0000000-0000-4000-8000-00000000000a'
+  );
+  insert into ficha_evolucoes (clinica_id, ficha_id, dentista_id, data, texto, atendimento_id)
+  values (
+    'a0000000-0000-4000-8000-000000000001',
+    'a0000000-0000-4000-8000-0000000000a3',
+    'a0000000-0000-4000-8000-0000000000a1', current_date,
+    '__MATRIZ_SEGUNDA_VISITA_MESMO_DIA__', 'a0000000-0000-4000-8000-0000000000e2'
+  );
+  select count(*) into v_n from ficha_evolucoes
+   where ficha_id = 'a0000000-0000-4000-8000-0000000000a3'
+     and atendimento_id in (
+       'a0000000-0000-4000-8000-0000000000e1',
+       'a0000000-0000-4000-8000-0000000000e2'
+     );
+  perform pg_temp.matriz_assert('dentista_a', 'duas visitas no mesmo dia → duas evoluções', '2', v_n, v_n = 2);
+
+  begin
+    insert into ficha_evolucoes (clinica_id, ficha_id, dentista_id, data, texto, atendimento_id)
+    values (
+      'a0000000-0000-4000-8000-000000000001',
+      'a0000000-0000-4000-8000-0000000000a3',
+      'a0000000-0000-4000-8000-0000000000a1', current_date,
+      '__MATRIZ_RETRY_DUPLICADO__', 'a0000000-0000-4000-8000-0000000000e2'
+    );
+    v_rejeitado := false;
+  exception when unique_violation then
+    v_rejeitado := true;
+  end;
+  perform pg_temp.matriz_assert_bool('dentista_a', 'retry da mesma visita → evolução duplicada rejeitada', true, v_rejeitado);
 end $$;
 
 -- ---------------------------------------------------------------------
@@ -478,6 +602,14 @@ begin
   update odontograma_eventos set observacao = '__MATRIZ_HACK__' where id = 'a0000000-0000-4000-8000-0000000000d1';
   get diagnostics v_affected = row_count;
   perform pg_temp.matriz_assert('dentista_b', 'UPDATE evento de odontograma de A → 0 linhas', '0', v_affected, v_affected = 0);
+
+  select count(*) into v_n from atendimentos_clinicos
+   where id = 'a0000000-0000-4000-8000-0000000000e1';
+  perform pg_temp.matriz_assert('dentista_b', 'atendimentos: VÊ o de A (núcleo clínico)', '1', v_n, v_n = 1);
+  update atendimentos_clinicos set data_atendimento = current_date
+   where id = 'a0000000-0000-4000-8000-0000000000e1';
+  get diagnostics v_affected = row_count;
+  perform pg_temp.matriz_assert('dentista_b', 'UPDATE atendimento de A → 0 linhas', '0', v_affected, v_affected = 0);
 end $$;
 
 -- ---------------------------------------------------------------------
@@ -486,7 +618,9 @@ end $$;
 set local request.jwt.claims = '{"sub":"a0000000-0000-4000-8000-00000000000c","role":"authenticated"}';
 
 do $$
-declare v_n bigint;
+declare
+  v_n bigint;
+  v_affected bigint;
 begin
   select count(*) into v_n from fichas where clinica_id = 'a0000000-0000-4000-8000-000000000001';
   perform pg_temp.matriz_assert('secretaria', 'fichas: vê tudo da clínica', '2', v_n, v_n = 2);
@@ -542,6 +676,14 @@ begin
   -- migration 101: secretária lê o registro clínico (2 do seed + 1 inserido por A em §4 = 3).
   select count(*) into v_n from odontograma_eventos where clinica_id = 'a0000000-0000-4000-8000-000000000001';
   perform pg_temp.matriz_assert('secretaria', 'odontograma_eventos: vê tudo da clínica', '3', v_n, v_n = 3);
+
+  -- Secretária enxerga o núcleo, mas R-140a não libera criação/edição clínica.
+  select count(*) into v_n from atendimentos_clinicos where clinica_id = 'a0000000-0000-4000-8000-000000000001';
+  perform pg_temp.matriz_assert('secretaria', 'atendimentos: vê tudo da clínica', '2', v_n, v_n = 2);
+  update atendimentos_clinicos set data_atendimento = current_date
+   where id = 'a0000000-0000-4000-8000-0000000000e1';
+  get diagnostics v_affected = row_count;
+  perform pg_temp.matriz_assert('secretaria', 'UPDATE atendimento → 0 linhas', '0', v_affected, v_affected = 0);
 end $$;
 
 -- ---------------------------------------------------------------------
@@ -572,7 +714,7 @@ begin
    where schemaname = 'public'
      and tablename in ('fichas','pacientes','planejamento_procedimentos',
                        'planejamento_secoes','paciente_documentos','tratamentos',
-                       'odontograma_eventos')
+                       'odontograma_eventos','atendimentos_clinicos','atendimento_eventos')
      and cmd in ('SELECT','ALL')
      and qual like '%belongs_to_active_clinic%'
      and qual not like '%is_clinic_staff%'

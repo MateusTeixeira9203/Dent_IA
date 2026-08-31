@@ -44,6 +44,8 @@ export interface RotearVisitaInput {
   fichaId?: string;
   finalizarAtendimento?: boolean;
   destinoNovos?: DestinoNovos;
+  /** R-140a — presente apenas no novo caminho do Meu Dia; chamadas legadas mantêm o dedup diário. */
+  atendimentoId?: string;
 }
 
 const ERRO_FICHA_SUMIU =
@@ -76,6 +78,7 @@ export async function acrescentarEventosNaFicha(input: {
   pacienteId: string;
   eventos: OdontogramaEventoDraft[];
   evolucao: { texto: string | null; automatica: boolean };
+  atendimentoId?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const { supabase, clinicId, dentistaId, role } = await requireClinicContext();
   if (role === 'secretaria') return { ok: false, error: 'Sem permissão.' };
@@ -144,11 +147,13 @@ export async function acrescentarEventosNaFicha(input: {
     fichaId: input.fichaId,
     texto: input.evolucao.texto,
     automatica: input.evolucao.automatica,
+    atendimentoId: input.atendimentoId,
   });
 }
 
 type EventoLegadoRow = {
   tipo: TipoRegistroOdontograma;
+  procedimento_nome: string | null;
   observacao: string | null;
   dente: number | null;
   status: StatusRegistro;
@@ -172,7 +177,7 @@ async function rederivarDaFicha(
 ): Promise<boolean> {
   const { data: todos, error } = await supabase
     .from('odontograma_eventos')
-    .select('tipo, observacao, dente, status')
+    .select('tipo, procedimento_nome, observacao, dente, status')
     .eq('ficha_id', fichaId)
     .eq('clinica_id', clinicId);
 
@@ -183,7 +188,12 @@ async function rederivarDaFicha(
 
   const eventos = (todos ?? []) as EventoLegadoRow[];
   const derivado = derivarV2DosEventos(
-    eventos.map((r) => ({ tipo: r.tipo, observacao: r.observacao, ancora: { dente: r.dente } })),
+    eventos.map((r) => ({
+      tipo: r.tipo,
+      procedimentoNome: r.procedimento_nome,
+      observacao: r.observacao,
+      ancora: { dente: r.dente },
+    })),
   );
 
   const { data: atualizada } = await supabase
@@ -220,18 +230,24 @@ async function registrarEvolucao(
     fichaId: string;
     texto: string | null;
     automatica: boolean;
+    atendimentoId?: string;
   },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const data = hojeBRT();
   const texto = ctx.texto?.trim() ? ctx.texto.trim() : null;
 
-  const { data: existente } = await supabase
+  let query = supabase
     .from('ficha_evolucoes')
     .select('id, texto, automatica')
-    .eq('ficha_id', ctx.fichaId)
-    .eq('dentista_id', ctx.dentistaId)
-    .eq('data', data)
-    .maybeSingle<{ id: string; texto: string | null; automatica: boolean }>();
+    .eq('ficha_id', ctx.fichaId);
+
+  if (ctx.atendimentoId) {
+    query = query.eq('atendimento_id', ctx.atendimentoId);
+  } else {
+    query = query.eq('dentista_id', ctx.dentistaId).eq('data', data);
+  }
+
+  const { data: existente } = await query.maybeSingle<{ id: string; texto: string | null; automatica: boolean }>();
 
   if (existente) {
     // A MESMA ficha pode ser escrita duas vezes no mesmo dia por caminhos diferentes — uma vez
@@ -274,6 +290,7 @@ async function registrarEvolucao(
     data,
     texto,
     automatica:  ctx.automatica,
+    ...(ctx.atendimentoId && { atendimento_id: ctx.atendimentoId }),
   });
 
   if (error) {
@@ -293,7 +310,10 @@ function listar(itens: string[]): string {
 }
 
 function rotulo(ev: OdontogramaEventoDraft): string {
-  return ev.ancora.dente != null ? `${TIPO_LABEL[ev.tipo]} ${ev.ancora.dente}` : TIPO_LABEL[ev.tipo];
+  const nome = ev.procedimentoNome?.trim()
+    || (ev.tipo === 'outro' ? ev.observacao.trim() : '')
+    || TIPO_LABEL[ev.tipo];
+  return ev.ancora.dente != null ? `${nome} ${ev.ancora.dente}` : nome;
 }
 
 /**
@@ -421,6 +441,7 @@ export async function rotearVisitaMeuDia(input: RotearVisitaInput): Promise<Salv
       evolucao: ehPrincipal
         ? { texto: input.textoVisita, automatica: false }
         : { texto: textoAutomatico(eventos, hoje), automatica: true },
+      atendimentoId: input.atendimentoId,
     });
     if (!resultado.ok) return resultado;
   }
@@ -475,6 +496,7 @@ export async function rotearVisitaMeuDia(input: RotearVisitaInput): Promise<Salv
     fichaId: resultado.fichaId,
     texto: input.textoVisita,
     automatica: false,
+    atendimentoId: input.atendimentoId,
   });
   // Deliberadamente não-fatal: a ficha já existe neste ponto, e devolver erro faria o dentista
   // salvar de novo — criando uma 2ª ficha, que é bem pior que uma timeline sem a entrada de

@@ -30,11 +30,16 @@ export interface MeuDiaSlot {
   /** G3 — existe `fichas.data_atendimento = hoje` pra este paciente (mesma régua do
    *  baseline medido em 31/07: paciente_id + data_atendimento = dia do atendimento). */
   temFichaHoje: boolean;
+  /** R-140b — âncora clínica finalizada DESTE agendamento. Diferente de `temFichaHoje`,
+   *  não vaza o selo de uma consulta para outro encaixe do mesmo paciente no mesmo dia. */
+  atendimentoRegistrado: boolean;
 }
 
 export interface MeuDiaPendencia {
   id: string;
   tipo: TipoRegistroOdontograma;
+  procedimentoId: string | null;
+  procedimentoNome: string | null;
   dente: number | null;
   arcada: Arcada | null;
   quadrante: QuadranteFDI | null;
@@ -82,6 +87,8 @@ export interface MeuDiaPendencia {
 export interface MeuDiaEventoVisita {
   id: string;
   tipo: TipoRegistroOdontograma;
+  procedimentoId: string | null;
+  procedimentoNome: string | null;
   dente: number | null;
   arcada: Arcada | null;
   quadrante: QuadranteFDI | null;
@@ -259,7 +266,8 @@ function notaDaFicha(anotacoes: string | null): string | null {
  */
 function eventoParaVisita(e: EventoRow, fichaDataPorId: Map<string, string>): MeuDiaEventoVisita {
   return {
-    id: e.id, tipo: e.tipo, dente: e.dente, arcada: e.arcada, quadrante: e.quadrante,
+    id: e.id, tipo: e.tipo, procedimentoId: e.procedimento_id,
+    procedimentoNome: e.procedimento_nome, dente: e.dente, arcada: e.arcada, quadrante: e.quadrante,
     faces: e.faces ?? [], observacao: e.observacao, nivel: e.nivel, status: e.status,
     origem: e.origem, momento_planejado: e.momento_planejado, grupoId: e.grupo_id, realizadoEm: e.realizado_em,
     indicadoEm: (e.ficha_id ? fichaDataPorId.get(e.ficha_id) : undefined) ?? e.registrado_em,
@@ -281,7 +289,8 @@ function eventoParaBoca(e: EventoRow): OdontogramaEventoDraft {
   if (e.quadrante != null) ancora.quadrante = e.quadrante;
   if ((e.faces ?? []).length > 0) ancora.faces = e.faces ?? [];
   return {
-    id: e.id, tipo: e.tipo, status: e.status, origem: e.origem,
+    id: e.id, tipo: e.tipo, procedimentoId: e.procedimento_id,
+    procedimentoNome: e.procedimento_nome, status: e.status, origem: e.origem,
     momento_planejado: e.momento_planejado, ancora,
     grupo_id: e.grupo_id, papel_no_grupo: e.papel_no_grupo, observacao: e.observacao ?? '',
     realizado_em: e.realizado_em, registrado_em: e.registrado_em,
@@ -315,6 +324,8 @@ type EventoRow = {
    *  tratamento novo também gera ficha própria). null em eventos sem ficha (preexistente). */
   ficha_id: string | null;
   tipo: TipoRegistroOdontograma;
+  procedimento_id: string | null;
+  procedimento_nome: string | null;
   status: 'indicado' | 'realizado';
   origem: OrigemRegistro;
   /** R-101 — ver corDoRegistro. Default 'sessao_atual'. */
@@ -347,7 +358,8 @@ type EventoRow = {
  *  de identidade semântica que `chaveDedupEvento` usa em FichasTab.tsx, sem o status. */
 function chaveAncora(e: EventoRow): string {
   return JSON.stringify([
-    e.tipo, e.origem, e.nivel, e.arcada, e.quadrante, e.dente, [...(e.faces ?? [])].sort(),
+    e.tipo, e.procedimento_id, e.procedimento_nome, e.origem, e.nivel,
+    e.arcada, e.quadrante, e.dente, [...(e.faces ?? [])].sort(),
     e.papel_no_grupo,
   ]);
 }
@@ -419,6 +431,7 @@ export async function getMeuDiaData({
 
   const [
     { data: fichasHojeRaw, error: fichasHojeError },
+    { data: atendimentosRaw, error: atendimentosError },
     { data: fichasRecentesRaw, error: fichasRecentesError },
     { data: eventosRaw, error: eventosError },
     { data: catalogoRaw, error: catalogoError },
@@ -430,6 +443,16 @@ export async function getMeuDiaData({
       .eq('clinica_id', clinicId)
       .in('paciente_id', pacienteIds)
       .eq('data_atendimento', hoje),
+
+    // R-140a é a fonte exata do selo do rail: uma ficha no mesmo dia pertence ao paciente,
+    // mas uma âncora finalizada pertence a este agendamento. Sem esta separação, o segundo
+    // encaixe herdava visualmente o “✓ registrado” da primeira consulta.
+    supabase
+      .from('atendimentos_clinicos')
+      .select('agendamento_id')
+      .eq('clinica_id', clinicId)
+      .in('agendamento_id', agendamentos.map((a) => a.id))
+      .eq('estado', 'finalizado'),
 
     // Sem .limit(): contagem de fichas por paciente é pequena em produção (máx. observado:
     // 8; a maioria tem 1) — pegar tudo e reduzir em memória é mais simples que paginar
@@ -471,7 +494,7 @@ export async function getMeuDiaData({
         // apontam pra `dentistas`, então os dois embeds PRECISAM do `!fkey` desambiguando —
         // sem isso o Postgrest devolve 300 (é a família de bug do R-44). Mesmo par já usado
         // em FichasTab.tsx:943.
-        'id, paciente_id, ficha_id, tipo, status, origem, momento_planejado, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, observacao, detalhe, registrado_em, realizado_em, created_at, dentista_id, encaminhado_para, dentista:dentistas!odontograma_eventos_dentista_id_fkey(nome), encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(nome)',
+        'id, paciente_id, ficha_id, tipo, procedimento_id, procedimento_nome, status, origem, momento_planejado, nivel, arcada, quadrante, dente, faces, papel_no_grupo, grupo_id, observacao, detalhe, registrado_em, realizado_em, created_at, dentista_id, encaminhado_para, dentista:dentistas!odontograma_eventos_dentista_id_fkey(nome), encaminhado_dentista:dentistas!odontograma_eventos_encaminhado_para_fkey(nome)',
       )
       .eq('clinica_id', clinicId)
       .in('paciente_id', pacienteIds)
@@ -503,19 +526,21 @@ export async function getMeuDiaData({
   ]);
 
   if (fichasHojeError) throw new Error(`[getMeuDiaData] fichasHoje: ${fichasHojeError.message}`);
+  if (atendimentosError) throw new Error(`[getMeuDiaData] atendimentos: ${atendimentosError.message}`);
   if (fichasRecentesError) throw new Error(`[getMeuDiaData] fichasRecentes: ${fichasRecentesError.message}`);
   if (eventosError) throw new Error(`[getMeuDiaData] eventos: ${eventosError.message}`);
   if (catalogoError) throw new Error(`[getMeuDiaData] catalogo: ${catalogoError.message}`);
   if (destinosError) throw new Error(`[getMeuDiaData] destinosEncaminhar: ${destinosError.message}`);
 
-  // G3 — granularidade é por paciente+dia, não por agendamento específico (verificação
-  // adversarial 31/07): `fichas` não tem FK pra `agendamentos`, então 2 atendimentos do
-  // mesmo paciente no mesmo dia (ex.: retorno) compartilham este sinal — o 2º slot herda
-  // "registrado" do 1º mesmo sem ficha própria. Mesma régua da baseline da spec §6 (medida
-  // por paciente+dia); resolver por agendamento pediria schema novo, fora do escopo desta
-  // fatia (zero-escrita, zero-migration).
+  // O contador do rodapé continua por paciente+dia: ele informa que há ficha na data, não
+  // pretende identificar uma consulta específica.
   const pacientesComFichaHoje = new Set(
     ((fichasHojeRaw ?? []) as { paciente_id: string }[]).map((f) => f.paciente_id),
+  );
+  const agendamentosRegistrados = new Set(
+    ((atendimentosRaw ?? []) as { agendamento_id: string | null }[])
+      .map((atendimento) => atendimento.agendamento_id)
+      .filter((agendamentoId): agendamentoId is string => agendamentoId != null),
   );
 
   const fichasPorPaciente = new Map<string, FichaRow[]>();
@@ -571,6 +596,8 @@ export async function getMeuDiaData({
     arr.push({
       id: e.id,
       tipo: e.tipo,
+      procedimentoId: e.procedimento_id,
+      procedimentoNome: e.procedimento_nome,
       dente: e.dente,
       arcada: e.arcada,
       quadrante: e.quadrante,
@@ -752,6 +779,7 @@ export async function getMeuDiaData({
     horario: fmtHora.format(new Date(a.data_hora)),
     statusAgendamento: a.status,
     temFichaHoje: pacientesComFichaHoje.has(a.paciente.id),
+    atendimentoRegistrado: agendamentosRegistrados.has(a.id),
   }));
 
   const catalogoProcedimentos: MeuDiaCatalogoProcedimento[] = (catalogoRaw ?? []) as MeuDiaCatalogoProcedimento[];
