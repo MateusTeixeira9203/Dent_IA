@@ -41,7 +41,9 @@ export function eventosParaCards<T extends EventoParaCard>(
         procedimentoNome: primeiro.procedimentoNome,
         status: primeiro.status,
         origem: primeiro.origem,
-        momentoPlanejado: primeiro.momentoPlanejado,
+        momentoPlanejado: itens.every((evento) => (
+          evento.status === 'indicado' && evento.momentoPlanejado === 'proxima_sessao'
+        )) ? 'proxima_sessao' : 'sessao_atual',
         ancoras: itens.map((e) => e.ancora),
         observacao: primeiro.observacao,
         detalhe: primeiro.detalhe,
