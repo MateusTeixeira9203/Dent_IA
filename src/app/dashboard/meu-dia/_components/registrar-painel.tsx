@@ -52,7 +52,7 @@
 // linha ficava sem fundo, "flutuando"). `ToothDetailPanel` sem esse prop já renderiza a
 // tabela de especialidade inline, dentro do próprio card do perfil (555px).
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { Check, AlertTriangle, CalendarPlus, FileText, Loader2, ScanLine, X } from 'lucide-react';
@@ -964,15 +964,19 @@ export function useRegistrarPainel({
 
   // R-123 — atalhos só reaproveitam as ações existentes: Ctrl+Enter é tratado pela captura;
   // Ctrl+S chama o mesmo salvar que o botão do rodapé. Nenhum atalho cria rota paralela.
+  const salvarPorAtalho = useEffectEvent(() => {
+    if (!isSaving && eventosPendentes == null && !semRascunho) void handleSalvar();
+  });
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return;
       event.preventDefault();
-      if (!isSaving && eventosPendentes == null && !semRascunho) void handleSalvar();
+      salvarPorAtalho();
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [eventosPendentes, handleSalvar, isSaving, semRascunho]);
+  }, []);
 
   function voltarParaBoca() {
     setOrtoChipAberto(false);
