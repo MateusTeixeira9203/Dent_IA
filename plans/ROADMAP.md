@@ -1,6 +1,6 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · atualizado em **30/08/2026** · mapa do produto atual.
+> **ROADMAP** · atualizado em **31/08/2026** · mapa do produto atual.
 > Histórico de decisões, itens antigos e specs fechadas vivem em [`_arquivo/`](./_arquivo/).
 
 ## Produto atual — fonte de decisão
@@ -28,7 +28,7 @@
 
 | ID | Item | Estado |
 |---|---|---|
-| [**R-140**](specs/R-140-prontuario-atendimento-rastreabilidade.md) | **Prontuário longitudinal, Atendimento e rastreabilidade** — reorganiza Meu Dia/Ficha sem quebrar tratamento, orçamento e assinatura; prepara etiquetas e estoque | 🔵 R-140a/R-140b validados apenas localmente; código segue na branch de transferência, nunca em `main` enquanto as migrations e o gate clínico Dex não forem liberados. |
+| [**R-140**](specs/R-140-prontuario-atendimento-rastreabilidade.md) | **Prontuário longitudinal, Atendimento e rastreabilidade** — reorganiza Meu Dia/Ficha sem quebrar tratamento, orçamento e assinatura; prepara etiquetas e estoque | 🔵 núcleo local passou; R-140c ainda falha em editar registro, retorno interno, prova final de assinatura e estado visual sem localização. Materiais/etiquetas seguem no R-140d. |
 | **R-138** | **Agenda com calendário mobile** — Dia e Semana preservam a grade de horários do desktop no celular | 🟡 enviada à `main`; falta validação manual em Android/iPhone e desktop. |
 | [**R-139a**](specs/R-139a-remover-procedimento-catalogo.md) | **Remover procedimento do catálogo** — o dentista tira o item das escolhas novas sem apagar histórico financeiro | 🟡 no ar; aprovado pelo usuário em produção em 29/08, pendente de auditoria completa para ✅. |
 | [**R-139b**](specs/R-139b-face-incisal-i.md) | **Face incisal como I** — dentes anteriores mostram a abreviação clínica correta sem migrar o código canônico `O` | 🟡 no ar; aprovado pelo usuário em produção em 29/08, pendente de auditoria completa para ✅. |
@@ -40,8 +40,8 @@
 | **R-134** | **Apresentação comercial interativa** — pitch offline do Workspace Odontológico para uso presencial | 🧊 referência visual local removida da árvore do produto; só retoma com escopo comercial explícito. |
 | [**R-133**](specs/R-133-dex-clinico-sem-perda.md) | **Dex clínico sem perda** — procedimento fora do vocabulário vira card revisável e divergência nunca some silenciosamente | ⏳ P0 em contrato; executa depois de R-139c e antes do gate de revisão R-143. |
 | **R-129** | **Fluidez e estabilidade** — Dex sob demanda, histórico clínico com carga progressiva e revisão seletiva de refreshes | ⏳ preservado em commits locais; retoma depois do R-133. Paginação clínica exige fatia própria para não esconder prontuário. |
-| **R-131** | **Patches de segurança** — atualizar Next, parser de documentos e cadeia Gemini em commits isolados | ⏳ prioridade pré-lançamento; auditoria encontrou vulnerabilidades de dependência. |
-| **R-132** | **Gate automatizado** — testes com aliases, lint bloqueante e CI confiável | ⏳ `npm test` executa só 5 de 23 arquivos; precisa incluir o teste do R-139c e tornar o eval clínico reproduzível no CI. |
+| **R-131** | **Patches de segurança** — hardening de headers, limites de upload, grants/funções e cadeia Gemini em commits isolados | ⏳ prioridade pré-lançamento; dependências de produção estão sem CVE conhecido, mas a auditoria encontrou hardening pendente. |
+| **R-132** | **Gate automatizado** — testes, lint bloqueante, build e banco local reproduzível | ⏳ 154 testes e TypeScript passam; lint/build e a ordem histórica das migrations ainda impedem um gate confiável. |
 | **R-92** | **Cobrança Stripe** — primeiro checkout real, webhook, retry e portal | 🟡 produto e chaves configurados; falta um ciclo real completo para validar cobrança e webhook. |
 | **R-105** | **Onboarding do primeiro valor** — apresentação Dex curta, Meu Dia guiado e missão opcional | 🟡 fluxo novo está no ar; falta repetir o caminho completo em uma conta nova, celular e convite. |
 
@@ -49,6 +49,7 @@
 
 | ID | Item | Estado |
 |---|---|---|
+| **R-144** | **Fechamento assistido opcional** — após revisar a consulta, sugere retorno, próxima sessão, orçamento, assinatura e materiais sem bloquear nem forçar abrir a Ficha | ⏳ planejar somente depois do gate do R-140c; não misturar com as correções atuais. |
 | [**R-141**](specs/R-141-captura-dex-sem-perda.md) | **Captura Dex sem perda** — salvar aguarda áudio/arquivo/IA, transcrição repete sem novo ditado e corte por silêncio fica explícito | ⏳ contrato escrito; aguarda aprovação. |
 | [**R-142**](specs/R-142-contratos-hardening-dex.md) | **Contratos e hardening do Dex** — Zod runtime, limites, rate limit por identidade, timeout e observabilidade agregada | ⏳ contrato escrito; migration aditiva e teste com duas contas impedem publicação sem gate. |
 | [**R-143**](specs/R-143-revisao-clinica-segura-acessivel.md) | **Revisão clínica segura e acessível** — suspeitos bloqueiam save, lote tem confirmação/undo e controles atendem mobile/WCAG | ⏳ contrato escrito; gate de publicação de R-139c/R-133. |
