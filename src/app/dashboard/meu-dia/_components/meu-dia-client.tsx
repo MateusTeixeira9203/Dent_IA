@@ -352,6 +352,7 @@ export function MeuDiaClient({
   // é RENDERIZADA dentro do `{slotSelecionado && contexto ? ... }` abaixo, nunca aparece vazia.
   const registrarPainel = useRegistrarPainel({
     visitaKey,
+    contextoId: slotSelecionado?.agendamentoId ?? '',
     pacienteId: slotSelecionado?.pacienteId ?? '',
     agendamentoId: slotSelecionado?.agendamentoId ?? '',
     pacienteNome: slotSelecionado?.pacienteNome ?? '',

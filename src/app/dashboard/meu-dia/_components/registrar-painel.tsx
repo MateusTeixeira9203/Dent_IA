@@ -99,11 +99,26 @@ const TIPOS_NIVEL_BOCA = new Set<TipoRegistroOdontograma>(['profilaxia', 'clarea
  *  desenho se um dia precisar. */
 type OndeValor = { dentes: number[] } | null;
 
+export type SalvarRegistroClinico = (dados: {
+  visitaKey: string;
+  fichaId?: string;
+  pacienteId: string;
+  agendamentoId?: string;
+  textoVisita: string;
+  eventosDraft: OdontogramaEventoDraft[];
+  alertaNovo: string | null;
+  ortoManutencao: OrtoManutencaoDetalhe | null;
+  destinoNovos: { fichaId: string | null };
+}) => Promise<SalvarFichaResult>;
+
 interface RegistrarPainelProps {
   /** R-140a — a mesma chave cobre orçamento antecipado, salvar e retry da visita atual. */
   visitaKey: string;
+  /** Identidade visual da bancada. No Meu Dia é o agendamento; no Prontuário, a própria visita. */
+  contextoId: string;
   pacienteId: string;
-  agendamentoId: string;
+  /** Só o Meu Dia possui agendamento; o Prontuário não inventa esse vínculo. */
+  agendamentoId?: string;
   /** NOVO (D1) — só pro campo mágico (`CapturaLivreCard` precisa pro prompt da IA). */
   pacienteNome: string;
   /** R-64 — o "Marcar retorno" do rodapé abre a MESMA grade/modal do perfil do paciente;
@@ -135,6 +150,8 @@ interface RegistrarPainelProps {
   /** C2 (P7) — avisa o pai que a visita salvou (odontograma incluso, ver `eventosFalharam`
    *  abaixo). Nunca chamado enquanto o odontograma não gravou (I4). */
   onSalvo: () => void;
+  /** R-140c — permite que o mesmo painel grave um atendimento aberto pelo Prontuário. */
+  onSalvarVisita?: SalvarRegistroClinico;
   /** R-46d D8 — "usar este documento de base" (anexar-documentos-bloco.tsx), repassado pro
    *  campo mágico. */
   anexarTexto?: { texto: string; nonce: number; origem: 'audio' | 'documento' };
@@ -215,7 +232,7 @@ export interface RegistrarPainelSlots {
 }
 
 export function useRegistrarPainel({
-  visitaKey, pacienteId, agendamentoId, pacienteNome, dentistaId, catalogoProcedimentos,
+  visitaKey, contextoId, pacienteId, agendamentoId, pacienteNome, dentistaId, catalogoProcedimentos,
   eventosDraft, onEventosDraftChange: setEventosDraft,
   denteAberto, onDenteAbertoChange: setDenteAberto,
   textoVisita, onTextoVisitaChange: setTextoVisita,
@@ -223,6 +240,7 @@ export function useRegistrarPainel({
   fichaRascunhoId,
   destinoNovos,
   onSalvo,
+  onSalvarVisita,
   anexarTexto,
   boca,
   detalheEspecialidadeAberto,
@@ -300,14 +318,14 @@ export function useRegistrarPainel({
   // vazariam pro próximo. Mesmo padrão de "comparar id durante o render" que
   // `meu-dia-client.tsx` (`idAoResetar`) já usa, pelo mesmo motivo (o lint do projeto,
   // `react-hooks/set-state-in-effect`, bloqueia a versão com `useEffect`).
-  const [agendamentoIdAoResetar, setAgendamentoIdAoResetar] = useState(agendamentoId);
+  const [contextoIdAoResetar, setContextoIdAoResetar] = useState(contextoId);
   if (eventosDraft.length !== quantidadeAoRenderizar) {
     const adicionouRegistro = eventosDraft.length > quantidadeAoRenderizar;
     setQuantidadeAoRenderizar(eventosDraft.length);
     if (adicionouRegistro) setControlesAbertos(false);
   }
-  if (agendamentoId !== agendamentoIdAoResetar) {
-    setAgendamentoIdAoResetar(agendamentoId);
+  if (contextoId !== contextoIdAoResetar) {
+    setContextoIdAoResetar(contextoId);
     setTextoAberto(false);
     setControlesAbertos(false);
     setMateriaisAberto(false);
@@ -345,6 +363,23 @@ export function useRegistrarPainel({
     setOrtoValor(orto);
     setOrtoChipAberto(true);
   }
+
+  const salvarRegistro: SalvarRegistroClinico = onSalvarVisita ?? (async (dados) => {
+    if (!dados.agendamentoId) {
+      return { ok: false, error: 'Este atendimento precisa de um agendamento válido.' };
+    }
+    return salvarVisitaMeuDia({
+      visitaKey: dados.visitaKey,
+      fichaId: dados.fichaId,
+      pacienteId: dados.pacienteId,
+      agendamentoId: dados.agendamentoId,
+      textoVisita: dados.textoVisita,
+      eventosDraft: dados.eventosDraft,
+      alertaNovo: dados.alertaNovo,
+      ortoManutencao: dados.ortoManutencao,
+      destinoNovos: dados.destinoNovos,
+    });
+  });
 
   /** R-125a — todos os caminhos manuais criam o mesmo draft contextual. */
   function criarEventos(
@@ -509,7 +544,7 @@ export function useRegistrarPainel({
     // nada" quando na verdade tinha crashado silenciosamente.
     let resultado: SalvarFichaResult;
     try {
-      resultado = await salvarVisitaMeuDia({
+      resultado = await salvarRegistro({
         // R-85 — se "Gerar orçamento" já criou a ficha (fichaRascunhoId), EDITA em vez de criar
         // uma 2ª: mesmos eventos por id (upsert), sem duplicar o que o orçamento já gravou.
         // finalizarAtendimento omitido (default true) — É este clique que fecha o atendimento.
@@ -550,7 +585,7 @@ export function useRegistrarPainel({
     if (res.ok) {
       let resultado: SalvarFichaResult;
       try {
-        resultado = await salvarVisitaMeuDia({
+        resultado = await salvarRegistro({
           visitaKey,
           fichaId: savedFichaId,
           pacienteId,
@@ -583,7 +618,7 @@ export function useRegistrarPainel({
   // da tela e acompanham o odontograma no slot contextual abaixo.
   const campoMagico = (
     <CampoMagicoMeuDia
-      key={agendamentoId}
+      key={contextoId}
       pacienteNome={pacienteNome}
       eventosDraft={eventosDraft}
       onEventosDraftChange={setEventosDraft}

@@ -4,7 +4,7 @@ import { derivarV2DosEventos } from '@/lib/odontograma/derivar-campos-legado';
 import { statusDoTratamento } from '@/lib/ficha/status-tratamento';
 import { montarRowsEventos } from '@/lib/odontograma/montar-rows-eventos';
 import { finalizarAtendimentoSeAplicavel } from '@/server/patients/finalizar-atendimento';
-import { salvarFicha, type SalvarFichaResult } from '@/server/patients/salvar-ficha';
+import { salvarFicha, type OrigemFicha, type SalvarFichaResult } from '@/server/patients/salvar-ficha';
 import {
   TIPO_LABEL,
   type OdontogramaEventoDraft,
@@ -35,7 +35,8 @@ export interface DestinoNovos {
 
 export interface RotearVisitaInput {
   pacienteId: string;
-  agendamentoId: string;
+  /** Ausente somente quando o registro nasce diretamente pelo prontuário do paciente. */
+  agendamentoId?: string;
   textoVisita: string;
   eventosDraft: OdontogramaEventoDraft[];
   alertaNovo?: string | null;
@@ -46,6 +47,8 @@ export interface RotearVisitaInput {
   destinoNovos?: DestinoNovos;
   /** R-140a — presente apenas no novo caminho do Meu Dia; chamadas legadas mantêm o dedup diário. */
   atendimentoId?: string;
+  /** R-140c — o prontuário cria ficha manual, sem inventar um agendamento de origem. */
+  origemFicha?: Extract<OrigemFicha, 'modo_consulta' | 'manual'>;
 }
 
 const ERRO_FICHA_SUMIU =
@@ -458,7 +461,7 @@ export async function rotearVisitaMeuDia(input: RotearVisitaInput): Promise<Salv
       clinicId,
       dentistaId,
       pacienteId: input.pacienteId,
-      origem: 'modo_consulta',
+      origem: input.origemFicha ?? 'modo_consulta',
       agendamentoId: input.agendamentoId,
       finalizarAtendimento: input.finalizarAtendimento,
     });
@@ -471,7 +474,7 @@ export async function rotearVisitaMeuDia(input: RotearVisitaInput): Promise<Salv
   const resultado = await salvarFicha({
     fichaId: fichaDaSessao ?? undefined,
     pacienteId: input.pacienteId,
-    origem: 'modo_consulta',
+    origem: input.origemFicha ?? 'modo_consulta',
     agendamentoId: input.agendamentoId,
     // O fechamento do atendimento é UM por visita (G12) e acontece abaixo, depois de tudo ter
     // dado certo — nunca uma vez por ficha alcançada.
@@ -507,7 +510,7 @@ export async function rotearVisitaMeuDia(input: RotearVisitaInput): Promise<Salv
     clinicId,
     dentistaId,
     pacienteId: input.pacienteId,
-    origem: 'modo_consulta',
+    origem: input.origemFicha ?? 'modo_consulta',
     agendamentoId: input.agendamentoId,
     finalizarAtendimento: input.finalizarAtendimento,
   });

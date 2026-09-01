@@ -30,6 +30,11 @@ type AtendimentoEventoRow = {
 export interface RegistrarAtendimentoClinicoInput extends RotearVisitaInput {
   /** UUID criado no navegador uma vez por visita; é reutilizado no orçamento antecipado e no salvar final. */
   visitaKey: string;
+  /**
+   * Meu Dia tem agendamento; o Prontuário pode registrar uma consulta sem criar uma agenda
+   * fictícia. A âncora continua idempotente nos dois casos.
+   */
+  origemAtendimento?: 'meu_dia' | 'ficha';
 }
 
 /**
@@ -45,6 +50,11 @@ export async function registrarAtendimentoClinico(
   const { supabase, clinicId, dentistaId, role, user } = await requireClinicContext();
   if (role === 'secretaria') return { ok: false, error: 'Sem permissão.' };
 
+  const origemAtendimento = input.origemAtendimento ?? 'meu_dia';
+  if (origemAtendimento === 'meu_dia' && !input.agendamentoId) {
+    return { ok: false, error: 'A consulta do Meu Dia precisa de um agendamento válido.' };
+  }
+
   const atendimento = await obterOuCriarAtendimento({
     supabase,
     clinicId,
@@ -53,6 +63,7 @@ export async function registrarAtendimentoClinico(
     visitaKey: input.visitaKey,
     pacienteId: input.pacienteId,
     agendamentoId: input.agendamentoId,
+    origem: origemAtendimento,
   });
 
   if (!atendimento.ok) return atendimento;
@@ -68,6 +79,7 @@ export async function registrarAtendimentoClinico(
   const resultado = await rotearVisitaMeuDia({
     ...input,
     atendimentoId: atendimento.row.id,
+    origemFicha: origemAtendimento === 'ficha' ? 'manual' : 'modo_consulta',
     // O fechamento de agenda é feito apenas depois que as relações da visita estiverem íntegras.
     finalizarAtendimento: false,
   });
@@ -103,14 +115,16 @@ export async function registrarAtendimentoClinico(
     return { ok: false, error: 'A visita foi gravada, mas não pôde ser finalizada. Tente salvar novamente.' };
   }
 
-  await finalizarAtendimentoSeAplicavel(supabase, {
-    clinicId,
-    dentistaId,
-    pacienteId: input.pacienteId,
-    origem: 'modo_consulta',
-    agendamentoId: input.agendamentoId,
-    finalizarAtendimento: input.finalizarAtendimento,
-  });
+  if (origemAtendimento === 'meu_dia') {
+    await finalizarAtendimentoSeAplicavel(supabase, {
+      clinicId,
+      dentistaId,
+      pacienteId: input.pacienteId,
+      origem: 'modo_consulta',
+      agendamentoId: input.agendamentoId,
+      finalizarAtendimento: input.finalizarAtendimento,
+    });
+  }
 
   return { ...resultado, atendimentoId: atendimento.row.id };
 }
@@ -122,15 +136,18 @@ async function obterOuCriarAtendimento(ctx: {
   usuarioId: string;
   visitaKey: string;
   pacienteId: string;
-  agendamentoId: string;
+  agendamentoId?: string;
+  origem: 'meu_dia' | 'ficha';
 }): Promise<{ ok: true; row: AtendimentoRow } | { ok: false; error: string }> {
   const porChave = await buscarAtendimento(ctx.supabase, ctx.clinicId, 'chave_idempotencia', ctx.visitaKey);
   if (porChave) return validarContextoAtendimento(porChave, ctx);
 
   // A constraint por agendamento também protege um refresh que gere uma chave nova. Reusar a
   // mesma visita é mais seguro do que falhar depois de uma ficha já ter sido criada.
-  const porAgendamento = await buscarAtendimento(ctx.supabase, ctx.clinicId, 'agendamento_id', ctx.agendamentoId);
-  if (porAgendamento) return validarContextoAtendimento(porAgendamento, ctx);
+  if (ctx.agendamentoId) {
+    const porAgendamento = await buscarAtendimento(ctx.supabase, ctx.clinicId, 'agendamento_id', ctx.agendamentoId);
+    if (porAgendamento) return validarContextoAtendimento(porAgendamento, ctx);
+  }
 
   const { data: criado, error } = await ctx.supabase
     .from('atendimentos_clinicos')
@@ -141,7 +158,7 @@ async function obterOuCriarAtendimento(ctx: {
       agendamento_id: ctx.agendamentoId,
       chave_idempotencia: ctx.visitaKey,
       data_atendimento: hojeBRT(),
-      origem: 'meu_dia',
+      origem: ctx.origem,
       estado: 'preparando',
       criado_por: ctx.usuarioId,
     })
@@ -156,7 +173,9 @@ async function obterOuCriarAtendimento(ctx: {
 
   const concorrente =
     await buscarAtendimento(ctx.supabase, ctx.clinicId, 'chave_idempotencia', ctx.visitaKey)
-    ?? await buscarAtendimento(ctx.supabase, ctx.clinicId, 'agendamento_id', ctx.agendamentoId);
+    ?? (ctx.agendamentoId
+      ? await buscarAtendimento(ctx.supabase, ctx.clinicId, 'agendamento_id', ctx.agendamentoId)
+      : null);
   if (!concorrente) return { ok: false, error: 'Esta visita está sendo salva. Tente novamente em instantes.' };
   return validarContextoAtendimento(concorrente, ctx);
 }
@@ -180,12 +199,12 @@ async function buscarAtendimento(
 
 function validarContextoAtendimento(
   row: AtendimentoRow,
-  ctx: { pacienteId: string; dentistaId: string; agendamentoId: string },
+  ctx: { pacienteId: string; dentistaId: string; agendamentoId?: string },
 ): { ok: true; row: AtendimentoRow } | { ok: false; error: string } {
   if (
     row.paciente_id !== ctx.pacienteId
     || row.dentista_id !== ctx.dentistaId
-    || row.agendamento_id !== ctx.agendamentoId
+    || row.agendamento_id !== (ctx.agendamentoId ?? null)
   ) {
     return { ok: false, error: 'Esta visita já pertence a outro contexto. Atualize a página antes de salvar.' };
   }
