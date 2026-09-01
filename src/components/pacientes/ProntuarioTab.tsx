@@ -613,6 +613,9 @@ export function ProntuarioTab({
       <section className="space-y-4" aria-label="Atendimento aberto no prontuário">
         <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
           <div>
+            <button type="button" onClick={voltarAoContextoAnterior} className="mb-1 inline-flex min-h-9 items-center gap-1 text-xs font-bold text-teal-ink hover:underline">
+              <ArrowLeft className="h-3.5 w-3.5" /> Prontuário / Registro de {formatarData(atendimentoAberto.dataAtendimento)}
+            </button>
             <p className="font-heading text-2xl text-text-primary">{formatarData(atendimentoAberto.dataAtendimento)}</p>
             <p className="mt-1 text-sm text-text-secondary">
               {rotuloOrigem(atendimentoAberto)} · {atendimentoAberto.profissional.nome}
@@ -624,9 +627,6 @@ export function ProntuarioTab({
                 <PenLine className="h-4 w-4" /> Editar ficha
               </Button>
             )}
-            <Button variant="ghost" onClick={voltarAoContextoAnterior}>
-              <ArrowLeft className="h-4 w-4" /> Voltar ao prontuário
-            </Button>
           </div>
         </header>
 

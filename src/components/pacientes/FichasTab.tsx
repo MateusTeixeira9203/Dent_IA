@@ -1905,7 +1905,11 @@ export function FichasTab({
               Voltar ao prontuário
             </Button>
           )}
-          <h2 className="font-heading text-2xl text-text-primary">Histórico Clínico</h2>
+          <h2 className="font-heading text-2xl text-text-primary">
+            {onVoltarAoProntuario
+              ? `Prontuário / ${editingId ? 'Editar ficha' : (viewingEvo?.nome ?? 'Tratamento')}`
+              : 'Histórico Clínico'}
+          </h2>
         </div>
         {!isPanelOpen && canWrite && (
           <div className="flex flex-wrap items-center gap-2">
