@@ -74,7 +74,7 @@ type CorClinica = 'coral' | 'teal' | 'slate' | 'warning';
 
 const COR_TOKEN: Record<CorClinica, string> = {
   coral:   'var(--color-coral)',
-  teal:    'var(--color-teal)',
+  teal:    'var(--color-clinical-done)',
   slate:   'var(--color-slate)',
   warning: 'var(--color-warning)',
 };
@@ -83,7 +83,7 @@ const COR_TOKEN: Record<CorClinica, string> = {
 // em light mode — teal 3.38:1, coral 2.99:1; achado auditoria UX 19/07).
 const COR_TOKEN_INK: Record<CorClinica, string> = {
   coral:   'var(--color-coral-ink)',
-  teal:    'var(--color-teal-ink)',
+  teal:    'var(--color-clinical-done-ink)',
   slate:   'var(--color-slate-ink)',
   warning: 'var(--color-warning-ink)',
 };
@@ -91,7 +91,7 @@ const COR_TOKEN_INK: Record<CorClinica, string> = {
 /** Versão clara — tinge a RAIZ (canal/implante). Artefato usa o token -pale direto. */
 const COR_PALE: Record<CorClinica, string> = {
   coral:   'var(--color-coral-pale)',
-  teal:    'var(--color-teal-pale)',
+  teal:    'var(--color-clinical-done-pale)',
   slate:   'var(--color-slate-pale)',
   warning: 'var(--color-warning-pale)',
 };
@@ -110,7 +110,7 @@ const COR_PALE: Record<CorClinica, string> = {
  */
 const CROWN_FILL: Record<CorClinica, string> = {
   coral:   'var(--color-coral-pale)',
-  teal:    'color-mix(in srgb, var(--color-teal) 24%, var(--color-surface-alt))',
+  teal:    'color-mix(in srgb, var(--color-clinical-done) 24%, var(--color-surface-alt))',
   slate:   'var(--color-slate-pale)',
   warning: 'var(--color-warning-pale)',
 };
@@ -121,7 +121,7 @@ const STATUS_CLINICO_LABEL: Record<CorClinica, string> = {
   coral:   'a fazer',
   teal:    'feito aqui',
   slate:   'pré-existente',
-  warning: 'próxima seção',
+  warning: 'próxima sessão',
 };
 
 /**
@@ -1200,7 +1200,7 @@ export function Odontograma({
             )}
             {hoveredResumo?.cor === 'warning' && (
               <span className="text-[10px] font-semibold ml-0.5" style={{ color: COR_TOKEN_INK.warning }}>
-                · próxima seção
+                · próxima sessão
               </span>
             )}
             {hoveredResumo?.cor === 'teal' && (

@@ -120,7 +120,7 @@ const PILL: Record<'coral' | 'teal' | 'slate' | 'warning' | 'misto', { label: st
   teal:    { label: 'Realizado',      wrap: 'bg-teal-pale text-teal-ink',       dot: 'bg-teal' },
   coral:   { label: 'Planejado',      wrap: 'bg-coral-pale text-coral-ink',     dot: 'bg-coral' },
   slate:   { label: 'Pré-existente',  wrap: 'bg-slate-pale text-slate-ink',     dot: 'bg-slate' },
-  warning: { label: 'Próxima seção',  wrap: 'bg-warning-pale text-warning-ink', dot: 'bg-warning' },
+  warning: { label: 'Próxima sessão',  wrap: 'bg-warning-pale text-warning-ink', dot: 'bg-warning' },
   misto:   { label: 'Status misto',   wrap: 'bg-surface-alt text-text-secondary border border-border', dot: 'bg-text-secondary' },
 };
 
@@ -345,7 +345,7 @@ export function RegistroCard({
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onToggleMomento(); }
             }}
-            title={data.momentoPlanejado === 'proxima_sessao' ? 'Marcar pra sessão atual' : 'Marcar pra próxima seção'}
+            title={data.momentoPlanejado === 'proxima_sessao' ? 'Marcar pra sessão atual' : 'Marcar pra próxima sessão'}
             className={`inline-flex items-center gap-1 shrink-0 text-[11px] font-bold px-2 py-1 rounded-full cursor-pointer transition-colors outline-none focus-visible:ring-2 focus-visible:ring-teal ${
               data.momentoPlanejado === 'proxima_sessao'
                 ? 'bg-warning-pale text-warning-ink'
@@ -353,7 +353,7 @@ export function RegistroCard({
             }`}
           >
             <Clock className="w-3 h-3" />
-            Próxima seção
+            Próxima sessão
           </span>
         )}
 
