@@ -57,7 +57,7 @@ const TabSkeleton = () => (
 );
 
 const DocumentosTab   = dynamic(() => import('@/components/pacientes/DocumentosTab').then(m => m.DocumentosTab),     { ssr: false, loading: () => <TabSkeleton /> });
-const FichasTab       = dynamic(() => import('@/components/pacientes/FichasTab').then(m => m.FichasTab),             { ssr: false, loading: () => <TabSkeleton /> });
+const ProntuarioTab   = dynamic(() => import('@/components/pacientes/ProntuarioTab').then(m => m.ProntuarioTab),     { ssr: false, loading: () => <TabSkeleton /> });
 import { createClient } from '@/lib/supabase/client';
 import { saveRecentPatient } from '@/components/command-palette/command-palette';
 import { marcarFollowUp, limparFollowUp, snoozeFollowUp } from '../../followup-actions';
@@ -103,6 +103,7 @@ import { useOrcamentoModal } from './use-orcamento-modal';
 import { ApresentarPaciente } from '@/components/pacientes/ApresentarPaciente';
 
 import type { FichaRecente } from '@/server/patients/get-patient-workspace-data';
+import type { ProntuarioLongitudinalData } from '@/server/patients/get-prontuario-longitudinal';
 
 type FichaParaPendencia = {
   id: string;
@@ -159,6 +160,7 @@ interface PacienteDetailClientProps {
   plano: PlanoId;
   fichasRecentesSSR?: FichaRecente[];
   timeline?: TimelineEvent[];
+  prontuario?: ProntuarioLongitudinalData;
 }
 
 export function PacienteDetailClient({
@@ -171,11 +173,12 @@ export function PacienteDetailClient({
   plano,
   fichasRecentesSSR,
   timeline = [],
+  prontuario,
 }: PacienteDetailClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const canViewClinical  = true;
+  const canViewClinical  = role === 'admin' || role === 'dentista';
   const canWriteClinical = role === 'admin' || role === 'dentista';
 
   const [activeTab, setActiveTab] = useState('ficha-clinica');
@@ -1418,14 +1421,15 @@ export function PacienteDetailClient({
                 {canViewClinical && (
                   <TabsContent value="ficha-clinica" className="mt-0">
                     {mountedTabs.has('ficha-clinica') && (
-                      <FichasTab
+                      <ProntuarioTab
                         patientId={paciente.id}
                         clinicaId={clinicaId}
                         dentistaId={dentistaId}
-                        plano={plano}
                         patientName={displayNome}
                         canWrite={canWriteClinical}
-                        onGerarOrcamento={role !== 'secretaria' ? (fichaId) => void orcamentoModal.abrirOrcamentoParaFicha(fichaId) : undefined}
+                        dados={prontuario ?? { atendimentos: [], boca: [], profissionaisClinicos: [], errosParciais: [] }}
+                        onGerarOrcamento={(fichaId) => void orcamentoModal.abrirOrcamentoParaFicha(fichaId)}
+                        onAbrirArquivos={() => handleTabChange('arquivos')}
                         // R-107b — catálogo pro match local da busca livre do painel do dente.
                         // `categoria` não vem da query (`ProcedimentoClinica` é o contrato do
                         // fluxo de orçamento e tem outros produtores) e não é usada pelo

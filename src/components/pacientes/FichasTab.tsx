@@ -548,9 +548,23 @@ interface FichasTabProps {
   /** R-107b — catálogo do dentista, repassado pros `ToothDetailPanel` daqui (busca livre do
    *  painel do dente). Ausente = a busca casa só os tipos estruturais, sem catálogo. */
   catalogoProcedimentos?: MeuDiaCatalogoProcedimento[];
+  /** R-140c: tratamento a abrir ao entrar pelo prontuário longitudinal. */
+  initialFichaId?: string;
+  /** R-140c: retorna ao prontuário sem alterar a lógica do editor legado. */
+  onVoltarAoProntuario?: () => void;
 }
 
-export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWrite = true, onGerarOrcamento, catalogoProcedimentos }: FichasTabProps) {
+export function FichasTab({
+  patientId,
+  clinicaId,
+  dentistaId,
+  patientName,
+  canWrite = true,
+  onGerarOrcamento,
+  catalogoProcedimentos,
+  initialFichaId,
+  onVoltarAoProntuario,
+}: FichasTabProps) {
   // O histórico é da CLÍNICA (todo dentista lê), o trabalho é do AUTOR (só ele escreve) —
   // migration 099. `canWrite` cobre papel/plano; a autoria é uma segunda condição, não a
   // mesma. Esconder o controle é conveniência: quem barra de verdade é a RLS (invariante #9).
@@ -560,6 +574,7 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
   );
 
   const [evolutions, setEvolutions] = React.useState<Evolution[]>([]);
+  const fichaInicialAbertaRef = React.useRef<string | null>(null);
   // R-46c — colar histórico do Word, mesmo dialog do Meu dia.
   const [colarAberto, setColarAberto] = React.useState(false);
   // R-04b — rascunho do detalhe que o DESTINO está preenchendo (chave = key do card = id do evento;
@@ -1008,17 +1023,27 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
       // Mais recente primeiro — mesma ordem da timeline do artefato (blocos 1-6).
       for (const arr of evolucoesPorFicha.values()) arr.sort((a, b) => (a.data < b.data ? 1 : -1));
 
-      setEvolutions(fichas.map((f) => ({
+      const proximasEvolucoes = fichas.map((f) => ({
         ...f,
         eventos: eventosPorFicha.get(f.id) ?? [],
         evolucoes: evolucoesPorFicha.get(f.id) ?? [],
-      })));
+      }));
+      setEvolutions(proximasEvolucoes);
+
+      if (initialFichaId && fichaInicialAbertaRef.current !== initialFichaId) {
+        const fichaInicial = proximasEvolucoes.find((ficha) => ficha.id === initialFichaId);
+        if (fichaInicial) {
+          fichaInicialAbertaRef.current = initialFichaId;
+          setViewingEvo(fichaInicial);
+          setIsPanelOpen(true);
+        }
+      }
     } catch (err) {
       console.error("Erro ao buscar fichas:", err);
     } finally {
       setIsLoading(false);
     }
-  }, [patientId, clinicaId, dentistaId]);
+  }, [patientId, clinicaId, dentistaId, initialFichaId]);
 
   React.useEffect(() => {
     if (patientId && clinicaId) {
@@ -1859,8 +1884,15 @@ export function FichasTab({ patientId, clinicaId, dentistaId, patientName, canWr
           Medido em 14/08: os 3 botões somam 474px e nasciam a 98px da borda (depois do título),
           chegando a 571px numa faixa de 343px — 228px cortados, o maior corte do Prontuário.
           Eles têm `shrink-0` no `Button`, então não tinha como o `justify-between` acomodar. */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-        <h2 className="font-heading text-2xl text-text-primary">Histórico Clínico</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          {onVoltarAoProntuario && (
+            <Button variant="ghost" size="sm" onClick={onVoltarAoProntuario}>
+              Voltar ao prontuário
+            </Button>
+          )}
+          <h2 className="font-heading text-2xl text-text-primary">Histórico Clínico</h2>
+        </div>
         {!isPanelOpen && canWrite && (
           <div className="flex flex-wrap items-center gap-2">
             {/* R-05b (D4) — atalho secundário: "Nova Evolução" segue o único CTA sólido teal.
