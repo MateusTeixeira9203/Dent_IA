@@ -31,6 +31,13 @@ import {
   atualizarStatusEncaminhado,
   encaminharProcedimento,
 } from '@/server/patients/registro-actions';
+import {
+  CONTEXTO_TIMELINE_INICIAL,
+  contextoDaSuperficie,
+  voltarParaTimeline,
+  type ContextoTimeline,
+  type SuperficieProntuario,
+} from '@/lib/prontuario/superficie';
 
 const FichasTab = dynamic(
   () => import('@/components/pacientes/FichasTab').then((module) => module.FichasTab),
@@ -143,11 +150,12 @@ export function ProntuarioTab({
   onAbrirArquivos,
 }: ProntuarioTabProps) {
   const router = useRouter();
-  const [novoRegistroAberto, setNovoRegistroAberto] = useState(false);
-  const [fichaNoEditor, setFichaNoEditor] = useState<string | null>(null);
+  const [superficie, setSuperficie] = useState<SuperficieProntuario>({
+    tipo: 'timeline',
+    contexto: CONTEXTO_TIMELINE_INICIAL,
+  });
   const [retornoAberto, setRetornoAberto] = useState(false);
   const [retornoAtendimentoId, setRetornoAtendimentoId] = useState<string | null>(null);
-  const [atendimentoAbertoId, setAtendimentoAbertoId] = useState<string | null>(null);
   const [odontogramaCompletoAberto, setOdontogramaCompletoAberto] = useState(false);
   const [filtroClinico, setFiltroClinico] = useState<'tudo' | 'indicado' | 'realizado'>('tudo');
   const [eventosDraft, setEventosDraft] = useState<OdontogramaEventoDraft[]>([]);
@@ -174,6 +182,53 @@ export function ProntuarioTab({
   const [orientacoesAssinatura, setOrientacoesAssinatura] = useState('Orientações clínicas fornecidas e compreendidas pelo paciente.');
   const [salvandoAssinatura, setSalvandoAssinatura] = useState(false);
   const assinaturaPadRef = useRef<SignaturePadLib | null>(null);
+
+  const fichaNoEditor = superficie.tipo === 'tratamento'
+    ? superficie.fichaId
+    : superficie.tipo === 'editor' && superficie.modo === 'editar'
+      ? superficie.fichaId
+      : null;
+  const intencaoFicha = superficie.tipo === 'tratamento' ? 'ler' : 'editar';
+  const novoRegistroAberto = superficie.tipo === 'editor' && superficie.modo !== 'editar';
+  const atendimentoAbertoId = superficie.tipo === 'registro' ? superficie.atendimentoId : null;
+
+  function contextoAtual(): ContextoTimeline {
+    return {
+      filtro: filtroClinico,
+      dente: resumoDenteSelecionado,
+      scrollY: window.scrollY,
+    };
+  }
+
+  function contextoParaDestino(): ContextoTimeline {
+    return superficie.tipo === 'timeline' ? contextoAtual() : contextoDaSuperficie(superficie);
+  }
+
+  function abrirRegistro(atendimentoId: string): void {
+    setSuperficie({ tipo: 'registro', atendimentoId, retorno: contextoParaDestino() });
+  }
+
+  function abrirTratamento(fichaId: string): void {
+    setSuperficie({ tipo: 'tratamento', fichaId, retorno: contextoParaDestino() });
+  }
+
+  function abrirEdicao(fichaId: string, atendimentoOrigemId: string | null): void {
+    setSuperficie({
+      tipo: 'editor',
+      modo: 'editar',
+      fichaId,
+      atendimentoOrigemId,
+      retorno: contextoParaDestino(),
+    });
+  }
+
+  function voltarAoContextoAnterior(): void {
+    const contexto = contextoDaSuperficie(superficie);
+    setFiltroClinico(contexto.filtro);
+    setResumoDenteSelecionado(contexto.dente);
+    setSuperficie(voltarParaTimeline(superficie));
+    requestAnimationFrame(() => window.scrollTo({ top: contexto.scrollY }));
+  }
 
   const salvarRegistro: SalvarRegistroClinico = async (input) => salvarAtendimentoDoProntuario(input);
 
@@ -202,7 +257,7 @@ export function ProntuarioTab({
     onIniciarPonte: (dente) => setDenteAberto(dente),
     onAbrirDetalheEndo: (dente) => setDenteAberto(dente),
     onSalvarVisita: salvarRegistro,
-    onSalvo: () => {
+    onSalvo: (resultado) => {
       setEventosDraft([]);
       setTextoVisita('');
       setDenteAberto(null);
@@ -210,7 +265,8 @@ export function ProntuarioTab({
       setDestinoNovoRegistroId(null);
       setAtendimentoDeOrigemId(null);
       setVisitaKey(crypto.randomUUID());
-      setNovoRegistroAberto(false);
+      if ('atendimentoId' in resultado) abrirRegistro(resultado.atendimentoId);
+      else voltarAoContextoAnterior();
       router.refresh();
     },
   });
@@ -289,7 +345,13 @@ export function ProntuarioTab({
     setAtendimentoDeOrigemId(params?.atendimentoOrigemId ?? null);
     setDenteAberto(params?.dente ?? null);
     setDetalheEspecialidadeAberto(false);
-    setNovoRegistroAberto(true);
+    setSuperficie({
+      tipo: 'editor',
+      modo: params?.atendimentoOrigemId ? 'complementar' : 'novo',
+      fichaId: params?.fichaId ?? null,
+      atendimentoOrigemId: params?.atendimentoOrigemId ?? null,
+      retorno: contextoParaDestino(),
+    });
   }
 
   function complementarAtendimento(atendimento: ProntuarioAtendimento, dente: number | null = null): void {
@@ -315,7 +377,7 @@ export function ProntuarioTab({
       ? eventosDaFicha.every((evento) => evento.dentistaId === dentistaId)
       : atendimento.profissional.id === dentistaId;
     if (ficha && ficha.assinadoEm == null && fichaDoProfissionalAtual) {
-      setFichaNoEditor(ficha.id);
+      abrirEdicao(ficha.id, atendimento.id);
       return;
     }
     complementarAtendimento(atendimento);
@@ -422,13 +484,16 @@ export function ProntuarioTab({
   }
 
   function voltarDaBancada(): void {
-    setNovoRegistroAberto(false);
     setEventosDraft([]);
     setTextoVisita('');
     setDenteAberto(null);
     setDetalheEspecialidadeAberto(false);
     setDestinoNovoRegistroId(null);
-    if (atendimentoDeOrigemId) setAtendimentoAbertoId(atendimentoDeOrigemId);
+    if (atendimentoDeOrigemId) {
+      setSuperficie({ tipo: 'registro', atendimentoId: atendimentoDeOrigemId, retorno: contextoDaSuperficie(superficie) });
+    } else {
+      voltarAoContextoAnterior();
+    }
     setAtendimentoDeOrigemId(null);
   }
 
@@ -441,10 +506,11 @@ export function ProntuarioTab({
         patientName={patientName}
         canWrite={canWrite}
         initialFichaId={fichaNoEditor}
+        initialIntent={intencaoFicha}
         onGerarOrcamento={onGerarOrcamento}
         catalogoProcedimentos={catalogoProcedimentos}
         onVoltarAoProntuario={() => {
-          setFichaNoEditor(null);
+          voltarAoContextoAnterior();
           router.refresh();
         }}
       />
@@ -549,7 +615,7 @@ export function ProntuarioTab({
                 <PenLine className="h-4 w-4" /> Editar ficha
               </Button>
             )}
-            <Button variant="ghost" onClick={() => setAtendimentoAbertoId(null)}>
+            <Button variant="ghost" onClick={voltarAoContextoAnterior}>
               <ArrowLeft className="h-4 w-4" /> Voltar ao prontuário
             </Button>
           </div>
@@ -738,7 +804,7 @@ export function ProntuarioTab({
                         {ficha && canWrite && autorAtual && (
                           <button
                             type="button"
-                            onClick={() => ficha.assinadoEm == null ? setFichaNoEditor(ficha.id) : complementarAtendimento(atendimentoAberto, evento.ancora.dente ?? null)}
+                            onClick={() => ficha.assinadoEm == null ? abrirEdicao(ficha.id, atendimentoAberto.id) : complementarAtendimento(atendimentoAberto, evento.ancora.dente ?? null)}
                             className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-bold text-text-secondary hover:bg-surface hover:text-text-primary"
                           >
                             <PenLine className="h-3.5 w-3.5" /> {ficha.assinadoEm == null ? 'Editar procedimento' : 'Adicionar retificação'}
@@ -809,7 +875,7 @@ export function ProntuarioTab({
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-text-secondary">Tratamentos vinculados</p>
                 <div className="mt-3 grid gap-2">
                   {atendimentoAberto.fichas.map((ficha) => (
-                    <Button key={ficha.id} variant="ghost" className="justify-start" onClick={() => setFichaNoEditor(ficha.id)}>
+                    <Button key={ficha.id} variant="ghost" className="justify-start" onClick={() => abrirTratamento(ficha.id)}>
                       <FolderOpen className="h-4 w-4" /> {ficha.nome}
                     </Button>
                   ))}
@@ -900,7 +966,7 @@ export function ProntuarioTab({
                     const atendimento = edicaoPendente;
                     setEdicaoPendente(null);
                     if (!atendimento) return;
-                    if (podeEditarFicha) setFichaNoEditor(ficha.id);
+                    if (podeEditarFicha) abrirEdicao(ficha.id, atendimento.id);
                     else abrirNovoRegistro({ fichaId: ficha.id, atendimentoOrigemId: atendimento.id });
                   }}
                 >
@@ -1063,7 +1129,7 @@ export function ProntuarioTab({
                 <button
                   key={ficha.id}
                   type="button"
-                  onClick={() => setFichaNoEditor(ficha.id)}
+                  onClick={() => abrirTratamento(ficha.id)}
                   className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 py-2.5 text-left transition-colors hover:text-teal-ink"
                 >
                   <span className="min-w-0">
@@ -1116,7 +1182,7 @@ export function ProntuarioTab({
                 {resumoAberto === 'atendimentos' && (
                   <div className="grid gap-1">
                     {atendimentos.slice(0, 5).map((atendimento) => (
-                      <button key={atendimento.id} type="button" onClick={() => setAtendimentoAbertoId(atendimento.id)} className="flex min-h-9 items-center justify-between gap-3 rounded-lg px-2 text-left text-xs font-semibold text-text-primary hover:bg-surface-alt">
+                      <button key={atendimento.id} type="button" onClick={() => abrirRegistro(atendimento.id)} className="flex min-h-9 items-center justify-between gap-3 rounded-lg px-2 text-left text-xs font-semibold text-text-primary hover:bg-surface-alt">
                         <span>{formatarData(atendimento.dataAtendimento)}</span><span className="text-text-secondary">Abrir registro →</span>
                       </button>
                     ))}
@@ -1126,7 +1192,7 @@ export function ProntuarioTab({
                 {resumoAberto === 'tratamentos' && (
                   <div className="grid gap-1">
                     {tratamentosEmCurso.map((ficha) => (
-                      <button key={ficha.id} type="button" onClick={() => setFichaNoEditor(ficha.id)} className="flex min-h-9 items-center justify-between gap-3 rounded-lg px-2 text-left text-xs font-semibold text-text-primary hover:bg-surface-alt">
+                      <button key={ficha.id} type="button" onClick={() => abrirTratamento(ficha.id)} className="flex min-h-9 items-center justify-between gap-3 rounded-lg px-2 text-left text-xs font-semibold text-text-primary hover:bg-surface-alt">
                         <span>{ficha.nome}</span><span className="text-text-secondary">Abrir tratamento →</span>
                       </button>
                     ))}
@@ -1141,7 +1207,7 @@ export function ProntuarioTab({
                         <button
                           key={evento.id}
                           type="button"
-                          onClick={() => { if (atendimento) setAtendimentoAbertoId(atendimento.id); }}
+                          onClick={() => { if (atendimento) abrirRegistro(atendimento.id); }}
                           disabled={!atendimento}
                           className="flex min-h-9 items-center justify-between gap-3 rounded-lg px-2 text-left text-xs font-semibold text-text-primary hover:bg-surface-alt disabled:cursor-default disabled:opacity-60"
                         >
@@ -1186,7 +1252,7 @@ export function ProntuarioTab({
                         key={ficha?.id ?? `sem-ficha-${index}`}
                         type="button"
                         disabled={!ficha}
-                        onClick={() => { if (ficha) setFichaNoEditor(ficha.id); }}
+                        onClick={() => { if (ficha) abrirTratamento(ficha.id); }}
                         className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-border px-2.5 py-1.5 text-left transition-colors hover:border-teal/40 hover:bg-teal/5 disabled:cursor-default disabled:opacity-70"
                       >
                         <span className="min-w-0">
@@ -1290,7 +1356,7 @@ export function ProntuarioTab({
                 <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3">
                   <button
                     type="button"
-                    onClick={() => setAtendimentoAbertoId(atendimento.id)}
+                    onClick={() => abrirRegistro(atendimento.id)}
                     className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-bold text-text-secondary transition-colors hover:border-teal/40 hover:text-teal-ink"
                   >
                     Abrir registro <ChevronRight className="h-3.5 w-3.5" />
@@ -1299,7 +1365,7 @@ export function ProntuarioTab({
                     <button
                       key={ficha.id}
                       type="button"
-                      onClick={() => setFichaNoEditor(ficha.id)}
+                      onClick={() => abrirTratamento(ficha.id)}
                       className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-text-secondary transition-colors hover:bg-surface-alt hover:text-text-primary"
                     >
                       <FolderOpen className="h-3.5 w-3.5" /> {ficha.nome}

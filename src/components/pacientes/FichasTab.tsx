@@ -550,6 +550,8 @@ interface FichasTabProps {
   catalogoProcedimentos?: MeuDiaCatalogoProcedimento[];
   /** R-140c: tratamento a abrir ao entrar pelo prontuário longitudinal. */
   initialFichaId?: string;
+  /** R-140c: leitura e edição são entradas exclusivas; leitura nunca abre formulário vazio. */
+  initialIntent?: 'ler' | 'editar';
   /** R-140c: retorna ao prontuário sem alterar a lógica do editor legado. */
   onVoltarAoProntuario?: () => void;
 }
@@ -563,6 +565,7 @@ export function FichasTab({
   onGerarOrcamento,
   catalogoProcedimentos,
   initialFichaId,
+  initialIntent = 'ler',
   onVoltarAoProntuario,
 }: FichasTabProps) {
   // O histórico é da CLÍNICA (todo dentista lê), o trabalho é do AUTOR (só ele escreve) —
@@ -1030,12 +1033,12 @@ export function FichasTab({
       }));
       setEvolutions(proximasEvolucoes);
 
-      if (initialFichaId && fichaInicialAbertaRef.current !== initialFichaId) {
+      if (initialIntent === 'ler' && initialFichaId && fichaInicialAbertaRef.current !== initialFichaId) {
         const fichaInicial = proximasEvolucoes.find((ficha) => ficha.id === initialFichaId);
         if (fichaInicial) {
           fichaInicialAbertaRef.current = initialFichaId;
           setViewingEvo(fichaInicial);
-          setIsPanelOpen(true);
+          setIsPanelOpen(false);
         }
       }
     } catch (err) {
@@ -1043,7 +1046,7 @@ export function FichasTab({
     } finally {
       setIsLoading(false);
     }
-  }, [patientId, clinicaId, dentistaId, initialFichaId]);
+  }, [patientId, clinicaId, dentistaId, initialFichaId, initialIntent]);
 
   React.useEffect(() => {
     if (patientId && clinicaId) {
@@ -1811,6 +1814,17 @@ export function FichasTab({
     setIsPanelOpen(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  const iniciarEdicaoInicial = React.useEffectEvent((ficha: Evolution) => handleEdit(ficha));
+
+  React.useEffect(() => {
+    if (initialIntent !== 'editar' || !initialFichaId || fichaInicialAbertaRef.current === initialFichaId) return;
+    const fichaInicial = evolutions.find((ficha) => ficha.id === initialFichaId);
+    if (!fichaInicial) return;
+    fichaInicialAbertaRef.current = initialFichaId;
+    setViewingEvo(null);
+    iniciarEdicaoInicial(fichaInicial);
+  }, [evolutions, initialFichaId, initialIntent]);
 
   /** R-60 — manutenção nova abre limpa: copiar dados da consulta anterior cria ato clínico falso. */
   const abrirNovaComOrto = () => {

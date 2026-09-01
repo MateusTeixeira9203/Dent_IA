@@ -64,6 +64,7 @@ import { OrtoForm } from '@/components/fichas/orto-form';
 import { hojeBRT } from '@/lib/hora-brt';
 import { salvarVisitaMeuDia } from '../actions';
 import type { SalvarFichaResult } from '@/server/patients/salvar-ficha';
+import type { RegistrarAtendimentoClinicoResult } from '@/server/patients/registrar-atendimento-clinico';
 import { MarcarRetornoModal } from '@/components/pacientes/marcar-retorno-modal';
 import { useMarcarRetorno } from '@/hooks/use-marcar-retorno';
 import {
@@ -99,6 +100,8 @@ const TIPOS_NIVEL_BOCA = new Set<TipoRegistroOdontograma>(['profilaxia', 'clarea
  *  desenho se um dia precisar. */
 type OndeValor = { dentes: number[] } | null;
 
+type SalvarRegistroClinicoResult = SalvarFichaResult | RegistrarAtendimentoClinicoResult;
+
 export type SalvarRegistroClinico = (dados: {
   visitaKey: string;
   fichaId?: string;
@@ -109,7 +112,7 @@ export type SalvarRegistroClinico = (dados: {
   alertaNovo: string | null;
   ortoManutencao: OrtoManutencaoDetalhe | null;
   destinoNovos: { fichaId: string | null };
-}) => Promise<SalvarFichaResult>;
+}) => Promise<SalvarRegistroClinicoResult>;
 
 interface RegistrarPainelProps {
   /** R-140a — a mesma chave cobre orçamento antecipado, salvar e retry da visita atual. */
@@ -149,7 +152,7 @@ interface RegistrarPainelProps {
   destinoNovos: string | null;
   /** C2 (P7) — avisa o pai que a visita salvou (odontograma incluso, ver `eventosFalharam`
    *  abaixo). Nunca chamado enquanto o odontograma não gravou (I4). */
-  onSalvo: () => void;
+  onSalvo: (resultado: Extract<SalvarRegistroClinicoResult, { ok: true }>) => void;
   /** R-140c — permite que o mesmo painel grave um atendimento aberto pelo Prontuário. */
   onSalvarVisita?: SalvarRegistroClinico;
   /** R-46d D8 — "usar este documento de base" (anexar-documentos-bloco.tsx), repassado pro
@@ -542,7 +545,7 @@ export function useRegistrarPainel({
     // vivo) lançava uma exceção não tratada — `isSaving` nunca voltava a `false`, nenhum toast
     // aparecia, e o botão ficava travado (disabled) pros cliques seguintes. Parecia "não fez
     // nada" quando na verdade tinha crashado silenciosamente.
-    let resultado: SalvarFichaResult;
+    let resultado: SalvarRegistroClinicoResult;
     try {
       resultado = await salvarRegistro({
         // R-85 — se "Gerar orçamento" já criou a ficha (fichaRascunhoId), EDITA em vez de criar
@@ -570,7 +573,7 @@ export function useRegistrarPainel({
       return;
     }
     toast.success('Visita registrada.');
-    onSalvo();
+    onSalvo(resultado);
   }
 
   async function handleRegravarEventos() {
@@ -583,7 +586,7 @@ export function useRegistrarPainel({
       res = { ok: false, error: 'Falha de conexão. Tente novamente.' };
     }
     if (res.ok) {
-      let resultado: SalvarFichaResult;
+      let resultado: SalvarRegistroClinicoResult;
       try {
         resultado = await salvarRegistro({
           visitaKey,
@@ -607,7 +610,7 @@ export function useRegistrarPainel({
       setEventosPendentes(null);
       setIsRegravando(false);
       toast.success('Odontograma gravado.');
-      onSalvo();
+      onSalvo(resultado);
     } else {
       setIsRegravando(false);
       toast.error(res.error ?? 'Não foi possível regravar o odontograma.');
