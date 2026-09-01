@@ -6,7 +6,10 @@ import {
   type FichaExport,
   type OrcamentoExport,
   type AgendamentoExport,
+  type AtendimentoProntuarioExport,
 } from '@/lib/prontuario-html';
+import { getProntuarioLongitudinal } from '@/server/patients/get-prontuario-longitudinal';
+import { TIPO_LABEL } from '@/types/odontograma';
 
 export async function GET(
   _req: Request,
@@ -57,11 +60,39 @@ export async function GET(
 
   if (!pacienteRaw) return new Response('Paciente não encontrado', { status: 404 });
 
+  const longitudinal = await getProntuarioLongitudinal({ patientId: id, clinicId: dentista.clinica_id });
+  const nomeFicha = new Map(longitudinal.atendimentos.flatMap((atendimento) => (
+    atendimento.fichas.map((ficha) => [ficha.id, ficha.nome] as const)
+  )));
+  const atendimentosExport: AtendimentoProntuarioExport[] = longitudinal.atendimentos.map((atendimento) => ({
+    data: atendimento.dataAtendimento,
+    fonte: atendimento.fonte,
+    profissionalNome: atendimento.profissional.nome,
+    evolucoes: atendimento.evolucoes.map((evolucao) => ({
+      fichaNome: nomeFicha.get(evolucao.fichaId) ?? 'Evolução clínica',
+      texto: evolucao.texto,
+    })),
+    procedimentos: atendimento.eventos.map((evento) => ({
+      nome: evento.procedimentoNome?.trim() || TIPO_LABEL[evento.tipo],
+      localizacao: evento.ancora.dente != null
+        ? `Dente ${evento.ancora.dente}`
+        : evento.ancora.quadrante != null
+          ? `Quadrante ${evento.ancora.quadrante}`
+          : evento.ancora.arcada != null
+            ? `Arcada ${evento.ancora.arcada}`
+            : evento.ancora.nivel === 'boca'
+              ? 'Boca toda'
+              : 'Sem localização registrada',
+      status: evento.status,
+    })),
+  }));
+
   const html = buildProntuarioHTML(
     pacienteRaw as PacienteExport,
     (fichasRaw ?? []) as unknown as FichaExport[],
     (orcamentosRaw ?? []) as unknown as OrcamentoExport[],
     (agendamentosRaw ?? []) as unknown as AgendamentoExport[],
+    atendimentosExport,
   );
 
   return new Response(html, {

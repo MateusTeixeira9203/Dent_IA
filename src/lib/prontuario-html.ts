@@ -68,6 +68,14 @@ export type AgendamentoExport = {
   dentista: { nome: string } | null;
 };
 
+export type AtendimentoProntuarioExport = {
+  data: string;
+  fonte: 'moderna' | 'evolucao_legada' | 'ficha_legada';
+  profissionalNome: string;
+  evolucoes: Array<{ fichaNome: string; texto: string | null }>;
+  procedimentos: Array<{ nome: string; localizacao: string; status: 'indicado' | 'realizado' }>;
+};
+
 export type FichaComPaciente = FichaExport & {
   paciente: { nome: string; data_nascimento: string | null } | null;
 };
@@ -412,6 +420,7 @@ export function buildProntuarioHTML(
   fichas: FichaExport[],
   orcamentos: OrcamentoExport[],
   agendamentos: AgendamentoExport[],
+  atendimentos: AtendimentoProntuarioExport[] = [],
 ): string {
   const now = fmtDateTime(new Date().toISOString());
   const idade = p.data_nascimento ? calcIdade(p.data_nascimento) : null;
@@ -443,6 +452,17 @@ export function buildProntuarioHTML(
       </table>`
     : '<p class="empty">Nenhuma consulta registrada.</p>';
 
+  const atendimentosHtml = atendimentos.length > 0
+    ? atendimentos.map((atendimento) => `<div class="card">
+        <div class="card-head">
+          <div><span class="card-date">${esc(fmtDateOnly(atendimento.data))}</span> · ${esc(atendimento.profissionalNome)}</div>
+          ${atendimento.fonte === 'moderna' ? '' : '<span class="badge">Registro anterior</span>'}
+        </div>
+        ${atendimento.evolucoes.map((evolucao) => `<div class="field"><div class="field-label">${esc(evolucao.fichaNome)}</div><div class="field-value">${esc(evolucao.texto?.trim() || 'Sem evolução textual registrada.')}</div></div>`).join('')}
+        ${atendimento.procedimentos.map((procedimento) => `<div class="tooth-row"><span class="tooth-num">${esc(procedimento.nome)}</span><span class="tooth-note">${esc(procedimento.localizacao)}</span><span class="badge ${procedimento.status === 'realizado' ? 'badge-teal' : ''}">${procedimento.status === 'realizado' ? 'Realizado' : 'A fazer'}</span></div>`).join('')}
+      </div>`).join('')
+    : '<p class="empty">Nenhum atendimento longitudinal registrado.</p>';
+
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -471,6 +491,11 @@ export function buildProntuarioHTML(
       ${endereco ? `<div><div class="ph-lbl">Endereço</div><div class="ph-val">${esc(endereco)}</div></div>` : ''}
       <div><div class="ph-lbl">Gerado em</div><div class="ph-val">${now}</div></div>
     </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Atendimentos <span class="section-count">${atendimentos.length}</span></div>
+    ${atendimentosHtml}
   </div>
 
   <div class="section">
