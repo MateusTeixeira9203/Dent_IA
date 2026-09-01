@@ -13,6 +13,7 @@ import { Check, Forward } from 'lucide-react';
 import { TIPO_LABEL, type OdontogramaEventoDraft } from '@/types/odontograma';
 import type { MeuDiaPendencia } from '@/server/dashboard/get-meu-dia';
 import { fmtData, ondeLabel } from './meu-dia-format';
+import { ehPlanejadoParaHoje } from '@/lib/prontuario/planejamento-pendente';
 
 export interface AFazerBlocoProps {
   /** R-63 F2 — já filtrada pelo pai ("responsável = eu", `responsavelPassaFiltro`/X1): o
@@ -68,6 +69,7 @@ function PendenciaLinha({
             status no banco. Marcador de texto de propósito: coral/teal no odontograma já
             significam "a fazer"/"feito", e um 3º tom aqui competiria com essa gramática. */}
         {p.emAndamento && ' · em andamento'}
+        {ehPlanejadoParaHoje(p.momentoPlanejado) && ' · Planejado para hoje'}
         {recebida && ' · encaminhado pra você'}
       </p>
     </div>
