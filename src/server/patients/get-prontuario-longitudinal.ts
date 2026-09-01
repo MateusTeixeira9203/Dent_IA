@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createClient } from '@/lib/supabase/server';
 import { nomeTratamentoDerivado } from '@/lib/ficha/nome-tratamento';
+import { eventosDaVisita } from '@/lib/prontuario/eventos-da-visita';
 import type { OdontogramaEventoDraft, OrtoManutencaoInfo } from '@/types/odontograma';
 
 export type FonteProntuario = 'moderna' | 'evolucao_legada' | 'ficha_legada';
@@ -409,25 +410,27 @@ export async function getProntuarioLongitudinal({
   );
 
   const fichasUsadasPorAtendimento = new Set<string>();
+  const fichasComFallbackConsumido = new Set<string>();
   const nomeDaFicha = (ficha: FichaRaw): string => (
     ficha.nome ?? nomeTratamentoDerivado(eventosPorFicha.get(ficha.id) ?? [])
   );
   const modernos = atendimentos.map<ProntuarioAtendimento>((atendimento) => {
     const evolucoesDaVisita = evolucoesPorAtendimento.get(atendimento.id) ?? [];
     const linksDaVisita = linksPorAtendimento.get(atendimento.id) ?? [];
-    const eventosVinculados = linksDaVisita
-      .map((link) => eventoPorId.get(link.evento_id))
-      .filter((evento): evento is ProntuarioEvento => evento != null);
     const fichaIdsDasEvolucoes = evolucoesDaVisita.map((evolucao) => evolucao.ficha_id);
     // Atendimentos existentes antes de `atendimento_eventos` podem já ter a evolução
     // vinculada, mas ainda não as relações dos eventos. Nesse caso, usa os eventos da ficha
     // da visita uma vez; quando existe relação explícita, ela sempre vence.
-    const eventosDaVisita = linksDaVisita.length > 0
-      ? eventosVinculados
-      : fichaIdsDasEvolucoes.flatMap((fichaId) => eventosPorFicha.get(fichaId) ?? []);
+    const eventosProjetados = eventosDaVisita({
+      links: linksDaVisita,
+      eventosPorId: eventoPorId,
+      fichaIds: fichaIdsDasEvolucoes,
+      fichasComFallbackConsumido,
+      eventosPorFicha,
+    });
     const fichaIds = [...new Set([
       ...fichaIdsDasEvolucoes,
-      ...eventosDaVisita.flatMap((evento) => evento.fichaId ? [evento.fichaId] : []),
+      ...eventosProjetados.flatMap((evento) => evento.fichaId ? [evento.fichaId] : []),
     ])];
     fichaIds.forEach((id) => fichasUsadasPorAtendimento.add(id));
     const profissional = profissionais.get(atendimento.dentista_id) ?? profissionalDesconhecido;
@@ -462,7 +465,7 @@ export async function getProntuarioLongitudinal({
         data: evolucao.data,
         profissional: profissionais.get(evolucao.dentista_id) ?? profissionalDesconhecido,
       })),
-      eventos: eventosDaVisita,
+      eventos: eventosProjetados,
       retorno: retornoPorAtendimento.get(atendimento.id) ?? null,
       documentos: fichaIds.flatMap((fichaId) => documentosPorFicha.get(fichaId) ?? []),
     };
