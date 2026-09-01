@@ -1,7 +1,7 @@
 # R-140c — Redesign: Prontuário longitudinal do paciente
 
 > **SPEC (redesign)** · **R-140c** · 🔵 filha do R-140
-> **Aberto:** 2026-08-30 · **Fase:** contrato — revisão 2 aguardando aprovação
+> **Aberto:** 2026-08-30 · **Fase:** contrato — revisão 2 aprovada em 01/09/2026
 > **Depende:** R-140a · **Preserva:** R-108 e R-120
 
 ## 0. Identificação
@@ -97,7 +97,7 @@ type ProntuarioTratamento = { fichaId: string; nome: string; status: 'aberta'|'c
 
 O servidor compõe a projeção em `getPatientWorkspaceData`/serviço específico com fetches
 independentes em `Promise.all`. O client recebe DTO tipado; não faz joins clínicos nem reduce de
-autoria. Paginação é por Atendimento (`cursor = data,id`) e nunca corta conteúdo dentro da visita.
+autoria. Paginação real foi formalmente deferida ao R-129; R-140c não limita nem omite dados.
 
 A projeção não escreve no histórico: Atendimento → evolução sem Atendimento → Ficha sem evolução.
 `atendimento_eventos` é preferido; fallback legado nunca duplica evento nem vira vazio editável.
@@ -172,7 +172,7 @@ abrir para leitura nunca ativa o editor. Voltar restaura filtro, dente seleciona
   grava uma referência anulável ao Atendimento de origem; sem essa referência, o rótulo obrigatório
   é “Próximo agendamento do paciente”.
   **Decisão aprovada em 31/08/2026:** adicionar `agendamentos.atendimento_origem_id` anulável;
-  histórico permanece `NULL` e não será reinterpretado.
+  histórico fica `NULL`. Coluna/índice existem no remoto sem `20260831110000` no histórico; não reparar agora.
 - Assinatura não fica escondida em materiais. A ação do cabeçalho abre o fluxo granular atual com
   todos os procedimentos realizados e ainda não assinados da visita; indicados não entram. Por
   padrão vêm selecionados, mas o dentista pode desmarcar. Se a visita tocar mais de uma Ficha, a UI
@@ -257,7 +257,7 @@ abrir para leitura nunca ativa o editor. Voltar restaura filtro, dente seleciona
 - [ ] Filtrar tratamento não altera ou reparenta dados.
 - [ ] Odontograma compacto deriva do mesmo reduce canônico.
 - [ ] Conteúdo assinado, orçamento e documento congelado não são recalculados pela UI.
-- [ ] Paginação não esconde metade de um Atendimento.
+- [ ] Paginação não esconde metade de um Atendimento — deferida ao R-129, não aprovada na R-140c.
 - [ ] Alterar procedimento encaminhado nunca troca seu autor original nem a data de criação.
 - [ ] Alteração clínica e respectivo log persistem juntos ou falham juntos.
 - [ ] Toda Ficha aparece uma vez na projeção moderna ou em fallback; nenhuma é descartada por não
@@ -270,7 +270,7 @@ abrir para leitura nunca ativa o editor. Voltar restaura filtro, dente seleciona
 - [ ] A fazer/Realizado alteram status; Próxima sessão só prioriza o indicado e mantém cor coerente.
 - [ ] Selecionar tratamento filtra corretamente e “Tudo” restaura a linha do tempo.
 - [ ] Ficha legada, documento assinado, PDF, Arquivos e orçamento continuam acessíveis.
-- [ ] Perfil com 500 atendimentos carrega primeira página sem buscar/renderizar tudo.
+- [ ] Perfil com 500 atendimentos carrega progressivamente — gate deferido ao R-129, não aprovado.
 - [ ] Secretária/dentista/admin veem somente ações autorizadas; duas clínicas provam isolamento.
 - [ ] Na visita aberta, autor muda status/momento, edita detalhe e encaminha somente procedimento
       não assinado; destinatário altera só o item recebido; auditoria mostra ator e horário reais.

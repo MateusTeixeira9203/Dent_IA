@@ -1,45 +1,44 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado em 31/08/2026
+> **ESTADO** · atualizado em 01/09/2026
 
 ## Agora
 
-🔵 **R-140c — Prontuário longitudinal em contrato/execução.** O artefato v7 foi aprovado, mas a
-revisão 2 da spec aguarda aprovação antes de continuar o código.
+🔵 **R-140c — Prontuário longitudinal implementado offline.** Artefato v7 e revisão 2 aprovados.
+Branch local `codex/r140c-prontuario-vm-20260831`, sem push, deploy ou migration remota.
 
 **Feito**
 
-- Projeção longitudinal preserva Atendimento moderno, evolução legada e Ficha sem evolução.
-- Meu Dia manual/Dex, paciente, Agenda, orçamento básico, Atendimento, prontuário e encaminhamento
-  passaram no Supabase local descartável.
-- Matriz RLS com duas clínicas passou; 154/154 testes, TypeScript, diff-check e audit de dependências
-  de produção passaram.
-- Auditoria salva em `auditorias/2026-08-31-sistema-completo.md` e retomada da VM no handoff mais
-  recente.
-- Revisão 2 define uma única superfície de Prontuário e navegação explícita entre timeline,
-  registro, tratamento e editor. R-144 preserva o fechamento assistido como etapa posterior.
+- Superfície única para timeline, registro, tratamento e editor; novo/editar/complementar separados.
+- Edição preenchida, volta com contexto, destino exato pelo odontograma e breadcrumb explícito.
+- Fallback legado sem duplicação; status/Próxima sessão canônicos; “Planejado para hoje” no Meu Dia.
+- Assinatura exposta até Arquivos e exportação agrupada por Atendimento preservando seção por Ficha.
+- 164/164 testes, TypeScript, build e `git diff --check` passaram; arquivos tocados estão limpos no lint.
+- Paginação real/500 Atendimentos foi deferida formalmente ao R-129; não é gate aprovado da R-140c.
 
-**Falta**
+**Falta provar no PC/local navegador**
 
-1. Eliminar a ficha vazia que aparece junto da correta ao abrir pelo odontograma.
-2. Tornar “Editar ficha” edição preenchida do registro atual e separar de “Complementar”.
-3. Corrigir retorno dentro do registro, status visual sem localização e assinatura até Arquivos.
-4. Validar arcada, quadrante, ortodontia, anexos, PDF/exportação, mobile, teclado e light/dark.
-5. Rodar perfis dentista/admin/secretária, lint/build e gate final antes de propor publicação.
+1. Dente → registro/tratamento, edição/complemento/volta e odontograma inteiro em 375/768/1440 px.
+2. Assinatura → Storage → documento congelado → Arquivos, inclusive visita com duas Fichas.
+3. Retorno único ligado ao Atendimento e reabertura na Agenda; depende dos objetos da `110000`.
+4. Encaminhamento e log atômicos com dois dentistas; depende da `111000`, ainda somente local.
+5. RLS com duas clínicas e perfis dentista/admin/secretária; legado, anexos, PDF, light/dark e teclado.
 
-## Travado
+## Restrições do teste local
 
-- `supabase db reset` não reproduz produção porque migrations históricas estão fora de ordem.
-- `next build` falha neste host ao interpretar `tsc --showConfig`, embora o TypeScript passe.
-- Produção não deve receber a R-140c enquanto os P0 e o gate visual não passarem.
+- Localhost pode usar Supabase de produção somente com clínica, contas e paciente sintéticos de teste.
+- Sem `service_role`, dados clínicos reais, pagamentos ou integrações externas.
+- Não executar `repair`: objetos da `20260831110000` existem no remoto sem histórico correspondente.
+- Ausência da `20260831111000` bloqueia a prova da auditoria atômica do encaminhamento.
+- Nenhum push, deploy, Vercel ou publicação antes da revisão e dos gates acima.
 
-## Esperando você
+## Bloqueios conhecidos
 
-- Aprovar a revisão 2 de `specs/R-140c-prontuario-longitudinal.md` na VM.
-- Nenhuma decisão de Vercel é necessária para a transferência: a branch de trabalho não deve mover
-  a produção; qualquer alteração de projeto/alias será decidida separadamente.
+- `supabase db reset` não reproduz produção: migrations históricas `001`/`007` estão fora de ordem.
+- Lint geral mantém baseline preexistente de 14 erros/65 warnings fora dos arquivos desta execução.
+- Produção não recebe a R-140c enquanto os gates funcionais, RLS e build não passarem.
 
-## Próximo da fila
+## Próximo
 
-Depois da R-140c: R-144 (fechamento assistido opcional), gate clínico do Dex e R-140d
-(etiquetas/câmera/OCR). Ordem completa no `ROADMAP.md`.
+Testar a R-140c no PC com dados sintéticos. Performance/paginação segue no R-129; R-144 e R-140d
+permanecem posteriores e fora desta execução.
