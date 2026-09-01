@@ -38,6 +38,8 @@ interface RetornoConcluido {
 
 interface UseMarcarRetornoOptions {
   pacienteId: string;
+  /** Quando aberto a partir de um atendimento, o retorno fica ligado à visita que o originou. */
+  atendimentoOrigemId?: string;
   onConcluido: (retorno: RetornoConcluido) => void;
 }
 
@@ -53,7 +55,7 @@ interface UseMarcarRetornoResult {
   resetar: () => void;
 }
 
-export function useMarcarRetorno({ pacienteId, onConcluido }: UseMarcarRetornoOptions): UseMarcarRetornoResult {
+export function useMarcarRetorno({ pacienteId, atendimentoOrigemId, onConcluido }: UseMarcarRetornoOptions): UseMarcarRetornoResult {
   const [form, setForm] = useState<MarcarRetornoForm>(criarFormRetornoInicial);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -94,6 +96,7 @@ export function useMarcarRetorno({ pacienteId, onConcluido }: UseMarcarRetornoOp
         duracaoMinutos: parseInt(form.duracao, 10) || 30,
         observacoes: form.observacoes || null,
         dentistaId,
+        atendimentoOrigemId,
         agendaLivre: form.agendaLivre,
         pedidoProtetico: form.pedidoProtetico,
       });
@@ -113,7 +116,7 @@ export function useMarcarRetorno({ pacienteId, onConcluido }: UseMarcarRetornoOp
     } finally {
       setSaving(false);
     }
-  }, [agendamentoPendenteId, concluir, form, pacienteId]);
+  }, [agendamentoPendenteId, atendimentoOrigemId, concluir, form, pacienteId]);
 
   const tentarEnviarPedido = useCallback(async (dentistaId: string | null) => {
     if (!agendamentoPendenteId || !form.pedidoProtetico) return;

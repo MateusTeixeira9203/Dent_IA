@@ -65,6 +65,8 @@ export async function criarAgendamento(dados: {
   forcarConflitoDentista?: boolean;
   /** R-110 — confirmação independente do horário fora da grade do dentista. */
   forcarForaDoExpediente?: boolean;
+  /** R-140c — retorno criado a partir de uma visita clínica já salva. */
+  atendimentoOrigemId?: string;
 }): Promise<{ error?: string; id?: string; conflitoDentista?: boolean; foraDoExpediente?: MotivoForaDoExpediente }> {
   const { supabase, user, clinicId, role } = await requireClinicContext();
 
@@ -88,6 +90,34 @@ export async function criarAgendamento(dados: {
       .eq('ativo', true)
       .in('role', ['admin', 'dentista']);
     if ((dentCount ?? 0) === 0) return { error: 'Dentista não encontrado.' };
+  }
+
+  // O ID chega do navegador, portanto Zod/UUID não bastam: a visita precisa ser do mesmo
+  // paciente, clínica e profissional do novo retorno. Isso impede ligar uma agenda legítima
+  // a um prontuário de outro contexto.
+  if (dados.atendimentoOrigemId) {
+    const { data: atendimento, error: atendimentoError } = await supabase
+      .from('atendimentos_clinicos')
+      .select('id, dentista_id')
+      .eq('id', dados.atendimentoOrigemId)
+      .eq('clinica_id', clinicId)
+      .eq('paciente_id', dados.pacienteId)
+      .maybeSingle<{ id: string; dentista_id: string }>();
+    if (atendimentoError || !atendimento || atendimento.dentista_id !== dentistaAlvo) {
+      return { error: 'A visita de origem deste retorno não é válida.' };
+    }
+
+    const { data: retornoExistente, error: retornoExistenteError } = await supabase
+      .from('agendamentos')
+      .select('id')
+      .eq('clinica_id', clinicId)
+      .eq('atendimento_origem_id', dados.atendimentoOrigemId)
+      .maybeSingle<{ id: string }>();
+    if (retornoExistenteError) {
+      console.error('[criarAgendamento:retorno]', retornoExistenteError.message);
+      return { error: 'Não foi possível verificar o retorno desta visita. Tente novamente.' };
+    }
+    if (retornoExistente) return { error: 'Esta visita já possui um retorno. Altere-o pela Agenda.' };
   }
 
   const novoInicioMs = new Date(dados.dataHora).getTime();
@@ -195,6 +225,7 @@ export async function criarAgendamento(dados: {
       observacoes:      dados.observacoes || null,
       status:           "scheduled",
       created_by:       dentistaPerfil.id,
+      ...(dados.atendimentoOrigemId && { atendimento_origem_id: dados.atendimentoOrigemId }),
     })
     .select("id")
     .single();
@@ -833,6 +864,7 @@ export async function criarRetornoComPedido(input: {
   duracaoMinutos: number;
   observacoes: string | null;
   dentistaId?: string;
+  atendimentoOrigemId?: string;
   /** Seleção realizada no retorno em um dia que não possui grade configurada. */
   agendaLivre?: boolean;
   pedidoProtetico: PedidoProteticoRetornoInput | null;
@@ -858,6 +890,7 @@ export async function criarRetornoComPedido(input: {
     duracaoMinutos: input.duracaoMinutos,
     observacoes: input.observacoes,
     dentistaId: input.dentistaId,
+    atendimentoOrigemId: input.atendimentoOrigemId,
   });
 
   // “Agenda livre” só substitui a ausência de grade daquele dia. Nunca ignora abertura,
@@ -869,6 +902,7 @@ export async function criarRetornoComPedido(input: {
       duracaoMinutos: input.duracaoMinutos,
       observacoes: input.observacoes,
       dentistaId: input.dentistaId,
+      atendimentoOrigemId: input.atendimentoOrigemId,
       forcarForaDoExpediente: true,
     });
   }
@@ -1150,4 +1184,3 @@ export async function excluirCompromissoPessoal(id: string): Promise<{ error?: s
   revalidatePath("/dashboard/agendamentos");
   return {};
 }
-

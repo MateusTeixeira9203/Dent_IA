@@ -300,7 +300,7 @@ export async function alternarMomentoRegistro(params: {
     // odontograma_eventos_momento_coerente — tentativa em status='realizado' (não deveria
     // chegar aqui, o controle na UI já esconde; defesa em profundidade mesmo assim).
     if (error.message.includes('momento_coerente')) {
-      return { ok: false, error: 'Só é possível marcar "próxima seção" em registros ainda não realizados.' };
+      return { ok: false, error: 'Só é possível marcar "próxima sessão" em registros ainda não realizados.' };
     }
     console.error('[alternarMomentoRegistro]', error.message);
     return { ok: false, error: 'Não foi possível atualizar o registro.' };
@@ -394,12 +394,13 @@ export async function encaminharProcedimento(params: {
     destino = destinoData;
   }
 
-  const { error } = await supabase
-    .from('odontograma_eventos')
-    .update({ encaminhado_para: params.dentistaDestinoId })
-    .in('id', idsElegiveis)
-    .eq('clinica_id', clinicId)
-    .eq('dentista_id', dentistaPerfil.id);
+  // R-140c: alteração e trilha de auditoria precisam ser uma operação só. A RPC
+  // reafirma autor, clínica, status, ficha não assinada e destino antes de gravar
+  // o evento e o `activity_logs`; se o log falhar, nada é encaminhado.
+  const { error } = await supabase.rpc('encaminhar_eventos_odontograma', {
+    p_evento_ids: idsElegiveis,
+    p_destino_id: params.dentistaDestinoId,
+  });
 
   if (error) {
     console.error('[encaminharProcedimento]', error.message);
