@@ -702,6 +702,11 @@ export function ProntuarioTab({
                     <ClipboardCheck className="h-4 w-4" /> Coletar assinatura
                   </Button>
                 )}
+                {atendimentoAberto.documentos.length > 0 && (
+                  <Button variant="outline" onClick={onAbrirArquivos}>
+                    <FileText className="h-4 w-4" /> Ver documento assinado
+                  </Button>
+                )}
               </div>
               {atendimentoAberto.eventos.length === 0 ? (
                 <p className="mt-3 text-sm text-text-secondary">Nenhum procedimento estruturado nesta visita.</p>
