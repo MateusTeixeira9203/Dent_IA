@@ -38,6 +38,7 @@ import {
   type ContextoTimeline,
   type SuperficieProntuario,
 } from '@/lib/prontuario/superficie';
+import { destinosDoDente as resolverDestinosDoDente } from '@/lib/prontuario/destinos-do-dente';
 
 const FichasTab = dynamic(
   () => import('@/components/pacientes/FichasTab').then((module) => module.FichasTab),
@@ -315,24 +316,32 @@ export function ProntuarioTab({
       procedimentos,
     };
   });
-  const eventosDoDenteSelecionado = resumoDenteSelecionado == null
-    ? []
-    : eventosClinicosUnicos.filter((evento) => evento.ancora.dente === resumoDenteSelecionado);
-  const destinosDoDente = Array.from(eventosDoDenteSelecionado.reduce((destinos, evento) => {
-    const chave = evento.fichaId ?? `sem-ficha:${evento.id}`;
-    const atual = destinos.get(chave);
-    const procedimento = evento.procedimentoNome?.trim() || TIPO_LABEL[evento.tipo];
-    destinos.set(chave, {
-      ficha: evento.fichaId ? fichaConhecidaPorId.get(evento.fichaId) ?? null : null,
-      procedimentos: [...new Set([...(atual?.procedimentos ?? []), procedimento])],
-      pendentes: (atual?.pendentes ?? 0) + (evento.status === 'indicado' ? 1 : 0),
+  const destinosDoDente = resumoDenteSelecionado == null ? [] : resolverDestinosDoDente({
+    dente: resumoDenteSelecionado,
+    eventos: eventosClinicosUnicos.map((evento) => ({
+      id: evento.id,
+      fichaId: evento.fichaId,
+      dente: evento.ancora.dente ?? null,
+    })),
+    atendimentos: atendimentos.map((atendimento) => ({
+      id: atendimento.id,
+      eventoIds: atendimento.eventos.map((evento) => evento.id),
+    })),
+  }).map((destino) => {
+    const eventos = destino.eventoIds.flatMap((id) => {
+      const evento = eventosClinicosUnicos.find((item) => item.id === id);
+      return evento ? [evento] : [];
     });
-    return destinos;
-  }, new Map<string, {
-    ficha: (typeof todasFichas)[number] | null;
-    procedimentos: string[];
-    pendentes: number;
-  }>()).values());
+    return {
+      ...destino,
+      atendimento: destino.atendimentoId
+        ? atendimentos.find((atendimento) => atendimento.id === destino.atendimentoId) ?? null
+        : null,
+      ficha: destino.fichaId ? fichaConhecidaPorId.get(destino.fichaId) ?? null : null,
+      procedimentos: [...new Set(eventos.map((evento) => evento.procedimentoNome?.trim() || TIPO_LABEL[evento.tipo]))],
+      pendentes: eventos.filter((evento) => evento.status === 'indicado').length,
+    };
+  });
   const eventosPendentes = dados.boca.filter((evento) => evento.status === 'indicado');
   const pendencias = eventosPendentes.length;
 
@@ -1247,22 +1256,22 @@ export function ProntuarioTab({
                 </div>
                 {destinosDoDente.length > 0 ? (
                   <div className="mt-1 grid gap-1 sm:grid-cols-2">
-                    {destinosDoDente.map(({ ficha, procedimentos, pendentes }, index) => (
-                      <button
-                        key={ficha?.id ?? `sem-ficha-${index}`}
-                        type="button"
-                        disabled={!ficha}
-                        onClick={() => { if (ficha) abrirTratamento(ficha.id); }}
-                        className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-border px-2.5 py-1.5 text-left transition-colors hover:border-teal/40 hover:bg-teal/5 disabled:cursor-default disabled:opacity-70"
+                    {destinosDoDente.map(({ atendimento, ficha, procedimentos, pendentes }, index) => (
+                      <div
+                        key={`${atendimento?.id ?? 'sem-visita'}:${ficha?.id ?? index}`}
+                        className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-border px-2.5 py-1.5"
                       >
                         <span className="min-w-0">
                           <span className="block truncate text-[11px] font-bold text-text-primary">{procedimentos.join(' · ')}</span>
                           <span className="block truncate text-[10px] text-text-secondary">
-                            {ficha?.nome ?? 'Registro sem tratamento vinculado'}{pendentes > 0 ? ` · ${pendentes} pendente${pendentes === 1 ? '' : 's'}` : ''}
+                            {ficha?.nome ?? 'Registro sem tratamento vinculado'}{atendimento ? ` · ${formatarData(atendimento.dataAtendimento)}` : ''}{pendentes > 0 ? ` · ${pendentes} pendente${pendentes === 1 ? '' : 's'}` : ''}
                           </span>
                         </span>
-                        {ficha && <span className="shrink-0 text-[10px] font-bold text-teal-ink">Abrir →</span>}
-                      </button>
+                        <span className="flex shrink-0 gap-1">
+                          {atendimento && <button type="button" onClick={() => abrirRegistro(atendimento.id)} className="rounded-md px-2 py-1 text-[10px] font-bold text-teal-ink hover:bg-teal/10">Abrir registro</button>}
+                          {ficha && <button type="button" onClick={() => abrirTratamento(ficha.id)} className="rounded-md px-2 py-1 text-[10px] font-bold text-text-secondary hover:bg-surface-alt hover:text-text-primary">Abrir tratamento</button>}
+                        </span>
+                      </div>
                     ))}
                   </div>
                 ) : (
