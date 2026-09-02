@@ -82,7 +82,7 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
       initial={{ y: 20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden md:flex items-center gap-1 px-2 py-2 rounded-2xl"
+      className="fixed bottom-3 xl:bottom-6 left-1/2 -translate-x-1/2 z-50 hidden md:flex items-center gap-0 xl:gap-1 px-1 py-1.5 xl:px-2 xl:py-2 rounded-xl xl:rounded-2xl"
       style={{
         background: 'rgba(12, 17, 14, 0.88)',
         backdropFilter: 'blur(20px)',
@@ -91,7 +91,7 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
       }}
     >
       {/* ── Logo + nome ── */}
-      <div className="flex items-center gap-2 px-3 py-2 shrink-0">
+      <div className="hidden xl:flex items-center gap-2 px-3 py-2 shrink-0">
         <OdontoIALogo className="w-5 h-5 text-teal shrink-0" />
         <span className="font-bold text-[14px] tracking-[0.03em] text-white whitespace-nowrap">
           Odonto<span className="text-teal">.IA</span>
@@ -99,7 +99,7 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
       </div>
 
       {/* ── Separador ── */}
-      <div className="w-px h-6 bg-white/[0.07] mx-1 shrink-0" />
+      <div className="hidden xl:block w-px h-6 bg-white/[0.07] mx-1 shrink-0" />
 
       {/* ── Nav items ── */}
       {visibleItems.map(item => {
@@ -130,7 +130,7 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
         <button
           title="Abrir DEX"
           onClick={() => window.dispatchEvent(new Event('dex-toggle'))}
-          className="relative w-11 h-11 rounded-full flex items-center justify-center shrink-0 hover:scale-110 active:scale-95 transition-transform mx-1 outline-none"
+          className="relative w-9 h-9 xl:w-11 xl:h-11 rounded-full flex items-center justify-center shrink-0 hover:scale-110 active:scale-95 transition-transform mx-0.5 xl:mx-1 outline-none"
           style={{
             background: 'linear-gradient(135deg, #2f9c85 0%, #1a7a65 100%)',
             boxShadow: '0 4px 16px -4px rgba(47,156,133,0.6)',
@@ -151,7 +151,7 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
       <button
         title={mounted ? (theme === 'dark' ? 'Modo Claro' : 'Modo Escuro') : 'Tema'}
         onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-white/45 hover:text-white/80 hover:bg-white/[0.07] transition-all mx-0.5 outline-none"
+        className="w-9 h-9 xl:w-11 xl:h-11 rounded-lg xl:rounded-xl flex items-center justify-center shrink-0 text-white/45 hover:text-white/80 hover:bg-white/[0.07] transition-all mx-0.5 outline-none"
       >
         {mounted && theme === 'dark'
           ? <Sun style={{ width: 18, height: 18 }} />
@@ -169,9 +169,9 @@ export function FloatingDock({ nome, clinicaNome, activeClinicId, role, avatarUr
         <DropdownMenu.Trigger asChild>
           <button
             title={nome}
-            className="relative ml-1 mr-1 h-11 w-11 flex items-center justify-center hover:brightness-110 active:opacity-80 transition-all outline-none"
+            className="relative mx-0.5 xl:ml-1 xl:mr-1 h-9 w-9 xl:h-11 xl:w-11 flex items-center justify-center hover:brightness-110 active:opacity-80 transition-all outline-none"
           >
-            <div className="w-8 h-8 rounded-full bg-teal flex items-center justify-center text-white font-bold text-[11px] ring-2 ring-teal/20 overflow-hidden">
+            <div className="w-7 h-7 xl:w-8 xl:h-8 rounded-full bg-teal flex items-center justify-center text-white font-bold text-[11px] ring-2 ring-teal/20 overflow-hidden">
               {avatarUrl ? (
                 <Image src={avatarUrl} alt={nome} width={32} height={32} className="w-full h-full object-cover" />
               ) : avatarInitials}
