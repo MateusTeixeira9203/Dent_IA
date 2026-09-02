@@ -391,8 +391,19 @@ export function MeuDiaClient({
     dicaCampoMagico: dicas.campo,
     onAbrirPickerOrcamento: () => {
       const eventosNovos = eventosDraft.filter((e) => !idsDeAntes.has(e.id));
-      if (eventosNovos.length === 0 || !slotSelecionado) {
-        void orcamentoModal.abrirPickerFichasAbertas(fichaRascunhoId, eventosNovos.map(draftParaEventoOrc));
+      if (!slotSelecionado) {
+        void orcamentoModal.abrirPickerFichasAbertas(null);
+        return;
+      }
+      if (eventosNovos.length === 0) {
+        // A ficha já foi criada pelo primeiro clique em "Gerar orçamento". Reabrir o
+        // modal precisa buscar os eventos dela, não cair no picker vazio: o dentista espera
+        // rever e ajustar os mesmos procedimentos da consulta corrente.
+        if (fichaRascunhoId) {
+          void orcamentoModal.abrirOrcamentoParaFicha(fichaRascunhoId);
+        } else {
+          void orcamentoModal.abrirPickerFichasAbertas(null);
+        }
         return;
       }
       void (async () => {

@@ -75,6 +75,12 @@ type ModoPersistenciaOrcamento =
   | { tipo: 'novo' }
   | { tipo: 'adicionar'; orcamentoId: string };
 
+type ResumoOrigemOrcamento = {
+  disponiveis: number;
+  deOutrosResponsaveis: number;
+  responsaveis: string[];
+};
+
 const CAMPOS_FICHA_ORC =
   'id, created_at, data_atendimento, queixa_principal, dentes_afetados, dentes_observacoes, ' +
   'dentista_id, dentista:dentistas(nome)';
@@ -105,6 +111,7 @@ export function useOrcamentoModal({
   const [novoOrcDentistaAlvoId, setNovoOrcDentistaAlvoId] = useState('');
   const [modoPersistencia, setModoPersistencia] = useState<ModoPersistenciaOrcamento>({ tipo: 'novo' });
   const [eventoIdsJaOrcados, setEventoIdsJaOrcados] = useState<Set<string>>(() => new Set());
+  const [resumoOrigemOrcamento, setResumoOrigemOrcamento] = useState<ResumoOrigemOrcamento | null>(null);
   // Pré-seleciona o 1º dentista da lista assim que ela chega — só quando ainda vazio, nunca
   // sobrescreve uma escolha manual já feita (o pai só popula `dentistasClinica` quando
   // isSecretaria; dentista comum nunca aciona isto, `dentistasClinica` fica sempre []).
@@ -319,6 +326,28 @@ export function useOrcamentoModal({
     return itens.length > 0 ? itens : eventos.length === 0 ? itensDoTexto(ficha) : [];
   };
 
+  /** O banco já barra evento de outro responsável. Este resumo apenas deixa a regra visível
+   * antes do dentista editar preços ou tentar salvar o orçamento. */
+  const resumoDaFichaParaOrcamento = (
+    ficha: FichaParaOrc,
+    alvoDentistaId: string,
+    idsJaOrcados: ReadonlySet<string> = eventoIdsJaOrcados,
+  ): ResumoOrigemOrcamento | null => {
+    const eventos = ficha.odontograma_eventos ?? [];
+    if (eventos.length === 0) return null;
+    const eventosComResponsavel = eventos.map((ev) => ({ ...ev, ...paraResponsavel(ev) }));
+    const visiveis = eventosVisiveis(eventosComResponsavel, ficha.dentista_id, FILTRO_MEUS, alvoDentistaId);
+    const idsVisiveis = new Set(visiveis.map((ev) => ev.id));
+    const candidatos = eventos.filter((ev) => ev.origem === 'clinica' && !idsJaOrcados.has(ev.id));
+    const deOutros = candidatos.filter((ev) => !idsVisiveis.has(ev.id));
+    const responsaveis = [...new Set(deOutros.map((ev) => ev.encaminhado_dentista?.nome ?? ficha.dentista?.nome ?? 'outro dentista'))];
+    return {
+      disponiveis: candidatos.length - deOutros.length,
+      deOutrosResponsaveis: deOutros.length,
+      responsaveis,
+    };
+  };
+
   const alvoAtual = () => isSecretaria
     ? (novoOrcDentistaAlvoId || dentistasClinica[0]?.id || '')
     : meuDentistaId;
@@ -370,6 +399,12 @@ export function useOrcamentoModal({
       setNovoOrcItens(itensDoAgregado(fichasParaOrc, id, eventoIdsJaOrcados));
     }
     if (isSecretaria && fichaOrcId !== null && etapaNovoOrc === 'itens') {
+      const ficha = fichasParaOrc.find((item) => item.id === fichaOrcId);
+      if (ficha) {
+        const itens = fichaParaItens(ficha, id, eventoIdsJaOrcados);
+        setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
+        setResumoOrigemOrcamento(resumoDaFichaParaOrcamento(ficha, id, eventoIdsJaOrcados));
+      }
       void carregarModoDaFicha(fichaOrcId, id)
         .then(setModoPersistencia)
         .catch((error: unknown) => {
@@ -415,10 +450,12 @@ export function useOrcamentoModal({
           setModoPersistencia(await carregarModoDaFicha(agregado[0].id, alvoId));
           const itens = fichaParaItens(agregado[0], alvoId, idsJaOrcados);
           setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
+          setResumoOrigemOrcamento(resumoDaFichaParaOrcamento(agregado[0], alvoId, idsJaOrcados));
         } else {
           setFichaOrcId(null);
           setModoPersistencia({ tipo: 'novo' });
           setNovoOrcItens(itensDoAgregado(agregado, alvoId, idsJaOrcados));
+          setResumoOrigemOrcamento(null);
         }
         setEtapaNovoOrc('itens');
       } else {
@@ -443,6 +480,7 @@ export function useOrcamentoModal({
           setFichaOrcId(null);
           setEtapaNovoOrc('selecionar');
           setNovoOrcItens([ITEM_VAZIO]);
+          setResumoOrigemOrcamento(null);
         } else {
           setFichaOrcId(fichas.length === 1 ? fichas[0].id : null);
           if (fichas.length === 1) {
@@ -454,6 +492,9 @@ export function useOrcamentoModal({
             ? fichaParaItens(fichas[0], alvoAtual(), idsJaOrcadosFallback)
             : [];
           setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
+          setResumoOrigemOrcamento(fichas.length === 1
+            ? resumoDaFichaParaOrcamento(fichas[0], alvoAtual(), idsJaOrcadosFallback)
+            : null);
           setEtapaNovoOrc('itens');
         }
       }
@@ -461,6 +502,7 @@ export function useOrcamentoModal({
       setFichasParaOrc([]);
       setFichaOrcId(null);
       setNovoOrcItens([ITEM_VAZIO]);
+      setResumoOrigemOrcamento(null);
       setEtapaNovoOrc('itens');
       setOrcError(error instanceof Error ? error.message : 'Não foi possível carregar os procedimentos indicados. Tente novamente antes de criar o orçamento.');
     } finally {
@@ -492,6 +534,7 @@ export function useOrcamentoModal({
       if (eventosRascunho.length > 0) {
         const itens = eventosParaItens(eventosRascunho, idsJaOrcados);
         setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
+        setResumoOrigemOrcamento(null);
         setEtapaNovoOrc('itens');
       } else {
         setEtapaNovoOrc('selecionar');
@@ -510,6 +553,7 @@ export function useOrcamentoModal({
     if (!fichaId) {
       setModoPersistencia({ tipo: 'novo' });
       setNovoOrcItens([ITEM_VAZIO]);
+      setResumoOrigemOrcamento(null);
     } else {
       const ficha = fichasParaOrc.find((f) => f.id === fichaId);
       try {
@@ -521,6 +565,7 @@ export function useOrcamentoModal({
       }
       const itens = ficha ? fichaParaItens(ficha, alvoAtual(), eventoIdsJaOrcados) : [];
       setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
+      setResumoOrigemOrcamento(ficha ? resumoDaFichaParaOrcamento(ficha, alvoAtual(), eventoIdsJaOrcados) : null);
     }
     setEtapaNovoOrc('itens');
   };
@@ -547,11 +592,13 @@ export function useOrcamentoModal({
       setModoPersistencia(await carregarModoDaFicha(fichaId, alvoAtual()));
       const itens = ficha ? fichaParaItens(ficha, alvoAtual(), idsJaOrcados) : [];
       setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
+      setResumoOrigemOrcamento(ficha ? resumoDaFichaParaOrcamento(ficha, alvoAtual(), idsJaOrcados) : null);
     } catch (error: unknown) {
       setFichaOrcId(fichaId);
       setFichasParaOrc([]);
       setModoPersistencia({ tipo: 'novo' });
       setNovoOrcItens([ITEM_VAZIO]);
+      setResumoOrigemOrcamento(null);
       setOrcError(error instanceof Error ? error.message : 'Não foi possível localizar o orçamento desta ficha.');
     } finally {
       setEtapaNovoOrc('itens');
@@ -728,6 +775,7 @@ export function useOrcamentoModal({
         setEtapaNovoOrc('itens'); setFichasParaOrc([]); setOrcError(null); setNovoOrcValorFinal(null);
         setModoPersistencia({ tipo: 'novo' });
         setEventoIdsJaOrcados(new Set());
+        setResumoOrigemOrcamento(null);
         setNovoOrcPlanoForma(null); setNovoOrcNumParcelas('3'); setNovoOrcPrimeiroVencimento(''); setNovoOrcParcelasForma('');
       }
     },
@@ -753,6 +801,7 @@ export function useOrcamentoModal({
     setNovoOrcValorFinal,
     orcSaving,
     modoPersistencia: modoPersistencia.tipo,
+    resumoOrigemOrcamento,
     onCriarOrcamento: () => void handleCriarOrcamento(),
     onSelecionarFicha: selecionarFichaParaOrc,
     onCadastrarProcedimento: (idx) => void handleCadastrarProcedimento(idx),

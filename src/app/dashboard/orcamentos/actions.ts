@@ -41,6 +41,12 @@ const reorganizarParcelasSchema = z.object({
     dataVencimento: z.string().date(),
   })).min(0).max(24),
 });
+const planoAvistaSchema = z.object({
+  orcamentoId: z.string().uuid(),
+  valorAcordado: z.number().finite().positive().multipleOf(0.01),
+  entradaValor: z.number().finite().min(0).multipleOf(0.01).optional(),
+  entradaForma: formaPagamentoSchema.optional(),
+});
 
 type RpcResult = { data: unknown; error: { message: string } | null };
 type RpcCall = (fn: string, args: Record<string, unknown>) => Promise<RpcResult>;
@@ -51,6 +57,7 @@ function erroFinanceiro(message: string): string {
   if (message.includes('valor_menor_que_recebido')) return 'O valor combinado não pode ser menor que o total já recebido.';
   if (message.includes('parcelas_nao_fecham_saldo')) return 'A soma das parcelas precisa ser exatamente igual ao saldo.';
   if (message.includes('numero_parcelas_invalido')) return 'Informe entre 2 e 24 parcelas.';
+  if (message.includes('forma_invalida')) return 'Selecione uma forma de pagamento válida.';
   if (message.includes('recebimento_indisponivel')) return 'Somente um recebimento confirmado pode ser corrigido ou estornado.';
   if (message.includes('previsao_indisponivel')) return 'Esta previsão não está mais disponível. Recarregue a página.';
   if (message.includes('motivo_invalido')) return 'Informe o motivo do estorno (até 500 caracteres).';
@@ -544,6 +551,9 @@ export async function definirPlanoAvista(dados: {
   entradaValor?: number;
   entradaForma?: FormaPagamento;
 }): Promise<{ error?: string }> {
+  const parsed = planoAvistaSchema.safeParse(dados);
+  if (!parsed.success) return { error: 'Revise o valor do acordo à vista.' };
+
   const { supabase, user, clinicId } = await requireClinicContext();
 
   const { data: dentistaPerfil } = await supabase
@@ -556,14 +566,15 @@ export async function definirPlanoAvista(dados: {
   if (!dentistaPerfil) redirect("/onboarding");
 
   const { error } = await supabase.rpc("definir_plano_avista", {
-    p_orcamento_id:   dados.orcamentoId,
-    p_valor_acordado: dados.valorAcordado,
-    p_entrada_valor:  dados.entradaValor ?? null,
-    p_entrada_forma:  dados.entradaForma ?? null,
+    p_orcamento_id:   parsed.data.orcamentoId,
+    p_valor_acordado: parsed.data.valorAcordado,
+    p_entrada_valor:  parsed.data.entradaValor ?? null,
+    p_entrada_forma:  parsed.data.entradaForma ?? null,
   });
 
   if (error) {
     if (error.message.includes("valor_invalido")) return { error: "Informe um valor válido." };
+    if (error.message.includes('valor_menor_que_recebido')) return { error: "O valor combinado não pode ser menor que o já recebido." };
     if (error.message.includes("plano_ja_definido")) return { error: "Este orçamento já tem forma de pagamento definida." };
     if (error.message.includes("sem_permissao")) return { error: "Orçamento não encontrado." };
     console.error("[definirPlanoAvista]", error.message);
@@ -571,16 +582,17 @@ export async function definirPlanoAvista(dados: {
   }
 
   const partes: string[] = [];
-  if (dados.entradaValor) {
-    partes.push(`Entrada de ${fmtReal(dados.entradaValor)}${dados.entradaForma ? ` (${FORMA_LABEL[dados.entradaForma]})` : ""}`);
-    partes.push(`Restante à vista — ${fmtReal(dados.valorAcordado - dados.entradaValor)}`);
+  if (parsed.data.entradaValor) {
+    partes.push(`Entrada de ${fmtReal(parsed.data.entradaValor)}${parsed.data.entradaForma ? ` (${FORMA_LABEL[parsed.data.entradaForma]})` : ""}`);
+    partes.push(`Restante à vista — ${fmtReal(parsed.data.valorAcordado - parsed.data.entradaValor)}`);
   } else {
-    partes.push(`À vista — ${fmtReal(dados.valorAcordado)}`);
+    partes.push(`À vista — ${fmtReal(parsed.data.valorAcordado)}`);
   }
   await supabase.from("orcamentos").update({ condicoes_pagamento: partes.join(" + ") })
-    .eq("id", dados.orcamentoId).eq("clinica_id", clinicId);
+    .eq("id", parsed.data.orcamentoId).eq("clinica_id", clinicId);
 
   revalidatePath("/dashboard/orcamentos");
+  revalidatePath("/dashboard/financeiro");
   return {};
 }
 

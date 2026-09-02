@@ -49,6 +49,11 @@ export interface NovoOrcamentoModalProps {
   setNovoOrcValorFinal: React.Dispatch<React.SetStateAction<number | null>>;
   orcSaving: boolean;
   modoPersistencia: 'novo' | 'adicionar';
+  resumoOrigemOrcamento: {
+    disponiveis: number;
+    deOutrosResponsaveis: number;
+    responsaveis: string[];
+  } | null;
   onCriarOrcamento: () => void;
   onSelecionarFicha: (fichaId: string | null) => void;
   onCadastrarProcedimento: (idx: number) => void;
@@ -84,6 +89,7 @@ export function NovoOrcamentoModal({
   setNovoOrcValorFinal,
   orcSaving,
   modoPersistencia,
+  resumoOrigemOrcamento,
   onCriarOrcamento,
   onSelecionarFicha,
   onCadastrarProcedimento,
@@ -251,6 +257,21 @@ export function NovoOrcamentoModal({
                   {novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length} selecionado{novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length === 1 ? '' : 's'}
                 </span>
               </div>
+
+              {resumoOrigemOrcamento && (
+                <div className="rounded-xl border border-border bg-surface-alt px-3 py-2.5 text-xs leading-relaxed text-text-secondary">
+                  <p>
+                    <span className="font-semibold text-text-primary">{resumoOrigemOrcamento.disponiveis}</span>{' '}
+                    registro{resumoOrigemOrcamento.disponiveis === 1 ? '' : 's'} clínico{resumoOrigemOrcamento.disponiveis === 1 ? '' : 's'}{' '}
+                    {resumoOrigemOrcamento.disponiveis === 1 ? 'disponível' : 'disponíveis'} para este orçamento.
+                  </p>
+                  {resumoOrigemOrcamento.deOutrosResponsaveis > 0 && (
+                    <p className="mt-1 text-warning-ink">
+                      {resumoOrigemOrcamento.deOutrosResponsaveis} pertence{resumoOrigemOrcamento.deOutrosResponsaveis === 1 ? '' : 'm'} a {resumoOrigemOrcamento.responsaveis.join(', ')} e só pode ser orçado pelo responsável.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-2">
                 {novoOrcItens.map((item, idx) => {
