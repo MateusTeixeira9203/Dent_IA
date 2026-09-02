@@ -30,6 +30,10 @@ sessão foi voltar ao fluxo leve: Next.js no localhost, sem depender de Supabase
 - O orçamento de teste foi criado e aprovado. O recebimento de R$ 500 e a organização de parcelas
   ficaram presos em “Salvando…” por `supabase.rpc` chamado sem contexto (`reading 'rest'`). A correção
   (`bind(supabase)`) está no commit `b791a54`, mas a revalidação manual ainda precisa ser feita.
+- Auditoria do DEX em 02/09 encontrou P0: `/api/transcrever` consultava `dentistas.usuario_id`, mas o
+  schema usa `dentistas.user_id`; o Preview devolveu 401 antes da Groq. A correção local usa o helper
+  canônico, classifica erros, alinha MIME e registra métricas; falta provar no Preview após deploy.
+  Relatório: `plans/auditorias/2026-09-02-dex-completo.md`.
 
 ## Travado
 
