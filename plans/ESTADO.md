@@ -12,6 +12,11 @@ normaliza “dente N está ausente” como estado pré-existente no odontograma.
 canal 18, extração 44, ausência 23 + implante 23 e ausência 37 não podem trocar dentes nem virar
 extração a fazer.
 
+**Observação visual pendente:** no painel “Revisão do atendimento” do Meu Dia, os cartões
+misturam título truncado, alerta “Confira o status”, seletor de três estados e ações em uma única
+faixa. O dentista perde a leitura do procedimento; discutir uma hierarquia mais curta antes de
+redesenhar.
+
 **Feito**
 
 - RPCs e actions para recebimento livre, reorganização de previsões, correção e estorno auditável.
