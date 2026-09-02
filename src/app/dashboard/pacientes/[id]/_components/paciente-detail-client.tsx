@@ -864,6 +864,7 @@ export function PacienteDetailClient({
     } else {
       const novasPag: Pagamento[] = result.parcelas.map((p) => ({
         id:              p.id,
+        cobranca_id:     null,
         valor:           p.valor,
         status:          'pendente',
         forma_pagamento: null,
@@ -1783,6 +1784,7 @@ export function PacienteDetailClient({
         detalheOrcId={detalheOrcId}
         pacienteTelefone={displayTelefone}
         pacienteNome={displayNome}
+        pacienteId={paciente.id}
         onClose={() => {
           setDetalheOrcId(null);
           setPagError(null);

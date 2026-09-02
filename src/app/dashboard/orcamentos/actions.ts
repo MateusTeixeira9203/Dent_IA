@@ -47,6 +47,24 @@ const planoAvistaSchema = z.object({
   entradaValor: z.number().finite().min(0).multipleOf(0.01).optional(),
   entradaForma: formaPagamentoSchema.optional(),
 });
+const criarCobrancaEtapaSchema = z.object({
+  orcamentoId: z.string().uuid(),
+  pacienteId: z.string().uuid(),
+  itemIds: z.array(z.string().uuid()).min(1).max(100),
+  desconto: z.number().finite().min(0).multipleOf(0.01),
+});
+const recebimentoCobrancaSchema = z.object({
+  cobrancaId: z.string().uuid(),
+  pacienteId: z.string().uuid(),
+  valor: z.number().finite().positive().multipleOf(0.01),
+  formaPagamento: formaPagamentoSchema,
+  data: z.string().date(),
+});
+const cancelarCobrancaSchema = z.object({
+  cobrancaId: z.string().uuid(),
+  pacienteId: z.string().uuid(),
+  motivo: z.string().trim().min(1).max(500),
+});
 
 type RpcResult = { data: unknown; error: { message: string } | null };
 type RpcCall = (fn: string, args: Record<string, unknown>) => Promise<RpcResult>;
@@ -61,6 +79,13 @@ function erroFinanceiro(message: string): string {
   if (message.includes('recebimento_indisponivel')) return 'Somente um recebimento confirmado pode ser corrigido ou estornado.';
   if (message.includes('previsao_indisponivel')) return 'Esta previsão não está mais disponível. Recarregue a página.';
   if (message.includes('motivo_invalido')) return 'Informe o motivo do estorno (até 500 caracteres).';
+  if (message.includes('itens_invalidos')) return 'Selecione ao menos um procedimento para cobrar nesta etapa.';
+  if (message.includes('item_nao_aprovado')) return 'A etapa só pode cobrar procedimentos aprovados pelo paciente.';
+  if (message.includes('item_ja_cobrado')) return 'Um dos procedimentos já pertence a outra cobrança ativa.';
+  if (message.includes('desconto_acima_subtotal')) return 'O desconto não pode ser maior que os procedimentos selecionados.';
+  if (message.includes('desconto_invalido')) return 'Informe um desconto válido.';
+  if (message.includes('cobranca_indisponivel')) return 'Esta cobrança não está mais disponível. Recarregue a página.';
+  if (message.includes('cobranca_com_recebimento')) return 'Uma cobrança com recebimento não pode ser cancelada.';
   if (message.includes('sem_permissao')) return 'Você não tem permissão para alterar este orçamento.';
   return 'Não foi possível concluir a alteração financeira. Tente novamente.';
 }
@@ -755,6 +780,86 @@ export async function registrarPagamento(dados: {
   revalidatePath('/dashboard/orcamentos');
   revalidatePath('/dashboard/financeiro');
   return { id: pagamento?.id };
+}
+
+/**
+ * R-145 revisão 2 — transforma somente os procedimentos escolhidos em uma cobrança real.
+ * Proposta aprovada não vira dívida automaticamente; a RPC cria a previsão pendente da etapa.
+ */
+export async function criarCobrancaEtapa(dados: {
+  orcamentoId: string;
+  pacienteId: string;
+  itemIds: string[];
+  desconto: number;
+}): Promise<{ error?: string; id?: string }> {
+  const parsed = criarCobrancaEtapaSchema.safeParse(dados);
+  if (!parsed.success) return { error: 'Revise os procedimentos e o desconto da etapa.' };
+
+  const { supabase } = await requireClinicContext();
+  const rpc = supabase.rpc.bind(supabase) as unknown as RpcCall;
+  const { data, error } = await rpc('criar_cobranca_orcamento', {
+    p_orcamento_id: parsed.data.orcamentoId,
+    p_item_ids: parsed.data.itemIds,
+    p_desconto: parsed.data.desconto,
+  });
+  if (error) return { error: erroFinanceiro(error.message) };
+
+  const cobranca = data as { id?: string } | null;
+  revalidatePath(`/dashboard/pacientes/${parsed.data.pacienteId}`);
+  revalidatePath('/dashboard/orcamentos');
+  revalidatePath('/dashboard/financeiro');
+  return { id: cobranca?.id };
+}
+
+/** Registra dinheiro contra a etapa escolhida; a RPC recompõe apenas o saldo dela. */
+export async function registrarRecebimentoCobranca(dados: {
+  cobrancaId: string;
+  pacienteId: string;
+  valor: number;
+  formaPagamento: FormaPagamento;
+  data: string;
+}): Promise<{ error?: string; id?: string }> {
+  const parsed = recebimentoCobrancaSchema.safeParse(dados);
+  if (!parsed.success) return { error: 'Revise valor, data e forma de pagamento.' };
+
+  const { supabase } = await requireClinicContext();
+  const rpc = supabase.rpc.bind(supabase) as unknown as RpcCall;
+  const { data, error } = await rpc('registrar_recebimento_cobranca', {
+    p_cobranca_id: parsed.data.cobrancaId,
+    p_valor: parsed.data.valor,
+    p_forma: parsed.data.formaPagamento,
+    p_data: parsed.data.data,
+  });
+  if (error) return { error: erroFinanceiro(error.message) };
+
+  const pagamento = data as { id?: string } | null;
+  revalidatePath(`/dashboard/pacientes/${parsed.data.pacienteId}`);
+  revalidatePath('/dashboard/orcamentos');
+  revalidatePath('/dashboard/financeiro');
+  return { id: pagamento?.id };
+}
+
+/** Cancela apenas uma etapa sem dinheiro recebido e libera seus itens para nova negociação. */
+export async function cancelarCobrancaEtapa(dados: {
+  cobrancaId: string;
+  pacienteId: string;
+  motivo: string;
+}): Promise<{ error?: string }> {
+  const parsed = cancelarCobrancaSchema.safeParse(dados);
+  if (!parsed.success) return { error: 'Informe o motivo do cancelamento (até 500 caracteres).' };
+
+  const { supabase } = await requireClinicContext();
+  const rpc = supabase.rpc.bind(supabase) as unknown as RpcCall;
+  const { error } = await rpc('cancelar_cobranca_orcamento', {
+    p_cobranca_id: parsed.data.cobrancaId,
+    p_motivo: parsed.data.motivo,
+  });
+  if (error) return { error: erroFinanceiro(error.message) };
+
+  revalidatePath(`/dashboard/pacientes/${parsed.data.pacienteId}`);
+  revalidatePath('/dashboard/orcamentos');
+  revalidatePath('/dashboard/financeiro');
+  return {};
 }
 
 export async function editarPagamento(

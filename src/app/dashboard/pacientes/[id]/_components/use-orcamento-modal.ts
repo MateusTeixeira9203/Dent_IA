@@ -721,6 +721,7 @@ export function useOrcamentoModal({
           aprovado: false,
         })),
         pagamentos: [],
+        cobrancas: [],
         aprovado_por: null,
         aprovado_em: null,
         aceite: null,

@@ -16,6 +16,7 @@ export type OrcamentoItem = {
 
 export type Pagamento = {
   id: string;
+  cobranca_id: string | null;
   valor: number;
   status: string;
   forma_pagamento: string | null;
@@ -24,6 +25,17 @@ export type Pagamento = {
   parcela_numero: number | null;
   total_parcelas: number | null;
   marcado_por: { nome: string } | null;
+};
+
+export type CobrancaEtapa = {
+  id: string;
+  subtotal: number;
+  desconto: number;
+  valor_final: number;
+  situacao: 'aberta' | 'cancelada';
+  created_at: string;
+  itens: { orcamento_item_id: string; preco_total_snapshot: number }[];
+  pagamentos: Pagamento[];
 };
 
 export type OrcamentoComItens = {
@@ -47,6 +59,7 @@ export type OrcamentoComItens = {
   dentista_id: string | null;
   itens: OrcamentoItem[];
   pagamentos: Pagamento[];
+  cobrancas: CobrancaEtapa[];
   aprovado_por: { nome: string } | null;
   aprovado_em: string | null;
   /** R-03c-1 — aceite assinado pelo paciente. null = ainda não coletado. */
