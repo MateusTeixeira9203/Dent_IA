@@ -4,12 +4,20 @@
 
 ## Agora
 
-🔵 **R-145 — Orçamento financeiro flexível.** Implementação local em revisão; a decisão desta
-sessão foi voltar ao fluxo leve: Next.js no localhost, sem depender de Supabase local/Docker.
+🔵 **R-145 — Orçamento financeiro flexível.** Revisão 2 implementada localmente: uma proposta
+só vira dívida quando o dentista cria uma cobrança por etapa com os procedimentos escolhidos. A
+decisão desta sessão permanece fluxo leve: Next.js no localhost, sem Supabase local/Docker.
 
 **Complemento aprovado em 02/09:** orçamento por Ficha respeita o responsável de cada evento
 (`encaminhado_para ?? autor`), explica os itens de colegas sem permitir cobrá-los e o plano à
 vista passa a criar uma única cobrança `pendente` para hoje — nunca receita automática.
+
+**Achado de regra no orçamento (02/09):** em orçamento com vários itens, a cobrança precisa
+derivar somente dos procedimentos aceitos pelo paciente, menos o desconto negociado aplicável.
+Exemplo obrigatório: itens de R$ 5.000, aceito só procedimento de R$ 1.000 e desconto de R$ 100
+resulta em R$ 900 para cobrar. A revisão 2 cria subtotal, desconto e final próprios por etapa;
+R$ 500 recebido deixa R$ 400 pendentes naquela mesma etapa, sem afetar os demais itens. Para
+“pagar conforme realiza”, os outros procedimentos continuam proposta, sem dívida antecipada.
 
 **Publicado em produção (02/09):** migration `20260902050000_r145_avista_cobranca_pendente.sql`
 foi executada pontualmente e o deployment Vercel `dpl_8LHnKppEhYU5g7xXbsBinEifGaF8` está Ready.
