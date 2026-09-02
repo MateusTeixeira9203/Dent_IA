@@ -11,6 +11,11 @@ sessão foi voltar ao fluxo leve: Next.js no localhost, sem depender de Supabase
 (`encaminhado_para ?? autor`), explica os itens de colegas sem permitir cobrá-los e o plano à
 vista passa a criar uma única cobrança `pendente` para hoje — nunca receita automática.
 
+**Publicado em produção (02/09):** migration `20260902050000_r145_avista_cobranca_pendente.sql`
+foi executada pontualmente e o deployment Vercel `dpl_8LHnKppEhYU5g7xXbsBinEifGaF8` está Ready.
+O histórico de migrations remoto diverge do diretório local; não usar `supabase db push` para uma
+correção isolada sem reconciliar esse histórico primeiro.
+
 **Correção clínica em curso:** R-148 corrige a associação do campo mágico em relato composto e
 normaliza “dente N está ausente” como estado pré-existente no odontograma. Regressão registrada:
 canal 18, extração 44, ausência 23 + implante 23 e ausência 37 não podem trocar dentes nem virar
