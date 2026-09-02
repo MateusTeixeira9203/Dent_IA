@@ -7,6 +7,10 @@
 🔵 **R-145 — Orçamento financeiro flexível.** Implementação local em revisão; a decisão desta
 sessão foi voltar ao fluxo leve: Next.js no localhost, sem depender de Supabase local/Docker.
 
+**Complemento aprovado em 02/09:** orçamento por Ficha respeita o responsável de cada evento
+(`encaminhado_para ?? autor`), explica os itens de colegas sem permitir cobrá-los e o plano à
+vista passa a criar uma única cobrança `pendente` para hoje — nunca receita automática.
+
 **Correção clínica em curso:** R-148 corrige a associação do campo mágico em relato composto e
 normaliza “dente N está ausente” como estado pré-existente no odontograma. Regressão registrada:
 canal 18, extração 44, ausência 23 + implante 23 e ausência 37 não podem trocar dentes nem virar

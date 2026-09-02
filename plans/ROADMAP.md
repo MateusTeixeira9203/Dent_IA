@@ -28,7 +28,7 @@
 
 | ID | Item | Estado |
 |---|---|---|
-| [**R-145**](specs/R-145-orcamento-flexivel.md) | **Orçamento financeiro flexível** — recebimento livre, previsão de cobrança reorganizável e correção auditável sem criar outro orçamento | 🔵 contrato aprovado em conversa; implementação local em curso. |
+| [**R-145**](specs/R-145-orcamento-flexivel.md) | **Orçamento financeiro flexível** — recebimento livre, previsão de cobrança reorganizável, à vista como conta a receber e orçamento estritamente por responsável | 🔵 complemento aprovado; implementação local em curso. |
 | [**R-149**](specs/R-149-revisao-meu-dia-legivel.md) | **Revisão legível no Meu Dia** — cartões clínicos priorizam procedimento e status, sem esconder nenhuma ação | 🟡 implementação validada localmente; aguarda conferência visual em produção. |
 | **R-146** | **Contexto seguro da consulta** — `?ag=` resolve o agendamento futuro correto, sem fallback silencioso para outro paciente; retorno da Ficha usa o mesmo vínculo da Agenda | ⏳ P0/P1 encontrado na auditoria de 02/09; bloqueia o gate clínico antes de novo teste de escrita. |
 | **R-147** | **DEX: transcrição autenticada e resiliente** — corrigir vínculo `user_id`/clínica ativa, expor erros acionáveis, alinhar MIME e provar Whisper no Preview | ⏳ P0 encontrado na auditoria `2026-09-02-dex-completo.md`; toda transcrição autenticada está retornando 401 antes da Groq. |

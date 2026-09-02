@@ -13,6 +13,10 @@ orçamento para refletir uma negociação ou pagamento real diferente do previst
 O orçamento permanece a proposta clínica; as finanças precisam comportar negociação e recebimentos
 parciais sem perder autoria, data ou valor já confirmado.
 
+Há duas lacunas de integração que impedem a operação diária: ao gerar por uma Ficha, a interface
+não explica quais eventos pertencem ao dentista atual e quais foram encaminhados a outro colega; e
+o acordo explícito **à vista** não cria uma conta a receber, embora o parcelado já crie previsões.
+
 ## 2. Decisão
 
 - **Orçamento único:** mudar pagamento ou previsão não cria outro orçamento.
@@ -27,6 +31,12 @@ parciais sem perder autoria, data ou valor já confirmado.
 - **Proteções:** nenhum recebimento ou edição pode fazer o total pago superar o valor combinado;
   o valor combinado não pode ficar abaixo do recebido. `quitado` não aceita novo recebimento até
   estorno ou correção que reabra o saldo.
+- **Responsável canônico por procedimento:** um evento sem encaminhamento pertence ao autor da
+  Ficha; um evento encaminhado pertence exclusivamente ao destino. O banco já impõe esta regra e
+  a interface a torna explícita, sem oferecer ao dentista o procedimento de outro responsável.
+- **À vista é uma cobrança prevista, não receita:** ao escolher esse plano, cria uma única linha
+  `pendente` para o valor acordado e vencimento de hoje. Ela só passa a receita quando alguém a
+  marca como `pago`. A proposta/orçamento, isoladamente, continua sem lançar dinheiro.
 
 ## 3. Objetivo
 
@@ -42,6 +52,9 @@ No modal de orçamento do perfil do paciente, transformar a coluna financeira em
    posterior, não promessa implícita desta tela.
 4. **Histórico de recebimentos** — pago, corrigido e estornado com responsável, data e ações
    contextualizadas.
+5. **Origem clínica legível** — o modal informa quantos procedimentos da Ficha estão disponíveis
+   para o orçamento do responsável atual e quantos pertencem a colegas. Itens de colegas ficam
+   visíveis apenas como contexto, nunca selecionáveis nem enviados à RPC.
 
 `/dashboard/financeiro` reutiliza a mesma escrita transacional; sua lista de pendências continua
 lendo somente linhas `pendente` e sua receita somente linhas `pago`.
@@ -66,6 +79,11 @@ interface RecebimentoInput {
   data: string;
 }
 ```
+
+`definir_plano_avista` mantém a assinatura atual e passa a criar a cobrança pendente única com
+`data_vencimento = CURRENT_DATE`. `entrada_valor` continua sendo somente informação de acordo:
+não reduz a cobrança e não representa dinheiro recebido. Para reduzir a cobrança, registra-se um
+recebimento real ou confirma-se a previsão.
 
 `pagamentos` continua sendo a fonte de compatibilidade para Financeiro. A migration altera o índice
 de número de parcela para considerar apenas as pendências ativas, permitindo manter linhas
@@ -120,6 +138,7 @@ saldo local. A página dedicada de Orçamentos recebe `valor_acordado` para não
 |---|---|
 | Sem item aprovado | Mostra proposta; bloqueia recebimento com explicação. |
 | Saldo positivo sem previsão | `Registrar recebimento` e `Organizar cobrança` disponíveis. |
+| Plano à vista | Uma cobrança pendente do saldo aparece no Financeiro com vencimento hoje; confirmar pagamento a torna receita. |
 | Saldo positivo com previsão | Recebimento livre disponível; previsão mostra `Reorganizar`. |
 | Quitado | Exibe quitado e histórico; não oferece novo recebimento. |
 | Valor acima do saldo | Bloqueia sem gravar. |
@@ -134,6 +153,8 @@ Exemplos:
 - Se havia 6 previsões, elas não são “quitadas” à força; o dentista pode redistribuir R$ 1.550.
 - Se R$ 250 foi digitado como R$ 350, `Corrigir` grava o antes/depois e o saldo passa a refletir
   R$ 350. Se o dinheiro foi devolvido, `Estornar` cancela R$ 250 e registra o motivo.
+- A Ficha de A tem dois eventos próprios e um encaminhado para B: A recebe os dois próprios no
+  orçamento e vê um aviso de que o terceiro pertence a B; B recebe somente o encaminhado.
 
 ## 6. Referência visual
 
@@ -153,6 +174,9 @@ Exemplos:
 4. Só pendências são canceladas/recriadas em reorganização; histórico pago não é reescrito.
 5. Soma de previsões novas é exatamente o saldo no instante da transação, em centavos.
 6. Correção e estorno deixam `activity_logs` com ator, antes/depois ou motivo.
+7. Um evento de odontograma entra em no máximo um orçamento e somente no orçamento do seu
+   responsável canônico (`encaminhado_para ?? ficha.dentista_id`).
+8. A cobrança à vista nasce `pendente`; criar ou aprovar orçamento nunca a transforma em `pago`.
 
 ## 8. Gates de aceite
 
@@ -162,6 +186,10 @@ Exemplos:
 - [ ] Corrigir recebimento e verificar saldo/histórico; estornar com motivo e verificar reabertura.
 - [ ] Depois de quitado, novo recebimento é bloqueado; após estorno, volta a ser permitido.
 - [ ] Financeiro mostra só recebidos como receita e só previsões pendentes como contas a receber.
+- [ ] À vista cria exatamente uma pendência para hoje; ao confirmá-la, a pendência some e a receita
+  aparece no Financeiro.
+- [ ] Em Ficha com eventos de A e encaminhado para B, cada dentista vê e consegue orçar somente
+  seus eventos; a interface explica os itens de outro responsável.
 - [ ] Duas contas de clínicas diferentes não leem nem alteram dados uma da outra.
 - [ ] TypeScript, testes, lint do recorte, build com rede e teste manual no perfil passam.
 
