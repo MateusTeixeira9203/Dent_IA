@@ -9,6 +9,7 @@ import { isArch } from '@/lib/arcadas';
 import { classificarStatusDex } from '@/lib/dex/classificar-status';
 import { reconciliarProcedimentosDex } from '@/lib/dex/reconciliar-procedimentos';
 import { formatarEvolucaoRequestSchema } from '@/lib/dex/schemas';
+import { aplicarAusenciasExplicitamenteNarradas } from '@/lib/odontograma/estado-ausencia';
 import type {
   OdontogramaEventoInput,
   TipoRegistroOdontograma,
@@ -449,9 +450,13 @@ Se o relato for APENAS manutenção de aparelho (troca de arco, ativação, borr
     const procedimentos = Array.isArray(wire.procedimentos)
       ? (wire.procedimentos as unknown[]).filter((p): p is string => typeof p === 'string')
       : [];
+    const eventosComAusencias = aplicarAusenciasExplicitamenteNarradas(
+      entrada.data.texto,
+      parseEventos(wire.odontograma_eventos, modo),
+    );
     const odontogramaEventos = reconciliarProcedimentosDex({
       procedimentos,
-      eventos: parseEventos(wire.odontograma_eventos, modo),
+      eventos: eventosComAusencias,
       dentesObservacoes,
       modo,
     }).eventos;

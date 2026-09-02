@@ -430,6 +430,7 @@ export function useRegistrarPainel({
     observacao: string,
     ancoras: AncoraClinica[],
     procedimento?: { id: string | null; nome: string | null },
+    modo: ModoLancamento = modoLancamento,
   ): OdontogramaEventoDraft[] {
     return criarEventosContextuais({
       tipo,
@@ -438,7 +439,7 @@ export function useRegistrarPainel({
       ancoras,
       dataPadrao,
       observacao,
-      contexto: { capturaId: crypto.randomUUID(), modo: modoLancamento },
+      contexto: { capturaId: crypto.randomUUID(), modo },
     });
   }
 
@@ -458,6 +459,7 @@ export function useRegistrarPainel({
     observacao = '',
     dentesSugeridos: number[] = [],
     procedimento?: { id: string | null; nome: string | null },
+    modo: ModoLancamento = modoLancamento,
   ) {
     // 03/08 — profilaxia/clareamento/flúor/exame periodontal não têm "onde": a âncora é
     // SEMPRE boca, e nenhum dente clicado antes se aplica aqui — não é esquecido, é ignorado
@@ -467,7 +469,7 @@ export function useRegistrarPainel({
     // o modo manual ativo. Digitar o mesmo tipo 2x no campo mágico ainda cria 2 eventos —
     // comportamento pré-existente, fora de escopo desta fatia (spec R-107a §6).
     if (TIPOS_NIVEL_BOCA.has(tipo)) {
-      setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacao, [{ nivel: 'boca' }], procedimento)]);
+      setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacao, [{ nivel: 'boca' }], procedimento, modo)]);
       setTipoPendente(null);
       setCatalogoPendente(null);
       return;
@@ -496,7 +498,7 @@ export function useRegistrarPainel({
       const primeiroDente = ancoras.map((a) => a.dente).find((d): d is number => d != null);
       if (primeiroDente != null) setDenteAberto(primeiroDente);
     }
-    setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacao, ancoras, procedimento)]);
+    setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacao, ancoras, procedimento, modo)]);
     setTipoPendente(null);
     setCatalogoPendente(null);
   }
@@ -550,7 +552,7 @@ export function useRegistrarPainel({
       escolherDoCatalogo(s.catalogo, s.dentes);
       return;
     }
-    if (s.tipo) registrar(s.tipo, '', s.dentes);
+    if (s.tipo) registrar(s.tipo, '', s.dentes, undefined, s.origem === 'preexistente' ? 'preexistente' : undefined);
   }
 
   /** "✕ limpar" — só esvazia a seleção, nunca desfaz o que já foi registrado. */

@@ -7,6 +7,7 @@
 import { TIPO_LABEL, type TipoRegistroOdontograma } from '@/types/odontograma';
 import { TEETH_UPPER, TEETH_LOWER, TEETH_UPPER_DEC, TEETH_LOWER_DEC } from '@/components/odontograma/Odontograma';
 import type { MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
+import { extrairDentesExplicitamenteAusentes, fragmentarRelatoClinico } from './estado-ausencia';
 
 const DENTES_VALIDOS = new Set([...TEETH_UPPER, ...TEETH_LOWER, ...TEETH_UPPER_DEC, ...TEETH_LOWER_DEC]);
 
@@ -25,6 +26,9 @@ export interface SugestaoLocal {
   dentes: number[];
   /** Rótulo pronto pro chip mostrar — não é o texto inteiro. */
   trecho: string;
+  /** `preexistente` só existe para a declaração literal “dente ausente”. Ao clicar, ela
+   *  cria estado clínico, não uma extração proposta. */
+  origem: 'preexistente' | null;
 }
 
 // Marcas de combinação Unicode (U+0300–U+036F), o que sobra de "ç"/"ã" depois do
@@ -93,15 +97,11 @@ export function extrairDentesDoTexto(texto: string): number[] {
  *  no 12" dava os 2 dentes pros 2 tipos). Um segmento sem tipo/catálogo próprio (ex.: "36"
  *  em "restauração 35 e 36") é CONTINUAÇÃO do grupo anterior, não abre grupo novo — é o que
  *  impede quebrar o caso já coberto de 2 dentes no mesmo procedimento. */
-function agruparPorProcedimento(texto: string, labelsReconhecidos: string[]): string[] {
-  const grupos: string[] = [];
-  for (const seg of texto.split(/,| e /i).map((s) => s.trim()).filter(Boolean)) {
-    const segNorm = normalizar(seg);
-    const abreGrupo = grupos.length === 0 || labelsReconhecidos.some((l) => casaLabel(segNorm, l));
-    if (abreGrupo) grupos.push(seg);
-    else grupos[grupos.length - 1] += ` e ${seg}`;
-  }
-  return grupos;
+function referenciaPronomeNoFragmentoAnterior(fragmentos: readonly string[], indice: number): number[] {
+  const atual = normalizar(fragmentos[indice] ?? '');
+  if (!/\bnel[ea]s?\b/.test(atual)) return [];
+  const anterior = fragmentos[indice - 1];
+  return anterior ? extrairDentesDoTexto(anterior) : [];
 }
 
 export function casarProcedimentoLocal(
@@ -117,17 +117,23 @@ export function casarProcedimentoLocal(
     ...(Object.values(TIPO_LABEL) as string[]).filter((label) => casaLabel(norm, label)),
     ...catalogo.filter((item) => casaLabel(norm, item.nome)).map((item) => item.nome),
   ];
-  // Só agrupa quando há >1 procedimento no relato — com 0 ou 1, o grupo é o texto inteiro
-  // e o resultado é idêntico ao comportamento anterior (mantém os testes de dente único).
-  const grupos = labelsCasados.length > 1 ? agruparPorProcedimento(texto, labelsCasados) : [texto];
+  const fragmentos = labelsCasados.length > 1 ? fragmentarRelatoClinico(texto) : [texto];
 
-  /** Dentes do(s) segmento(s) onde ESTE label apareceu — não do relato inteiro. Grupo sem
-   *  dente próprio (ex.: "coroa total" sem número) cai pro global em vez de ficar vazio. */
+  /** Dentes do(s) fragmento(s) onde ESTE label apareceu — nunca do relato inteiro quando há
+   *  mais de um procedimento. Sem referência segura, o chip pede o clique no odontograma. */
   function dentesDoLabel(label: string): number[] {
-    const gruposDoLabel = grupos.filter((g) => casaLabel(normalizar(g), label));
-    if (gruposDoLabel.length === 0) return dentesGlobais;
-    const dentesDoGrupo = [...new Set(gruposDoLabel.flatMap(extrairDentesDoTexto))];
-    return dentesDoGrupo.length > 0 ? dentesDoGrupo : dentesGlobais;
+    const indices = fragmentos
+      .map((fragmento, indice) => (casaLabel(normalizar(fragmento), label) ? indice : -1))
+      .filter((indice) => indice >= 0);
+    const dentesDoFragmento = [...new Set(indices.flatMap((indice) => extrairDentesDoTexto(fragmentos[indice] ?? '')))];
+    if (dentesDoFragmento.length > 0) return dentesDoFragmento;
+
+    const porPronome = [...new Set(indices.flatMap((indice) => referenciaPronomeNoFragmentoAnterior(fragmentos, indice)))];
+    if (porPronome.length > 0) return porPronome;
+
+    // Em relato com mais de um procedimento, cair para todos os dentes é associação inventada.
+    // O chip continua disponível, mas pede que o dentista escolha o dente no odontograma.
+    return labelsCasados.length === 1 ? dentesGlobais : [];
   }
 
   const sugestoes: SugestaoLocal[] = [];
@@ -142,6 +148,7 @@ export function casarProcedimentoLocal(
       catalogo: null,
       dentes,
       trecho: !nivelBoca && dentes.length > 0 ? `${label} – dente ${dentes.join(', ')}` : label,
+      origem: null,
     });
   }
 
@@ -153,6 +160,18 @@ export function casarProcedimentoLocal(
       catalogo: item,
       dentes,
       trecho: dentes.length > 0 ? `${item.nome} – dente ${dentes.join(', ')}` : item.nome,
+      origem: null,
+    });
+  }
+
+  const dentesAusentes = extrairDentesExplicitamenteAusentes(texto);
+  if (dentesAusentes.length > 0) {
+    sugestoes.push({
+      tipo: 'exodontia',
+      catalogo: null,
+      dentes: dentesAusentes,
+      trecho: `Dentes ausentes – ${dentesAusentes.join(', ')}`,
+      origem: 'preexistente',
     });
   }
 
