@@ -69,10 +69,11 @@ import {
   editarPagamento,
   marcarPagamentoPago,
   excluirPagamento,
-  editarValorAcordado,
+  estornarPagamento,
   editarOrcamento,
   excluirOrcamento,
   gerarParcelas,
+  reorganizarParcelas,
   atualizarMostrarValorPorItem,
   // R-114 — substituem atualizarStatusOrcamento nesta tela (o dentista/perfil do paciente).
   alternarAprovacaoItem,
@@ -82,7 +83,7 @@ import {
 import { deriveEstadoOrcamento, rotuloEstado } from '@/lib/orcamentos/estado';
 import type { Paciente } from '@/types/database';
 import type { TimelineEvent } from '@/server/patients/get-visible-timeline-events';
-import { format, parseISO, differenceInCalendarDays } from 'date-fns';
+import { addMonths, format, parseISO, differenceInCalendarDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { formatarDataFicha } from '@/lib/format-data-ficha';
 import { toast } from 'sonner';
@@ -715,7 +716,7 @@ export function PacienteDetailClient({
   }, []);
 
   const handleRegistrarPagamento = async () => {
-    if (!detalheOrcId) return;
+    if (!detalheOrcId || !detalheOrc) return;
     const valor = parseValorBR(pagForm.valor);
     if (!valor || valor <= 0) {
       setPagError('Informe um valor válido.');
@@ -724,46 +725,25 @@ export function PacienteDetailClient({
     setPagError(null);
     setPagSaving(true);
 
-    const hoje = new Date().toISOString().split('T')[0];
-    const isAgendado = pagForm.dataVencimento && pagForm.dataVencimento > hoje;
-
     const result = await registrarPagamento({
       orcamentoId: detalheOrcId,
       pacienteId: paciente.id,
       valor,
       formaPagamento: pagForm.formaPagamento,
       data: pagForm.data,
-      dataVencimento: pagForm.dataVencimento || undefined,
       dentistaId: detalheOrc?.dentista_id ?? undefined,
     });
 
     if (result.error) {
       setPagError(result.error);
     } else {
-      const novoPag: Pagamento = {
-        id:              result.id ?? crypto.randomUUID(),
-        valor,
-        status:          isAgendado ? 'pendente' : 'pago',
-        forma_pagamento: isAgendado ? null : pagForm.formaPagamento,
-        data_pagamento:  isAgendado ? null : pagForm.data,
-        data_vencimento: pagForm.dataVencimento || null,
-        parcela_numero:  null,
-        total_parcelas:  null,
-        marcado_por:     null,
-      };
-      setOrcamentosState((prev) =>
-        prev.map((o) =>
-          o.id === detalheOrcId
-            ? { ...o, pagamentos: [...o.pagamentos, novoPag] }
-            : o
-        )
-      );
       setPagForm({
         valor: '',
         formaPagamento: 'dinheiro',
         data: new Date().toISOString().split('T')[0],
         dataVencimento: '',
       });
+      router.refresh();
     }
     setPagSaving(false);
   };
@@ -829,7 +809,7 @@ export function PacienteDetailClient({
   };
 
   const handleGerarParcelas = async () => {
-    if (!detalheOrcId) return;
+    if (!detalheOrcId || !detalheOrc) return;
     const numero = parseInt(parcelasForm.numero, 10);
     // Aviso local só de UX — quem soma "já pago" de verdade agora é a RPC (server).
     const derivado = detalheOrc
@@ -855,11 +835,29 @@ export function PacienteDetailClient({
     setParcelasError(null);
     setParcelasSaving(true);
 
-    const result = await gerarParcelas({
-      orcamentoId: detalheOrcId,
-      numeroParcelas: numero,
-      primeiroVencimento: parcelasForm.primeiroVencimento,
-    });
+    const temPrevisaoAtiva = detalheOrc.pagamentos.some((pagamento) => pagamento.status === 'pendente');
+    const temPlanoAtivo = Boolean(detalheOrc.plano_forma) || temPrevisaoAtiva;
+    const result = temPlanoAtivo
+      ? await reorganizarParcelas({
+          orcamentoId: detalheOrcId,
+          valorAcordado: detalheOrc.valor_acordado ?? (derivado?.valorDevido ?? 0),
+          parcelas: Array.from({ length: numero }, (_, indice) => {
+            const saldoCentavos = Math.round(saldoAproximado * 100);
+            const baseCentavos = Math.floor(saldoCentavos / numero);
+            const valorCentavos = indice === numero - 1
+              ? saldoCentavos - baseCentavos * (numero - 1)
+              : baseCentavos;
+            return {
+              valor: valorCentavos / 100,
+              dataVencimento: format(addMonths(parseISO(parcelasForm.primeiroVencimento), indice), 'yyyy-MM-dd'),
+            };
+          }),
+        })
+      : await gerarParcelas({
+          orcamentoId: detalheOrcId,
+          numeroParcelas: numero,
+          primeiroVencimento: parcelasForm.primeiroVencimento,
+        });
 
     if (result.error || !result.parcelas) {
       setParcelasError(result.error ?? 'Não foi possível gerar as parcelas.');
@@ -884,7 +882,8 @@ export function PacienteDetailClient({
       );
       setParcelasMode(false);
       setParcelasForm({ numero: '3', primeiroVencimento: '' });
-      toast.success(`${numero} parcelas geradas.`);
+      toast.success(temPlanoAtivo ? 'Previsão de cobrança reorganizada.' : `${numero} parcelas geradas.`);
+      router.refresh();
     }
     setParcelasSaving(false);
   };
@@ -934,11 +933,28 @@ export function PacienteDetailClient({
         )
       );
       setEditingPagId(null);
+      router.refresh();
     }
     setEditPagSaving(false);
   };
 
-  const handleExcluirPagamento = async (pagamentoId: string) => {
+  const handleExcluirPagamento = async (pagamentoId: string, motivoEstorno?: string) => {
+    const pagamento = detalheOrc?.pagamentos.find((item) => item.id === pagamentoId);
+    if (!pagamento) return;
+    if (pagamento.status === 'pago') {
+      const motivo = motivoEstorno?.trim();
+      if (!motivo) return;
+      setPagDeleteSaving(true);
+      const result = await estornarPagamento(pagamentoId, motivo);
+      if (result.error) toast.error(result.error);
+      else {
+        setConfirmDeletePagId(null);
+        toast.success('Recebimento estornado. O saldo foi reaberto.');
+        router.refresh();
+      }
+      setPagDeleteSaving(false);
+      return;
+    }
     setPagDeleteSaving(true);
     const result = await excluirPagamento(pagamentoId);
     if (result.error) {
@@ -952,7 +968,8 @@ export function PacienteDetailClient({
         )
       );
       setConfirmDeletePagId(null);
-      toast.success('Pagamento excluído.');
+      toast.success('Previsão removida.');
+      router.refresh();
     }
     setPagDeleteSaving(false);
   };
@@ -979,7 +996,34 @@ export function PacienteDetailClient({
 
     setValorAcordadoError(null);
     setValorAcordadoSaving(true);
-    const result = await editarValorAcordado(detalheOrc.id, valor);
+    const previsoesAtivas = detalheOrc.pagamentos
+      .filter((pagamento) => pagamento.status === 'pendente')
+      .sort((a, b) => (a.parcela_numero ?? 0) - (b.parcela_numero ?? 0));
+    const resultadoDerivado = deriveEstadoOrcamento({
+      valorAcordado: detalheOrc.valor_acordado,
+      itens: detalheOrc.itens.map((item) => ({ precoTotal: item.preco_total, aprovado: item.aprovado })),
+      pagamentos: detalheOrc.pagamentos.map((pagamento) => ({ valor: pagamento.valor, status: pagamento.status })),
+    });
+    const saldoNovoCentavos = Math.round((valor - resultadoDerivado.valorPago) * 100);
+    if (saldoNovoCentavos < 0) {
+      setValorAcordadoError('O valor final não pode ser menor que o total já recebido.');
+      setValorAcordadoSaving(false);
+      return;
+    }
+    const result = await reorganizarParcelas({
+          orcamentoId: detalheOrc.id,
+          valorAcordado: valor,
+          parcelas: saldoNovoCentavos === 0 ? [] : previsoesAtivas.map((previsao, indice) => {
+            const baseCentavos = Math.floor(saldoNovoCentavos / previsoesAtivas.length);
+            const valorCentavos = indice === previsoesAtivas.length - 1
+              ? saldoNovoCentavos - baseCentavos * (previsoesAtivas.length - 1)
+              : baseCentavos;
+            return {
+              valor: valorCentavos / 100,
+              dataVencimento: previsao.data_vencimento ?? new Date().toISOString().split('T')[0],
+            };
+          }),
+        });
     if (result.error) {
       setValorAcordadoError(result.error);
     } else {
@@ -988,6 +1032,7 @@ export function PacienteDetailClient({
       ));
       setEditValorAcordadoAberto(false);
       toast.success('Valor final atualizado.');
+      router.refresh();
     }
     setValorAcordadoSaving(false);
   };

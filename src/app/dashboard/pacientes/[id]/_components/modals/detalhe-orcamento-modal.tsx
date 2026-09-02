@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import {
   Edit2, Trash2, CircleDollarSign, Plus, CheckCircle2, Check,
   Loader2, CreditCard, Banknote, Smartphone,
-  Receipt, User, CalendarClock, X, PenLine,
+  Receipt, User, X, PenLine,
 } from 'lucide-react';
 import { AceiteOrcamentoModal } from '@/components/orcamentos/aceite-orcamento-modal';
 import { BotaoDownloadPDF } from '@/components/orcamentos/botao-download-pdf';
@@ -109,7 +109,7 @@ interface Props {
   confirmDeletePagId: string | null;
   setConfirmDeletePagId: (id: string | null) => void;
   pagDeleteSaving: boolean;
-  onExcluirPagamento: (id: string) => void;
+  onExcluirPagamento: (id: string, motivoEstorno?: string) => void;
   editValorAcordadoAberto: boolean;
   valorAcordadoTexto: string;
   setValorAcordadoTexto: React.Dispatch<React.SetStateAction<string>>;
@@ -151,7 +151,7 @@ export function DetalheOrcamentoModal({
   /** R-39a: só Procedimentos e Atividade — Pagamentos virou a coluna do dinheiro. */
   const [tab, setTab] = useState<'procedimentos' | 'atividade'>('procedimentos');
   const [showAceiteModal, setShowAceiteModal] = useState(false);
-  const [mostrarAgendamentoUnico, setMostrarAgendamentoUnico] = useState(false);
+  const [motivoEstorno, setMotivoEstorno] = useState('');
   const [activityLogs, setActivityLogs] = useState<{ id: string; actor_nome: string | null; action: string; created_at: string }[]>([]);
 
   // Patch 4: Lazy-fetch activity logs quando o modal abre
@@ -181,6 +181,8 @@ export function DetalheOrcamentoModal({
     'pagamento.parcelado': 'Parcelamento gerado',
     'pagamento.editado': 'Pagamento editado',
     'pagamento.excluido': 'Pagamento excluído',
+    'pagamento.estornado': 'Recebimento estornado',
+    'pagamento.previsao_reorganizada': 'Cobrança reorganizada',
     status_alterado: 'Status alterado',
   };
 
@@ -219,15 +221,9 @@ export function DetalheOrcamentoModal({
   ) ?? false;
   const temPlanoParcelado = detalheOrc?.plano_forma === 'parcelado'
     || detalheOrc?.pagamentos.some((pagamento) => pagamento.parcela_numero !== null) === true;
-  const temPlanoAvista = detalheOrc?.plano_forma === 'avista';
   const temItensAprovados = valorAprovado > 0;
-  const podeEscolherRecebimento = temItensAprovados && !quitado && !temPlanoParcelado && !temPlanoAvista && !closingPagamentoId;
-  const podeConfigurarRecebimento = temItensAprovados && !quitado && !temPlanoParcelado && !closingPagamentoId;
-  const valorFinalTravado = Boolean(detalheOrc?.plano_forma) || temParcelaAgendada;
-
-  useEffect(() => {
-    if (temPlanoAvista) setParcelasMode(false);
-  }, [setParcelasMode, temPlanoAvista]);
+  const podeEscolherRecebimento = temItensAprovados && !quitado && !closingPagamentoId;
+  const podeConfigurarRecebimento = temItensAprovados && !quitado && !closingPagamentoId;
 
   /**
    * R-27a: quantidade de pagamentos recebidos e formas distintas usadas — é o que a
@@ -248,7 +244,6 @@ export function DetalheOrcamentoModal({
   function preencherRestante() {
     if (restante <= 0) return;
     setPagForm(f => ({ ...f, valor: formatValorBR(restante), dataVencimento: '' }));
-    setMostrarAgendamentoUnico(false);
   }
 
   return (
@@ -648,18 +643,15 @@ export function DetalheOrcamentoModal({
                               size="sm"
                               variant="outline"
                               onClick={onIniciarEdicaoValorAcordado}
-                              disabled={valorFinalTravado}
                               className="rounded-lg h-8 text-xs"
                             >
                               <Edit2 className="w-3.5 h-3.5 mr-1" /> Editar
                             </Button>
                           </div>
                           <p className="text-[11px] text-text-secondary mt-2">
-                            {detalheOrc.plano_forma
-                              ? 'Há um plano de pagamento ativo. Ajuste as parcelas antes de alterar este valor.'
-                              : temParcelaAgendada
-                                ? 'Há uma parcela agendada. Ajuste ou remova a parcela antes de alterar este valor.'
-                                : 'Você pode corrigir o combinado sem mudar os procedimentos.'}
+                            {temParcelaAgendada
+                              ? 'Ao salvar, a previsão futura é redistribuída; o recebido não muda.'
+                              : 'Você pode corrigir o combinado sem mudar os procedimentos.'}
                           </p>
                         </div>
                       )}
@@ -671,9 +663,9 @@ export function DetalheOrcamentoModal({
                       <div className="h-px bg-border my-4" />
                       <div className="mb-2 flex items-center justify-between gap-3">
                         <h4 className="text-xs font-bold uppercase tracking-widest text-text-secondary">
-                          {temPlanoParcelado ? 'Parcelas' : 'Recebimentos'}
+                          {temPlanoParcelado ? 'Previsão e recebimentos' : 'Recebimentos'}
                         </h4>
-                        <span className="text-[11px] text-text-secondary">Edite valor, forma e data quando precisar</span>
+                        <span className="text-[11px] text-text-secondary">Recebido é histórico; previsão pode ser reorganizada</span>
                       </div>
                       <div className="space-y-1.5">
                         {detalheOrc.pagamentos.map(pg => {
@@ -740,23 +732,40 @@ export function DetalheOrcamentoModal({
 
                           if (confirmDeletePagId === pg.id) {
                             return (
-                              <div key={pg.id} className="rounded-xl border border-coral/30 bg-coral/5 p-3 flex items-center justify-between gap-2">
-                                <p className="text-xs text-text-primary">Excluir pagamento de R$ {fmt(pg.valor)}?</p>
-                                <div className="flex gap-1.5 shrink-0">
+                              <div key={pg.id} className="rounded-xl border border-coral/30 bg-coral/5 p-3 space-y-2">
+                                <p className="text-xs text-text-primary">
+                                  {isPago ? 'Estornar' : 'Excluir previsão'} de R$ {fmt(pg.valor)}?
+                                </p>
+                                {isPago && (
+                                  <Input
+                                    value={motivoEstorno}
+                                    onChange={(event) => setMotivoEstorno(event.target.value)}
+                                    placeholder="Motivo do estorno (obrigatório)"
+                                    maxLength={500}
+                                    disabled={pagDeleteSaving}
+                                    className="h-8 text-xs"
+                                  />
+                                )}
+                                <div className="flex justify-end gap-1.5 shrink-0">
                                   <Button
-                                    size="sm" variant="outline" onClick={() => setConfirmDeletePagId(null)} disabled={pagDeleteSaving}
+                                    size="sm" variant="outline" onClick={() => {
+                                      setConfirmDeletePagId(null);
+                                      setMotivoEstorno('');
+                                    }} disabled={pagDeleteSaving}
                                     className="rounded-lg h-7 text-xs px-2"
                                   >
                                     Cancelar
                                   </Button>
                                   <Button
-                                    size="sm" onClick={() => onExcluirPagamento(pg.id)} disabled={pagDeleteSaving}
+                                    size="sm"
+                                    onClick={() => onExcluirPagamento(pg.id, motivoEstorno)}
+                                    disabled={pagDeleteSaving || (isPago && !motivoEstorno.trim())}
                                     /* `text-white` sobre `bg-coral` reprova no escuro: coral vira
                                        #ef9a9a (rosa claro) e branco em cima dá ~1,9:1. Par
                                        coral-ink/coral-pale funciona nos dois temas. */
                                     className="rounded-lg h-7 text-xs px-2 bg-coral-pale border border-coral text-coral-ink hover:bg-coral/20"
                                   >
-                                    {pagDeleteSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Excluir'}
+                                    {pagDeleteSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isPago ? 'Estornar' : 'Excluir'}
                                   </Button>
                                 </div>
                               </div>
@@ -839,7 +848,7 @@ export function DetalheOrcamentoModal({
                                 <button
                                   onClick={() => setConfirmDeletePagId(pg.id)}
                                   className="p-1 rounded-lg hover:bg-coral/10 text-text-secondary hover:text-coral transition-colors"
-                                  aria-label="Excluir pagamento"
+                                  aria-label={isPago ? 'Estornar recebimento' : 'Excluir previsão'}
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -874,7 +883,7 @@ export function DetalheOrcamentoModal({
 
                       <div className="mb-3">
                         <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">
-                          {closingPagamentoId ? 'Marcar parcela como paga' : parcelasMode ? 'Plano parcelado' : 'Recebimento à vista'}
+                          {closingPagamentoId ? 'Confirmar previsão como recebida' : parcelasMode ? 'Organizar cobrança' : 'Registrar recebimento'}
                         </p>
                         {!closingPagamentoId && podeEscolherRecebimento && (
                           <div className="mt-3 grid grid-cols-2 rounded-xl border border-border bg-surface-alt/40 p-1" role="tablist" aria-label="Forma de recebimento">
@@ -887,7 +896,7 @@ export function DetalheOrcamentoModal({
                                 !parcelasMode ? 'bg-surface text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
                               }`}
                             >
-                              À vista
+                              Recebimento
                             </button>
                             <button
                               type="button"
@@ -898,7 +907,7 @@ export function DetalheOrcamentoModal({
                                 parcelasMode ? 'bg-surface text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
                               }`}
                             >
-                              Parcelado
+                              Organizar cobrança
                             </button>
                           </div>
                         )}
@@ -931,7 +940,7 @@ export function DetalheOrcamentoModal({
                             if (!n || n < 2 || !restante) return null;
                             return (
                               <p className="text-[11px] text-text-secondary bg-surface rounded-xl px-3 py-2">
-                                Saldo restante: R$ {fmt(restante)} — {n}x de R$ {fmt(restante / n)}, vencimentos no mesmo dia, mês a mês.
+                                Saldo restante: R$ {fmt(restante)} — {n} previsões de R$ {fmt(restante / n)}, vencimentos no mesmo dia, mês a mês.
                               </p>
                             );
                           })()}
@@ -969,75 +978,33 @@ export function DetalheOrcamentoModal({
                               </Button>
                             )}
                           </div>
-                          {!closingPagamentoId && (
-                            <div className="space-y-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setMostrarAgendamentoUnico((aberto) => {
-                                    if (aberto) setPagForm((form) => ({ ...form, dataVencimento: '' }));
-                                    return !aberto;
-                                  });
-                                }}
-                                className="text-xs font-semibold text-text-secondary transition-colors hover:text-teal-ink"
-                              >
-                                {mostrarAgendamentoUnico ? 'Receber agora' : 'Agendar recebimento'}
-                              </button>
-                              {mostrarAgendamentoUnico && (
-                                <div className="space-y-1.5">
-                                  <Label className="text-xs text-text-secondary">Vencimento</Label>
-                                  <Input
-                                    type="date" min={hoje}
-                                    value={pagForm.dataVencimento}
-                                    onChange={e => setPagForm(f => ({ ...f, dataVencimento: e.target.value }))}
-                                    className="rounded-xl bg-surface border-border text-text-primary"
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {!closingPagamentoId && mostrarAgendamentoUnico ? (
-                            pagForm.dataVencimento && pagForm.dataVencimento > hoje ? (
-                              <div className="flex items-center gap-2 bg-warning-pale border border-warning/40 rounded-xl px-3 py-2.5">
-                                <CalendarClock className="w-3.5 h-3.5 text-warning-ink shrink-0" />
-                                <p className="text-xs text-warning-ink">
-                                  Vencimento futuro — será registrado como <strong>pendente</strong>.
-                                </p>
-                              </div>
-                            ) : (
-                              <p className="text-xs text-text-secondary">Escolha uma data futura para agendar este recebimento.</p>
-                            )
-                          ) : (
-                            <>
-                              <div className="space-y-1.5">
-                                <Label className="text-xs text-text-secondary">Data do recebimento</Label>
-                                <Input
-                                  type="date" value={pagForm.data}
-                                  onChange={e => setPagForm(f => ({ ...f, data: e.target.value }))}
-                                  className="rounded-xl bg-surface border-border text-text-primary"
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <Label className="text-xs text-text-secondary">Forma de pagamento</Label>
-                                <Select
-                                  value={pagForm.formaPagamento}
-                                  onValueChange={v => v && setPagForm(f => ({ ...f, formaPagamento: v as FormaPagamento }))}
-                                >
-                                  <SelectTrigger className="rounded-xl bg-surface border-border text-text-primary">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent className="bg-surface border-border">
-                                    <SelectItem value="dinheiro">Dinheiro</SelectItem>
-                                    <SelectItem value="pix">PIX</SelectItem>
-                                    <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
-                                    <SelectItem value="cartao_debito">Cartão de Débito</SelectItem>
-                                    <SelectItem value="boleto">Boleto</SelectItem>
-                                    <SelectItem value="outro">Outro</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </>
-                          )}
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-text-secondary">Data do recebimento</Label>
+                            <Input
+                              type="date" value={pagForm.data}
+                              onChange={e => setPagForm(f => ({ ...f, data: e.target.value }))}
+                              className="rounded-xl bg-surface border-border text-text-primary"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-text-secondary">Forma de pagamento</Label>
+                            <Select
+                              value={pagForm.formaPagamento}
+                              onValueChange={v => v && setPagForm(f => ({ ...f, formaPagamento: v as FormaPagamento }))}
+                            >
+                              <SelectTrigger className="rounded-xl bg-surface border-border text-text-primary">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="bg-surface border-border">
+                                <SelectItem value="dinheiro">Dinheiro</SelectItem>
+                                <SelectItem value="pix">PIX</SelectItem>
+                                <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
+                                <SelectItem value="cartao_debito">Cartão de Débito</SelectItem>
+                                <SelectItem value="boleto">Boleto</SelectItem>
+                                <SelectItem value="outro">Outro</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                           {pagError && (
                             <p className="text-xs text-coral-ink bg-coral-pale rounded-xl px-3 py-2">{pagError}</p>
                           )}
@@ -1058,23 +1025,21 @@ export function DetalheOrcamentoModal({
                         className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl disabled:opacity-50 font-semibold"
                       >
                         {parcelasSaving
-                          ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Gerando...</>
-                          : 'Gerar Parcelas'
+                          ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</>
+                          : temParcelaAgendada ? 'Reorganizar cobrança' : 'Organizar cobrança'
                         }
                       </Button>
                     ) : (
                       <Button
                         onClick={onRegistrarPagamento}
-                        disabled={pagSaving || !pagForm.valor || (mostrarAgendamentoUnico && !closingPagamentoId && (!pagForm.dataVencimento || pagForm.dataVencimento <= hoje))}
+                        disabled={pagSaving || !pagForm.valor}
                         className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl disabled:opacity-50 font-semibold"
                       >
                         {pagSaving
                           ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</>
                           : closingPagamentoId
                             ? 'Marcar como Pago'
-                            : (mostrarAgendamentoUnico && pagForm.dataVencimento && pagForm.dataVencimento > hoje)
-                              ? 'Agendar recebimento'
-                              : 'Registrar recebimento'
+                            : 'Registrar recebimento'
                         }
                       </Button>
                     )}

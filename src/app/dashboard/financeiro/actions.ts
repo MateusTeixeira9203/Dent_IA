@@ -4,8 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { requireClinicContext } from '@/server/auth/clinic';
 import { inserirNotificacao } from '@/lib/notificacoes';
 import { buildCsv } from '@/lib/export/csv';
-import { ERRO_ORCAMENTO_SEM_APROVACAO } from '@/server/orcamentos/pagamento-guards';
-import { deriveEstadoOrcamento, orcamentoAceitaPagamento } from '@/lib/orcamentos/estado';
+import { registrarPagamento, type FormaPagamento } from '@/app/dashboard/orcamentos/actions';
 
 export type Despesa = {
   id: string;
@@ -737,60 +736,19 @@ export async function registrarRecebimento(dados: {
   data: string;
   dentistaId?: string;
 }): Promise<{ error?: string; autoAprovado?: boolean }> {
-  const { supabase, clinicId } = await requireClinicContext();
-
-  // Garante que o orçamento e o paciente pertencem a esta clínica
-  const { data: orc } = await supabase
-    .from('orcamentos')
-    .select('id, dentista_id, valor_acordado, orcamento_itens(preco_total, aprovado), pagamentos(valor, status)')
-    .eq('id', dados.orcamentoId)
-    .eq('clinica_id', clinicId)
-    .maybeSingle();
-  if (!orc) return { error: 'Orçamento não encontrado.' };
-
-  const estadoAntes = deriveEstadoOrcamento({
-    valorAcordado: orc.valor_acordado,
-    itens: (orc.orcamento_itens ?? []).map((i) => ({ precoTotal: i.preco_total, aprovado: i.aprovado })),
-    pagamentos: (orc.pagamentos ?? []).map((p) => ({ valor: p.valor, status: p.status })),
+  // Transferência é uma forma apresentada só no Financeiro legado; `pagamentos` não possui
+  // esse valor no CHECK, então preservamos a escrita como "outro" em vez de inseri-la sem
+  // validação. Todas as demais regras (saldo, tenant e auditoria) são a mesma transação do
+  // orçamento, nunca um INSERT paralelo.
+  const formaPagamento: FormaPagamento = dados.formaPagamento === 'transferencia'
+    ? 'outro'
+    : dados.formaPagamento;
+  return registrarPagamento({
+    orcamentoId: dados.orcamentoId,
+    pacienteId: dados.pacienteId,
+    valor: dados.valor,
+    formaPagamento,
+    data: dados.data,
+    dentistaId: dados.dentistaId,
   });
-
-  // R-114 — substitui o guard por `status` do R-65 (era o único dos 4 caminhos que não
-  // checava nada antes de aceitar dinheiro).
-  if (!orcamentoAceitaPagamento(estadoAntes.estado)) {
-    return { error: ERRO_ORCAMENTO_SEM_APROVACAO };
-  }
-
-  const { data: pac } = await supabase
-    .from('pacientes')
-    .select('id')
-    .eq('id', dados.pacienteId)
-    .eq('clinica_id', clinicId)
-    .maybeSingle();
-  if (!pac) return { error: 'Paciente não encontrado.' };
-
-  // R-90 — dentista_id nunca era gravado (coluna NOT NULL, todo insert falhava). Vem do
-  // orçamento, não de dados.dentistaId — mesma regra 8 de registrarPagamentoRapido.
-  const { error: pagError } = await supabase.from('pagamentos').insert({
-    clinica_id:      clinicId,
-    orcamento_id:    dados.orcamentoId,
-    paciente_id:     dados.pacienteId,
-    dentista_id:     orc.dentista_id,
-    valor:           dados.valor,
-    status:          'pago',
-    forma_pagamento: dados.formaPagamento,
-    data_pagamento:  dados.data,
-  });
-
-  if (pagError) return { error: pagError.message };
-
-  // R-114 — "aprovado" não se escreve mais; `autoAprovado` passa a significar "este
-  // pagamento fechou a conta".
-  const autoAprovado =
-    estadoAntes.estado !== 'quitado' &&
-    estadoAntes.valorPago + dados.valor >= estadoAntes.valorDevido;
-
-  revalidatePath('/dashboard/financeiro');
-  revalidatePath('/dashboard/orcamentos');
-  return { autoAprovado };
 }
-
