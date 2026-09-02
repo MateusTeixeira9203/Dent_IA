@@ -7,6 +7,11 @@
 🔵 **R-145 — Orçamento financeiro flexível.** Implementação local em revisão; a decisão desta
 sessão foi voltar ao fluxo leve: Next.js no localhost, sem depender de Supabase local/Docker.
 
+**Correção clínica em curso:** R-148 corrige a associação do campo mágico em relato composto e
+normaliza “dente N está ausente” como estado pré-existente no odontograma. Regressão registrada:
+canal 18, extração 44, ausência 23 + implante 23 e ausência 37 não podem trocar dentes nem virar
+extração a fazer.
+
 **Feito**
 
 - RPCs e actions para recebimento livre, reorganização de previsões, correção e estorno auditável.
