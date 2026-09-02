@@ -61,7 +61,10 @@ import { salvarEventosOdontograma } from '@/server/patients/registro-actions';
 import { CampoMagicoMeuDia } from './campo-magico-meu-dia';
 import type { CapturaDexState } from '@/components/fichas/captura-livre-card';
 import { OrtoForm } from '@/components/fichas/orto-form';
+import { DexLoader } from '@/components/ui/dex-loader';
 import { hojeBRT } from '@/lib/hora-brt';
+import { sugerirEvolucaoResponseSchema } from '@/lib/dex/schemas';
+import { montarPedidoSugestaoEvolucao } from '@/lib/dex/sugerir-evolucao';
 import { salvarVisitaMeuDia } from '../actions';
 import type { SalvarFichaResult } from '@/server/patients/salvar-ficha';
 import type { RegistrarAtendimentoClinicoResult } from '@/server/patients/registrar-atendimento-clinico';
@@ -258,6 +261,8 @@ export function useRegistrarPainel({
     fase: 'idle', busy: false, impedeSalvar: false, audioParaRetry: false,
   });
   const [textoAberto, setTextoAberto] = useState(false);
+  const [gerandoEvolucao, setGerandoEvolucao] = useState(false);
+  const [evolucaoSugeridaDex, setEvolucaoSugeridaDex] = useState(false);
   const [controlesAbertos, setControlesAbertos] = useState(false);
   /** Entrada visual do R-140d: a captura real de etiquetas ainda não existe nesta fatia. */
   const [materiaisAberto, setMateriaisAberto] = useState(false);
@@ -330,6 +335,8 @@ export function useRegistrarPainel({
   if (contextoId !== contextoIdAoResetar) {
     setContextoIdAoResetar(contextoId);
     setTextoAberto(false);
+    setGerandoEvolucao(false);
+    setEvolucaoSugeridaDex(false);
     setControlesAbertos(false);
     setMateriaisAberto(false);
     setQuantidadeAoRenderizar(eventosDraft.length);
@@ -357,6 +364,8 @@ export function useRegistrarPainel({
   // 04/08 — visita só-de-orto (sem evento, sem texto) também é rascunho de verdade.
   const ortoParaSalvar = normalizarOrtoManutencao(ortoValor);
   const semRascunho = eventosDraft.length === 0 && textoVisita.trim() === '' && ortoParaSalvar == null;
+  const podeSugerirEvolucao = textoVisita.trim() === ''
+    && (eventosDraft.length > 0 || ortoParaSalvar != null);
 
   /** R-50 — orto veio da IA: vira estado editável E abre o chip. Abrir é o guarda-corpo (mesma
    *  razão do `criarDenteTipo` abrir a tabela de endo sozinha): dado extraído nunca entra
@@ -383,6 +392,37 @@ export function useRegistrarPainel({
       destinoNovos: dados.destinoNovos,
     });
   });
+
+  async function handleSugerirEvolucao() {
+    if (!podeSugerirEvolucao || gerandoEvolucao || capturaDex.busy) return;
+    setTextoAberto(true);
+    setGerandoEvolucao(true);
+    try {
+      const response = await fetch('/api/dex/sugerir-evolucao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(montarPedidoSugestaoEvolucao(eventosDraft, ortoParaSalvar)),
+      });
+      const payload: unknown = await response.json();
+      const parsed = sugerirEvolucaoResponseSchema.safeParse(payload);
+      if (!response.ok || !parsed.success) {
+        const mensagem = payload && typeof payload === 'object' && 'error' in payload
+          && typeof payload.error === 'string'
+          ? payload.error
+          : 'O Dex não conseguiu sugerir a evolução. Você pode continuar manualmente.';
+        throw new Error(mensagem);
+      }
+      setTextoVisita(parsed.data.texto);
+      setEvolucaoSugeridaDex(true);
+      toast.success('Sugestão pronta. Revise antes de salvar.');
+    } catch (error) {
+      toast.error(error instanceof Error
+        ? error.message
+        : 'O Dex não conseguiu sugerir a evolução. Você pode continuar manualmente.');
+    } finally {
+      setGerandoEvolucao(false);
+    }
+  }
 
   /** R-125a — todos os caminhos manuais criam o mesmo draft contextual. */
   function criarEventos(
@@ -626,7 +666,10 @@ export function useRegistrarPainel({
       eventosDraft={eventosDraft}
       onEventosDraftChange={setEventosDraft}
       textoVisita={textoVisita}
-      onTextoVisitaChange={setTextoVisita}
+      onTextoVisitaChange={(texto) => {
+        setTextoVisita(texto);
+        setEvolucaoSugeridaDex(false);
+      }}
       onAlertaNovoChange={setAlertaNovo}
       onOrtoDetectado={handleOrtoDetectado}
       onEndoDetectado={onAbrirDetalheEndo}
@@ -739,7 +782,12 @@ export function useRegistrarPainel({
       {textoAberto && (
         <div className="mt-2 rounded-lg border border-border bg-surface-alt p-2.5">
           <div className="mb-1.5 flex items-center justify-between gap-2">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Evolução clínica</p>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Evolução clínica</p>
+              {evolucaoSugeridaDex && (
+                <p className="mt-0.5 text-[11px] font-semibold text-teal-ink">Rascunho do Dex — revise antes de salvar</p>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => setTextoAberto(false)}
@@ -748,14 +796,21 @@ export function useRegistrarPainel({
               Recolher
             </button>
           </div>
-          <textarea
-            value={textoVisita}
-            onChange={(event) => setTextoVisita(event.target.value)}
-            placeholder="Curativo, sutura, orientação ou evolução da consulta"
-            rows={3}
-            autoFocus
-            className="w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-teal"
-          />
+          {gerandoEvolucao ? (
+            <DexLoader size="sm" label="Dex preparando a evolução para revisão..." className="min-h-28" />
+          ) : (
+            <textarea
+              value={textoVisita}
+              onChange={(event) => {
+                setTextoVisita(event.target.value);
+                if (event.target.value.trim() === '') setEvolucaoSugeridaDex(false);
+              }}
+              placeholder="Curativo, sutura, orientação ou evolução da consulta"
+              rows={3}
+              autoFocus
+              className="w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-teal"
+            />
+          )}
         </div>
       )}
     </div>
@@ -851,6 +906,16 @@ export function useRegistrarPainel({
 
   const acoesSecundarias = (
     <div className="flex flex-wrap justify-end gap-2">
+      {podeSugerirEvolucao && (
+        <button
+          type="button"
+          onClick={() => void handleSugerirEvolucao()}
+          disabled={gerandoEvolucao || capturaDex.busy}
+          className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-teal/30 bg-teal/10 px-3 text-xs font-bold text-teal-ink transition-colors hover:bg-teal/15 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Gerar evolução com Dex
+        </button>
+      )}
       <button
         type="button"
         onClick={() => setRetornoModalAberto(true)}

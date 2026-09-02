@@ -53,7 +53,8 @@ import { toast } from 'sonner';
 import { AnimatePresence, motion } from 'motion/react';
 import { AlertCircle, CheckCircle2, Hourglass } from 'lucide-react';
 import {
-  atualizarStatusEncaminhado, encaminharProcedimento, getGruposAbertos,
+  alternarMomentoRegistro, atualizarStatusEncaminhado,
+  encaminharProcedimento, getGruposAbertos,
 } from '@/server/patients/registro-actions';
 import { salvarVisitaMeuDia } from '@/app/dashboard/meu-dia/actions';
 import type { SalvarFichaResult } from '@/server/patients/salvar-ficha';
@@ -64,7 +65,6 @@ import { atualizarStatusAgendamento } from '@/app/dashboard/agendamentos/actions
 import type { AgendamentoStatus } from '@/types/database';
 import { HistoricoBloco } from './historico-bloco';
 import { AnexarDocumentosBloco } from './anexar-documentos-bloco';
-import { AFazerBloco } from './a-fazer-bloco';
 import { NestaSessaoBloco } from './nesta-sessao-bloco';
 import { FaixaGavetas, type GavetaId } from './faixa-gavetas';
 import { ondeLabel } from './meu-dia-format';
@@ -134,6 +134,12 @@ function draftParaEventoOrc(e: OdontogramaEventoDraft): EventoOdontogramaParaOrc
     encaminhado_dentista: null,
   };
 }
+
+type UltimaAcaoPlano = {
+  pendencia: MeuDiaPendencia;
+  momentoAnterior: MeuDiaPendencia['momentoPlanejado'];
+  descricao: string;
+};
 
 interface MeuDiaClientProps extends MeuDiaData {
   agendamentoInicialId?: string;
@@ -228,6 +234,8 @@ export function MeuDiaClient({
   const [modoEncaminhar, setModoEncaminhar] = useState(false);
   const [selecionadosEncaminhar, setSelecionadosEncaminhar] = useState<Set<string>>(new Set());
   const [destinoEncaminhar, setDestinoEncaminhar] = useState<string | null>(null);
+  const [acaoPlanoEmAndamentoId, setAcaoPlanoEmAndamentoId] = useState<string | null>(null);
+  const [ultimaAcaoPlano, setUltimaAcaoPlano] = useState<UltimaAcaoPlano | null>(null);
 
   // R-78 F0 — as duas barras de abas morreram: "Hoje"/"Novos" fundiram em "Nesta ficha"
   // (lista única, sempre visível); Histórico/A fazer/Anexos viraram gaveta — 1 aberta por
@@ -259,15 +267,13 @@ export function MeuDiaClient({
     setModoEncaminhar(false);
     setSelecionadosEncaminhar(new Set());
     setDestinoEncaminhar(null);
+    setAcaoPlanoEmAndamentoId(null);
+    setUltimaAcaoPlano(null);
     // D8 — documento anexado é do paciente anterior, não sobrevive à troca.
     setDocumentoNome(null);
     setDocumentoTexto(null);
     setDocumentoOrigem('documento');
   }
-
-  /** R-52 — pendência recebida sendo concluída agora (trava o botão durante a escrita). */
-  const [concluindoId, setConcluindoId] = useState<string | null>(null);
-
 
   const slotSelecionado = selecionadoId ? (slots.find((s) => s.agendamentoId === selecionadoId) ?? null) : null;
   const contexto = slotSelecionado ? contextoPorPaciente[slotSelecionado.pacienteId] : null;
@@ -480,10 +486,6 @@ export function MeuDiaClient({
     router.refresh();
   }
 
-  function fazerHoje(p: MeuDiaPendencia) {
-    setEventosDraft([...eventosDraft, pendenciaParaDraft(p, hojeBRT())]);
-  }
-
   function handleDenteAbertoChange(dente: number | null) {
     if (dente != null) setJaTocouDente(true); // R-105a §4.2.1 — dispensa a dica do odontograma
     setDenteAberto(dente);
@@ -546,27 +548,78 @@ export function MeuDiaClient({
     return () => window.removeEventListener('keydown', voltarAoOdontograma);
   }, [denteAberto, handleDenteAbertoChange, registrandoDenteAberto]);
 
-  // R-52 — pendência encaminhada A MIM tem caminho de escrita PRÓPRIO, e isso não é
-  // preferência de UX: o evento pertence a outro dentista, então o upsert do rascunho
-  // (`pendenciaParaDraft` reusa o id original) bate na RLS `odontograma_eventos_write_own`,
-  // afeta 0 linhas, e 0 linhas NÃO é erro no Postgres — gravaria nada dizendo que gravou.
-  // A RPC 109 (`concluir_evento_encaminhado`) é a escrita estreita do destino: valida
-  // clínica + `encaminhado_para = eu` + ficha não assinada, e só toca status/realizado_em.
-  //
-  // Conclui na hora, fora do "Salvar" da visita — o rótulo do botão diz "concluir →" em vez
-  // de "fazer hoje →" justamente pra não prometer o mesmo gesto duas vezes.
-  async function concluirRecebida(p: MeuDiaPendencia) {
-    setConcluindoId(p.id);
-    const res = await atualizarStatusEncaminhado({
-      eventoIds: [p.id],
-      novoStatus: 'realizado',
-    });
-    setConcluindoId(null);
-    if (!res.ok) {
-      toast.error(res.error ?? 'Não foi possível concluir o procedimento.');
+  /** Registro próprio entra na revisão da consulta como rascunho com o MESMO id. Assim o
+   * dentista informa detalhe de implante/canal antes do save, sem criar evento fantasma. */
+  function registrarHoje(pendencia: MeuDiaPendencia): void {
+    if (eventosDraft.some((evento) => evento.id === pendencia.id)) {
+      toast.message('Este procedimento já está na revisão do atendimento.');
       return;
     }
-    toast.success('Procedimento concluído.');
+    setEventosDraft((anteriores) => [...anteriores, pendenciaParaDraft(pendencia, hojeBRT())]);
+    setGavetaAberta(null);
+    toast.success('Adicionado à revisão. Complete os detalhes e salve o atendimento.');
+  }
+
+  /** Encaminhado é exceção deliberada: o destino não pode editar detalhe/autoria do evento
+   * alheio, mas pode concluir pelo caminho estreito autorizado pela RPC. */
+  async function concluirEncaminhada(pendencia: MeuDiaPendencia): Promise<void> {
+    setAcaoPlanoEmAndamentoId(pendencia.id);
+    const resultado = await atualizarStatusEncaminhado({ eventoIds: [pendencia.id], novoStatus: 'realizado' });
+    setAcaoPlanoEmAndamentoId(null);
+    if (!resultado.ok) {
+      toast.error(resultado.error ?? 'Não foi possível concluir o procedimento encaminhado.');
+      return;
+    }
+    toast.success('Procedimento encaminhado concluído.');
+    router.refresh();
+  }
+
+  /** Próxima sessão é organização, portanto persiste imediatamente no evento já salvo. */
+  async function alterarSituacaoDoPlano(
+    pendencia: MeuDiaPendencia,
+    situacao: 'sessao_atual' | 'proxima_sessao',
+  ): Promise<void> {
+    const propria = pendencia.dentistaId === meuDentistaId;
+    if (!propria) {
+      toast.error('Só o dentista autor pode organizar a próxima sessão.');
+      return;
+    }
+    if (pendencia.momentoPlanejado === situacao) return;
+
+    setAcaoPlanoEmAndamentoId(pendencia.id);
+    const resultado = await alternarMomentoRegistro({ eventoIds: [pendencia.id], novoMomento: situacao });
+    setAcaoPlanoEmAndamentoId(null);
+    if (!resultado.ok) {
+      toast.error(resultado.error ?? 'Não foi possível atualizar o procedimento.');
+      return;
+    }
+
+    const nome = pendencia.procedimentoNome?.trim() || TIPO_LABEL[pendencia.tipo];
+    setUltimaAcaoPlano({
+      pendencia,
+      momentoAnterior: pendencia.momentoPlanejado,
+      descricao: situacao === 'proxima_sessao'
+        ? `${nome} separado para a próxima sessão.`
+        : `${nome} voltou para A fazer.`,
+    });
+    toast.success('Planejamento atualizado.');
+    router.refresh();
+  }
+
+  async function desfazerUltimaAcaoDoPlano(): Promise<void> {
+    if (ultimaAcaoPlano == null) return;
+    const { pendencia, momentoAnterior } = ultimaAcaoPlano;
+    setAcaoPlanoEmAndamentoId(pendencia.id);
+    const resultado = await alternarMomentoRegistro({ eventoIds: [pendencia.id], novoMomento: momentoAnterior });
+
+    if (!resultado.ok) {
+      setAcaoPlanoEmAndamentoId(null);
+      toast.error(resultado.error ?? 'Não foi possível desfazer a ação.');
+      return;
+    }
+    setAcaoPlanoEmAndamentoId(null);
+    setUltimaAcaoPlano(null);
+    toast.success('Última ação desfeita.');
     router.refresh();
   }
 
@@ -848,7 +901,7 @@ export function MeuDiaClient({
               layout="size"
               transition={{ layout: { duration: 0.18, ease: 'easeOut' } }}
               className={`h-full rounded-2xl border border-border bg-surface p-4 xl:h-[760px] xl:sticky xl:top-4 ${
-                gavetaAberta === null && denteAberto == null && leituraGrande == null
+                gavetaAberta !== null || (denteAberto == null && leituraGrande == null)
                   ? 'overflow-hidden'
                   : 'overflow-y-auto'
               }`}
@@ -856,8 +909,7 @@ export function MeuDiaClient({
               <FaixaGavetas
                 aberta={gavetaAberta}
                 onAbertaChange={setGavetaAberta}
-                historicoCount={contexto.visitas.length}
-                aFazerCount={minhasPendencias.length}
+                planoHistoricoCount={minhasPendencias.length}
                 pacienteId={slotSelecionado.pacienteId}
                 contextual
                 onOdontograma={() => setGavetaAberta(null)}
@@ -869,21 +921,18 @@ export function MeuDiaClient({
                     onImportado={() => router.refresh()}
                     onGerarOrcamento={(fichaId) => void orcamentoModal.abrirOrcamentoParaFicha(fichaId)}
                     meuDentistaId={meuDentistaId}
-                    onLerGrande={abrirLeituraGrande}
-                  />
-                }
-                aFazerBody={
-                  <AFazerBloco
                     pendencias={minhasPendencias}
-                    eventosDraft={eventosDraft}
-                    onFazerHoje={fazerHoje}
-                    onConcluirRecebida={(p) => void concluirRecebida(p)}
-                    concluindoId={concluindoId}
-                    meuDentistaId={meuDentistaId}
+                    onSituacaoChange={(pendencia, situacao) => void alterarSituacaoDoPlano(pendencia, situacao)}
+                    onRegistrarHoje={registrarHoje}
+                    onConcluirEncaminhada={(pendencia) => void concluirEncaminhada(pendencia)}
+                    ultimaAcao={ultimaAcaoPlano}
+                    onDesfazerUltimaAcao={() => void desfazerUltimaAcaoDoPlano()}
+                    acaoEmAndamentoId={acaoPlanoEmAndamentoId}
                     modoEncaminhar={modoEncaminhar}
-                    selecionados={selecionadosEncaminhar}
+                    selecionadosEncaminhar={selecionadosEncaminhar}
                     onToggleModoEncaminhar={toggleModoEncaminhar}
-                    onToggleSelecao={toggleSelecaoEncaminhar}
+                    onToggleSelecaoEncaminhar={toggleSelecaoEncaminhar}
+                    onLerGrande={abrirLeituraGrande}
                   />
                 }
                 anexosBody={

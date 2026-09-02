@@ -54,6 +54,15 @@ test('agrupar: status diferente no mesmo dente+tipo NÃO mescla (indicado ≠ re
   assert.equal(agruparRegistros(itens).length, 2);
 });
 
+test('agrupar: próxima sessão e sessão atual no mesmo dente NÃO mesclam', () => {
+  const itens = [
+    item({ id: 'atual', momentoPlanejado: 'sessao_atual' }),
+    item({ id: 'proxima', momentoPlanejado: 'proxima_sessao' }),
+  ];
+
+  assert.equal(agruparRegistros(itens).length, 2);
+});
+
 test('GATE: abertos primeiro, dente como critério secundário', () => {
   const itens = [
     item({ id: 'fechado-baixo', status: 'realizado', ancora: { nivel: 'dente', dente: 11 } }),
