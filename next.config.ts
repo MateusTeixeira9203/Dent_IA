@@ -6,6 +6,10 @@ const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: true },
   turbopack: {},
   experimental: {
+    // O runner CLI do Next 16.3.3 pode encerrar o `--showConfig` com stdout vazio.
+    // TypeScript 5.9 ainda expõe a Compiler API, então este caminho evita o falso
+    // erro de parse sem alterar o `typecheck` explícito do projeto.
+    useTypeScriptCli: false,
     // #9 — tree-shaking agressivo pra bundle das libs mais pesadas do app.
     optimizePackageImports: ['lucide-react', 'motion', 'date-fns', 'recharts'],
   },
