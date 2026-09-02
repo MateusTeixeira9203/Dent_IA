@@ -79,14 +79,14 @@ abrir o fluxo. Manter uma ação canônica e fazer todos os atalhos chamarem o m
 isso pode parecer o mesmo pagamento. A tela deve explicar a origem (orçamento ou receita avulsa) e
 preservar um único caminho para parcelas, recebimento, edição e estorno.
 
-### P1 — ações RPC financeiras quebram ao salvar
+### P1 — ações RPC financeiras quebram ao salvar (correção local pendente de prova)
 
 Ao registrar R$ 500,00 de recebimento, o botão ficou em “Salvando…” e o console registrou
 `TypeError: Cannot read properties of undefined (reading 'rest')` em `registrarPagamento`. A mesma
 falha ocorreu ao abrir/salvar a organização de parcelas, em `reorganizarParcelas`. O código extrai
-`supabase.rpc` para uma variável e a chama sem preservar o contexto do cliente; a implementação
-deve chamar o método no objeto ou fazer bind explícito. Corrigir também as ações de confirmar,
-editar e estornar, que usam o mesmo padrão, e repetir cada fluxo.
+`supabase.rpc` para uma variável e a chama sem preservar o contexto do cliente. A correção local
+aplicou `bind(supabase)` nas ações de reorganizar, registrar, confirmar, editar e estornar; falta
+repetir cada fluxo no navegador autenticado antes de liberar o push.
 
 ### P2 — primeiro vencimento não habilita o fluxo
 

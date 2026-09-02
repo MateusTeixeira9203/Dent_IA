@@ -27,9 +27,9 @@ sessão foi voltar ao fluxo leve: Next.js no localhost, sem depender de Supabase
   até corrigir a resolução de `?ag=`.
 - O retorno criado na Agenda não aparece na seção de retorno da Ficha; precisa corrigir o vínculo ou
   a revalidação antes do gate clínico.
-- O orçamento de teste foi criado e aprovado, mas o recebimento de R$ 500 e a organização de
-  parcelas ficaram presos em “Salvando…” por `supabase.rpc` chamado sem contexto (`reading 'rest'`).
-  As ações de corrigir/confirmar/estornar usam o mesmo padrão e ainda não foram provadas.
+- O orçamento de teste foi criado e aprovado. O recebimento de R$ 500 e a organização de parcelas
+  ficaram presos em “Salvando…” por `supabase.rpc` chamado sem contexto (`reading 'rest'`). A correção
+  (`bind(supabase)`) está no commit `b791a54`, mas a revalidação manual ainda precisa ser feita.
 
 ## Travado
 
