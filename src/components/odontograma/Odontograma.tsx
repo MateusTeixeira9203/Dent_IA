@@ -275,16 +275,17 @@ export function buildResumos(
     }
     map.set(dente, r);
   }
-  // R-127 — ausência é um estado estrutural exclusivo. Um implante (ou qualquer registro
-  // posterior) precisa voltar a desenhar o dente; o evento antigo continua no histórico e
-  // segue contribuindo para os demais resumos compatíveis.
+  // R-127 — ausência é um estado estrutural exclusivo. Só uma intervenção JÁ realizada
+  // posterior pode devolver o desenho normal do dente. Uma indicação de implante ainda
+  // depende justamente de o dente permanecer ausente; não pode apagar esse estado visual.
   for (const [dente, principal] of principais) {
     const r = map.get(dente);
     if (!r) continue;
-    const ausenciaAtual = principal.status === 'realizado'
-      && (principal.tipo === 'exodontia' || principal.tipo === 'esfoliacao');
-    r.ausente = ausenciaAtual;
-    r.esfoliado = ausenciaAtual && principal.tipo === 'esfoliacao';
+    if (principal.status !== 'realizado') continue;
+
+    const confirmaAusencia = principal.tipo === 'exodontia' || principal.tipo === 'esfoliacao';
+    r.ausente = confirmaAusencia;
+    r.esfoliado = confirmaAusencia && principal.tipo === 'esfoliacao';
   }
   for (const dente of mexidos) {
     const r = map.get(dente);
