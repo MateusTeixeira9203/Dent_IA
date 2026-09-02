@@ -303,7 +303,7 @@ export function NestaSessaoBloco({
             <button
               type="button"
               onClick={() => setModoEncaminhar(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-bold text-teal-ink transition-colors hover:bg-teal-pale"
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-teal/30 bg-teal-pale px-3 py-1 text-[11px] font-bold text-teal-ink transition-colors hover:bg-teal/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal"
             >
               <Forward className="h-3.5 w-3.5" />
               Encaminhar

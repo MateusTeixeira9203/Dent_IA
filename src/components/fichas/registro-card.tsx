@@ -256,9 +256,48 @@ export function RegistroCard({
         )}
 
         <div className={`min-w-0 flex-1 ${compacto && !emSelecao ? 'basis-full sm:basis-auto' : !compacto ? 'basis-full sm:basis-auto' : ''}`}>
-          <p className="font-semibold text-sm text-text-primary truncate">{titulo}</p>
+          <p className={`font-semibold text-text-primary ${editorCompacto ? 'text-[15px] leading-snug' : 'truncate text-sm'}`}>{titulo}</p>
           {data.revisarStatus && (
             <p className="mt-0.5 text-xs font-semibold text-warning-ink">Confira o status</p>
+          )}
+          {/* R-149 — no Meu Dia, a decisão clínica vem imediatamente após a identidade do
+              procedimento. O rótulo não é truncado e status não compete com ações auxiliares. */}
+          {editorCompacto && situacaoEditavel && (
+            <div
+              role="group"
+              aria-label={`Situação de ${titulo}`}
+              className="mt-2 grid max-w-md grid-cols-3 rounded-lg border border-border bg-surface-alt p-0.5"
+            >
+              {([
+                ['sessao_atual', 'A fazer', 'bg-coral-pale text-coral-ink'],
+                ['proxima_sessao', 'Próxima sessão', 'bg-warning-pale text-warning-ink'],
+                ['realizado', 'Realizado', 'bg-teal-pale text-teal-ink'],
+              ] as const).map(([situacao, label, ativo]) => (
+                <button
+                  key={situacao}
+                  type="button"
+                  aria-pressed={situacaoAtual === situacao}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSituacaoChange?.(situacao);
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  className={`min-h-10 rounded-md px-2 text-[11px] font-bold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-teal ${
+                    situacaoAtual === situacao
+                      ? ativo
+                      : 'text-text-secondary hover:bg-surface hover:text-text-primary'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {editorCompacto && !situacaoEditavel && (
+            <span className={`mt-2 inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 text-[11px] font-bold ${pill.wrap}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${pill.dot}`} />
+              {pill.label}
+            </span>
           )}
           {editavel && !compacto ? (
             <textarea
@@ -403,43 +442,7 @@ export function RegistroCard({
         )}
 
         {editorCompacto && (
-          <div className="flex basis-full flex-col gap-2 border-t border-border/70 pt-2 sm:flex-row sm:items-center sm:justify-between">
-            {situacaoEditavel ? (
-              <div
-                role="group"
-                aria-label={`Situação de ${titulo}`}
-                className="grid min-w-0 grid-cols-3 rounded-lg border border-border bg-surface-alt p-0.5"
-              >
-                {([
-                  ['sessao_atual', 'A fazer', 'bg-coral-pale text-coral-ink'],
-                  ['proxima_sessao', 'Próxima sessão', 'bg-warning-pale text-warning-ink'],
-                  ['realizado', 'Realizado', 'bg-teal-pale text-teal-ink'],
-                ] as const).map(([situacao, label, ativo]) => (
-                  <button
-                    key={situacao}
-                    type="button"
-                    aria-pressed={situacaoAtual === situacao}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onSituacaoChange?.(situacao);
-                    }}
-                    onKeyDown={(event) => event.stopPropagation()}
-                    className={`min-h-11 rounded-md px-2 text-[11px] font-bold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-teal ${
-                      situacaoAtual === situacao
-                        ? ativo
-                        : 'text-text-secondary hover:bg-surface hover:text-text-primary'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <span className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-[11px] font-bold ${pill.wrap}`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${pill.dot}`} />
-                {pill.label}
-              </span>
-            )}
+          <div className="mt-2 flex basis-full items-center justify-end border-t border-border/70 pt-1">
             <div className="flex shrink-0 items-center justify-end gap-1">
               {(abreFora || temCorpo) && (
                 <button
