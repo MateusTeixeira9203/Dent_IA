@@ -554,6 +554,8 @@ interface FichasTabProps {
   initialIntent?: 'ler' | 'editar';
   /** R-140c: retorna ao prontuário sem alterar a lógica do editor legado. */
   onVoltarAoProntuario?: () => void;
+  /** R-140c v8: usa somente o compositor compatível, sem reexibir a antiga lista de Fichas. */
+  modoEditorEmbutido?: boolean;
 }
 
 export function FichasTab({
@@ -567,6 +569,7 @@ export function FichasTab({
   initialFichaId,
   initialIntent = 'ler',
   onVoltarAoProntuario,
+  modoEditorEmbutido = false,
 }: FichasTabProps) {
   // O histórico é da CLÍNICA (todo dentista lê), o trabalho é do AUTOR (só ele escreve) —
   // migration 099. `canWrite` cobre papel/plano; a autoria é uma segunda condição, não a
@@ -1949,12 +1952,14 @@ export function FichasTab({
 
       {/* R-16: filtro por responsável — só quando há ≥2 responsáveis distintos no paciente
           (ChipsResponsavel esconde sozinho quando solo). */}
-      <ChipsResponsavel
-        responsaveis={responsaveis}
-        meuId={dentistaId}
-        filtro={filtroResponsavel}
-        onFiltroChange={setFiltroResponsavel}
-      />
+      {!modoEditorEmbutido && (
+        <ChipsResponsavel
+          responsaveis={responsaveis}
+          meuId={dentistaId}
+          filtro={filtroResponsavel}
+          onFiltroChange={setFiltroResponsavel}
+        />
+      )}
 
       <AnimatePresence>
         {isPanelOpen && (
@@ -2344,6 +2349,7 @@ export function FichasTab({
         )}
       </AnimatePresence>
 
+      {!modoEditorEmbutido && <>
       {/* Timeline */}
       {evolutions.length === 0 && !isPanelOpen && (
         <div className="bg-surface rounded-2xl border border-border p-12 text-center">
@@ -2859,6 +2865,7 @@ export function FichasTab({
         )}
 
       </div>
+      </>}
 
       {/* R-04 Fase 3 / R-03b: barra de ação do modo seleção — fixa, escopada à consulta em modo */}
       <AnimatePresence>

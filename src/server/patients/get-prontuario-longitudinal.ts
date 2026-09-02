@@ -4,6 +4,10 @@ import { createClient } from '@/lib/supabase/server';
 import { nomeTratamentoDerivado } from '@/lib/ficha/nome-tratamento';
 import { eventosDaVisita } from '@/lib/prontuario/eventos-da-visita';
 import type { OdontogramaEventoDraft, OrtoManutencaoInfo } from '@/types/odontograma';
+import {
+  projetarFichasProntuario,
+  type ProntuarioFicha,
+} from '@/server/patients/projetar-fichas-prontuario';
 
 export type FonteProntuario = 'moderna' | 'evolucao_legada' | 'ficha_legada';
 
@@ -44,6 +48,8 @@ export type ProntuarioDocumento = {
   fichaId: string;
   tipo: 'orcamento' | 'tcle' | 'conclusao_procedimento';
   assinadoEm: string;
+  /** Eventos clínicos congelados no documento; permite mostrar o PDF na consulta exata. */
+  eventoIds: string[];
 };
 
 export type ProntuarioAtendimento = {
@@ -63,6 +69,7 @@ export type ProntuarioAtendimento = {
     assinaturaUrl: string | null;
     assinadoEm: string | null;
     ortoManutencao: OrtoManutencaoInfo | null;
+    responsavel: ProntuarioProfissional;
   }>;
   evolucoes: ProntuarioEvolucao[];
   eventos: ProntuarioEvento[];
@@ -78,6 +85,7 @@ export type ProntuarioAtendimento = {
 
 export type ProntuarioLongitudinalData = {
   atendimentos: ProntuarioAtendimento[];
+  fichas: ProntuarioFicha[];
   boca: OdontogramaEventoDraft[];
   profissionaisClinicos: ProntuarioProfissional[];
   /** Falhas de uma fonte não podem transformar o restante do prontuário em lista vazia. */
@@ -161,8 +169,10 @@ type DentistaRaw = {
 type DocumentoRaw = {
   id: string;
   ficha_id: string | null;
+  assinatura_id: string | null;
   tipo: ProntuarioDocumento['tipo'];
   assinado_em: string;
+  conteudo_snapshot: unknown;
 };
 
 type ActivityLogRaw = {
@@ -242,6 +252,20 @@ function mapaDeListas<T>(items: T[], key: (item: T) => string | null): Map<strin
   return result;
 }
 
+function idsDeEventosDoSnapshot(snapshot: unknown): string[] {
+  if (!snapshot || typeof snapshot !== 'object' || !('eventoIds' in snapshot)) return [];
+  const eventoIds = (snapshot as { eventoIds?: unknown }).eventoIds;
+  if (!Array.isArray(eventoIds)) return [];
+
+  return eventoIds.flatMap((item) => {
+    if (typeof item === 'string') return [item];
+    if (item && typeof item === 'object' && 'id' in item && typeof item.id === 'string') {
+      return [item.id];
+    }
+    return [];
+  });
+}
+
 /**
  * Projeção de leitura do prontuário. Não altera nenhuma fonte clínica: atendimento moderno
  * vence; fichas sem âncora continuam visíveis como legado, em vez de sumirem da linha do tempo.
@@ -281,7 +305,7 @@ export async function getProntuarioLongitudinal({
       .eq('clinica_id', clinicId),
     supabase
       .from('documentos_aceite')
-      .select('id, ficha_id, tipo, assinado_em')
+      .select('id, ficha_id, assinatura_id, tipo, assinado_em, conteudo_snapshot')
       .eq('clinica_id', clinicId)
       .eq('paciente_id', patientId),
   ]);
@@ -351,12 +375,19 @@ export async function getProntuarioLongitudinal({
     ultimaAlteracaoPorEvento.get(evento.id) ?? null,
     profissionais.get(evento.dentista_id) ?? profissionalDesconhecido,
   ));
+  const eventosPorAssinatura = mapaDeListas(eventos, (evento) => evento.assinaturaId ?? null);
   const documentos = ((documentosResult.data as DocumentoRaw[] | null) ?? [])
     .flatMap((documento): ProntuarioDocumento[] => documento.ficha_id ? [{
       id: documento.id,
       fichaId: documento.ficha_id,
       tipo: documento.tipo,
       assinadoEm: documento.assinado_em,
+      eventoIds: [...new Set([
+        ...idsDeEventosDoSnapshot(documento.conteudo_snapshot),
+        ...(documento.assinatura_id
+          ? (eventosPorAssinatura.get(documento.assinatura_id) ?? []).map((evento) => evento.id)
+          : []),
+      ])],
     }] : []);
   const fichaPorId = new Map(fichas.map((ficha) => [ficha.id, ficha]));
   const evolucoesPorAtendimento = mapaDeListas(evolucoes, (evolucao) => evolucao.atendimento_id);
@@ -455,6 +486,7 @@ export async function getProntuarioLongitudinal({
           assinaturaUrl: ficha.assinatura_url,
           assinadoEm: ficha.assinado_em,
           ortoManutencao: ficha.orto_manutencao,
+          responsavel: profissionais.get(ficha.dentista_id) ?? profissionalDesconhecido,
         }];
       }),
       evolucoes: evolucoesDaVisita.map((evolucao) => ({
@@ -467,7 +499,16 @@ export async function getProntuarioLongitudinal({
       })),
       eventos: eventosProjetados,
       retorno: retornoPorAtendimento.get(atendimento.id) ?? null,
-      documentos: fichaIds.flatMap((fichaId) => documentosPorFicha.get(fichaId) ?? []),
+      documentos: fichaIds.flatMap((fichaId) => {
+        const idsEventoDaVisita = new Set(
+          eventosProjetados
+            .filter((evento) => evento.fichaId === fichaId)
+            .map((evento) => evento.id),
+        );
+        return (documentosPorFicha.get(fichaId) ?? []).filter((documento) => (
+          documento.eventoIds.some((eventoId) => idsEventoDaVisita.has(eventoId))
+        ));
+      }),
     };
   });
 
@@ -493,6 +534,7 @@ export async function getProntuarioLongitudinal({
           assinaturaUrl: ficha.assinatura_url,
           assinadoEm: ficha.assinado_em,
           ortoManutencao: ficha.orto_manutencao,
+          responsavel: profissional,
         }],
         evolucoes: (evolucoesDaFicha.length > 0 ? evolucoesDaFicha : [{
           id: `texto-legado:${ficha.id}`,
@@ -516,11 +558,14 @@ export async function getProntuarioLongitudinal({
       };
     });
 
-  return {
-    atendimentos: [...modernos, ...legados].sort((a, b) => (
+  const atendimentosOrdenados = [...modernos, ...legados].sort((a, b) => (
       b.dataAtendimento.localeCompare(a.dataAtendimento)
       || b.criadoEm.localeCompare(a.criadoEm)
-    )),
+  ));
+
+  return {
+    atendimentos: atendimentosOrdenados,
+    fichas: projetarFichasProntuario(atendimentosOrdenados),
     boca: eventos,
     profissionaisClinicos: ((dentistasResult.data as DentistaRaw[] | null) ?? [])
       .filter((profissional) => profissional.ativo && ['admin', 'dentista'].includes(profissional.role))

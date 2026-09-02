@@ -1,13 +1,14 @@
 export type ContextoTimeline = {
   filtro: 'tudo' | 'indicado' | 'realizado';
   dente: number | null;
+  concluidos: boolean;
   scrollY: number;
 };
 
 export type SuperficieProntuario =
-  | { tipo: 'timeline'; contexto: ContextoTimeline }
-  | { tipo: 'registro'; atendimentoId: string; retorno: ContextoTimeline }
-  | { tipo: 'tratamento'; fichaId: string; retorno: ContextoTimeline }
+  | { tipo: 'resumo'; contexto: ContextoTimeline }
+  | { tipo: 'ficha'; fichaId: string; atendimentoId: string | null; retorno: ContextoTimeline }
+  | { tipo: 'legado'; atendimentoId: string; retorno: ContextoTimeline }
   | {
       tipo: 'editor';
       modo: 'novo' | 'editar' | 'complementar';
@@ -19,13 +20,14 @@ export type SuperficieProntuario =
 export const CONTEXTO_TIMELINE_INICIAL: ContextoTimeline = {
   filtro: 'tudo',
   dente: null,
+  concluidos: false,
   scrollY: 0,
 };
 
 export function contextoDaSuperficie(superficie: SuperficieProntuario): ContextoTimeline {
-  return superficie.tipo === 'timeline' ? superficie.contexto : superficie.retorno;
+  return superficie.tipo === 'resumo' ? superficie.contexto : superficie.retorno;
 }
 
 export function voltarParaTimeline(superficie: SuperficieProntuario): SuperficieProntuario {
-  return { tipo: 'timeline', contexto: contextoDaSuperficie(superficie) };
+  return { tipo: 'resumo', contexto: contextoDaSuperficie(superficie) };
 }

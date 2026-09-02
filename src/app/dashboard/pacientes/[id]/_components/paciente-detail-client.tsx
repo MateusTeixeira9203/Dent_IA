@@ -1427,7 +1427,7 @@ export function PacienteDetailClient({
                         dentistaId={dentistaId}
                         patientName={displayNome}
                         canWrite={canWriteClinical}
-                        dados={prontuario ?? { atendimentos: [], boca: [], profissionaisClinicos: [], errosParciais: [] }}
+                        dados={prontuario ?? { atendimentos: [], fichas: [], boca: [], profissionaisClinicos: [], errosParciais: [] }}
                         onGerarOrcamento={(fichaId) => void orcamentoModal.abrirOrcamentoParaFicha(fichaId)}
                         onAbrirArquivos={() => handleTabChange('arquivos')}
                         // R-107b — catálogo pro match local da busca livre do painel do dente.
