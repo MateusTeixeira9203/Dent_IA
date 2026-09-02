@@ -8,6 +8,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useAudioRecorder, type RecorderStatus, type MicErro } from '@/hooks/useAudioRecorder';
 import { extensaoDoMime } from '@/lib/audio-mime';
+import { mensagemErroTranscricao, parseDexErrorCode, type DexErrorResponse } from '@/lib/dex/transcricao';
 
 // R-48 §5 — mensagens que dizem a verdade: cada motivo tem o texto certo, nunca
 // culpa permissão quando a permissão foi concedida (I4).
@@ -72,8 +73,15 @@ export function useCapturaLivre(options: UseCapturaLivreOptions = {}): UseCaptur
       // o formato pelo nome do arquivo, não pelo Content-Type do FormData.
       fd.append('audio', blob, `audio.${extensaoDoMime(blob.type || mimeTypeRef.current || '')}`);
       const res = await fetch('/api/transcrever', { method: 'POST', body: fd });
-      if (!res.ok) throw new Error(`Erro ${res.status}`);
-      const data = await res.json() as { transcricao?: string };
+      let data: DexErrorResponse & { transcricao?: string } = {};
+      try {
+        data = await res.json() as DexErrorResponse & { transcricao?: string };
+      } catch {
+        if (!res.ok) throw new Error(mensagemErroTranscricao(undefined, res.status));
+      }
+      if (!res.ok) {
+        throw new Error(mensagemErroTranscricao(parseDexErrorCode(data.code), res.status));
+      }
       const novoTexto = data.transcricao?.trim();
       if (!novoTexto) throw new Error('Transcrição vazia');
       setLiveTranscript(novoTexto);
@@ -83,7 +91,7 @@ export function useCapturaLivre(options: UseCapturaLivreOptions = {}): UseCaptur
     } catch (err) {
       console.error('[useCapturaLivre] transcrever:', err);
       setTranscriptionError(true);
-      toast.error('Não foi possível transcrever o áudio. O áudio continua disponível para tentar novamente.');
+      toast.error(err instanceof Error ? err.message : mensagemErroTranscricao(undefined));
     } finally {
       transcriptionInFlightRef.current = false;
       setIsTranscribing(false);

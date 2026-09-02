@@ -5,5 +5,7 @@
 export function extensaoDoMime(mime: string): string {
   const tipo = mime.split(';')[0]?.trim().toLowerCase();
   const subtipo = tipo?.split('/')[1];
+  if (subtipo === 'opus') return 'ogg';
+  if (subtipo === 'x-wav' || subtipo === 'wave') return 'wav';
   return subtipo || 'webm';
 }
