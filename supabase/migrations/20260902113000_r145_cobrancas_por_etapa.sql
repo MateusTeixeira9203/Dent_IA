@@ -1,4 +1,4 @@
--- R-145 revisão 2 — cobrança por etapa.
+-- R-145 revisão 3 — cobrança por etapa com parcelamento mensal.
 --
 -- Expansão aditiva: orçamentos e pagamentos anteriores continuam operando sem `cobranca_id`.
 -- Uma etapa só nasce quando o dentista a cria explicitamente; proposta clínica não vira dívida.
@@ -12,6 +12,8 @@ create table if not exists public.orcamento_cobrancas (
   subtotal numeric(10,2) not null check (subtotal > 0),
   desconto numeric(10,2) not null default 0 check (desconto >= 0 and desconto <= subtotal),
   valor_final numeric(10,2) not null check (valor_final >= 0 and valor_final = subtotal - desconto),
+  numero_parcelas smallint not null default 1 check (numero_parcelas between 1 and 24),
+  primeiro_vencimento date not null default (now() at time zone 'America/Sao_Paulo')::date,
   situacao text not null default 'aberta' check (situacao in ('aberta', 'cancelada')),
   cancelado_em timestamptz,
   cancelado_por_id uuid references public.dentistas(id) on delete set null,
@@ -51,6 +53,16 @@ create index if not exists pagamentos_clinica_cobranca_idx
   on public.pagamentos(clinica_id, cobranca_id, status)
   where cobranca_id is not null;
 
+-- A previsão legada é única por orçamento. Cobranças por etapa podem coexistir no
+-- mesmo orçamento, por isso cada uma tem sua própria sequência de parcelas.
+drop index if exists public.uq_pagamentos_orcamento_parcela_pendente;
+create unique index uq_pagamentos_orcamento_parcela_pendente
+  on public.pagamentos (orcamento_id, parcela_numero)
+  where cobranca_id is null and parcela_numero is not null and status = 'pendente';
+create unique index if not exists uq_pagamentos_cobranca_parcela_pendente
+  on public.pagamentos (cobranca_id, parcela_numero)
+  where cobranca_id is not null and parcela_numero is not null and status = 'pendente';
+
 alter table public.orcamento_cobrancas enable row level security;
 alter table public.orcamento_cobranca_itens enable row level security;
 
@@ -74,8 +86,8 @@ create policy orcamento_cobranca_itens_select on public.orcamento_cobranca_itens
     )
   );
 
--- Mantém uma única previsão pendente igual ao saldo da etapa. As linhas pagas/canceladas nunca
--- são reescritas; a previsão substituída vira histórico cancelado.
+-- Mantém as previsões mensais do saldo da etapa. As linhas pagas/canceladas nunca são
+-- reescritas; apenas previsões futuras são substituídas.
 create or replace function public.recompor_previsao_cobranca(
   p_cobranca_id uuid,
   p_clinica_id uuid,
@@ -89,6 +101,12 @@ declare
   v_cobranca public.orcamento_cobrancas%rowtype;
   v_pago numeric := 0;
   v_saldo numeric := 0;
+  v_total_centavos bigint := 0;
+  v_base_centavos bigint := 0;
+  v_resto_centavos bigint := 0;
+  v_valor_parcela numeric := 0;
+  v_primeiro_vencimento date;
+  i smallint;
 begin
   select c.* into v_cobranca
     from public.orcamento_cobrancas c
@@ -111,21 +129,37 @@ begin
      and status = 'pendente';
 
   if v_cobranca.situacao = 'aberta' and v_saldo > 0 then
-    insert into public.pagamentos (
-      clinica_id, orcamento_id, cobranca_id, paciente_id, dentista_id, valor, status, data_vencimento
-    ) values (
-      p_clinica_id, v_cobranca.orcamento_id, v_cobranca.id, v_cobranca.paciente_id,
-      v_cobranca.dentista_id, v_saldo, 'pendente',
+    v_total_centavos := round(v_saldo * 100)::bigint;
+    v_base_centavos := v_total_centavos / v_cobranca.numero_parcelas;
+    v_resto_centavos := v_total_centavos - v_base_centavos * v_cobranca.numero_parcelas;
+    v_primeiro_vencimento := greatest(
+      v_cobranca.primeiro_vencimento,
       (now() at time zone 'America/Sao_Paulo')::date
     );
+
+    for i in 1..v_cobranca.numero_parcelas loop
+      v_valor_parcela := (v_base_centavos
+        + case when i = v_cobranca.numero_parcelas then v_resto_centavos else 0 end) / 100.0;
+      insert into public.pagamentos (
+        clinica_id, orcamento_id, cobranca_id, paciente_id, dentista_id, valor, status,
+        data_vencimento, parcela_numero, total_parcelas
+      ) values (
+        p_clinica_id, v_cobranca.orcamento_id, v_cobranca.id, v_cobranca.paciente_id,
+        v_cobranca.dentista_id, v_valor_parcela, 'pendente',
+        (v_primeiro_vencimento + (i - 1) * interval '1 month')::date, i, v_cobranca.numero_parcelas
+      );
+    end loop;
   end if;
 end;
 $$;
 
+drop function if exists public.criar_cobranca_orcamento(uuid, uuid[], numeric);
 create or replace function public.criar_cobranca_orcamento(
   p_orcamento_id uuid,
   p_item_ids uuid[],
-  p_desconto numeric default 0
+  p_desconto numeric default 0,
+  p_numero_parcelas smallint default 1,
+  p_primeiro_vencimento date default null
 ) returns public.orcamento_cobrancas
 language plpgsql
 security definer
@@ -141,6 +175,7 @@ declare
   v_valor_final numeric := 0;
   v_item public.orcamento_itens%rowtype;
   v_item_id uuid;
+  v_primeiro_vencimento date;
 begin
   if v_clinica_id is null or v_actor_id is null then raise exception 'sem_permissao'; end if;
   if p_item_ids is null or cardinality(p_item_ids) is null or cardinality(p_item_ids) = 0
@@ -150,6 +185,10 @@ begin
   if p_desconto is null or p_desconto < 0 or round(p_desconto * 100) <> p_desconto * 100 then
     raise exception 'desconto_invalido';
   end if;
+  if p_numero_parcelas is null or p_numero_parcelas < 1 or p_numero_parcelas > 24 then
+    raise exception 'numero_parcelas_invalido';
+  end if;
+  v_primeiro_vencimento := coalesce(p_primeiro_vencimento, (now() at time zone 'America/Sao_Paulo')::date);
 
   select o.* into v_orc
     from public.orcamentos o
@@ -184,9 +223,11 @@ begin
   v_valor_final := v_subtotal - p_desconto;
 
   insert into public.orcamento_cobrancas (
-    clinica_id, orcamento_id, paciente_id, dentista_id, subtotal, desconto, valor_final
+    clinica_id, orcamento_id, paciente_id, dentista_id, subtotal, desconto, valor_final,
+    numero_parcelas, primeiro_vencimento
   ) values (
-    v_clinica_id, v_orc.id, v_orc.paciente_id, v_orc.dentista_id, v_subtotal, p_desconto, v_valor_final
+    v_clinica_id, v_orc.id, v_orc.paciente_id, v_orc.dentista_id, v_subtotal, p_desconto, v_valor_final,
+    p_numero_parcelas, v_primeiro_vencimento
   ) returning * into v_cobranca;
 
   foreach v_item_id in array p_item_ids loop
@@ -206,7 +247,8 @@ begin
     v_clinica_id, v_actor_id, v_actor_nome, v_orc.paciente_id, 'orcamento', v_orc.id::text,
     'cobranca.etapa_criada', jsonb_build_object(
       'cobranca_id', v_cobranca.id, 'item_ids', p_item_ids, 'subtotal', v_subtotal,
-      'desconto', p_desconto, 'valor_final', v_valor_final
+      'desconto', p_desconto, 'valor_final', v_valor_final,
+      'numero_parcelas', p_numero_parcelas, 'primeiro_vencimento', v_primeiro_vencimento
     )
   );
   return v_cobranca;
@@ -431,9 +473,9 @@ end;
 $$;
 
 revoke all on function public.recompor_previsao_cobranca(uuid, uuid, uuid) from public, anon, authenticated;
-revoke all on function public.criar_cobranca_orcamento(uuid, uuid[], numeric) from public, anon;
+revoke all on function public.criar_cobranca_orcamento(uuid, uuid[], numeric, smallint, date) from public, anon;
 revoke all on function public.registrar_recebimento_cobranca(uuid, numeric, text, date) from public, anon;
 revoke all on function public.cancelar_cobranca_orcamento(uuid, text) from public, anon;
-grant execute on function public.criar_cobranca_orcamento(uuid, uuid[], numeric) to authenticated;
+grant execute on function public.criar_cobranca_orcamento(uuid, uuid[], numeric, smallint, date) to authenticated;
 grant execute on function public.registrar_recebimento_cobranca(uuid, numeric, text, date) to authenticated;
 grant execute on function public.cancelar_cobranca_orcamento(uuid, text) to authenticated;
