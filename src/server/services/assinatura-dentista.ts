@@ -2,7 +2,6 @@ import type Stripe from 'stripe';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getSiteUrl, getStripeClient } from '@/lib/stripe';
 import { getResend } from '@/lib/email/resend';
-import { TRIAL_DAYS } from '@/lib/billing/trial';
 import {
   descreverPreco,
   resolverPrecoStripe,
@@ -12,6 +11,7 @@ import {
 } from '@/lib/billing/plan-catalog';
 import { avaliarMinimoClinica } from './elegibilidade-clinica';
 import { clinicaIsentaDeCobranca } from '@/lib/billing/exemptions';
+import { dadosTrialStripe, resolverDiasTrial, type DiasTrial } from '@/lib/billing/trial-policy';
 
 type AssinaturaRow = {
   id: string;
@@ -43,8 +43,23 @@ type MembershipRow = {
   status: string;
 };
 
+type PoliticaTrialRow = {
+  dias_trial: number;
+};
+
 function billingAtivo(): boolean {
   return process.env.STRIPE_BILLING_ENABLED === 'true';
+}
+
+async function obterDiasTrial(assinatura: AssinaturaRow): Promise<DiasTrial> {
+  const db = createServiceClient();
+  const { data, error } = await db.from('politicas_trial_assinatura')
+    .select('dias_trial')
+    .eq('clinica_id', assinatura.clinica_id)
+    .eq('usuario_id', assinatura.usuario_id)
+    .maybeSingle<PoliticaTrialRow>();
+  if (error) throw new Error('Não foi possível definir a política de trial.');
+  return resolverDiasTrial(data?.dias_trial);
 }
 
 async function criarCustomerStripe(assinatura: AssinaturaRow): Promise<string> {
@@ -187,6 +202,8 @@ export async function criarCheckoutAssinaturaDentista(
       oferta: assinatura.oferta,
     }));
 
+    const diasTrial = await obterDiasTrial(assinatura);
+
     const usaSetup = assinatura.plano === 'CLINICA' && Boolean(assinatura.formacao_id);
     const sessionId = usaSetup
       ? assinatura.stripe_setup_session_id
@@ -200,7 +217,8 @@ export async function criarCheckoutAssinaturaDentista(
     const customerId = await criarCustomerStripe(assinatura);
     const stripe = getStripeClient();
     const siteUrl = getSiteUrl();
-    const successUrl = retorno === 'onboarding'
+    const retornoConfirmado = retorno === 'onboarding' || assinatura.plano === 'CONSULTORIO';
+    const successUrl = retornoConfirmado
       ? `${siteUrl}/checkout/retorno?checkout=sucesso`
       : `${siteUrl}/bem-vindo-agregado?checkout=sucesso`;
     const cancelUrl = retorno === 'onboarding'
@@ -239,7 +257,7 @@ export async function criarCheckoutAssinaturaDentista(
           cancel_url: cancelUrl,
           metadata,
           subscription_data: {
-            trial_period_days: TRIAL_DAYS,
+            ...dadosTrialStripe(diasTrial),
             metadata: { assinaturaDentistaId: assinatura.id, clinicaId: assinatura.clinica_id },
           },
         }, { idempotencyKey: `r92-subscription-checkout-${assinatura.id}-${ciclo}-${sessionId ?? 'novo'}` });

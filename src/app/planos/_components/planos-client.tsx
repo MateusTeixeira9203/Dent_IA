@@ -12,7 +12,7 @@ import Link from 'next/link';
 
 interface PlanosClientProps {
   userId: string | null;
-  trialUsed: boolean;
+  trialDisponivel: boolean;
   estadoComercial: EstadoComercial;
   expired: boolean;
   onboarding: boolean;
@@ -65,7 +65,7 @@ const plans = [
 
 export function PlanosClient({
   userId,
-  trialUsed,
+  trialDisponivel,
   estadoComercial,
   expired,
   onboarding,
@@ -171,7 +171,7 @@ export function PlanosClient({
             {plans.map(plan => {
               const Icon = plan.icon;
               const isLoading = loadingPlan === plan.id;
-              const canTrial = !trialUsed && !isActive && !!userId;
+              const canTrial = trialDisponivel && !isActive && !!userId;
 
               return (
                 <motion.div
