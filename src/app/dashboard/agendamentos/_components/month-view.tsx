@@ -1,7 +1,7 @@
 'use client';
 
 import { motion, AnimatePresence } from 'motion/react';
-import { format, isToday as isDateToday, isSameDay, parseISO } from 'date-fns';
+import { format, isSameDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
   CalendarIcon,
@@ -75,7 +75,7 @@ interface MonthViewProps {
   assinadosIds: Set<string>;
 }
 
-const DAYS_OF_WEEK = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const DAYS_OF_WEEK = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -147,7 +147,7 @@ export function MonthView({
           </div>
 
           {/* Day-of-week headers */}
-          <div className="grid grid-cols-7 gap-1 mb-2">
+          <div className="grid grid-cols-6 gap-1 mb-2">
             {DAYS_OF_WEEK.map((day) => (
               <div
                 key={day}
@@ -159,7 +159,7 @@ export function MonthView({
           </div>
 
           {/* Calendar grid */}
-          <div className={`grid grid-cols-7 gap-1 transition-opacity duration-300 ${isPending ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
+          <div className={`grid grid-cols-6 gap-1 transition-opacity duration-300 ${isPending ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
             {calendarDays.map((day, i) => {
               const isSelected = isSameDay(day.date, selectedDate);
               return (

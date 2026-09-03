@@ -29,7 +29,13 @@ const AssinaturaRecepcaoModal = dynamic(
   () => import('@/components/fichas/AssinaturaRecepcaoModal').then(m => m.AssinaturaRecepcaoModal),
   { ssr: false }
 );
-import { buildClinicDatetime, janelaDaVisao, type VisaoAgenda } from './date-helpers';
+import {
+  buildClinicDatetime,
+  diaAnteriorDeAgenda,
+  janelaDaVisao,
+  proximoDiaDeAgenda,
+  type VisaoAgenda,
+} from './date-helpers';
 import type { DentistaAgenda } from './cor-dentista';
 import { useState, useMemo, useCallback, useTransition, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -39,11 +45,9 @@ import {
   addMonths,
   subMonths,
   addDays,
-  subDays,
   startOfMonth,
   endOfMonth,
   startOfWeek,
-  endOfWeek,
   eachDayOfInterval,
   isSameMonth,
   isSameDay,
@@ -471,16 +475,18 @@ export function AgendamentosClient({
 
   // Dias do calendário para o mês atual
   const calendarDays = useMemo(() => {
-    const start = startOfWeek(startOfMonth(currentMonth));
-    const end = endOfWeek(endOfMonth(currentMonth));
-    return eachDayOfInterval({ start, end }).map((date) => ({
-      date,
-      isCurrentMonth: isSameMonth(date, currentMonth),
-      isToday: isDateToday(date),
-      hasAppointments: agendamentosFiltrados.some((apt) =>
-        isSameDay(parseISO(apt.data_hora), date)
-      ),
-    }));
+    const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
+    const end = addDays(startOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 }), 5);
+    return eachDayOfInterval({ start, end })
+      .filter((date) => date.getDay() !== 0)
+      .map((date) => ({
+        date,
+        isCurrentMonth: isSameMonth(date, currentMonth),
+        isToday: isDateToday(date),
+        hasAppointments: agendamentosFiltrados.some((apt) =>
+          isSameDay(parseISO(apt.data_hora), date)
+        ),
+      }));
   }, [currentMonth, agendamentosFiltrados]);
 
   // Agendamentos do dia selecionado (com filtro de dentista aplicado)
@@ -617,13 +623,13 @@ export function AgendamentosClient({
         case 'ArrowLeft':
           if (!modalOpen && visao === 'dia') {
             e.preventDefault();
-            irPara('dia', subDays(ancoraDate, 1));
+            irPara('dia', diaAnteriorDeAgenda(ancoraDate));
           }
           break;
         case 'ArrowRight':
           if (!modalOpen && visao === 'dia') {
             e.preventDefault();
-            irPara('dia', addDays(ancoraDate, 1));
+            irPara('dia', proximoDiaDeAgenda(ancoraDate));
           }
           break;
       }

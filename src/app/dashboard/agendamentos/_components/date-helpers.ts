@@ -83,9 +83,10 @@ export function janelaDaVisao(
       fim = somaDias(base, 1);
       break;
     case 'semana':
-      // Domingo — mesmo `weekStartsOn: 0` que a WeekView usa pra desenhar.
-      ini = somaDias(base, -base.getUTCDay());
-      fim = somaDias(ini, 7);
+      // A semana operacional da agenda é segunda a sábado. A borda final continua
+      // exclusiva, portanto domingo à meia-noite fecha corretamente a janela.
+      ini = somaDias(base, -(base.getUTCDay() === 0 ? 6 : base.getUTCDay() - 1));
+      fim = somaDias(ini, 6);
       break;
     case 'mes':
       ini = new Date(Date.UTC(y, m - 1, 1, 12));
@@ -94,6 +95,25 @@ export function janelaDaVisao(
   }
 
   return { de: meiaNoiteNaClinica(ini), ate: meiaNoiteNaClinica(fim) };
+}
+
+/** Navegação da agenda não expõe domingo; sábado avança para segunda e segunda volta para sábado. */
+export function proximoDiaDeAgenda(data: Date): Date {
+  return somaDias(data, data.getDay() === 6 ? 2 : 1);
+}
+
+export function diaAnteriorDeAgenda(data: Date): Date {
+  return somaDias(data, data.getDay() === 1 ? -2 : -1);
+}
+
+/** Mantém URLs diretas na mesma regra da navegação visual: domingo abre a segunda seguinte. */
+export function ajustarAncoraDaAgenda(ancora: string): string {
+  const [ano, mes, dia] = ancora.split('-').map(Number);
+  const base = new Date(Date.UTC(ano, mes - 1, dia, 12));
+  if (base.getUTCDay() !== 0) return ancora;
+  const segunda = somaDias(base, 1);
+  const p = (valor: number) => String(valor).padStart(2, '0');
+  return `${segunda.getUTCFullYear()}-${p(segunda.getUTCMonth() + 1)}-${p(segunda.getUTCDate())}`;
 }
 
 /** Fim do mês da âncora — horizonte do banner "fora da janela", que não segue a visão. */
