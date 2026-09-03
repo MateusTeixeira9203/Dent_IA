@@ -10,6 +10,7 @@ import { classificarStatusDex } from '@/lib/dex/classificar-status';
 import { reconciliarProcedimentosDex } from '@/lib/dex/reconciliar-procedimentos';
 import { formatarEvolucaoRequestSchema } from '@/lib/dex/schemas';
 import { aplicarAusenciasExplicitamenteNarradas } from '@/lib/odontograma/estado-ausencia';
+import { normalizarBitolaOrto } from '@/lib/especialidades/normalizar-bitola-orto';
 import type {
   OdontogramaEventoInput,
   TipoRegistroOdontograma,
@@ -279,11 +280,15 @@ function parseOrto(wire: unknown): OrtoManutencaoInfo | null {
   // dita, não há manutenção estruturada — o relato cai no texto da visita.
   if (w.arcada !== 'superior' && w.arcada !== 'inferior' && w.arcada !== 'ambas') return null;
   const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const fio = (v: unknown): string | null => {
+    const valor = str(v);
+    return valor ? normalizarBitolaOrto(valor) : null;
+  };
   // R-50 (F1) — os `_inferior` só fazem sentido com 'ambas'; em arcada única ficam undefined
   // (o tipo os declara opcionais), não null, pra não gravar campo vazio à toa.
   const inferior = w.arcada === 'ambas'
     ? {
-        fio_inferior:                   str(w.fio_inferior),
+        fio_inferior:                   fio(w.fio_inferior),
         ativacao_inferior:              str(w.ativacao_inferior),
         elastico_corrente_inferior:     str(w.elastico_corrente_inferior),
         elastico_intermaxilar_inferior: str(w.elastico_intermaxilar_inferior),
@@ -291,7 +296,7 @@ function parseOrto(wire: unknown): OrtoManutencaoInfo | null {
     : {};
   return {
     arcada:                w.arcada,
-    fio:                   str(w.fio),
+    fio:                   fio(w.fio),
     ativacao:              str(w.ativacao),
     elastico_corrente:     str(w.elastico_corrente),
     elastico_intermaxilar: str(w.elastico_intermaxilar),
