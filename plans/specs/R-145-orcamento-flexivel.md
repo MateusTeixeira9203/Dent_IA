@@ -1,7 +1,7 @@
 # R-145 — Orçamento financeiro flexível
 
 > **SPEC** · **R-145** · 🔵 ativo
-> **Aberto:** 2026-09-02 · **Fechado:** — · **Fase:** revisão 2 aprovada pelo usuário na conversa
+> **Aberto:** 2026-09-02 · **Fechado:** — · **Fase:** revisão 3 aprovada pelo usuário na conversa
 
 ## 1. Problema
 
@@ -42,9 +42,12 @@ real de pagar procedimento por procedimento conforme o tratamento acontece.
 - **À vista é uma cobrança prevista, não receita:** ao escolher esse plano, cria uma única linha
   `pendente` para o valor acordado e vencimento de hoje. Ela só passa a receita quando alguém a
   marca como `pago`. A proposta/orçamento, isoladamente, continua sem lançar dinheiro.
-- **Cobrança por etapa (revisão 2):** o orçamento continua sendo a proposta; a dívida nasce
+- **Cobrança por etapa (revisão 3):** o orçamento continua sendo a proposta; a dívida nasce
   somente quando o dentista escolhe um ou mais itens para cobrar agora. Cada etapa tem subtotal,
   desconto e valor final próprios. Um recebimento reduz exclusivamente a etapa escolhida.
+- **Parcelado ocupa os meses, não um mês só:** a etapa parcelada divide seu valor final em N
+  previsões mensais. Nenhum mês recebe o montante integral; a soma das parcelas fecha o valor da
+  etapa em centavos.
 - **Sem rateio invisível:** um item não entra em duas etapas ativas. Para cobrar vários
   procedimentos em um único PIX, o dentista os seleciona juntos e cria uma única etapa.
 
@@ -65,9 +68,9 @@ No modal de orçamento do perfil do paciente, transformar a coluna financeira em
 5. **Origem clínica legível** — o modal informa quantos procedimentos da Ficha estão disponíveis
    para o orçamento do responsável atual e quantos pertencem a colegas. Itens de colegas ficam
    visíveis apenas como contexto, nunca selecionáveis nem enviados à RPC.
-6. **Cobrar nesta etapa** — o dentista seleciona itens inteiros aprovados, informa desconto desta
-   etapa e confirma o valor final antes de gerar a cobrança. A própria etapa mostra `Pendente`,
-   `Parcial`, `Paga` ou `Cancelada`; não há status manual de dinheiro.
+6. **Cobrar nesta etapa** — o dentista seleciona itens inteiros aprovados, informa desconto e
+   escolhe à vista ou N parcelas mensais antes de confirmar. A etapa mostra `Pendente`, `Parcial`,
+   `Paga` ou `Cancelada`; não há status manual de dinheiro.
 
 `/dashboard/financeiro` reutiliza a mesma escrita transacional; sua lista de pendências continua
 lendo somente linhas `pendente` e sua receita somente linhas `pago`.
@@ -96,6 +99,8 @@ interface CobrancaEtapaInput {
   orcamentoId: string;
   itemIds: string[];          // itens inteiros, únicos e pertencentes ao orçamento
   desconto: number;           // 0 <= desconto <= subtotal
+  numeroParcelas: number;     // 1 = à vista; 2..24 = mensal
+  primeiroVencimento: string; // ISO date
 }
 ```
 
@@ -124,10 +129,10 @@ interface CobrancaEtapa {
 ```
 
 As tabelas aditivas são `orcamento_cobrancas` e `orcamento_cobranca_itens`. `pagamentos` ganha
-`cobranca_id` anulável: linhas antigas continuam legíveis e cada novo recebimento ou previsão da
-etapa aponta para a cobrança correspondente. Criar uma etapa cria uma única previsão `pendente`
-para seu valor final, visível no Financeiro. Receber parcialmente preserva o recebido, cancela só
-a previsão substituída e recria apenas o saldo pendente da mesma etapa.
+`cobranca_id` anulável: linhas antigas continuam legíveis e cada recebimento ou previsão aponta
+para sua etapa. À vista cria uma pendência; parcelado cria N pendências mensais, divididas em
+centavos e com eventual resto na última parcela. Receber parcialmente preserva o recebido e
+recompõe somente o saldo futuro da mesma etapa.
 
 O desconto de `orcamentos.desconto` permanece metadado da proposta e compatibilidade do fluxo
 legado; ele **não é aplicado automaticamente** a uma nova etapa. O desconto aplicado é sempre o
@@ -155,7 +160,8 @@ corrigir_recebimento_orcamento(
 ) returns public.pagamentos
 
 criar_cobranca_orcamento(
-  p_orcamento_id uuid, p_item_ids uuid[], p_desconto numeric
+  p_orcamento_id uuid, p_item_ids uuid[], p_desconto numeric,
+  p_numero_parcelas smallint, p_primeiro_vencimento date
 ) returns public.orcamento_cobrancas
 
 registrar_recebimento_cobranca(
@@ -212,6 +218,7 @@ novo — sem migração silenciosa de negociação ou dinheiro histórico.
 | Estorno | Exige motivo, conserva a linha cancelada e reabre saldo. |
 | Sem permissão ou objeto desatualizado | Não muda UI otimista; mostra erro e recarrega. |
 | Etapa R$ 1.000 com R$ 100 de desconto | Cria previsão de R$ 900; R$ 500 recebido deixa R$ 400 pendentes. |
+| Etapa de R$ 900 em 3 meses | Cria 3 previsões mensais de R$ 300; nunca R$ 900 em um único mês. |
 | Item já em etapa aberta/paga | Não aparece elegível nem pode ser cobrado outra vez pela RPC. |
 | Cancelar etapa sem recebido | Cancela sua previsão e libera seus itens para uma nova etapa. |
 
@@ -252,6 +259,7 @@ Exemplos:
    ultrapassa seu subtotal e seu valor final nunca é negativo.
 10. Um item participa de no máximo uma etapa não cancelada; recebimento, correção e estorno de uma
     etapa não afetam saldo/previsão de outra.
+11. Etapa parcelada gera de 2 a 24 previsões mensais cuja soma é exatamente seu valor final.
 
 ## 8. Gates de aceite
 
@@ -268,6 +276,8 @@ Exemplos:
 - [ ] Duas contas de clínicas diferentes não leem nem alteram dados uma da outra.
 - [ ] Selecionar somente item de R$ 1.000 com desconto de R$ 100 cria uma etapa e previsão de
   R$ 900, mesmo que a proposta inteira seja R$ 5.000.
+- [ ] Parcelar essa etapa de R$ 900 em 3 meses cria 3 pendências de R$ 300 em meses consecutivos;
+  o Financeiro não concentra R$ 900 no primeiro mês.
 - [ ] Registrar R$ 500 nessa etapa deixa `Parcial` e R$ 400 no Financeiro; registrar R$ 400 muda
   imediatamente para `Paga`, sem mexer nos outros itens.
 - [ ] Cancelar etapa sem recebido libera seus itens; tentativa de duplicar item em etapa aberta ou

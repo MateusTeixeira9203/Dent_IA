@@ -1,6 +1,6 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · atualizado em **31/08/2026** · mapa do produto atual.
+> **ROADMAP** · atualizado em **03/09/2026** · mapa do produto atual.
 > Histórico de decisões, itens antigos e specs fechadas vivem em [`_arquivo/`](./_arquivo/).
 
 ## Produto atual — fonte de decisão
@@ -53,6 +53,7 @@
 
 | ID | Item | Estado |
 |---|---|---|
+| [**R-150**](specs/R-150-agenda-util-retorno-rapido.md) | **Agenda útil e retorno rápido** — atalhos de 7/15 dias, ponte fixa selecionável em dente ausente, expediente do dentista comprovado ponta a ponta e Agenda principal somente de segunda a sábado | 🔵 em execução; contrato aprovado pelo pedido de 03/09. |
 | **R-144** | **Fechamento assistido opcional** — após revisar a consulta, sugere retorno, próxima sessão, orçamento, assinatura e materiais sem bloquear nem forçar abrir a Ficha | ⏳ planejar somente depois do gate do R-140c; não misturar com as correções atuais. |
 | [**R-141**](specs/R-141-captura-dex-sem-perda.md) | **Captura Dex sem perda** — salvar aguarda áudio/arquivo/IA, transcrição repete sem novo ditado e corte por silêncio fica explícito | ⏳ contrato escrito; aguarda aprovação. |
 | [**R-142**](specs/R-142-contratos-hardening-dex.md) | **Contratos e hardening do Dex** — Zod runtime, limites, rate limit por identidade, timeout e observabilidade agregada | ⏳ contrato escrito; migration aditiva e teste com duas contas impedem publicação sem gate. |
