@@ -353,6 +353,7 @@ export function ToothDetailPanel({
     ancora,
     grupo_id: null,
     papel_no_grupo: null,
+    procedimentoNome: TIPO_LABEL[tipo],
     observacao: '',
     realizado_em: status === 'realizado' ? dataPadrao : null,
   });
@@ -407,7 +408,7 @@ export function ToothDetailPanel({
     const ev = {
       ...novo(tipo, modos[0], ancora),
       procedimentoId: procedimento?.id ?? null,
-      procedimentoNome: procedimento?.nome ?? null,
+      procedimentoNome: procedimento?.nome ?? TIPO_LABEL[tipo],
     };
     all.push(grupoId ? { ...ev, grupo_id: grupoId } : ev);
     // Endo/implante acabaram de ganhar tabela (migration 106) — abre sozinha na criação,

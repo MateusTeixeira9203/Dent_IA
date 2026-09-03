@@ -155,6 +155,7 @@ interface PacienteDetailClientProps {
   paciente: Paciente;
   agendamentoProximo: AgendamentoProximo | null;
   orcamentos: OrcamentoComItens[];
+  orcamentosAviso?: string | null;
   clinicaId: string;
   dentistaId: string;
   role: DentistaRole;
@@ -168,6 +169,7 @@ export function PacienteDetailClient({
   paciente,
   agendamentoProximo,
   orcamentos,
+  orcamentosAviso = null,
   clinicaId,
   dentistaId,
   role,
@@ -1489,6 +1491,12 @@ export function PacienteDetailClient({
 
                 {/* Orçamentos */}
                 <TabsContent value="orcamentos" className="mt-0 space-y-4">
+                  {orcamentosAviso && (
+                    <div role="status" className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning-ink">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <p>{orcamentosAviso}</p>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-text-secondary font-medium">
                       {orcamentosState.length} orçamento{orcamentosState.length !== 1 ? 's' : ''}

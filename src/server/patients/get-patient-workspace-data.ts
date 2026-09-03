@@ -96,6 +96,8 @@ export type PatientWorkspaceData = {
   paciente: Paciente;
   agendamentoProximo: AgendamentoProximo | null;
   orcamentos: OrcamentoComItens[];
+  /** A proposta continua visível quando a relação financeira complementar falha. */
+  orcamentosAviso: string | null;
   fichasRecentes: FichaRecente[];
   timeline: TimelineEvent[];
 };
@@ -145,7 +147,7 @@ export async function getPatientWorkspaceData({
           .from('orcamentos')
           .select(
             // R-114 — valor_acordado entra pro devido derivado (I1); itens ganham `aprovado`.
-            'id, status, total, valor_acordado, plano_forma, desconto, created_at, validade_dias, condicoes_pagamento, mostrar_valor_por_item, dentista_id, aprovado_em, aprovado_por:dentistas!orcamentos_aprovado_por_id_fkey(nome), itens:orcamento_itens(id, descricao, preco_total, quantidade, aprovado), pagamentos(id, cobranca_id, valor, status, forma_pagamento, data_pagamento, data_vencimento, parcela_numero, total_parcelas, marcado_por:dentistas!pagamentos_marcado_por_id_fkey(nome)), cobrancas:orcamento_cobrancas(id, subtotal, desconto, valor_final, numero_parcelas, primeiro_vencimento, situacao, created_at, itens:orcamento_cobranca_itens(orcamento_item_id, preco_total_snapshot), pagamentos(id, cobranca_id, valor, status, forma_pagamento, data_pagamento, data_vencimento, parcela_numero, total_parcelas, marcado_por:dentistas!pagamentos_marcado_por_id_fkey(nome)), aceite:assinaturas!assinaturas_orcamento_id_fkey(id, assinado_por, cro_no_ato, assinatura_ref, assinado_em, termos_snapshot)'
+            'id, status, total, valor_acordado, plano_forma, desconto, created_at, validade_dias, condicoes_pagamento, mostrar_valor_por_item, dentista_id, aprovado_em, aprovado_por:dentistas!orcamentos_aprovado_por_id_fkey(nome), itens:orcamento_itens(id, descricao, preco_total, quantidade, aprovado), pagamentos(id, cobranca_id, valor, status, forma_pagamento, data_pagamento, data_vencimento, parcela_numero, total_parcelas, marcado_por:dentistas!pagamentos_marcado_por_id_fkey(nome)), aceite:assinaturas!assinaturas_orcamento_id_fkey(id, assinado_por, cro_no_ato, assinatura_ref, assinado_em, termos_snapshot)'
           )
           .eq('paciente_id', patientId)
           .eq('clinica_id', clinicId)
@@ -171,16 +173,60 @@ export async function getPatientWorkspaceData({
 
   if (!pacienteResult.data) return null;
 
+  if (orcamentosResult.error) {
+    console.error('[patient-workspace] falha ao carregar orçamento-base', {
+      code: orcamentosResult.error.code,
+      message: orcamentosResult.error.message,
+    });
+    throw new Error('Não foi possível carregar os orçamentos do paciente.');
+  }
+
   // O embed reverso por FK (assinaturas ← orcamentos) sempre vem como array no PostgREST,
   // mesmo com o índice único parcial (migration 113) garantindo no máximo 1 linha — a
   // constraint é condicional (`where tipo='orcamento'`), e o PostgREST só infere to-one a
   // partir de unique constraint incondicional. Achata pra objeto|null aqui.
-  type OrcamentoRaw = Omit<OrcamentoComItens, 'aceite'> & { aceite: AssinaturaOrcamentoRaw[] | null };
+  type OrcamentoRaw = Omit<OrcamentoComItens, 'aceite' | 'cobrancas'> & {
+    aceite: AssinaturaOrcamentoRaw[] | null;
+  };
   const orcamentosRaw = (orcamentosResult.data as unknown as OrcamentoRaw[]) ?? [];
+  const orcamentoIds = orcamentosRaw.map((orcamento) => orcamento.id);
+  type CobrancaRaw = CobrancaEtapa & { orcamento_id: string };
+  let cobrancasPorOrcamento = new Map<string, CobrancaEtapa[]>();
+  let orcamentosAviso: string | null = null;
+
+  if (orcamentoIds.length > 0) {
+    const { data, error } = await supabase
+      .from('orcamento_cobrancas')
+      .select(
+        'id, orcamento_id, subtotal, desconto, valor_final, numero_parcelas, primeiro_vencimento, situacao, created_at, itens:orcamento_cobranca_itens!orcamento_cobranca_itens_cobranca_id_fkey(orcamento_item_id, preco_total_snapshot), pagamentos:pagamentos!pagamentos_cobranca_id_fkey(id, cobranca_id, valor, status, forma_pagamento, data_pagamento, data_vencimento, parcela_numero, total_parcelas, marcado_por:dentistas!pagamentos_marcado_por_id_fkey(nome))'
+      )
+      .eq('clinica_id', clinicId)
+      .in('orcamento_id', orcamentoIds);
+
+    if (error) {
+      console.error('[patient-workspace] falha ao carregar cobranças do orçamento', {
+        code: error.code,
+        message: error.message,
+      });
+      orcamentosAviso = 'Os orçamentos foram carregados, mas os detalhes das cobranças não. Recarregue a página.';
+    } else {
+      cobrancasPorOrcamento = (data as unknown as CobrancaRaw[] ?? []).reduce(
+        (porOrcamento, cobranca) => {
+          const existentes = porOrcamento.get(cobranca.orcamento_id) ?? [];
+          const detalhe: CobrancaEtapa = cobranca;
+          porOrcamento.set(cobranca.orcamento_id, [...existentes, detalhe]);
+          return porOrcamento;
+        },
+        new Map<string, CobrancaEtapa[]>(),
+      );
+    }
+  }
+
   const orcamentos: OrcamentoComItens[] = orcamentosRaw.map((orc) => {
     const raw = orc.aceite?.[0] ?? null;
     return {
       ...orc,
+      cobrancas: cobrancasPorOrcamento.get(orc.id) ?? [],
       aceite: raw && raw.termos_snapshot
         ? {
             id: raw.id,
@@ -198,6 +244,7 @@ export async function getPatientWorkspaceData({
     paciente: pacienteResult.data as Paciente,
     agendamentoProximo: (agendamentoResult.data as AgendamentoProximo | null) ?? null,
     orcamentos,
+    orcamentosAviso,
     fichasRecentes: isClinical
       ? ((fichasResult.data as unknown as FichaRecente[]) ?? [])
       : [],

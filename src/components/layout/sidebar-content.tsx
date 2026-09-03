@@ -103,7 +103,7 @@ export function SidebarContent({
       label: 'GESTÃO',
       items: [
         { href: '/dashboard/financeiro',  icon: Wallet,    label: 'Financeiro', id: 'financeiro-link',  visible: true, locked: financeiroLocked },
-        { href: '/dashboard/orcamentos',  icon: FileText,  label: 'Orçamentos', id: 'orcamentos-link',  visible: true, locked: false },
+        { href: '/dashboard/orcamentos',  icon: FileText,  label: 'Orçamentos', id: 'orcamentos-link',  visible: role === 'secretaria', locked: false },
       ],
     },
     {

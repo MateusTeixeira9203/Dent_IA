@@ -31,6 +31,7 @@ export default async function PacienteDetalhePage({
       paciente={data.paciente}
       agendamentoProximo={data.agendamentoProximo}
       orcamentos={data.orcamentos}
+      orcamentosAviso={data.orcamentosAviso}
       fichasRecentesSSR={data.fichasRecentes}
       timeline={data.timeline}
       prontuario={prontuario}

@@ -123,7 +123,7 @@ async function SecretaryDashboardServer({
       pacienteId: pg.paciente.id,
       pacienteNome: pg.paciente.nome,
       descricao: `Pagamento ${valor} vencido há ${dias} dia${dias !== 1 ? 's' : ''}`,
-      href: '/dashboard/orcamentos',
+      href: `/dashboard/pacientes/${pg.paciente.id}?tab=orcamentos`,
       diasAtrasado: dias,
     });
   }

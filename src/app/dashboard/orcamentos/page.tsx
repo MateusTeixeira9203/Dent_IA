@@ -44,6 +44,7 @@ export type OrcamentoRow = {
 export default async function OrcamentosPage() {
   const dentista = await getDentistaCached();
   if (!dentista) redirect('/login');
+  if (dentista.role !== 'secretaria') redirect('/dashboard/pacientes');
 
   // Override para usuário específico ter acesso a features de plano superior
   const supabase = await createClient();

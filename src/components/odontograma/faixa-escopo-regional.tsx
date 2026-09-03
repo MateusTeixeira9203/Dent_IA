@@ -79,7 +79,7 @@ export function FaixaEscopoRegional({
     const novos = criarEventosContextuais({
       tipo: tipo ?? 'outro',
       procedimentoId,
-      procedimentoNome: tipo && procedimentoId == null ? null : label,
+      procedimentoNome: label,
       ancoras: [ancoraDoEscopoRegional(escopo)],
       contexto: { capturaId: crypto.randomUUID(), modo: modoLancamento },
       dataPadrao,

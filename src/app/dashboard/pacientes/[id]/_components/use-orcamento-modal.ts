@@ -167,12 +167,18 @@ export function useOrcamentoModal({
     return null;
   };
 
-  // Match no catálogo pelo RÓTULO CANÔNICO do tipo (TIPO_LABEL), nunca por texto livre — é o
-  // texto livre que fazia a mesma coisa dita de 2 jeitos virar 2 itens de orçamento diferentes.
-  const matchProcedimentoPorTipo = (tipo: EventoOdontogramaParaOrc['tipo']) => {
-    const rotulo = TIPO_LABEL[tipo].toLowerCase();
+  const normalizarNomeProcedimento = (nome: string) => nome
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLocaleLowerCase('pt-BR');
+
+  // O catálogo só entra automaticamente com nome exato. "Extração" e "Extração de siso",
+  // por exemplo, são procedimentos e preços distintos; texto parecido não é vínculo clínico.
+  const matchProcedimentoPorNomeExato = (nome: string) => {
+    const normalizado = normalizarNomeProcedimento(nome);
     return procedimentosClinicaCompleto.find(
-      (p) => p.nome.toLowerCase().includes(rotulo) || rotulo.includes(p.nome.toLowerCase()),
+      (procedimento) => normalizarNomeProcedimento(procedimento.nome) === normalizado,
     );
   };
 
@@ -199,11 +205,7 @@ export function useOrcamentoModal({
     }
 
     return Array.from(procToTeeth.entries()).map(([proc, teeth]) => {
-      const match = procedimentosClinicaCompleto.find(
-        (p) =>
-          p.nome.toLowerCase().includes(proc.toLowerCase()) ||
-          proc.toLowerCase().includes(p.nome.toLowerCase()),
-      );
+      const match = matchProcedimentoPorNomeExato(proc);
       const descricao =
         teeth.length > 1
           ? `${match?.nome ?? proc} (D${teeth.join(', D')})`
@@ -245,10 +247,10 @@ export function useOrcamentoModal({
       const catalogoVinculado = primeiro.procedimento_id
         ? procedimentosClinica.find((procedimento) => procedimento.id === primeiro.procedimento_id)
         : undefined;
-      const match = catalogoVinculado ?? matchProcedimentoPorTipo(primeiro.tipo);
       const rotulo = primeiro.procedimento_nome?.trim()
         || (primeiro.tipo === 'outro' ? primeiro.observacao?.trim() : null)
         || TIPO_LABEL[primeiro.tipo];
+      const match = catalogoVinculado ?? matchProcedimentoPorNomeExato(rotulo);
 
       const dentesDistintos = [
         ...new Set(grupoEventos.map((ev) => ev.dente).filter((d): d is number => d != null)),
