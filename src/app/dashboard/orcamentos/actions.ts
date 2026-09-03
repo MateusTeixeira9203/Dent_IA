@@ -52,6 +52,8 @@ const criarCobrancaEtapaSchema = z.object({
   pacienteId: z.string().uuid(),
   itemIds: z.array(z.string().uuid()).min(1).max(100),
   desconto: z.number().finite().min(0).multipleOf(0.01),
+  numeroParcelas: z.number().int().min(1).max(24),
+  primeiroVencimento: z.string().date(),
 });
 const recebimentoCobrancaSchema = z.object({
   cobrancaId: z.string().uuid(),
@@ -330,7 +332,7 @@ export async function atualizarStatusOrcamento(
   orcamentoId: string,
   status: StatusOrcamento
 ): Promise<{ error?: string }> {
-  const { supabase, user, clinicId, dentistaId } = await requireClinicContext();
+  const { supabase, user, clinicId } = await requireClinicContext();
 
   const { data: dentistaPerfil } = await supabase
     .from("dentistas")
@@ -791,9 +793,11 @@ export async function criarCobrancaEtapa(dados: {
   pacienteId: string;
   itemIds: string[];
   desconto: number;
+  numeroParcelas: number;
+  primeiroVencimento: string;
 }): Promise<{ error?: string; id?: string }> {
   const parsed = criarCobrancaEtapaSchema.safeParse(dados);
-  if (!parsed.success) return { error: 'Revise os procedimentos e o desconto da etapa.' };
+  if (!parsed.success) return { error: 'Revise os procedimentos, o desconto e as parcelas da etapa.' };
 
   const { supabase } = await requireClinicContext();
   const rpc = supabase.rpc.bind(supabase) as unknown as RpcCall;
@@ -801,6 +805,8 @@ export async function criarCobrancaEtapa(dados: {
     p_orcamento_id: parsed.data.orcamentoId,
     p_item_ids: parsed.data.itemIds,
     p_desconto: parsed.data.desconto,
+    p_numero_parcelas: parsed.data.numeroParcelas,
+    p_primeiro_vencimento: parsed.data.primeiroVencimento,
   });
   if (error) return { error: erroFinanceiro(error.message) };
 

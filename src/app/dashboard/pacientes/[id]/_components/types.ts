@@ -32,6 +32,8 @@ export type CobrancaEtapa = {
   subtotal: number;
   desconto: number;
   valor_final: number;
+  numero_parcelas: number;
+  primeiro_vencimento: string;
   situacao: 'aberta' | 'cancelada';
   created_at: string;
   itens: { orcamento_item_id: string; preco_total_snapshot: number }[];
