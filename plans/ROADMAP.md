@@ -22,7 +22,7 @@
 
 | ID | Item | Estado |
 |---|---|---|
-| [**R-153**](specs/R-153-orcamento-ficha-fluxo-continuo.md) | **Orçamento da Ficha em fluxo contínuo** — uma Ficha por orçamento, catálogo confiável e continuidade no perfil do paciente | 🔵 execução local commitada; ainda não enviada ou publicada. |
+| [**R-153**](specs/R-153-orcamento-ficha-fluxo-continuo.md) | **Orçamento da Ficha em fluxo contínuo** — uma Ficha por orçamento, catálogo confiável e continuidade no perfil do paciente | 🔵 integrada em `main`; aguarda confirmação do deploy e validação dirigida. |
 
 ## Publicado, aguardando validação dirigida
 
@@ -49,7 +49,7 @@
 | ID | Item | Estado |
 |---|---|---|
 | [**R-154**](specs/R-154-plano-tratamento-fluido.md) | **Plano de tratamento fluido no Meu Dia** — fila clínica completa, responsabilidade explícita e transição de status sem recarregar | ⏳ debate; não altera autoria clínica sem decisão explícita. |
-| [**R-151**](specs/R-151-dex-organizar-baixa-latencia.md) | **Dex organiza a ficha com baixa latência** — otimiza autenticação, esperas e infraestrutura mantendo a inteligência atual | 🧊 alteração local isolada; retoma após validar/fechar R-153. |
+| [**R-151**](specs/R-151-dex-organizar-baixa-latencia.md) | **Dex organiza a ficha com baixa latência** — otimiza autenticação, esperas e infraestrutura mantendo a inteligência atual | 🟡 integrada com a baseline; aguarda validação dirigida própria. |
 | [**R-150**](specs/R-150-agenda-util-retorno-rapido.md) | **Agenda útil e retorno rápido** — atalhos de 7/15 dias, ponte fixa, expediente comprovado e Agenda de segunda a sábado | ⏳ fila; não concorre com as correções P0. |
 | [**R-139c**](specs/R-139c-status-dex-preservado.md) | **Status clínico confiável na saída do Dex** | ⏳ revisão 2 em contrato; classificação exige eval antes/depois. |
 | [**R-133**](specs/R-133-dex-clinico-sem-perda.md) | **Dex clínico sem perda** | ⏳ executa depois de R-139c e antes do gate R-143. |

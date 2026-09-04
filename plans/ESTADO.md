@@ -1,21 +1,21 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado em 03/09/2026 · retrato da branch, não histórico de sessão.
+> **ESTADO** · atualizado em 04/09/2026 · retrato da branch, não histórico de sessão.
 
 ## Agora
 
-🔵 **R-153 — Orçamento da Ficha em fluxo contínuo.** A implementação local isola o orçamento
+🔵 **R-153 — Orçamento da Ficha em fluxo contínuo.** A implementação em `main` isola o orçamento
 clínico por Ficha e impede que o dentista precise fechar/abandonar o paciente para montar uma
-proposta. Está commitada localmente, mas ainda não foi enviada ou publicada. O recorte está em
+proposta. Aguarda confirmação do deploy e validação dirigida. O recorte está em
 `use-orcamento-modal`, `novo-orcamento-modal` e `meu-dia-client`.
 
 **Trava:** antes de qualquer push, validar o fluxo com eventos de uma única Ficha e confirmar que
 nenhum item solto financeiro é criado. Mudança de banco/RLS não entra neste recorte sem novo gate.
 
-**Integração com `main` (03/09):** a baseline `release/2026-09-03-r140c` mesclou sem conflito em
-worktree isolado e 196 testes passaram. A promoção está bloqueada: lint tem 14 erros já espalhados
-fora do recorte, typecheck excedeu a memória do ambiente e build não concluiu por DNS de fontes.
-Nenhuma alteração chegou à `main`.
+**Integração com `main` (04/09):** a baseline `release/2026-09-03-r140c` foi integrada sem
+conflito no commit `a3a5c19`; a suíte passou com 200 testes. O lint global ainda registra 14 erros
+fora do recorte. Não houve deploy manual nesta integração; confirmar o resultado do pipeline antes
+da validação clínica.
 
 ## Em produção, ainda em validação dirigida
 
@@ -34,8 +34,8 @@ Nenhuma alteração chegou à `main`.
 - **R-147 (P0):** a transcrição Dex precisa ser provada no Preview após corrigir o vínculo do
   dentista; o 401 anterior acontecia antes do provider.
 - **R-137:** confirmar no celular o protético de `Novo agendamento` e o retorno clicável na Ficha.
-- **R-151:** há alteração local já commitada de baixa latência do Dex, pausada para não misturar
-  sua publicação com R-153.
+- **R-151:** a otimização de baixa latência do Dex foi integrada com a baseline; exige validação
+  dirigida separada antes de ser tratada como concluída.
 - **R-154:** debate registrado para fila clínica completa, autoria explícita e mudanças de status
   sem recarregar; não altera autoria de colega sem decisão clínica explícita.
 
