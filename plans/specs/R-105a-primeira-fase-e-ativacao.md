@@ -1,6 +1,6 @@
 # R-105a — Onboarding guiado até o primeiro valor
 
-> **SPEC** · **R-105a** · 🔵 em execução
+> **SPEC** · **R-105a** · 🟡 no ar; aguarda ciclo completo em conta nova
 > **Aberto:** 2026-08-21 · **Fechado:** — · **Fase:** aprovada
 > **Depende de:** ajuste de formação do R-92 descrito no §4.4
 > **Irmão:** [R-105b](R-105b-marcos-e-gatilhos.md) — retenção da primeira semana e medição.

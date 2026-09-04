@@ -1,7 +1,7 @@
 # R-137 — Retorno com protético e agenda mobile
 
-> **SPEC** · **R-137** · 🔵 ativo
-> **Aberto:** 2026-08-27 · **Fechado:** — · **Fase:** execução
+> **SPEC** · **R-137** · 🟡 publicada; validação mobile pendente
+> **Aberto:** 2026-08-27 · **Fechado:** — · **Fase:** validação em produção
 > **Artefato:** aprovado pelo usuário em 2026-08-27 · **Migration:** nenhuma
 
 ## 1. Problema

@@ -7,7 +7,7 @@
  * 45", feedback 21/07) e ordena abertos primeiro, dente como critério secundário (Decisão 1
  * = Opção A / Decisão 3, spec R-02 §4, 23/07).
  */
-import type { AncoraClinica, StatusRegistro, TipoRegistroOdontograma } from '@/types/odontograma';
+import type { AncoraClinica, MomentoPlanejado, StatusRegistro, TipoRegistroOdontograma } from '@/types/odontograma';
 
 /** Shape mínimo que a função precisa — cada chamador adapta seu tipo real pra este (ex.:
  *  OdontogramaEventoDraft usa `grupo_id`, snake_case; aqui é sempre `grupoId`). */
@@ -16,6 +16,9 @@ export interface RegistroAgrupavel {
   grupoId: string | null;
   tipo: TipoRegistroOdontograma;
   status: StatusRegistro;
+  /** Indicações de momentos diferentes são decisões clínicas diferentes. Para registros
+   * sem grupo explícito, elas não podem se fundir num único card e esconder a prioridade. */
+  momentoPlanejado?: MomentoPlanejado;
   ancora: AncoraClinica;
 }
 
@@ -24,11 +27,13 @@ export function grupoEstaAberto(itens: { status: StatusRegistro }[]): boolean {
   return itens.some((e) => e.status === 'indicado');
 }
 
-/** Chave de agrupamento: `grupo_id` explícito, ou (sem grupo) dente+tipo+status. */
+/** Chave de agrupamento: `grupo_id` explícito, ou (sem grupo) dente+tipo+status+momento.
+ * Um grupo explícito continua indivisível: representa um único tratamento multi-dente. */
 function chaveDoGrupo(item: RegistroAgrupavel): string {
   const a = item.ancora;
+  const momento = item.status === 'indicado' ? item.momentoPlanejado ?? 'sessao_atual' : 'realizado';
   return item.grupoId
-    ?? `m:${a.dente ?? `${a.nivel}:${a.arcada ?? a.quadrante ?? ''}`}|${item.tipo}|${item.status}`;
+    ?? `m:${a.dente ?? `${a.nivel}:${a.arcada ?? a.quadrante ?? ''}`}|${item.tipo}|${item.status}|${momento}`;
 }
 
 /**

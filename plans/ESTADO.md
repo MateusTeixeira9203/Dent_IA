@@ -1,79 +1,50 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado em 30/08/2026
+> **ESTADO** · atualizado em 03/09/2026 · retrato da branch, não histórico de sessão.
 
 ## Agora
 
-🔵 **R-140b — fechamento rápido do Meu Dia em execução local.** O pacote Dex
-R-139c → R-133 → R-143 → R-141 → R-142 permanece pronto para retomar depois deste gate visual.
+🔵 **R-153 — Orçamento da Ficha em fluxo contínuo.** A implementação local isola o orçamento
+clínico por Ficha e impede que o dentista precise fechar/abandonar o paciente para montar uma
+proposta. Está commitada localmente, mas ainda não foi enviada ou publicada. O recorte está em
+`use-orcamento-modal`, `novo-orcamento-modal` e `meu-dia-client`.
 
-- Produção (`953f9bc`) está `Ready`; login/Dashboard, R-139a/b/d/e e orçamentos foram aprovados.
-  CI remoto passou typecheck/testes/build; lint mantém dívida não bloqueante. Fotos e radiografias
-  têm viewer; PDF/Word aguardam decisão.
-- Em 30/08, o usuário confirmou que o Dex transforma tudo em realizado e descarta intervenções
-  fora do vocabulário. R-139c/R-133 são P0; `outro`/`exame_periodontal` existem no domínio/banco,
-  mas faltavam no schema/parser.
-- Execução 30/08: `npm test` agora descobre a suíte inteira (144 testes); R-139c bloqueia
-  `realizado` sem execução explícita e neutraliza o prompt; R-133 reconcilia procedimento sem
-  cobertura como `outro` revisável; R-143 bloqueia salvar pendências e confirma ações em massa;
-  R-141 preserva áudio falho em memória e bloqueia save durante captura. Testes focados e
-  `tsc --noEmit` com heap ampliado passaram. Ainda faltam aviso de silêncio/limite (R-141),
-  contratos/hardening (R-142) e teste autenticado ponta a ponta.
-- R-140a só existe no Supabase local descartável: matriz RLS 92/92, dual-write + testes e backfill
-  idempotente passaram em rollback. No UI, A criou Atendimento/ficha/evolução/evento e B viu apenas
-  sua própria clínica. Nada foi aplicado em produção.
-- R-140b: implementação funcional concluída no localhost. Procedimento, localização e detalhe
-  especializado são independentes; posição ausente continua selecionável e catálogo não é
-  obrigatório. A correção visual de 30/08 mantém o odontograma anatômico atual, leva cabeçalho,
-  entrada, bancada e rodapé à largura da régua do dia e fixa revisão/contexto em `760 px`. Boca
-  não tem rolagem interna; formulários e gavetas longas podem rolar. Em 30/08, o usuário achou
-  o acesso rápido cortado após selecionar dente e a manutenção sem retorno/revisão; o painel foi
-  ampliado, regiões viraram duas linhas e manutenção passa a aparecer em Feito hoje com edição.
-  Regra visual consolidada: no fluxo clínico comum, há uma única rolagem vertical da página —
-  nunca barras internas concorrentes que escondam procedimento ou ação de salvar.
-  Em 30/08, o usuário aprovou o restante do fluxo visual; o botão de fechar do modal de orçamento
-  foi centralizado no próprio botão. Em 31/08, a prova passou: novo encaixe do paciente
-  sintético criou uma única ficha/evento `Restauração O · D15`, a âncora ficou `finalizado` com
-  um só vínculo realizado e o prontuário exibiu D15 sem erros de console. O segundo clique ficou
-  bloqueado porque a consulta sai da bancada após salvar. O bloqueio agora é determinado pela
-  âncora `atendimentos_clinicos.agendamento_id`: um segundo encaixe do mesmo paciente segue
-  editável e não herda o selo. `tsc --noEmit`, `git diff --check` e 154/154 testes passaram;
-  migration local e matriz RLS 92/92 já haviam passado. Falta só a conferência visual manual
-  dos dois slots porque a automação do navegador foi recusada nesta sessão.
+**Trava:** antes de qualquer push, validar o fluxo com eventos de uma única Ficha e confirmar que
+nenhum item solto financeiro é criado. Mudança de banco/RLS não entra neste recorte sem novo gate.
 
-## Travado
+**Integração com `main` (03/09):** a baseline `release/2026-09-03-r140c` mesclou sem conflito em
+worktree isolado e 196 testes passaram. A promoção está bloqueada: lint tem 14 erros já espalhados
+fora do recorte, typecheck excedeu a memória do ambiente e build não concluiu por DNS de fontes.
+Nenhuma alteração chegou à `main`.
 
-R-139c/R-133: a [auditoria de 30/08](auditorias/2026-08-30-dex.md) provou que mescla, payload e
-leitura preservam o status; a hipótese é `evidencia_status` incorreta, favorecida pelo prompt.
-Falta reprodução autenticada, captura bruto/pós-parser e eval antes/depois. R-143 é o gate humano.
+## Em produção, ainda em validação dirigida
 
-Achado intermitente na validação de produção: a rolagem do sistema inteiro ficou bloqueada e
-voltou após F5. Hipótese principal: algum modal/visualizador deixou `body.style.overflow =
-'hidden'` residual; tentar reproduzir observando qual interação ocorre imediatamente antes.
+- **R-152 / R-152a — Ficha unificada:** a publicação já levou edição e exclusão por procedimento,
+  encaminhamento, navegação do dente até o procedimento e o cabeçalho organizado. O legado é
+  somente leitura para histórico incompatível. Falta consolidar os testes de paridade clínica;
+  não é item ativo nem autorização para remover `FichasTab`.
+- **R-149 — Revisão legível no Meu Dia:** está publicada; aguarda confirmação visual completa.
+- **R-145 — Orçamento financeiro flexível:** concluído e verificado pelo usuário; spec e artefato
+  já foram para `_arquivo/`.
 
-R-140a: `db reset` direto segue quebrado pela ordem histórica das migrations; o harness usa dump
-de schema sem dados. O gate local de duas clínicas passou via `localhost`, mas produção continua vetada.
+## Bloqueios e fila técnica
 
-Achado R-140b resolvido no código: uma ficha do paciente no dia não mais bloqueia nem marca outro
-encaixe. O selo e a leitura usam exclusivamente a âncora finalizada do respectivo `agendamento_id`.
-Visita finalizada permanece somente leitura; depois de salvar, avança para o próximo paciente e
-`Ver ficha` continua opcional. Nova visita no mesmo dia exige novo encaixe/agendamento.
+- **R-146 (P0/P1):** `Agenda → Iniciar consulta` não pode resolver outro paciente; retorno criado
+  na Agenda precisa reaparecer na Ficha. Não repetir escrita naquele caminho até corrigir.
+- **R-147 (P0):** a transcrição Dex precisa ser provada no Preview após corrigir o vínculo do
+  dentista; o 401 anterior acontecia antes do provider.
+- **R-137:** confirmar no celular o protético de `Novo agendamento` e o retorno clicável na Ficha.
+- **R-151:** há alteração local já commitada de baixa latência do Dex, pausada para não misturar
+  sua publicação com R-153.
+- **R-154:** debate registrado para fila clínica completa, autoria explícita e mudanças de status
+  sem recarregar; não altera autoria de colega sem decisão clínica explícita.
 
-Verificação local: `tsc --noEmit` e `npm test` passam. `next build --webpack` falha no ambiente ao
-parsear `tsc --showConfig`; CI remoto anterior passou. Resolver antes do próximo gate de build.
+## Próxima decisão
 
-## Esperando você
+Você vai separar os novos pontos de trabalho. Cada um entra na fila com evidência, escopo e
+dependência; nenhum item já publicado volta a `ativo` apenas por ainda faltar uma rodada de
+validação.
 
-1. Conferir manualmente no localhost: o cartão concluído deve mostrar `✓ registrado` e abrir só
-   a mensagem de leitura; o encaixe aguardando do mesmo paciente deve continuar editável, sem selo.
-2. Materiais/etiquetas é hoje uma prévia visual: OCR, persistência e estoque continuam pertencendo
-   a R-140d/R-140e. Decisão de produto: no celular, abre a câmera traseira após toque explícito;
-   desktop oferece arquivo/webcam.
-3. Após concluir R-141/R-142, testar o pacote Dex em clínica de teste autenticada com os casos
-   realizado, indicado, negação e procedimento sem tipo canônico.
-
-## Próximo da fila
-
-Ordem de publicação permanece: preflight R-132 → R-139c → R-133 → R-143 → R-141 → R-142 → auditoria
-completa. R-140a pode ser validado apenas no ambiente local, mas não entra em produção antes desse
-gate clínico.
+**Fora da classificação atual:** alterações clínicas sem spec ativa ficam intocadas até você
+apontar a qual item pertencem. O pacote jurídico e seus scripts auxiliares já foram versionados
+em commits documentais próprios e não devem ser misturados com R-153.

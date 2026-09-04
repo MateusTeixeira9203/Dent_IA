@@ -7,6 +7,7 @@ import { AgendamentosClient } from './_components/agendamentos-client';
 import { PageTransition } from '@/components/layout/page-transition';
 import type { DentistaAgenda } from './_components/cor-dentista';
 import {
+  ajustarAncoraDaAgenda,
   ehAncora,
   ehVisao,
   fimDoMesDaAncora,
@@ -69,6 +70,14 @@ export default async function AgendamentosPage({ searchParams }: PageProps) {
   const { v, d, novo } = await searchParams;
   const visao: VisaoAgenda = ehVisao(v) ? v : VISAO_PADRAO;
   const ancora: string = ehAncora(d) ? d : hojeBRT();
+
+  if (visao === 'dia') {
+    const ancoraUtil = ajustarAncoraDaAgenda(ancora);
+    if (ancoraUtil !== ancora) {
+      const novoParam = novo === '1' ? '&novo=1' : '';
+      redirect(`/dashboard/agendamentos?v=dia&d=${ancoraUtil}${novoParam}`);
+    }
+  }
 
   const janela = janelaDaVisao(visao, ancora);
   const fimDoMes = fimDoMesDaAncora(ancora);

@@ -54,6 +54,7 @@ export interface MeuDiaPendencia {
    */
   nivel: NivelAncora;
   origem: OrigemRegistro;
+  momentoPlanejado: MomentoPlanejado;
   faces: FaceDental[];
   grupoId: string | null;
   papelNoGrupo: PapelNoGrupo | null;
@@ -605,6 +606,7 @@ export async function getMeuDiaData({
       dentistaNome: e.dentista?.nome ?? 'Equipe',
       nivel: e.nivel,
       origem: e.origem,
+      momentoPlanejado: e.momento_planejado,
       faces: e.faces ?? [],
       grupoId: e.grupo_id,
       papelNoGrupo: e.papel_no_grupo,

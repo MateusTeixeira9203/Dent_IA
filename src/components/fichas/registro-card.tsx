@@ -74,6 +74,9 @@ export interface RegistroCardProps {
    * status mostra a cor/rótulo (leitura sempre funciona via corDoRegistro).
    */
   onToggleMomento?: () => void;
+  /** Bancada compacta: apresenta as três situações como uma decisão única e textual,
+   *  mas o chamador continua persistindo `status` + `momento_planejado` canônicos. */
+  onSituacaoChange?: (situacao: 'sessao_atual' | 'proxima_sessao' | 'realizado') => void;
   /**
    * Variante B — modo seleção (R-04 Fase 3): quando true, o card mostra um checkbox
    * à esquerda e o clique SELECIONA em vez de expandir. Só é passado pros encamináveis
@@ -120,7 +123,7 @@ const PILL: Record<'coral' | 'teal' | 'slate' | 'warning' | 'misto', { label: st
   teal:    { label: 'Realizado',      wrap: 'bg-teal-pale text-teal-ink',       dot: 'bg-teal' },
   coral:   { label: 'Planejado',      wrap: 'bg-coral-pale text-coral-ink',     dot: 'bg-coral' },
   slate:   { label: 'Pré-existente',  wrap: 'bg-slate-pale text-slate-ink',     dot: 'bg-slate' },
-  warning: { label: 'Próxima seção',  wrap: 'bg-warning-pale text-warning-ink', dot: 'bg-warning' },
+  warning: { label: 'Próxima sessão',  wrap: 'bg-warning-pale text-warning-ink', dot: 'bg-warning' },
   misto:   { label: 'Status misto',   wrap: 'bg-surface-alt text-text-secondary border border-border', dot: 'bg-text-secondary' },
 };
 
@@ -167,7 +170,7 @@ function resumoAncora(ancoras: AncoraClinica[]): string {
 }
 
 export function RegistroCard({
-  data, children, defaultOpen = false, onToggleStatus, onToggleMomento,
+  data, children, defaultOpen = false, onToggleStatus, onToggleMomento, onSituacaoChange,
   selecionavel = false, selecionado = false, onToggleSelecao, onRemoverEncaminhamento,
   editavel = false, onObservacaoChange, onRemover, onAbrirGrande,
   compacto = false, aberto: abertoControlado, onAbertoChange,
@@ -186,16 +189,23 @@ export function RegistroCard({
   const titulo = `${rotulo}${faces ? ` ${faces}` : ''} · ${resumoAncora(data.ancoras)}`;
 
   const retroativo = data.realizadoEm != null && dataBRT(data.registradoEm) > data.realizadoEm;
+  const emSelecao = selecionavel;
+  const editorCompacto = compacto && editavel && !emSelecao;
+  const situacaoEditavel = data.origem === 'clinica' && !data.statusMisto && onSituacaoChange != null;
+  const situacaoAtual = data.status === 'realizado'
+    ? 'realizado'
+    : data.momentoPlanejado === 'proxima_sessao'
+      ? 'proxima_sessao'
+      : 'sessao_atual';
   // Fora do modo compacto, `onAbrirGrande` redireciona o card inteiro. Na bancada compacta,
   // o card abre a observação e o detalhe dental conserva um botão próprio.
   const abreFora = onAbrirGrande != null;
-  const temCorpo = (compacto && editavel) || (!abreFora && children != null);
+  const temCorpo = (compacto && editavel && !abreFora) || (!abreFora && children != null);
 
   // Modo seleção (variante B): o clique no card marca/desmarca em vez de expandir; o
   // pill e o × ficam inertes (a ação da vez é escolher o que encaminhar).
-  const emSelecao = selecionavel;
   const pillClicavel = !emSelecao && !data.statusMisto && onToggleStatus;
-  const containerInterativo = emSelecao || temCorpo || abreFora;
+  const containerInterativo = !editorCompacto && (emSelecao || temCorpo || abreFora);
   const aoClicar = emSelecao
     ? onToggleSelecao
     : compacto && editavel
@@ -215,16 +225,16 @@ export function RegistroCard({
       }`}
     >
       <div
-        role={emSelecao ? 'checkbox' : 'button'}
+        role={emSelecao ? 'checkbox' : containerInterativo ? 'button' : undefined}
         aria-checked={emSelecao ? selecionado : undefined}
-        tabIndex={containerInterativo ? 0 : -1}
-        onClick={aoClicar}
+        tabIndex={containerInterativo ? 0 : undefined}
+        onClick={containerInterativo ? aoClicar : undefined}
         onKeyDown={
           containerInterativo
             ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); aoClicar?.(); } }
             : undefined
         }
-        aria-expanded={!emSelecao && temCorpo ? aberto : undefined}
+        aria-expanded={!editorCompacto && !emSelecao && temCorpo ? aberto : undefined}
         // Acessibilidade (achado dele 08/08): sem isto o modo "abre fora" lia igual a um
         // simples expandir/colapsar pro leitor de tela — o rótulo deixa explícito que o
         // clique LEVA a outro lugar, não revela conteúdo aqui mesmo.
@@ -246,9 +256,48 @@ export function RegistroCard({
         )}
 
         <div className={`min-w-0 flex-1 ${compacto && !emSelecao ? 'basis-full sm:basis-auto' : !compacto ? 'basis-full sm:basis-auto' : ''}`}>
-          <p className="font-semibold text-sm text-text-primary truncate">{titulo}</p>
+          <p className={`font-semibold text-text-primary ${editorCompacto ? 'text-[15px] leading-snug' : 'truncate text-sm'}`}>{titulo}</p>
           {data.revisarStatus && (
             <p className="mt-0.5 text-xs font-semibold text-warning-ink">Confira o status</p>
+          )}
+          {/* R-149 — no Meu Dia, a decisão clínica vem imediatamente após a identidade do
+              procedimento. O rótulo não é truncado e status não compete com ações auxiliares. */}
+          {editorCompacto && situacaoEditavel && (
+            <div
+              role="group"
+              aria-label={`Situação de ${titulo}`}
+              className="mt-2 grid max-w-md grid-cols-3 rounded-lg border border-border bg-surface-alt p-0.5"
+            >
+              {([
+                ['sessao_atual', 'A fazer', 'bg-coral-pale text-coral-ink'],
+                ['proxima_sessao', 'Próxima sessão', 'bg-warning-pale text-warning-ink'],
+                ['realizado', 'Realizado', 'bg-teal-pale text-teal-ink'],
+              ] as const).map(([situacao, label, ativo]) => (
+                <button
+                  key={situacao}
+                  type="button"
+                  aria-pressed={situacaoAtual === situacao}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSituacaoChange?.(situacao);
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  className={`min-h-10 rounded-md px-2 text-[11px] font-bold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-teal ${
+                    situacaoAtual === situacao
+                      ? ativo
+                      : 'text-text-secondary hover:bg-surface hover:text-text-primary'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {editorCompacto && !situacaoEditavel && (
+            <span className={`mt-2 inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 text-[11px] font-bold ${pill.wrap}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${pill.dot}`} />
+              {pill.label}
+            </span>
           )}
           {editavel && !compacto ? (
             <textarea
@@ -314,7 +363,7 @@ export function RegistroCard({
           </span>
         )}
 
-        {pillClicavel ? (
+        {!editorCompacto && (pillClicavel ? (
           <span
             role="button"
             tabIndex={0}
@@ -333,11 +382,11 @@ export function RegistroCard({
             <span className={`w-1.5 h-1.5 rounded-full ${pill.dot}`} />
             {pill.label}
           </span>
-        )}
+        ))}
 
         {/* R-101 — só faz sentido enquanto indicado; a constraint do banco não aceita
             momento_planejado='proxima_sessao' com status='realizado'. */}
-        {data.status === 'indicado' && onToggleMomento && (
+        {!editorCompacto && data.status === 'indicado' && onToggleMomento && (
           <span
             role="button"
             tabIndex={0}
@@ -345,7 +394,7 @@ export function RegistroCard({
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onToggleMomento(); }
             }}
-            title={data.momentoPlanejado === 'proxima_sessao' ? 'Marcar pra sessão atual' : 'Marcar pra próxima seção'}
+            title={data.momentoPlanejado === 'proxima_sessao' ? 'Marcar pra sessão atual' : 'Marcar pra próxima sessão'}
             className={`inline-flex items-center gap-1 shrink-0 text-[11px] font-bold px-2 py-1 rounded-full cursor-pointer transition-colors outline-none focus-visible:ring-2 focus-visible:ring-teal ${
               data.momentoPlanejado === 'proxima_sessao'
                 ? 'bg-warning-pale text-warning-ink'
@@ -353,11 +402,11 @@ export function RegistroCard({
             }`}
           >
             <Clock className="w-3 h-3" />
-            Próxima seção
+            Próxima sessão
           </span>
         )}
 
-        {editavel && onRemover && (
+        {!editorCompacto && editavel && onRemover && (
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onRemover(); }}
@@ -370,7 +419,7 @@ export function RegistroCard({
           </button>
         )}
 
-        {!emSelecao && abreFora && (
+        {!editorCompacto && !emSelecao && abreFora && (
           compacto ? (
             <button
               type="button"
@@ -386,10 +435,42 @@ export function RegistroCard({
             <Maximize2 className="w-3.5 h-3.5 shrink-0 text-text-secondary" aria-hidden />
           )
         )}
-        {!emSelecao && temCorpo && (
+        {!editorCompacto && !emSelecao && temCorpo && (
           compacto
             ? <ChevronDown className={`h-4 w-4 shrink-0 text-text-secondary transition-transform ${aberto ? 'rotate-180' : ''}`} />
             : <ChevronRight className={`h-4 w-4 shrink-0 text-text-secondary transition-transform ${aberto ? 'rotate-90' : ''}`} />
+        )}
+
+        {editorCompacto && (
+          <div className="mt-2 flex basis-full items-center justify-end border-t border-border/70 pt-1">
+            <div className="flex shrink-0 items-center justify-end gap-1">
+              {(abreFora || temCorpo) && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (abreFora) onAbrirGrande?.();
+                    else setAberto(!aberto);
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  aria-expanded={temCorpo ? aberto : undefined}
+                  className="min-h-11 rounded-lg px-3 text-[11px] font-bold text-text-secondary transition-colors hover:bg-surface-alt hover:text-teal-ink outline-none focus-visible:ring-2 focus-visible:ring-teal"
+                >
+                  {temCorpo && aberto ? 'Ocultar detalhes' : 'Editar detalhes'}
+                </button>
+              )}
+              {onRemover && (
+                <button
+                  type="button"
+                  onClick={(event) => { event.stopPropagation(); onRemover(); }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  className="min-h-11 rounded-lg px-3 text-[11px] font-bold text-text-secondary transition-colors hover:bg-coral-pale hover:text-coral-ink outline-none focus-visible:ring-2 focus-visible:ring-teal"
+                >
+                  Remover
+                </button>
+              )}
+            </div>
+          </div>
         )}
       </div>
 

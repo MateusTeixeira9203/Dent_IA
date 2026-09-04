@@ -1,7 +1,7 @@
 # R-106 — Voz distingue realizado, indicado, negação e ambiguidade
 
-> **SPEC** · **R-106** · 🔵 ativo
-> **Aberto:** 2026-08-12 · **Fechado:** — · **Fase:** implementação local; aguardando eval e ditado real
+> **SPEC** · **R-106** · 🧊 base absorvida pelo R-139c
+> **Aberto:** 2026-08-12 · **Fechado:** — · **Fase:** congelada; continuidade no R-139c com eval
 > **Depende de:** baseline do eval atual. R-100 está congelado e não bloqueia esta correção.
 
 ## 1. Problema

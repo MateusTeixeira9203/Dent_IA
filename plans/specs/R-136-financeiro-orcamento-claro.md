@@ -1,7 +1,7 @@
 # R-136 — Financeiro do orçamento claro
 
-> **SPEC** · **R-136** · 🔵 ativo
-> **Aberto:** 2026-08-27 · **Fechado:** — · **Fase:** aprovada · implementação em andamento
+> **SPEC** · **R-136** · 🟡 publicada; validação manual pendente
+> **Aberto:** 2026-08-27 · **Fechado:** — · **Fase:** validação em produção
 
 ## 1. Problema
 

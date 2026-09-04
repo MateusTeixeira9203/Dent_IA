@@ -16,9 +16,9 @@ interface DockNavItemProps {
 export function DockNavItem({ href, icon: Icon, label, isActive, locked }: DockNavItemProps) {
   if (locked) {
     return (
-      <div className="relative flex flex-col items-center gap-1 px-4 py-2 rounded-xl min-w-[64px] cursor-not-allowed">
+      <div className="relative flex flex-col items-center gap-0.5 xl:gap-1 px-2 xl:px-4 py-1.5 xl:py-2 rounded-lg xl:rounded-xl min-w-[52px] xl:min-w-[64px] cursor-not-allowed">
         <div className="relative">
-          <Icon style={{ width: 20, height: 20 }} className="text-white/20" />
+          <Icon className="h-[18px] w-[18px] xl:h-5 xl:w-5 text-white/20" />
           <Lock className="absolute -bottom-1 -right-1 w-3 h-3 text-teal/40" />
         </div>
         {/* whitespace-nowrap — "Meu dia" é o único rótulo com espaço (2 palavras); sem
@@ -26,7 +26,7 @@ export function DockNavItem({ href, icon: Icon, label, isActive, locked }: DockN
             todo o resto (palavra única, nunca quebra, só cresce a coluna). mr negativo
             cancela o tracking sobrando depois da última letra, senão o texto "flutua"
             visualmente à esquerda do centro do ícone acima. */}
-        <span className="text-[10px] font-bold uppercase tracking-[0.1em] mr-[-0.1em] whitespace-nowrap text-white/20">
+        <span className="text-[10px] font-bold uppercase tracking-[0.06em] xl:tracking-[0.1em] mr-[-0.06em] xl:mr-[-0.1em] whitespace-nowrap text-white/20">
           {label}
         </span>
       </div>
@@ -36,7 +36,7 @@ export function DockNavItem({ href, icon: Icon, label, isActive, locked }: DockN
   return (
     <Link
       href={href}
-      className={`relative flex flex-col items-center gap-1 px-4 py-2 rounded-xl min-w-[64px] transition-all duration-150 group ${
+      className={`relative flex flex-col items-center gap-0.5 xl:gap-1 px-2 xl:px-4 py-1.5 xl:py-2 rounded-lg xl:rounded-xl min-w-[52px] xl:min-w-[64px] transition-all duration-150 group ${
         isActive ? '' : 'hover:bg-white/[0.05]'
       }`}
     >
@@ -48,8 +48,7 @@ export function DockNavItem({ href, icon: Icon, label, isActive, locked }: DockN
         />
       )}
       <Icon
-        style={{ width: 20, height: 20 }}
-        className={`relative transition-all duration-150 ${
+        className={`relative h-[18px] w-[18px] xl:h-5 xl:w-5 transition-all duration-150 ${
           isActive
             ? 'text-teal'
             : 'text-white/50 group-hover:text-white/80 group-hover:-translate-y-0.5'
@@ -61,7 +60,7 @@ export function DockNavItem({ href, icon: Icon, label, isActive, locked }: DockN
           o tracking sobrando depois da última letra, senão o texto "flutua" visualmente
           à esquerda do centro do ícone acima. */}
       <span
-        className={`relative text-[10px] font-bold uppercase tracking-[0.1em] mr-[-0.1em] whitespace-nowrap transition-colors ${
+        className={`relative text-[10px] font-bold uppercase tracking-[0.06em] xl:tracking-[0.1em] mr-[-0.06em] xl:mr-[-0.1em] whitespace-nowrap transition-colors ${
           isActive ? 'text-teal/80' : 'text-white/35 group-hover:text-white/60'
         }`}
       >

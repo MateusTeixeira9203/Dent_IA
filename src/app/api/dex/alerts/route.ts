@@ -195,7 +195,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         type:        'info',
         title:       `${rascunhos} orçamento${rascunhos > 1 ? 's' : ''} em rascunho`,
         description: `${rascunhos > 1 ? 'Orçamentos criados' : 'Orçamento criado'} mas ainda não enviado${rascunhos > 1 ? 's' : ''} ao paciente.`,
-        href:        '/dashboard/orcamentos',
+        href:        '/dashboard/pacientes',
       });
     }
 
@@ -211,7 +211,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         type:        'danger',
         title:       `Follow-up: ${atrasados.length} orçamento${atrasados.length > 1 ? 's' : ''} sem retorno`,
         description: `${nomes} — ${atrasados.length > 1 ? 'Orçamentos enviados' : 'Orçamento enviado'} há +3 dias. Total em aberto: R$ ${total.toFixed(2).replace('.', ',')}.`,
-        href:        '/dashboard/orcamentos',
+        href:        '/dashboard/pacientes',
       });
     }
 

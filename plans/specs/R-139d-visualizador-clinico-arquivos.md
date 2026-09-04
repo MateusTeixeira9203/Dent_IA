@@ -1,7 +1,7 @@
 # R-139d — Motor do visualizador clínico e integração em Arquivos
 
-> SPEC · R-139d · 🔵 ativo  
-> Aberto em 2026-08-28 · Fase: implementação local concluída · Artefato aprovado antes da execução
+> SPEC · R-139d · 🟡 no ar; aguarda auditoria completa
+> Aberto em 2026-08-28 · Fase: validação em produção · Artefato aprovado antes da execução
 
 ## 1. Problema
 

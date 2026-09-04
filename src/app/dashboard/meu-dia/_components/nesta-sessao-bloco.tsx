@@ -102,7 +102,8 @@ export function NestaSessaoBloco({
   const [selecionadosEncaminhar, setSelecionadosEncaminhar] = useState<Set<string>>(new Set());
   const [destinoEncaminhar, setDestinoEncaminhar] = useState<string | null>(null);
   const [cardAberto, setCardAberto] = useState<string | null>(null);
-  const [acaoEmMassa, setAcaoEmMassa] = useState<'indicado' | 'realizado' | null>(null);
+  const [modoAlterarVarios, setModoAlterarVarios] = useState(false);
+  const [selecionadosSituacao, setSelecionadosSituacao] = useState<Set<string>>(new Set());
   const [eventosAntesDaAcao, setEventosAntesDaAcao] = useState<OdontogramaEventoDraft[] | null>(null);
 
   function sairModoEncaminhar() {
@@ -110,24 +111,36 @@ export function NestaSessaoBloco({
     setSelecionadosEncaminhar(new Set());
     setDestinoEncaminhar(null);
   }
-  function toggleStatus(ids: string[]) {
-    onEventosDraftChange(eventosDraft.map((e) => (ids.includes(e.id)
-      ? {
-          ...e,
-          status: e.status === 'realizado' ? 'indicado' : 'realizado',
-          revisar_status: false,
-          realizado_em: e.status === 'realizado' ? null : (e.realizado_em ?? hojeBRT()),
-          // R-101 — vira realizado aqui: reseta, senão viola a constraint no save (RPC).
-          momento_planejado: e.status === 'realizado' ? e.momento_planejado : 'sessao_atual',
-        }
-      : e)));
+  function definirSituacao(
+    ids: string[],
+    situacao: 'sessao_atual' | 'proxima_sessao' | 'realizado',
+  ) {
+    onEventosDraftChange(eventosNaSituacao(ids, situacao));
   }
-  /** R-101 — irmã de toggleStatus. Só é chamada com status='indicado' (RegistroCard já
-   *  esconde o controle fora disso), então nunca precisa checar/resetar nada aqui. */
-  function toggleMomento(ids: string[]) {
-    onEventosDraftChange(eventosDraft.map((e) => (ids.includes(e.id)
-      ? { ...e, momento_planejado: e.momento_planejado === 'proxima_sessao' ? 'sessao_atual' : 'proxima_sessao' }
-      : e)));
+  function eventosNaSituacao(
+    ids: string[],
+    situacao: 'sessao_atual' | 'proxima_sessao' | 'realizado',
+  ): OdontogramaEventoDraft[] {
+    return eventosDraft.map((evento) => {
+      if (!ids.includes(evento.id)) return evento;
+      if (situacao === 'realizado') {
+        return {
+          ...evento,
+          status: 'realizado',
+          origem: 'clinica',
+          momento_planejado: 'sessao_atual',
+          revisar_status: false,
+          realizado_em: evento.realizado_em ?? hojeBRT(),
+        };
+      }
+      return {
+        ...evento,
+        status: 'indicado',
+        momento_planejado: situacao,
+        revisar_status: false,
+        realizado_em: null,
+      };
+    });
   }
   function updateObservacao(ids: string[], observacao: string) {
     onEventosDraftChange(eventosDraft.map((e) => (ids.includes(e.id) ? { ...e, observacao } : e)));
@@ -136,23 +149,15 @@ export function NestaSessaoBloco({
     onEventosDraftChange(eventosDraft.filter((e) => !ids.includes(e.id)));
     setCardAberto(null);
   }
-  function confirmarAcaoEmMassa() {
-    if (acaoEmMassa == null) return;
+  function aplicarSituacaoSelecionados(situacao: 'sessao_atual' | 'proxima_sessao' | 'realizado') {
+    const idsSelecionados = cards
+      .filter(({ key }) => selecionadosSituacao.has(key))
+      .flatMap(({ ids }) => ids);
+    if (idsSelecionados.length === 0) return;
     setEventosAntesDaAcao(eventosDraft);
-    onEventosDraftChange(eventosDraft.map((e) => {
-      if (acaoEmMassa === 'realizado') {
-        return {
-          ...e,
-          status: 'realizado',
-          origem: 'clinica',
-          momento_planejado: 'sessao_atual',
-          revisar_status: false,
-          realizado_em: e.realizado_em ?? hojeBRT(),
-        };
-      }
-      return { ...e, status: 'indicado', realizado_em: null, revisar_status: false };
-    }));
-    setAcaoEmMassa(null);
+    onEventosDraftChange(eventosNaSituacao(idsSelecionados, situacao));
+    setModoAlterarVarios(false);
+    setSelecionadosSituacao(new Set());
   }
   function desfazerAcaoEmMassa() {
     if (!eventosAntesDaAcao) return;
@@ -182,6 +187,20 @@ export function NestaSessaoBloco({
     && data.encaminhadoPara == null
     && ids.every((id) => !idsDeAntes.has(id)),
   );
+  const cardsComSituacao = cards.filter(({ data }) => data.origem === 'clinica' && !data.statusMisto);
+
+  function sairModoAlterarVarios() {
+    setModoAlterarVarios(false);
+    setSelecionadosSituacao(new Set());
+  }
+
+  function toggleSelecaoSituacao(key: string) {
+    setSelecionadosSituacao((atual) => {
+      const proximo = new Set(atual);
+      if (proximo.has(key)) proximo.delete(key); else proximo.add(key);
+      return proximo;
+    });
+  }
 
   function toggleSelecaoEncaminhar(key: string) {
     setSelecionadosEncaminhar((atual) => {
@@ -232,6 +251,8 @@ export function NestaSessaoBloco({
       const tratamento = deAntes
         ? ids.map((id) => nomeTratamentoPorEvento[id]).find(Boolean)
         : undefined;
+      const selecionavelParaSituacao = modoAlterarVarios && data.origem === 'clinica' && !data.statusMisto;
+      const selecionavelParaEncaminhar = modoEncaminhar && cardsEncaminhaveis.some((card) => card.key === key);
       return (
         <div key={key} className={`flex flex-col gap-0.5 ${cardAberto === key ? 'col-span-full' : ''}`}>
           <RegistroCard
@@ -240,19 +261,24 @@ export function NestaSessaoBloco({
             compacto
             aberto={cardAberto === key}
             onAbertoChange={(aberto) => setCardAberto(aberto ? key : null)}
-            selecionavel={modoEncaminhar && cardsEncaminhaveis.some((card) => card.key === key)}
-            selecionado={selecionadosEncaminhar.has(key)}
-            onToggleSelecao={modoEncaminhar && cardsEncaminhaveis.some((card) => card.key === key)
-              ? () => toggleSelecaoEncaminhar(key)
-              : undefined}
-            onToggleStatus={modoEncaminhar ? undefined : () => toggleStatus(ids)}
-            onToggleMomento={modoEncaminhar ? undefined : () => toggleMomento(ids)}
-            onObservacaoChange={modoEncaminhar ? undefined : (v) => updateObservacao(ids, v)}
-            onRemover={modoEncaminhar ? undefined : () => remover(ids)}
+            selecionavel={selecionavelParaSituacao || selecionavelParaEncaminhar}
+            selecionado={selecionavelParaSituacao ? selecionadosSituacao.has(key) : selecionadosEncaminhar.has(key)}
+            onToggleSelecao={selecionavelParaSituacao
+              ? () => toggleSelecaoSituacao(key)
+              : selecionavelParaEncaminhar
+                ? () => toggleSelecaoEncaminhar(key)
+                : undefined}
+            onSituacaoChange={
+              !modoEncaminhar && !modoAlterarVarios && data.origem === 'clinica'
+                ? (situacao) => definirSituacao(ids, situacao)
+                : undefined
+            }
+            onObservacaoChange={modoEncaminhar || modoAlterarVarios ? undefined : (v) => updateObservacao(ids, v)}
+            onRemover={modoEncaminhar || modoAlterarVarios ? undefined : () => remover(ids)}
             onRemoverEncaminhamento={
               !modoEncaminhar && data.encaminhadoPara ? () => removerEncaminhamento(ids) : undefined
             }
-            onAbrirGrande={modoEncaminhar ? undefined : temDetalhe ? () => onAbrirDenteGrande(dente, ids[0]) : undefined}
+            onAbrirGrande={modoEncaminhar || modoAlterarVarios ? undefined : temDetalhe ? () => onAbrirDenteGrande(dente, ids[0]) : undefined}
           />
           {deAntes && (
             // Artefato bloco 7: DM Mono 11.5px, --tx3, 2px abaixo do card.
@@ -273,65 +299,36 @@ export function NestaSessaoBloco({
             {totalRegistros} {totalRegistros === 1 ? 'registro' : 'registros'}
           </p>
           <div className="flex flex-wrap justify-end gap-2">
-          {!modoEncaminhar && cardsEncaminhaveis.length > 0 && destinosEncaminhar.length > 0 && (
+          {!modoEncaminhar && !modoAlterarVarios && cardsEncaminhaveis.length > 0 && destinosEncaminhar.length > 0 && (
             <button
               type="button"
               onClick={() => setModoEncaminhar(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-bold text-teal-ink transition-colors hover:bg-teal-pale"
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-teal/30 bg-teal-pale px-3 py-1 text-[11px] font-bold text-teal-ink transition-colors hover:bg-teal/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal"
             >
               <Forward className="h-3.5 w-3.5" />
               Encaminhar
             </button>
           )}
-          {temRealizado && (
+          {!modoEncaminhar && !modoAlterarVarios && cardsComSituacao.length > 1 && (
             <button
               type="button"
-              onClick={() => setAcaoEmMassa('indicado')}
-              className="min-h-11 rounded-lg px-3 py-1 text-[11px] font-bold text-coral-ink transition-colors hover:bg-coral-pale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal"
+              onClick={() => setModoAlterarVarios(true)}
+              className="min-h-11 rounded-lg px-3 py-1 text-[11px] font-bold text-text-secondary transition-colors hover:bg-surface-alt hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal"
             >
-              Tudo indicado
+              Alterar vários
             </button>
           )}
-          {temIndicado && (
+          {modoAlterarVarios && (
             <button
               type="button"
-              onClick={() => setAcaoEmMassa('realizado')}
+              onClick={() => setSelecionadosSituacao((atual) => atual.size === cardsComSituacao.length
+                ? new Set()
+                : new Set(cardsComSituacao.map(({ key }) => key)))}
               className="min-h-11 rounded-lg px-3 py-1 text-[11px] font-bold text-teal-ink transition-colors hover:bg-teal-pale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal"
             >
-              ✓ tudo feito
+              {selecionadosSituacao.size === cardsComSituacao.length ? 'Limpar seleção' : 'Selecionar todos'}
             </button>
           )}
-          </div>
-        </div>
-      )}
-      {acaoEmMassa && (
-        <div
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="confirmar-acao-em-massa"
-          className="rounded-xl border border-warning bg-warning-pale p-3 text-sm text-foreground"
-        >
-          <p id="confirmar-acao-em-massa" className="font-semibold">
-            {acaoEmMassa === 'realizado'
-              ? 'Marcar todos os procedimentos como realizados?'
-              : 'Marcar todos os procedimentos como indicados?'}
-          </p>
-          <p className="mt-1 text-xs text-text-secondary">A ação limpa as pendências de revisão. Você poderá desfazer em seguida.</p>
-          <div className="mt-3 flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setAcaoEmMassa(null)}
-              className="min-h-11 rounded-lg border border-border px-3 text-xs font-bold text-foreground hover:bg-surface-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={confirmarAcaoEmMassa}
-              className="min-h-11 rounded-lg bg-warning px-3 text-xs font-bold text-warning-ink hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal"
-            >
-              Confirmar
-            </button>
           </div>
         </div>
       )}
@@ -407,6 +404,19 @@ export function NestaSessaoBloco({
           </section>
         )}
       </div>
+      {modoAlterarVarios && (
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface-alt p-3 sm:flex-row sm:items-center sm:justify-between" role="group" aria-label="Alterar situação de vários procedimentos">
+          <span className="text-xs font-semibold text-text-secondary">
+            {selecionadosSituacao.size} selecionado{selecionadosSituacao.size === 1 ? '' : 's'}
+          </span>
+          <div className="flex flex-wrap items-center justify-end gap-1">
+            <button type="button" disabled={selecionadosSituacao.size === 0} onClick={() => aplicarSituacaoSelecionados('sessao_atual')} className="min-h-11 rounded-lg px-3 text-[11px] font-bold text-coral-ink hover:bg-coral-pale disabled:opacity-40">A fazer</button>
+            <button type="button" disabled={selecionadosSituacao.size === 0} onClick={() => aplicarSituacaoSelecionados('proxima_sessao')} className="min-h-11 rounded-lg px-3 text-[11px] font-bold text-warning-ink hover:bg-warning-pale disabled:opacity-40">Próxima sessão</button>
+            <button type="button" disabled={selecionadosSituacao.size === 0} onClick={() => aplicarSituacaoSelecionados('realizado')} className="min-h-11 rounded-lg px-3 text-[11px] font-bold text-teal-ink hover:bg-teal-pale disabled:opacity-40">Realizado</button>
+            <button type="button" onClick={sairModoAlterarVarios} className="min-h-11 rounded-lg px-3 text-[11px] font-bold text-text-secondary hover:bg-surface">Cancelar</button>
+          </div>
+        </div>
+      )}
       {modoEncaminhar && (
         <EncaminharBar
           totalSelecionado={selecionadosEncaminhar.size}

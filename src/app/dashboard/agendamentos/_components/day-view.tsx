@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import {
-  format, addDays, subDays, isToday as isDateToday, parseISO, isSameDay,
+  format, isToday as isDateToday, parseISO, isSameDay,
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
@@ -12,6 +12,7 @@ import {
 import { STATUS_CONFIG } from './status-config';
 import { calcularFaixas } from './layout-sobreposicao';
 import { corDoDentista, type DentistaAgenda } from './cor-dentista';
+import { diaAnteriorDeAgenda, proximoDiaDeAgenda } from './date-helpers';
 import type { AgendamentoRow, BloqueioRow } from '../page';
 import type { AgendamentoStatus } from '@/types/database';
 
@@ -170,7 +171,7 @@ export function DayView({
         <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-surface px-2 py-2">
           <button
             type="button"
-            onClick={() => onDateChange(subDays(selectedDate, 1))}
+            onClick={() => onDateChange(diaAnteriorDeAgenda(selectedDate))}
             aria-label="Dia anterior"
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border text-text-secondary"
           >
@@ -184,7 +185,7 @@ export function DayView({
           </div>
           <button
             type="button"
-            onClick={() => onDateChange(addDays(selectedDate, 1))}
+            onClick={() => onDateChange(proximoDiaDeAgenda(selectedDate))}
             aria-label="Próximo dia"
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border text-text-secondary"
           >
@@ -256,7 +257,7 @@ export function DayView({
       <div className="flex items-center justify-between px-2 py-2 border-b border-border bg-surface-alt/40 shrink-0 md:px-4 md:py-3">
         <div className="flex min-w-0 items-center gap-1 md:gap-2">
           <button
-            onClick={() => onDateChange(subDays(selectedDate, 1))}
+            onClick={() => onDateChange(diaAnteriorDeAgenda(selectedDate))}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border transition-colors hover:bg-surface md:h-11 md:w-11"
           >
             <ChevronLeft className="w-4 h-4 text-text-secondary" />
@@ -272,7 +273,7 @@ export function DayView({
             )}
           </div>
           <button
-            onClick={() => onDateChange(addDays(selectedDate, 1))}
+            onClick={() => onDateChange(proximoDiaDeAgenda(selectedDate))}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border transition-colors hover:bg-surface md:h-11 md:w-11"
           >
             <ChevronRight className="w-4 h-4 text-text-secondary" />

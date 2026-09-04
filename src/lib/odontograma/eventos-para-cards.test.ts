@@ -64,6 +64,24 @@ test('eventosParaCards: grupo com status diferentes é explicitamente misto', ()
   assert.equal(r[0].data.statusMisto, true);
 });
 
+test('grupo sem localização só aparece como próxima sessão quando todos os itens foram priorizados', () => {
+  const r = eventosParaCards([
+    evento({ id: 'a', grupoId: 'grupo', ancora: { nivel: 'geral' }, momentoPlanejado: 'proxima_sessao' }),
+    evento({ id: 'b', grupoId: 'grupo', ancora: { nivel: 'geral' }, momentoPlanejado: 'sessao_atual' }),
+  ], 'Dra. Ana', null);
+
+  assert.equal(r[0]?.data.momentoPlanejado, 'sessao_atual');
+});
+
+test('grupo sem localização mantém próxima sessão quando a priorização é unânime', () => {
+  const r = eventosParaCards([
+    evento({ id: 'a', grupoId: 'grupo', ancora: { nivel: 'geral' }, momentoPlanejado: 'proxima_sessao' }),
+    evento({ id: 'b', grupoId: 'grupo', ancora: { nivel: 'geral' }, momentoPlanejado: 'proxima_sessao' }),
+  ], 'Dra. Ana', null);
+
+  assert.equal(r[0]?.data.momentoPlanejado, 'proxima_sessao');
+});
+
 test('eventosParaCards: assinada é true sse o PRIMEIRO do grupo tem assinaturaId', () => {
   const assinado = eventosParaCards([evento({ id: 'a', assinaturaId: 'assin-1' })], 'Dra. Ana', null);
   const semAssinatura = eventosParaCards([evento({ id: 'b' })], 'Dra. Ana', null);

@@ -40,6 +40,8 @@ export interface NovoOrcamentoModalProps {
    *  por-ficha fica fechado mesmo com `fichasParaOrc.length === 1` (decisão 07/08). */
   podeTrocarFicha: boolean;
   orcError: string | null;
+  /** Catálogo ausente por erro não pode parecer uma lista legítima vazia. */
+  bloqueioCriacao: string | null;
   novoOrcItens: NovoOrcItem[];
   setNovoOrcItens: React.Dispatch<React.SetStateAction<NovoOrcItem[]>>;
   procedimentosClinica: ProcedimentoClinica[];
@@ -49,6 +51,13 @@ export interface NovoOrcamentoModalProps {
   setNovoOrcValorFinal: React.Dispatch<React.SetStateAction<number | null>>;
   orcSaving: boolean;
   modoPersistencia: 'novo' | 'adicionar';
+  /** Meu Dia sem evento inicial: a linha escolhida será registrada clinicamente antes da proposta. */
+  contextoClinicoPendente: boolean;
+  resumoOrigemOrcamento: {
+    disponiveis: number;
+    deOutrosResponsaveis: number;
+    responsaveis: string[];
+  } | null;
   onCriarOrcamento: () => void;
   onSelecionarFicha: (fichaId: string | null) => void;
   onCadastrarProcedimento: (idx: number) => void;
@@ -75,6 +84,7 @@ export function NovoOrcamentoModal({
   fichasParaOrc,
   podeTrocarFicha,
   orcError,
+  bloqueioCriacao,
   novoOrcItens,
   setNovoOrcItens,
   procedimentosClinica,
@@ -84,6 +94,8 @@ export function NovoOrcamentoModal({
   setNovoOrcValorFinal,
   orcSaving,
   modoPersistencia,
+  contextoClinicoPendente,
+  resumoOrigemOrcamento,
   onCriarOrcamento,
   onSelecionarFicha,
   onCadastrarProcedimento,
@@ -202,13 +214,6 @@ export function NovoOrcamentoModal({
                 </button>
               );
             })}
-            <button
-              onClick={() => void onSelecionarFicha(null)}
-              className="min-h-11 w-full py-3 border border-dashed border-border rounded-xl text-sm text-text-secondary hover:bg-surface-alt hover:text-text-primary transition-colors flex items-center justify-center gap-2"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Criar orçamento em branco
-            </button>
           </div>
         )}
 
@@ -244,13 +249,30 @@ export function NovoOrcamentoModal({
                   <p className="mt-1 text-sm text-text-muted">
                     {modoPersistencia === 'adicionar'
                       ? 'Novos procedimentos desta ficha. O orçamento atual não muda até você confirmar.'
-                      : 'Itens encontrados na ficha. Revise valores antes de criar.'}
+                      : contextoClinicoPendente
+                        ? 'Escolha os procedimentos. Eles serão registrados como planejados antes da proposta.'
+                        : 'Itens encontrados na ficha. Revise valores antes de criar.'}
                   </p>
                 </div>
                 <span className="shrink-0 rounded-full bg-teal/10 px-2.5 py-1 text-xs font-semibold text-teal-ink">
                   {novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length} selecionado{novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length === 1 ? '' : 's'}
                 </span>
               </div>
+
+              {resumoOrigemOrcamento && (
+                <div className="rounded-xl border border-border bg-surface-alt px-3 py-2.5 text-xs leading-relaxed text-text-secondary">
+                  <p>
+                    <span className="font-semibold text-text-primary">{resumoOrigemOrcamento.disponiveis}</span>{' '}
+                    registro{resumoOrigemOrcamento.disponiveis === 1 ? '' : 's'} clínico{resumoOrigemOrcamento.disponiveis === 1 ? '' : 's'}{' '}
+                    {resumoOrigemOrcamento.disponiveis === 1 ? 'disponível' : 'disponíveis'} para este orçamento.
+                  </p>
+                  {resumoOrigemOrcamento.deOutrosResponsaveis > 0 && (
+                    <p className="mt-1 text-warning-ink">
+                      {resumoOrigemOrcamento.deOutrosResponsaveis} pertence{resumoOrigemOrcamento.deOutrosResponsaveis === 1 ? '' : 'm'} a {resumoOrigemOrcamento.responsaveis.join(', ')} e só pode ser orçado pelo responsável.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-2">
                 {novoOrcItens.map((item, idx) => {
@@ -428,15 +450,18 @@ export function NovoOrcamentoModal({
 
               {/* ── Ação fixa no pé da coluna (R-39a) ── */}
               <div className="shrink-0 space-y-2 border-t border-border p-4">
+                {bloqueioCriacao && (
+                  <p role="alert" className="text-xs text-coral-ink bg-coral-pale rounded-xl px-3 py-2">{bloqueioCriacao}</p>
+                )}
                 {orcError && (
                   <p className="text-xs text-coral-ink bg-coral-pale rounded-xl px-3 py-2">{orcError}</p>
                 )}
                 <Button
                   onClick={onCriarOrcamento}
-                  disabled={orcSaving || novoOrcItens.every((item) => item.selecionado === false || !item.descricao.trim())}
+                  disabled={Boolean(bloqueioCriacao) || orcSaving || novoOrcItens.every((item) => item.selecionado === false || !item.descricao.trim())}
                   className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl disabled:opacity-50 font-bold"
                 >
-                  {orcSaving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</> : modoPersistencia === 'adicionar' ? `Adicionar ${novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length} procedimento${novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length === 1 ? '' : 's'}` : 'Criar orçamento'}
+                  {orcSaving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</> : modoPersistencia === 'adicionar' ? `Adicionar ${novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length} procedimento${novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length === 1 ? '' : 's'}` : 'Criar e continuar'}
                 </Button>
                 {podeTrocarFicha && (
                   <Button

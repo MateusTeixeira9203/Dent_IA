@@ -1,7 +1,54 @@
 # R-92 — Assinatura individual Stripe
 
-> **SPEC** · **R-92** · ⏳ aprovada para execução
-> **Aberto:** 2026-08-18 · **Replanejado:** 2026-08-20 · **Implementação Stripe:** autorizada
+> **SPEC** · **R-92** · 🟡 fluxo no ar; ciclo real controlado pendente
+> **Aberto:** 2026-08-18 · **Replanejado:** 2026-08-20 · **Revisado:** 2026-09-03
+
+## Emenda de ativação — 2026-09-03
+
+### Decisão de lançamento
+
+- Duas contas já existentes, fornecidas pelo responsável, serão os primeiros pagamentos reais.
+  Elas usam **Consultório** e escolhem mensal (R$ 200) ou anual (R$ 2.000) no Checkout.
+- Essas duas contas não recebem outro trial: a assinatura deve cobrar no Checkout. Identidade
+  pessoal não entra em código, commit ou migration; a exceção é uma configuração server-side
+  por `usuario_id` + `clinica_id` e fica auditável no banco.
+- Todo cadastro novo mantém cartão obrigatório e **7 dias gratuitos**. Não existe flag global
+  temporária para desligar trial: isso poderia cobrar um novo usuário por engano.
+- O plano escolhido no onboarding é persistido na clínica antes de abrir Checkout; o servidor
+  continua sendo a única fonte de Price ID, valor, ciclo e oferta.
+- Retorno de Checkout espera o webhook; quem já concluiu onboarding segue ao dashboard, e quem
+  ainda não concluiu segue ao onboarding. A URL de retorno jamais comprova pagamento.
+
+### Contrato adicional
+
+```ts
+type PoliticaTrialAssinatura = {
+  clinica_id: string
+  usuario_id: string
+  dias_trial: 0 | 7
+  motivo: string
+  criado_em: string
+}
+```
+
+- Ausência de política significa `TRIAL_DAYS` (7). `dias_trial: 0` faz o servidor **omitir**
+  `subscription_data.trial_period_days`; a Stripe cobra a primeira fatura no Checkout. O valor
+  `0` não é enviado à Stripe porque o parâmetro aceita no mínimo 1 dia.
+- A tabela é RLS-enabled e não recebe policy de cliente. Somente service role lê a regra na criação
+  de Checkout; nenhuma Server Action aceita dias de trial do browser.
+- Antes da ativação em Production são obrigatórios: Price IDs live validados, signing secret do
+  webhook em Production, `STRIPE_BILLING_ENABLED=true` somente após deploy, e Portal Stripe
+  padrão com atualização de cartão, faturas e cancelamento ao fim do período. Troca de preço fica
+  desabilitada neste lançamento.
+
+### Gates adicionais
+
+- [ ] As duas exceções geram Checkout sem trial e sem expor a identidade no repositório.
+- [ ] Cadastro novo gera Checkout com 7 dias, cartão obrigatório e mesmo catálogo de preços.
+- [ ] Conta legada com `clinicas.status_assinatura='trial'` e sem assinatura Stripe pode escolher
+  um plano; o status legado não desabilita indevidamente o CTA.
+- [ ] Webhook em Production sincroniza um pagamento real uma vez; retorno espera essa confirmação.
+- [ ] Após o primeiro pagamento, usuário já onboarded cai no dashboard sem loop.
 
 ## 1. Problema
 

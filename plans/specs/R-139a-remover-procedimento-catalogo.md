@@ -1,9 +1,9 @@
 # R-139a — Remover procedimento do catálogo
 
-> **SPEC** · **R-139a** · 🟡 implementação local
-> **Aberto:** 2026-08-28 · **Fechado:** — · **Fase:** validação manual antes de publicação
+> **SPEC** · **R-139a** · 🟡 no ar; auditoria completa pendente
+> **Aberto:** 2026-08-28 · **Fechado:** — · **Fase:** validação em produção
 > **Origem:** achado reportado após demonstração em 28/08.
-> **Prioridade:** independente; não troca o item ativo R-138.
+> **Prioridade:** independente; não reserva item ativo.
 
 ## 1. Problema
 

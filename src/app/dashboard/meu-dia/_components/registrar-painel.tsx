@@ -52,7 +52,7 @@
 // linha ficava sem fundo, "flutuando"). `ToothDetailPanel` sem esse prop já renderiza a
 // tabela de especialidade inline, dentro do próprio card do perfil (555px).
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { Check, AlertTriangle, CalendarPlus, FileText, Loader2, ScanLine, X } from 'lucide-react';
@@ -61,9 +61,13 @@ import { salvarEventosOdontograma } from '@/server/patients/registro-actions';
 import { CampoMagicoMeuDia } from './campo-magico-meu-dia';
 import type { CapturaDexState } from '@/components/fichas/captura-livre-card';
 import { OrtoForm } from '@/components/fichas/orto-form';
+import { DexLoader } from '@/components/ui/dex-loader';
 import { hojeBRT } from '@/lib/hora-brt';
+import { sugerirEvolucaoResponseSchema } from '@/lib/dex/schemas';
+import { montarPedidoSugestaoEvolucao } from '@/lib/dex/sugerir-evolucao';
 import { salvarVisitaMeuDia } from '../actions';
 import type { SalvarFichaResult } from '@/server/patients/salvar-ficha';
+import type { RegistrarAtendimentoClinicoResult } from '@/server/patients/registrar-atendimento-clinico';
 import { MarcarRetornoModal } from '@/components/pacientes/marcar-retorno-modal';
 import { useMarcarRetorno } from '@/hooks/use-marcar-retorno';
 import {
@@ -99,11 +103,28 @@ const TIPOS_NIVEL_BOCA = new Set<TipoRegistroOdontograma>(['profilaxia', 'clarea
  *  desenho se um dia precisar. */
 type OndeValor = { dentes: number[] } | null;
 
+type SalvarRegistroClinicoResult = SalvarFichaResult | RegistrarAtendimentoClinicoResult;
+
+export type SalvarRegistroClinico = (dados: {
+  visitaKey: string;
+  fichaId?: string;
+  pacienteId: string;
+  agendamentoId?: string;
+  textoVisita: string;
+  eventosDraft: OdontogramaEventoDraft[];
+  alertaNovo: string | null;
+  ortoManutencao: OrtoManutencaoDetalhe | null;
+  destinoNovos: { fichaId: string | null };
+}) => Promise<SalvarRegistroClinicoResult>;
+
 interface RegistrarPainelProps {
   /** R-140a — a mesma chave cobre orçamento antecipado, salvar e retry da visita atual. */
   visitaKey: string;
+  /** Identidade visual da bancada. No Meu Dia é o agendamento; no Prontuário, a própria visita. */
+  contextoId: string;
   pacienteId: string;
-  agendamentoId: string;
+  /** Só o Meu Dia possui agendamento; o Prontuário não inventa esse vínculo. */
+  agendamentoId?: string;
   /** NOVO (D1) — só pro campo mágico (`CapturaLivreCard` precisa pro prompt da IA). */
   pacienteNome: string;
   /** R-64 — o "Marcar retorno" do rodapé abre a MESMA grade/modal do perfil do paciente;
@@ -134,7 +155,9 @@ interface RegistrarPainelProps {
   destinoNovos: string | null;
   /** C2 (P7) — avisa o pai que a visita salvou (odontograma incluso, ver `eventosFalharam`
    *  abaixo). Nunca chamado enquanto o odontograma não gravou (I4). */
-  onSalvo: () => void;
+  onSalvo: (resultado: Extract<SalvarRegistroClinicoResult, { ok: true }>) => void;
+  /** R-140c — permite que o mesmo painel grave um atendimento aberto pelo Prontuário. */
+  onSalvarVisita?: SalvarRegistroClinico;
   /** R-46d D8 — "usar este documento de base" (anexar-documentos-bloco.tsx), repassado pro
    *  campo mágico. */
   anexarTexto?: { texto: string; nonce: number; origem: 'audio' | 'documento' };
@@ -215,7 +238,7 @@ export interface RegistrarPainelSlots {
 }
 
 export function useRegistrarPainel({
-  visitaKey, pacienteId, agendamentoId, pacienteNome, dentistaId, catalogoProcedimentos,
+  visitaKey, contextoId, pacienteId, agendamentoId, pacienteNome, dentistaId, catalogoProcedimentos,
   eventosDraft, onEventosDraftChange: setEventosDraft,
   denteAberto, onDenteAbertoChange: setDenteAberto,
   textoVisita, onTextoVisitaChange: setTextoVisita,
@@ -223,6 +246,7 @@ export function useRegistrarPainel({
   fichaRascunhoId,
   destinoNovos,
   onSalvo,
+  onSalvarVisita,
   anexarTexto,
   boca,
   detalheEspecialidadeAberto,
@@ -237,6 +261,8 @@ export function useRegistrarPainel({
     fase: 'idle', busy: false, impedeSalvar: false, audioParaRetry: false,
   });
   const [textoAberto, setTextoAberto] = useState(false);
+  const [gerandoEvolucao, setGerandoEvolucao] = useState(false);
+  const [evolucaoSugeridaDex, setEvolucaoSugeridaDex] = useState(false);
   const [controlesAbertos, setControlesAbertos] = useState(false);
   /** Entrada visual do R-140d: a captura real de etiquetas ainda não existe nesta fatia. */
   const [materiaisAberto, setMateriaisAberto] = useState(false);
@@ -300,15 +326,17 @@ export function useRegistrarPainel({
   // vazariam pro próximo. Mesmo padrão de "comparar id durante o render" que
   // `meu-dia-client.tsx` (`idAoResetar`) já usa, pelo mesmo motivo (o lint do projeto,
   // `react-hooks/set-state-in-effect`, bloqueia a versão com `useEffect`).
-  const [agendamentoIdAoResetar, setAgendamentoIdAoResetar] = useState(agendamentoId);
+  const [contextoIdAoResetar, setContextoIdAoResetar] = useState(contextoId);
   if (eventosDraft.length !== quantidadeAoRenderizar) {
     const adicionouRegistro = eventosDraft.length > quantidadeAoRenderizar;
     setQuantidadeAoRenderizar(eventosDraft.length);
     if (adicionouRegistro) setControlesAbertos(false);
   }
-  if (agendamentoId !== agendamentoIdAoResetar) {
-    setAgendamentoIdAoResetar(agendamentoId);
+  if (contextoId !== contextoIdAoResetar) {
+    setContextoIdAoResetar(contextoId);
     setTextoAberto(false);
+    setGerandoEvolucao(false);
+    setEvolucaoSugeridaDex(false);
     setControlesAbertos(false);
     setMateriaisAberto(false);
     setQuantidadeAoRenderizar(eventosDraft.length);
@@ -336,6 +364,8 @@ export function useRegistrarPainel({
   // 04/08 — visita só-de-orto (sem evento, sem texto) também é rascunho de verdade.
   const ortoParaSalvar = normalizarOrtoManutencao(ortoValor);
   const semRascunho = eventosDraft.length === 0 && textoVisita.trim() === '' && ortoParaSalvar == null;
+  const podeSugerirEvolucao = textoVisita.trim() === ''
+    && (eventosDraft.length > 0 || ortoParaSalvar != null);
 
   /** R-50 — orto veio da IA: vira estado editável E abre o chip. Abrir é o guarda-corpo (mesma
    *  razão do `criarDenteTipo` abrir a tabela de endo sozinha): dado extraído nunca entra
@@ -346,12 +376,61 @@ export function useRegistrarPainel({
     setOrtoChipAberto(true);
   }
 
+  const salvarRegistro: SalvarRegistroClinico = onSalvarVisita ?? (async (dados) => {
+    if (!dados.agendamentoId) {
+      return { ok: false, error: 'Este atendimento precisa de um agendamento válido.' };
+    }
+    return salvarVisitaMeuDia({
+      visitaKey: dados.visitaKey,
+      fichaId: dados.fichaId,
+      pacienteId: dados.pacienteId,
+      agendamentoId: dados.agendamentoId,
+      textoVisita: dados.textoVisita,
+      eventosDraft: dados.eventosDraft,
+      alertaNovo: dados.alertaNovo,
+      ortoManutencao: dados.ortoManutencao,
+      destinoNovos: dados.destinoNovos,
+    });
+  });
+
+  async function handleSugerirEvolucao() {
+    if (!podeSugerirEvolucao || gerandoEvolucao || capturaDex.busy) return;
+    setTextoAberto(true);
+    setGerandoEvolucao(true);
+    try {
+      const response = await fetch('/api/dex/sugerir-evolucao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(montarPedidoSugestaoEvolucao(eventosDraft, ortoParaSalvar)),
+      });
+      const payload: unknown = await response.json();
+      const parsed = sugerirEvolucaoResponseSchema.safeParse(payload);
+      if (!response.ok || !parsed.success) {
+        const mensagem = payload && typeof payload === 'object' && 'error' in payload
+          && typeof payload.error === 'string'
+          ? payload.error
+          : 'O Dex não conseguiu sugerir a evolução. Você pode continuar manualmente.';
+        throw new Error(mensagem);
+      }
+      setTextoVisita(parsed.data.texto);
+      setEvolucaoSugeridaDex(true);
+      toast.success('Sugestão pronta. Revise antes de salvar.');
+    } catch (error) {
+      toast.error(error instanceof Error
+        ? error.message
+        : 'O Dex não conseguiu sugerir a evolução. Você pode continuar manualmente.');
+    } finally {
+      setGerandoEvolucao(false);
+    }
+  }
+
   /** R-125a — todos os caminhos manuais criam o mesmo draft contextual. */
   function criarEventos(
     tipo: TipoRegistroOdontograma,
     observacao: string,
     ancoras: AncoraClinica[],
     procedimento?: { id: string | null; nome: string | null },
+    modo: ModoLancamento = modoLancamento,
   ): OdontogramaEventoDraft[] {
     return criarEventosContextuais({
       tipo,
@@ -360,7 +439,7 @@ export function useRegistrarPainel({
       ancoras,
       dataPadrao,
       observacao,
-      contexto: { capturaId: crypto.randomUUID(), modo: modoLancamento },
+      contexto: { capturaId: crypto.randomUUID(), modo },
     });
   }
 
@@ -380,6 +459,7 @@ export function useRegistrarPainel({
     observacao = '',
     dentesSugeridos: number[] = [],
     procedimento?: { id: string | null; nome: string | null },
+    modo: ModoLancamento = modoLancamento,
   ) {
     // 03/08 — profilaxia/clareamento/flúor/exame periodontal não têm "onde": a âncora é
     // SEMPRE boca, e nenhum dente clicado antes se aplica aqui — não é esquecido, é ignorado
@@ -389,7 +469,7 @@ export function useRegistrarPainel({
     // o modo manual ativo. Digitar o mesmo tipo 2x no campo mágico ainda cria 2 eventos —
     // comportamento pré-existente, fora de escopo desta fatia (spec R-107a §6).
     if (TIPOS_NIVEL_BOCA.has(tipo)) {
-      setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacao, [{ nivel: 'boca' }], procedimento)]);
+      setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacao, [{ nivel: 'boca' }], procedimento, modo)]);
       setTipoPendente(null);
       setCatalogoPendente(null);
       return;
@@ -418,7 +498,7 @@ export function useRegistrarPainel({
       const primeiroDente = ancoras.map((a) => a.dente).find((d): d is number => d != null);
       if (primeiroDente != null) setDenteAberto(primeiroDente);
     }
-    setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacao, ancoras, procedimento)]);
+    setEventosDraft([...eventosDraft, ...criarEventos(tipo, observacao, ancoras, procedimento, modo)]);
     setTipoPendente(null);
     setCatalogoPendente(null);
   }
@@ -472,7 +552,7 @@ export function useRegistrarPainel({
       escolherDoCatalogo(s.catalogo, s.dentes);
       return;
     }
-    if (s.tipo) registrar(s.tipo, '', s.dentes);
+    if (s.tipo) registrar(s.tipo, '', s.dentes, undefined, s.origem === 'preexistente' ? 'preexistente' : undefined);
   }
 
   /** "✕ limpar" — só esvazia a seleção, nunca desfaz o que já foi registrado. */
@@ -497,19 +577,15 @@ export function useRegistrarPainel({
         : 'A captura do Dex ainda está em andamento. Aguarde antes de salvar.');
       return;
     }
-    if (eventosDraft.some((evento) => evento.revisar_status)) {
-      toast.error('Revise os procedimentos marcados com “Confira o status” antes de salvar.');
-      return;
-    }
     setIsSaving(true);
     // R-86 — achado pela auditoria de 08/08: sem o try/catch (mesmo padrão que
     // `handleRegravarEventos`, logo abaixo, já usa), uma falha de rede/servidor (503 visto ao
     // vivo) lançava uma exceção não tratada — `isSaving` nunca voltava a `false`, nenhum toast
     // aparecia, e o botão ficava travado (disabled) pros cliques seguintes. Parecia "não fez
     // nada" quando na verdade tinha crashado silenciosamente.
-    let resultado: SalvarFichaResult;
+    let resultado: SalvarRegistroClinicoResult;
     try {
-      resultado = await salvarVisitaMeuDia({
+      resultado = await salvarRegistro({
         // R-85 — se "Gerar orçamento" já criou a ficha (fichaRascunhoId), EDITA em vez de criar
         // uma 2ª: mesmos eventos por id (upsert), sem duplicar o que o orçamento já gravou.
         // finalizarAtendimento omitido (default true) — É este clique que fecha o atendimento.
@@ -535,7 +611,7 @@ export function useRegistrarPainel({
       return;
     }
     toast.success('Visita registrada.');
-    onSalvo();
+    onSalvo(resultado);
   }
 
   async function handleRegravarEventos() {
@@ -548,9 +624,9 @@ export function useRegistrarPainel({
       res = { ok: false, error: 'Falha de conexão. Tente novamente.' };
     }
     if (res.ok) {
-      let resultado: SalvarFichaResult;
+      let resultado: SalvarRegistroClinicoResult;
       try {
-        resultado = await salvarVisitaMeuDia({
+        resultado = await salvarRegistro({
           visitaKey,
           fichaId: savedFichaId,
           pacienteId,
@@ -572,7 +648,7 @@ export function useRegistrarPainel({
       setEventosPendentes(null);
       setIsRegravando(false);
       toast.success('Odontograma gravado.');
-      onSalvo();
+      onSalvo(resultado);
     } else {
       setIsRegravando(false);
       toast.error(res.error ?? 'Não foi possível regravar o odontograma.');
@@ -583,12 +659,15 @@ export function useRegistrarPainel({
   // da tela e acompanham o odontograma no slot contextual abaixo.
   const campoMagico = (
     <CampoMagicoMeuDia
-      key={agendamentoId}
+      key={contextoId}
       pacienteNome={pacienteNome}
       eventosDraft={eventosDraft}
       onEventosDraftChange={setEventosDraft}
       textoVisita={textoVisita}
-      onTextoVisitaChange={setTextoVisita}
+      onTextoVisitaChange={(texto) => {
+        setTextoVisita(texto);
+        setEvolucaoSugeridaDex(false);
+      }}
       onAlertaNovoChange={setAlertaNovo}
       onOrtoDetectado={handleOrtoDetectado}
       onEndoDetectado={onAbrirDetalheEndo}
@@ -701,7 +780,12 @@ export function useRegistrarPainel({
       {textoAberto && (
         <div className="mt-2 rounded-lg border border-border bg-surface-alt p-2.5">
           <div className="mb-1.5 flex items-center justify-between gap-2">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Evolução clínica</p>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Evolução clínica</p>
+              {evolucaoSugeridaDex && (
+                <p className="mt-0.5 text-[11px] font-semibold text-teal-ink">Rascunho do Dex — revise antes de salvar</p>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => setTextoAberto(false)}
@@ -710,14 +794,21 @@ export function useRegistrarPainel({
               Recolher
             </button>
           </div>
-          <textarea
-            value={textoVisita}
-            onChange={(event) => setTextoVisita(event.target.value)}
-            placeholder="Curativo, sutura, orientação ou evolução da consulta"
-            rows={3}
-            autoFocus
-            className="w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-teal"
-          />
+          {gerandoEvolucao ? (
+            <DexLoader size="sm" label="Dex preparando a evolução para revisão..." className="min-h-28" />
+          ) : (
+            <textarea
+              value={textoVisita}
+              onChange={(event) => {
+                setTextoVisita(event.target.value);
+                if (event.target.value.trim() === '') setEvolucaoSugeridaDex(false);
+              }}
+              placeholder="Curativo, sutura, orientação ou evolução da consulta"
+              rows={3}
+              autoFocus
+              className="w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-teal"
+            />
+          )}
         </div>
       )}
     </div>
@@ -813,6 +904,16 @@ export function useRegistrarPainel({
 
   const acoesSecundarias = (
     <div className="flex flex-wrap justify-end gap-2">
+      {podeSugerirEvolucao && (
+        <button
+          type="button"
+          onClick={() => void handleSugerirEvolucao()}
+          disabled={gerandoEvolucao || capturaDex.busy}
+          className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-teal/30 bg-teal/10 px-3 text-xs font-bold text-teal-ink transition-colors hover:bg-teal/15 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Gerar evolução com Dex
+        </button>
+      )}
       <button
         type="button"
         onClick={() => setRetornoModalAberto(true)}
@@ -926,15 +1027,19 @@ export function useRegistrarPainel({
 
   // R-123 — atalhos só reaproveitam as ações existentes: Ctrl+Enter é tratado pela captura;
   // Ctrl+S chama o mesmo salvar que o botão do rodapé. Nenhum atalho cria rota paralela.
+  const salvarPorAtalho = useEffectEvent(() => {
+    if (!isSaving && eventosPendentes == null && !semRascunho) void handleSalvar();
+  });
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return;
       event.preventDefault();
-      if (!isSaving && eventosPendentes == null && !semRascunho) void handleSalvar();
+      salvarPorAtalho();
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [eventosPendentes, handleSalvar, isSaving, semRascunho]);
+  }, []);
 
   function voltarParaBoca() {
     setOrtoChipAberto(false);

@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
   Edit2, Trash2, CircleDollarSign, Plus, CheckCircle2, Check,
   Loader2, CreditCard, Banknote, Smartphone,
-  Receipt, User, CalendarClock, X, PenLine,
+  Receipt, User, X, PenLine,
 } from 'lucide-react';
 import { AceiteOrcamentoModal } from '@/components/orcamentos/aceite-orcamento-modal';
 import { BotaoDownloadPDF } from '@/components/orcamentos/botao-download-pdf';
@@ -23,9 +24,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import type { FormaPagamento } from '@/app/dashboard/orcamentos/actions';
+import {
+  cancelarCobrancaEtapa,
+  criarCobrancaEtapa,
+  editarPagamento,
+  estornarPagamento,
+  registrarRecebimentoCobranca,
+  type FormaPagamento,
+} from '@/app/dashboard/orcamentos/actions';
 import { deriveEstadoOrcamento, rotuloEstado, type EstadoOrcamento } from '@/lib/orcamentos/estado';
+import { deriveEstadoCobrancaEtapa } from '@/lib/orcamentos/cobranca-etapa';
 import { parseValorBR, formatValorBR } from '@/lib/valor-br';
+import { toast } from 'sonner';
 import type { OrcamentoComItens, OrcEditItem, Pagamento } from '../types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -63,6 +73,7 @@ interface Props {
    *  não estavam pendurados nesta tela ainda. */
   pacienteTelefone: string | null | undefined;
   pacienteNome: string;
+  pacienteId: string;
   pagForm: PagForm;
   setPagForm: React.Dispatch<React.SetStateAction<PagForm>>;
   pagSaving: boolean;
@@ -109,7 +120,7 @@ interface Props {
   confirmDeletePagId: string | null;
   setConfirmDeletePagId: (id: string | null) => void;
   pagDeleteSaving: boolean;
-  onExcluirPagamento: (id: string) => void;
+  onExcluirPagamento: (id: string, motivoEstorno?: string) => void;
   editValorAcordadoAberto: boolean;
   valorAcordadoTexto: string;
   setValorAcordadoTexto: React.Dispatch<React.SetStateAction<string>>;
@@ -124,11 +135,293 @@ interface Props {
   onToggleMostrarValorPorItem: (id: string, mostrar: boolean) => void;
 }
 
+function CobrancasPorEtapa({ orcamento, pacienteId }: { orcamento: OrcamentoComItens; pacienteId: string }) {
+  const router = useRouter();
+  const hoje = new Date().toISOString().split('T')[0];
+  const [formAberto, setFormAberto] = useState(false);
+  const [itemIds, setItemIds] = useState<string[]>([]);
+  const [desconto, setDesconto] = useState('');
+  const [formaCobranca, setFormaCobranca] = useState<'avista' | 'parcelado'>('avista');
+  const [numeroParcelas, setNumeroParcelas] = useState('3');
+  const [primeiroVencimento, setPrimeiroVencimento] = useState(hoje);
+  const [saving, setSaving] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [cobrancaRecebendoId, setCobrancaRecebendoId] = useState<string | null>(null);
+  const [recebimento, setRecebimento] = useState({ valor: '', forma: 'pix' as FormaPagamento, data: hoje });
+  const [cancelandoId, setCancelandoId] = useState<string | null>(null);
+  const [motivoCancelamento, setMotivoCancelamento] = useState('');
+  const [pagamentoEditandoId, setPagamentoEditandoId] = useState<string | null>(null);
+  const [pagamentoEditado, setPagamentoEditado] = useState({ valor: '', forma: 'pix' as FormaPagamento, data: hoje });
+  const [pagamentoEstornandoId, setPagamentoEstornandoId] = useState<string | null>(null);
+  const [motivoEstorno, setMotivoEstorno] = useState('');
+
+  const idsCobrados = useMemo(() => new Set(
+    orcamento.cobrancas
+      .filter((cobranca) => cobranca.situacao === 'aberta')
+      .flatMap((cobranca) => cobranca.itens.map((item) => item.orcamento_item_id)),
+  ), [orcamento.cobrancas]);
+  const itensElegiveis = useMemo(() => orcamento.itens.filter(
+    (item) => item.aprovado && !idsCobrados.has(item.id),
+  ), [idsCobrados, orcamento.itens]);
+  const subtotalSelecionado = useMemo(() => itemIds.reduce((soma, itemId) => {
+    const item = orcamento.itens.find((candidate) => candidate.id === itemId);
+    return soma + (item?.preco_total ?? 0);
+  }, 0), [itemIds, orcamento.itens]);
+  const descontoNumero = parseValorBR(desconto);
+  const valorFinal = Math.max(0, subtotalSelecionado - descontoNumero);
+  const itemPorId = useMemo(() => new Map(orcamento.itens.map((item) => [item.id, item])), [orcamento.itens]);
+
+  const toggleItem = (itemId: string) => {
+    setItemIds((current) => current.includes(itemId)
+      ? current.filter((id) => id !== itemId)
+      : [...current, itemId]);
+  };
+
+  const criarEtapa = async () => {
+    const parcelas = formaCobranca === 'avista' ? 1 : Number(numeroParcelas);
+    if (itemIds.length === 0) {
+      setErro('Selecione os procedimentos que serão cobrados nesta etapa.');
+      return;
+    }
+    if (descontoNumero > subtotalSelecionado) {
+      setErro('O desconto não pode ser maior que o subtotal selecionado.');
+      return;
+    }
+    if (!Number.isInteger(parcelas) || parcelas < 1 || parcelas > 24) {
+      setErro('Informe entre 2 e 24 parcelas.');
+      return;
+    }
+    if (formaCobranca === 'parcelado' && parcelas < 2) {
+      setErro('Parcelamento mensal começa em 2 parcelas.');
+      return;
+    }
+    setSaving(true);
+    setErro(null);
+    const result = await criarCobrancaEtapa({
+      orcamentoId: orcamento.id,
+      pacienteId,
+      itemIds,
+      desconto: descontoNumero,
+      numeroParcelas: parcelas,
+      primeiroVencimento,
+    });
+    setSaving(false);
+    if (result.error) {
+      setErro(result.error);
+      return;
+    }
+    setFormAberto(false);
+    setItemIds([]);
+    setDesconto('');
+    setFormaCobranca('avista');
+    setNumeroParcelas('3');
+    setPrimeiroVencimento(hoje);
+    toast.success(parcelas === 1 ? 'Cobrança criada. O saldo já apareceu no Financeiro.' : 'Parcelas mensais criadas no Financeiro.');
+    router.refresh();
+  };
+
+  const registrar = async (cobrancaId: string) => {
+    const valor = parseValorBR(recebimento.valor);
+    if (!valor) {
+      setErro('Informe um valor recebido.');
+      return;
+    }
+    setSaving(true);
+    setErro(null);
+    const result = await registrarRecebimentoCobranca({
+      cobrancaId,
+      pacienteId,
+      valor,
+      formaPagamento: recebimento.forma,
+      data: recebimento.data,
+    });
+    setSaving(false);
+    if (result.error) {
+      setErro(result.error);
+      return;
+    }
+    setCobrancaRecebendoId(null);
+    setRecebimento({ valor: '', forma: 'pix', data: hoje });
+    toast.success('Recebimento registrado. O status da etapa foi atualizado.');
+    router.refresh();
+  };
+
+  const cancelar = async (cobrancaId: string) => {
+    if (!motivoCancelamento.trim()) {
+      setErro('Informe o motivo do cancelamento.');
+      return;
+    }
+    setSaving(true);
+    setErro(null);
+    const result = await cancelarCobrancaEtapa({ cobrancaId, pacienteId, motivo: motivoCancelamento });
+    setSaving(false);
+    if (result.error) {
+      setErro(result.error);
+      return;
+    }
+    setCancelandoId(null);
+    setMotivoCancelamento('');
+    toast.success('Cobrança cancelada; os procedimentos voltaram a ficar disponíveis.');
+    router.refresh();
+  };
+
+  const salvarPagamentoEditado = async (pagamentoId: string) => {
+    const valor = parseValorBR(pagamentoEditado.valor);
+    if (!valor) {
+      setErro('Informe um valor válido.');
+      return;
+    }
+    setSaving(true);
+    setErro(null);
+    const result = await editarPagamento(pagamentoId, {
+      valor,
+      formaPagamento: pagamentoEditado.forma,
+      data: pagamentoEditado.data,
+    });
+    setSaving(false);
+    if (result.error) {
+      setErro(result.error);
+      return;
+    }
+    setPagamentoEditandoId(null);
+    toast.success('Recebimento corrigido e saldo da etapa recomposto.');
+    router.refresh();
+  };
+
+  const estornarPagamentoDaEtapa = async (pagamentoId: string) => {
+    if (!motivoEstorno.trim()) {
+      setErro('Informe o motivo do estorno.');
+      return;
+    }
+    setSaving(true);
+    setErro(null);
+    const result = await estornarPagamento(pagamentoId, motivoEstorno);
+    setSaving(false);
+    if (result.error) {
+      setErro(result.error);
+      return;
+    }
+    setPagamentoEstornandoId(null);
+    setMotivoEstorno('');
+    toast.success('Recebimento estornado e saldo da etapa reaberto.');
+    router.refresh();
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">Cobranças por etapa</p>
+        <p className="mt-1 text-xs text-text-secondary">Cobrar só o que o paciente decidiu fazer agora. O restante continua como proposta.</p>
+      </div>
+
+      {orcamento.cobrancas.map((cobranca) => {
+        const estado = deriveEstadoCobrancaEtapa({
+          valorFinal: cobranca.valor_final,
+          situacao: cobranca.situacao,
+          pagamentos: cobranca.pagamentos,
+        });
+        const podeCancelar = cobranca.situacao === 'aberta' && estado.valorPago === 0;
+        const recebendo = cobrancaRecebendoId === cobranca.id;
+        const recebimentosConfirmados = cobranca.pagamentos.filter((pagamento) => pagamento.status === 'pago');
+        const descricao = cobranca.itens
+          .map((item) => itemPorId.get(item.orcamento_item_id)?.descricao ?? 'Procedimento')
+          .join(', ');
+        const classeEstado: Record<typeof estado.estado, string> = {
+          pendente: 'bg-warning/15 text-warning-ink border-warning/25',
+          parcial: 'bg-teal/10 text-teal-ink border-teal/30',
+          paga: 'bg-teal/15 text-teal-ink border-teal/30',
+          cancelada: 'bg-surface-alt text-text-secondary border-border',
+        };
+        const rotuloEstado: Record<typeof estado.estado, string> = {
+          pendente: 'Pendente', parcial: 'Parcial', paga: 'Paga', cancelada: 'Cancelada',
+        };
+        return (
+          <div key={cobranca.id} className="rounded-2xl border border-border bg-surface-alt/40 p-3 space-y-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-text-primary leading-snug">{descricao}</p>
+                <p className="mt-1 text-[11px] text-text-secondary font-mono">
+                  Subtotal R$ {fmt(cobranca.subtotal)}{cobranca.desconto > 0 && ` − desconto R$ ${fmt(cobranca.desconto)}`}
+                </p>
+                <p className="mt-1 text-[11px] text-text-secondary">
+                  {cobranca.numero_parcelas === 1
+                    ? `À vista · vence ${format(parseISO(cobranca.primeiro_vencimento), 'dd/MM/yyyy')}`
+                    : `${cobranca.numero_parcelas}x mensais · 1º vencimento ${format(parseISO(cobranca.primeiro_vencimento), 'dd/MM/yyyy')}`}
+                </p>
+              </div>
+              <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-bold ${classeEstado[estado.estado]}`}>{rotuloEstado[estado.estado]}</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div><p className="text-text-secondary">Final</p><p className="font-mono font-semibold text-text-primary">R$ {fmt(cobranca.valor_final)}</p></div>
+              <div><p className="text-text-secondary">Recebido</p><p className="font-mono font-semibold text-teal-ink">R$ {fmt(estado.valorPago)}</p></div>
+              <div><p className="text-text-secondary">Saldo</p><p className="font-mono font-semibold text-text-primary">R$ {fmt(estado.saldo)}</p></div>
+            </div>
+
+            {recebimentosConfirmados.length > 0 && (
+              <div className="space-y-1.5 border-t border-border pt-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Recebimentos</p>
+                {recebimentosConfirmados.map((pagamento) => pagamentoEditandoId === pagamento.id ? (
+                  <div key={pagamento.id} className="space-y-2 rounded-lg bg-surface p-2">
+                    <div className="grid grid-cols-2 gap-2"><Input value={pagamentoEditado.valor} inputMode="decimal" onChange={(event) => setPagamentoEditado((current) => ({ ...current, valor: event.target.value }))} className="h-8 font-mono text-xs" /><Input type="date" value={pagamentoEditado.data} onChange={(event) => setPagamentoEditado((current) => ({ ...current, data: event.target.value }))} className="h-8 text-xs" /></div>
+                    <Select value={pagamentoEditado.forma} onValueChange={(value) => setPagamentoEditado((current) => ({ ...current, forma: value as FormaPagamento }))}><SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(FORMA_LABEL).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
+                    <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => setPagamentoEditandoId(null)} disabled={saving} className="h-7 flex-1 text-xs">Cancelar</Button><Button size="sm" onClick={() => void salvarPagamentoEditado(pagamento.id)} disabled={saving} className="h-7 flex-1 text-xs">Salvar</Button></div>
+                  </div>
+                ) : pagamentoEstornandoId === pagamento.id ? (
+                  <div key={pagamento.id} className="space-y-2 rounded-lg bg-coral-pale p-2"><Input value={motivoEstorno} onChange={(event) => setMotivoEstorno(event.target.value)} placeholder="Motivo do estorno" maxLength={500} className="h-8 text-xs" /><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => setPagamentoEstornandoId(null)} disabled={saving} className="h-7 flex-1 text-xs">Voltar</Button><Button size="sm" onClick={() => void estornarPagamentoDaEtapa(pagamento.id)} disabled={saving} className="h-7 flex-1 bg-coral-pale text-coral-ink hover:bg-coral/20 text-xs">Estornar</Button></div></div>
+                ) : (
+                  <div key={pagamento.id} className="flex items-center gap-2 rounded-lg bg-surface px-2.5 py-2 text-xs"><span className="min-w-0 flex-1 text-text-secondary">{FORMA_LABEL[pagamento.forma_pagamento ?? 'outro'] ?? 'Recebimento'} · {pagamento.data_pagamento ? format(parseISO(pagamento.data_pagamento), 'dd/MM/yyyy', { locale: ptBR }) : '—'}</span><span className="font-mono font-semibold text-teal-ink">R$ {fmt(pagamento.valor)}</span><button type="button" onClick={() => { setPagamentoEditandoId(pagamento.id); setPagamentoEditado({ valor: formatValorBR(pagamento.valor), forma: (pagamento.forma_pagamento as FormaPagamento) ?? 'pix', data: pagamento.data_pagamento ?? hoje }); }} className="text-text-secondary hover:text-text-primary">Editar</button><button type="button" onClick={() => setPagamentoEstornandoId(pagamento.id)} className="text-coral-ink">Estornar</button></div>
+                ))}
+              </div>
+            )}
+
+            {recebendo ? (
+              <div className="space-y-2 border-t border-border pt-3">
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1 space-y-1"><Label className="text-[10px] text-text-secondary">Valor recebido</Label><Input value={recebimento.valor} inputMode="decimal" onChange={(event) => setRecebimento((current) => ({ ...current, valor: event.target.value }))} className="h-9 font-mono" placeholder="0,00" /></div>
+                  <Button size="sm" variant="outline" onClick={() => setRecebimento((current) => ({ ...current, valor: formatValorBR(estado.saldo) }))} className="h-9 text-xs">Usar saldo</Button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="date" value={recebimento.data} onChange={(event) => setRecebimento((current) => ({ ...current, data: event.target.value }))} className="h-9" />
+                  <Select value={recebimento.forma} onValueChange={(value) => setRecebimento((current) => ({ ...current, forma: value as FormaPagamento }))}><SelectTrigger className="h-9"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(FORMA_LABEL).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
+                </div>
+                <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => setCobrancaRecebendoId(null)} disabled={saving} className="flex-1">Cancelar</Button><Button size="sm" onClick={() => void registrar(cobranca.id)} disabled={saving} className="flex-1 bg-teal text-white hover:bg-teal-lt">{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Registrar'}</Button></div>
+              </div>
+            ) : cancelandoId === cobranca.id ? (
+              <div className="space-y-2 border-t border-border pt-3"><Input value={motivoCancelamento} onChange={(event) => setMotivoCancelamento(event.target.value)} placeholder="Motivo do cancelamento" maxLength={500} className="h-9" /><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => setCancelandoId(null)} disabled={saving} className="flex-1">Voltar</Button><Button size="sm" onClick={() => void cancelar(cobranca.id)} disabled={saving} className="flex-1 bg-coral-pale text-coral-ink hover:bg-coral/20">Cancelar etapa</Button></div></div>
+            ) : estado.estado !== 'paga' && estado.estado !== 'cancelada' ? (
+              <div className="flex gap-2 border-t border-border pt-3"><Button size="sm" onClick={() => setCobrancaRecebendoId(cobranca.id)} className="flex-1 bg-teal text-white hover:bg-teal-lt">Registrar recebimento</Button>{podeCancelar && <Button size="sm" variant="outline" onClick={() => setCancelandoId(cobranca.id)} className="text-coral-ink">Cancelar</Button>}</div>
+            ) : null}
+          </div>
+        );
+      })}
+
+      {itensElegiveis.length > 0 && (
+        formAberto ? (
+          <div className="rounded-2xl border border-teal/30 bg-teal/5 p-3 space-y-3">
+            <div><p className="text-sm font-semibold text-text-primary">Nova cobrança</p><p className="text-xs text-text-secondary mt-1">Selecione itens aprovados. O desconto vale somente para esta etapa.</p></div>
+            <div className="space-y-1.5">{itensElegiveis.map((item) => <label key={item.id} className="flex items-center gap-2 rounded-lg bg-surface px-2.5 py-2 text-xs text-text-primary"><input type="checkbox" checked={itemIds.includes(item.id)} onChange={() => toggleItem(item.id)} className="accent-teal" /><span className="min-w-0 flex-1 truncate">{item.descricao ?? 'Procedimento'}</span><span className="font-mono">R$ {fmt(item.preco_total ?? 0)}</span></label>)}</div>
+            <div className="grid grid-cols-2 gap-2"><div><Label className="text-[10px] text-text-secondary">Desconto da etapa</Label><Input value={desconto} inputMode="decimal" placeholder="0,00" onChange={(event) => setDesconto(event.target.value)} className="mt-1 h-9 font-mono" /></div><div className="rounded-lg border border-border bg-surface px-3 py-2"><p className="text-[10px] text-text-secondary">Valor a cobrar</p><p className="font-mono text-sm font-semibold text-text-primary">R$ {fmt(valorFinal)}</p></div></div>
+            <div className="space-y-2 rounded-lg border border-border bg-surface p-2.5">
+              <Label className="text-[10px] text-text-secondary">Forma de cobrança</Label>
+              <div className="grid grid-cols-2 gap-1.5"><button type="button" onClick={() => setFormaCobranca('avista')} className={`h-9 rounded-lg border text-xs font-semibold ${formaCobranca === 'avista' ? 'border-teal/40 bg-teal/10 text-teal-ink' : 'border-border text-text-secondary hover:border-teal/30'}`}>À vista</button><button type="button" onClick={() => setFormaCobranca('parcelado')} className={`h-9 rounded-lg border text-xs font-semibold ${formaCobranca === 'parcelado' ? 'border-teal/40 bg-teal/10 text-teal-ink' : 'border-border text-text-secondary hover:border-teal/30'}`}>Parcelado</button></div>
+              <div className={`grid gap-2 ${formaCobranca === 'parcelado' ? 'grid-cols-2' : 'grid-cols-1'}`}><div className={formaCobranca === 'parcelado' ? '' : 'hidden'}><Label className="text-[10px] text-text-secondary">Nº de parcelas</Label><Input type="number" min={2} max={24} value={numeroParcelas} onChange={(event) => setNumeroParcelas(event.target.value)} className="mt-1 h-9 font-mono" /></div><div><Label className="text-[10px] text-text-secondary">1º vencimento</Label><Input type="date" value={primeiroVencimento} onChange={(event) => setPrimeiroVencimento(event.target.value)} className="mt-1 h-9" /></div></div>
+              {formaCobranca === 'parcelado' && Number(numeroParcelas) >= 2 && valorFinal > 0 && <p className="text-[11px] text-text-secondary">{numeroParcelas}x mensais de aproximadamente R$ {fmt(valorFinal / Number(numeroParcelas))}.</p>}
+            </div>
+            {erro && <p className="text-xs text-coral-ink">{erro}</p>}
+            <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => { setFormAberto(false); setErro(null); }} disabled={saving} className="flex-1">Cancelar</Button><Button size="sm" onClick={() => void criarEtapa()} disabled={saving || itemIds.length === 0} className="flex-1 bg-teal text-white hover:bg-teal-lt">{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Criar cobrança'}</Button></div>
+          </div>
+        ) : <Button variant="outline" onClick={() => setFormAberto(true)} className="w-full border-teal/35 text-teal-ink hover:bg-teal/10"><Plus className="mr-1.5 h-4 w-4" />Cobrar nesta etapa</Button>
+      )}
+      {erro && !formAberto && <p className="text-xs text-coral-ink">{erro}</p>}
+    </div>
+  );
+}
+
 // ─── component ───────────────────────────────────────────────────────────────
 
 export function DetalheOrcamentoModal({
   detalheOrc, detalheOrcId, onClose,
-  pacienteTelefone, pacienteNome,
+  pacienteTelefone, pacienteNome, pacienteId,
   pagForm, setPagForm, pagSaving, pagError,
   parcelasMode, setParcelasMode, parcelasForm, setParcelasForm, parcelasSaving, parcelasError, onGerarParcelas,
   orcEditMode, setOrcEditMode, orcEditItens, setOrcEditItens,
@@ -151,7 +444,7 @@ export function DetalheOrcamentoModal({
   /** R-39a: só Procedimentos e Atividade — Pagamentos virou a coluna do dinheiro. */
   const [tab, setTab] = useState<'procedimentos' | 'atividade'>('procedimentos');
   const [showAceiteModal, setShowAceiteModal] = useState(false);
-  const [mostrarAgendamentoUnico, setMostrarAgendamentoUnico] = useState(false);
+  const [motivoEstorno, setMotivoEstorno] = useState('');
   const [activityLogs, setActivityLogs] = useState<{ id: string; actor_nome: string | null; action: string; created_at: string }[]>([]);
 
   // Patch 4: Lazy-fetch activity logs quando o modal abre
@@ -181,6 +474,10 @@ export function DetalheOrcamentoModal({
     'pagamento.parcelado': 'Parcelamento gerado',
     'pagamento.editado': 'Pagamento editado',
     'pagamento.excluido': 'Pagamento excluído',
+    'pagamento.estornado': 'Recebimento estornado',
+    'pagamento.previsao_reorganizada': 'Cobrança reorganizada',
+    'cobranca.etapa_criada': 'Cobrança por etapa criada',
+    'cobranca.etapa_cancelada': 'Cobrança por etapa cancelada',
     status_alterado: 'Status alterado',
   };
 
@@ -219,15 +516,13 @@ export function DetalheOrcamentoModal({
   ) ?? false;
   const temPlanoParcelado = detalheOrc?.plano_forma === 'parcelado'
     || detalheOrc?.pagamentos.some((pagamento) => pagamento.parcela_numero !== null) === true;
-  const temPlanoAvista = detalheOrc?.plano_forma === 'avista';
   const temItensAprovados = valorAprovado > 0;
-  const podeEscolherRecebimento = temItensAprovados && !quitado && !temPlanoParcelado && !temPlanoAvista && !closingPagamentoId;
-  const podeConfigurarRecebimento = temItensAprovados && !quitado && !temPlanoParcelado && !closingPagamentoId;
-  const valorFinalTravado = Boolean(detalheOrc?.plano_forma) || temParcelaAgendada;
-
-  useEffect(() => {
-    if (temPlanoAvista) setParcelasMode(false);
-  }, [setParcelasMode, temPlanoAvista]);
+  const podeEscolherRecebimento = temItensAprovados && !quitado && !closingPagamentoId;
+  const podeConfigurarRecebimento = temItensAprovados && !quitado && !closingPagamentoId;
+  // Orçamentos já em negociação legada seguem na superfície anterior. Assim que não há dinheiro
+  // nem previsão legados, a primeira cobrança nasce por etapa e não por `valor_acordado` global.
+  const usarCobrancasPorEtapa = (detalheOrc?.cobrancas.length ?? 0) > 0
+    || ((detalheOrc?.pagamentos.length ?? 0) === 0 && temItensAprovados);
 
   /**
    * R-27a: quantidade de pagamentos recebidos e formas distintas usadas — é o que a
@@ -248,7 +543,6 @@ export function DetalheOrcamentoModal({
   function preencherRestante() {
     if (restante <= 0) return;
     setPagForm(f => ({ ...f, valor: formatValorBR(restante), dataVencimento: '' }));
-    setMostrarAgendamentoUnico(false);
   }
 
   return (
@@ -551,6 +845,10 @@ export function DetalheOrcamentoModal({
                 className="w-full sm:w-[416px] sm:shrink-0 border-t sm:border-t-0 sm:border-l border-border flex flex-col min-h-0 bg-teal/[0.04]"
               >
                 <div className="flex-1 min-h-0 overflow-y-auto p-5">
+                  {!orcEditMode && usarCobrancasPorEtapa ? (
+                    <CobrancasPorEtapa orcamento={detalheOrc} pacienteId={pacienteId} />
+                  ) : (
+                    <>
                   {orcEditMode ? (
                     <div className="rounded-2xl border border-teal/25 p-5 text-center">
                       <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">Novo total</p>
@@ -648,18 +946,15 @@ export function DetalheOrcamentoModal({
                               size="sm"
                               variant="outline"
                               onClick={onIniciarEdicaoValorAcordado}
-                              disabled={valorFinalTravado}
                               className="rounded-lg h-8 text-xs"
                             >
                               <Edit2 className="w-3.5 h-3.5 mr-1" /> Editar
                             </Button>
                           </div>
                           <p className="text-[11px] text-text-secondary mt-2">
-                            {detalheOrc.plano_forma
-                              ? 'Há um plano de pagamento ativo. Ajuste as parcelas antes de alterar este valor.'
-                              : temParcelaAgendada
-                                ? 'Há uma parcela agendada. Ajuste ou remova a parcela antes de alterar este valor.'
-                                : 'Você pode corrigir o combinado sem mudar os procedimentos.'}
+                            {temParcelaAgendada
+                              ? 'Ao salvar, a previsão futura é redistribuída; o recebido não muda.'
+                              : 'Você pode corrigir o combinado sem mudar os procedimentos.'}
                           </p>
                         </div>
                       )}
@@ -671,9 +966,9 @@ export function DetalheOrcamentoModal({
                       <div className="h-px bg-border my-4" />
                       <div className="mb-2 flex items-center justify-between gap-3">
                         <h4 className="text-xs font-bold uppercase tracking-widest text-text-secondary">
-                          {temPlanoParcelado ? 'Parcelas' : 'Recebimentos'}
+                          {temPlanoParcelado ? 'Previsão e recebimentos' : 'Recebimentos'}
                         </h4>
-                        <span className="text-[11px] text-text-secondary">Edite valor, forma e data quando precisar</span>
+                        <span className="text-[11px] text-text-secondary">Recebido é histórico; previsão pode ser reorganizada</span>
                       </div>
                       <div className="space-y-1.5">
                         {detalheOrc.pagamentos.map(pg => {
@@ -740,23 +1035,40 @@ export function DetalheOrcamentoModal({
 
                           if (confirmDeletePagId === pg.id) {
                             return (
-                              <div key={pg.id} className="rounded-xl border border-coral/30 bg-coral/5 p-3 flex items-center justify-between gap-2">
-                                <p className="text-xs text-text-primary">Excluir pagamento de R$ {fmt(pg.valor)}?</p>
-                                <div className="flex gap-1.5 shrink-0">
+                              <div key={pg.id} className="rounded-xl border border-coral/30 bg-coral/5 p-3 space-y-2">
+                                <p className="text-xs text-text-primary">
+                                  {isPago ? 'Estornar' : 'Excluir previsão'} de R$ {fmt(pg.valor)}?
+                                </p>
+                                {isPago && (
+                                  <Input
+                                    value={motivoEstorno}
+                                    onChange={(event) => setMotivoEstorno(event.target.value)}
+                                    placeholder="Motivo do estorno (obrigatório)"
+                                    maxLength={500}
+                                    disabled={pagDeleteSaving}
+                                    className="h-8 text-xs"
+                                  />
+                                )}
+                                <div className="flex justify-end gap-1.5 shrink-0">
                                   <Button
-                                    size="sm" variant="outline" onClick={() => setConfirmDeletePagId(null)} disabled={pagDeleteSaving}
+                                    size="sm" variant="outline" onClick={() => {
+                                      setConfirmDeletePagId(null);
+                                      setMotivoEstorno('');
+                                    }} disabled={pagDeleteSaving}
                                     className="rounded-lg h-7 text-xs px-2"
                                   >
                                     Cancelar
                                   </Button>
                                   <Button
-                                    size="sm" onClick={() => onExcluirPagamento(pg.id)} disabled={pagDeleteSaving}
+                                    size="sm"
+                                    onClick={() => onExcluirPagamento(pg.id, motivoEstorno)}
+                                    disabled={pagDeleteSaving || (isPago && !motivoEstorno.trim())}
                                     /* `text-white` sobre `bg-coral` reprova no escuro: coral vira
                                        #ef9a9a (rosa claro) e branco em cima dá ~1,9:1. Par
                                        coral-ink/coral-pale funciona nos dois temas. */
                                     className="rounded-lg h-7 text-xs px-2 bg-coral-pale border border-coral text-coral-ink hover:bg-coral/20"
                                   >
-                                    {pagDeleteSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Excluir'}
+                                    {pagDeleteSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isPago ? 'Estornar' : 'Excluir'}
                                   </Button>
                                 </div>
                               </div>
@@ -839,7 +1151,7 @@ export function DetalheOrcamentoModal({
                                 <button
                                   onClick={() => setConfirmDeletePagId(pg.id)}
                                   className="p-1 rounded-lg hover:bg-coral/10 text-text-secondary hover:text-coral transition-colors"
-                                  aria-label="Excluir pagamento"
+                                  aria-label={isPago ? 'Estornar recebimento' : 'Excluir previsão'}
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -874,7 +1186,7 @@ export function DetalheOrcamentoModal({
 
                       <div className="mb-3">
                         <p className="text-xs font-bold uppercase tracking-widest text-teal-ink">
-                          {closingPagamentoId ? 'Marcar parcela como paga' : parcelasMode ? 'Plano parcelado' : 'Recebimento à vista'}
+                          {closingPagamentoId ? 'Confirmar previsão como recebida' : parcelasMode ? 'Organizar cobrança' : 'Registrar recebimento'}
                         </p>
                         {!closingPagamentoId && podeEscolherRecebimento && (
                           <div className="mt-3 grid grid-cols-2 rounded-xl border border-border bg-surface-alt/40 p-1" role="tablist" aria-label="Forma de recebimento">
@@ -887,7 +1199,7 @@ export function DetalheOrcamentoModal({
                                 !parcelasMode ? 'bg-surface text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
                               }`}
                             >
-                              À vista
+                              Recebimento
                             </button>
                             <button
                               type="button"
@@ -898,7 +1210,7 @@ export function DetalheOrcamentoModal({
                                 parcelasMode ? 'bg-surface text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
                               }`}
                             >
-                              Parcelado
+                              Organizar cobrança
                             </button>
                           </div>
                         )}
@@ -931,7 +1243,7 @@ export function DetalheOrcamentoModal({
                             if (!n || n < 2 || !restante) return null;
                             return (
                               <p className="text-[11px] text-text-secondary bg-surface rounded-xl px-3 py-2">
-                                Saldo restante: R$ {fmt(restante)} — {n}x de R$ {fmt(restante / n)}, vencimentos no mesmo dia, mês a mês.
+                                Saldo restante: R$ {fmt(restante)} — {n} previsões de R$ {fmt(restante / n)}, vencimentos no mesmo dia, mês a mês.
                               </p>
                             );
                           })()}
@@ -969,75 +1281,33 @@ export function DetalheOrcamentoModal({
                               </Button>
                             )}
                           </div>
-                          {!closingPagamentoId && (
-                            <div className="space-y-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setMostrarAgendamentoUnico((aberto) => {
-                                    if (aberto) setPagForm((form) => ({ ...form, dataVencimento: '' }));
-                                    return !aberto;
-                                  });
-                                }}
-                                className="text-xs font-semibold text-text-secondary transition-colors hover:text-teal-ink"
-                              >
-                                {mostrarAgendamentoUnico ? 'Receber agora' : 'Agendar recebimento'}
-                              </button>
-                              {mostrarAgendamentoUnico && (
-                                <div className="space-y-1.5">
-                                  <Label className="text-xs text-text-secondary">Vencimento</Label>
-                                  <Input
-                                    type="date" min={hoje}
-                                    value={pagForm.dataVencimento}
-                                    onChange={e => setPagForm(f => ({ ...f, dataVencimento: e.target.value }))}
-                                    className="rounded-xl bg-surface border-border text-text-primary"
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {!closingPagamentoId && mostrarAgendamentoUnico ? (
-                            pagForm.dataVencimento && pagForm.dataVencimento > hoje ? (
-                              <div className="flex items-center gap-2 bg-warning-pale border border-warning/40 rounded-xl px-3 py-2.5">
-                                <CalendarClock className="w-3.5 h-3.5 text-warning-ink shrink-0" />
-                                <p className="text-xs text-warning-ink">
-                                  Vencimento futuro — será registrado como <strong>pendente</strong>.
-                                </p>
-                              </div>
-                            ) : (
-                              <p className="text-xs text-text-secondary">Escolha uma data futura para agendar este recebimento.</p>
-                            )
-                          ) : (
-                            <>
-                              <div className="space-y-1.5">
-                                <Label className="text-xs text-text-secondary">Data do recebimento</Label>
-                                <Input
-                                  type="date" value={pagForm.data}
-                                  onChange={e => setPagForm(f => ({ ...f, data: e.target.value }))}
-                                  className="rounded-xl bg-surface border-border text-text-primary"
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <Label className="text-xs text-text-secondary">Forma de pagamento</Label>
-                                <Select
-                                  value={pagForm.formaPagamento}
-                                  onValueChange={v => v && setPagForm(f => ({ ...f, formaPagamento: v as FormaPagamento }))}
-                                >
-                                  <SelectTrigger className="rounded-xl bg-surface border-border text-text-primary">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent className="bg-surface border-border">
-                                    <SelectItem value="dinheiro">Dinheiro</SelectItem>
-                                    <SelectItem value="pix">PIX</SelectItem>
-                                    <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
-                                    <SelectItem value="cartao_debito">Cartão de Débito</SelectItem>
-                                    <SelectItem value="boleto">Boleto</SelectItem>
-                                    <SelectItem value="outro">Outro</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </>
-                          )}
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-text-secondary">Data do recebimento</Label>
+                            <Input
+                              type="date" value={pagForm.data}
+                              onChange={e => setPagForm(f => ({ ...f, data: e.target.value }))}
+                              className="rounded-xl bg-surface border-border text-text-primary"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-text-secondary">Forma de pagamento</Label>
+                            <Select
+                              value={pagForm.formaPagamento}
+                              onValueChange={v => v && setPagForm(f => ({ ...f, formaPagamento: v as FormaPagamento }))}
+                            >
+                              <SelectTrigger className="rounded-xl bg-surface border-border text-text-primary">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="bg-surface border-border">
+                                <SelectItem value="dinheiro">Dinheiro</SelectItem>
+                                <SelectItem value="pix">PIX</SelectItem>
+                                <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
+                                <SelectItem value="cartao_debito">Cartão de Débito</SelectItem>
+                                <SelectItem value="boleto">Boleto</SelectItem>
+                                <SelectItem value="outro">Outro</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                           {pagError && (
                             <p className="text-xs text-coral-ink bg-coral-pale rounded-xl px-3 py-2">{pagError}</p>
                           )}
@@ -1045,11 +1315,13 @@ export function DetalheOrcamentoModal({
                       )}
                     </>
                   )}
+                    </>
+                  )}
                 </div>
 
                 {/* ── Ação fixa no pé da coluna — nunca sai da tela, mesmo com muitas
                     parcelas (a lista acima rola; o botão não). ── */}
-                {!orcEditMode && temItensAprovados && !quitado && (closingPagamentoId || podeConfigurarRecebimento) && (
+                {!orcEditMode && !usarCobrancasPorEtapa && temItensAprovados && !quitado && (closingPagamentoId || podeConfigurarRecebimento) && (
                   <div className="shrink-0 border-t border-border p-4">
                     {parcelasMode && !closingPagamentoId ? (
                       <Button
@@ -1058,23 +1330,21 @@ export function DetalheOrcamentoModal({
                         className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl disabled:opacity-50 font-semibold"
                       >
                         {parcelasSaving
-                          ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Gerando...</>
-                          : 'Gerar Parcelas'
+                          ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</>
+                          : temParcelaAgendada ? 'Reorganizar cobrança' : 'Organizar cobrança'
                         }
                       </Button>
                     ) : (
                       <Button
                         onClick={onRegistrarPagamento}
-                        disabled={pagSaving || !pagForm.valor || (mostrarAgendamentoUnico && !closingPagamentoId && (!pagForm.dataVencimento || pagForm.dataVencimento <= hoje))}
+                        disabled={pagSaving || !pagForm.valor}
                         className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl disabled:opacity-50 font-semibold"
                       >
                         {pagSaving
                           ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</>
                           : closingPagamentoId
                             ? 'Marcar como Pago'
-                            : (mostrarAgendamentoUnico && pagForm.dataVencimento && pagForm.dataVencimento > hoje)
-                              ? 'Agendar recebimento'
-                              : 'Registrar recebimento'
+                            : 'Registrar recebimento'
                         }
                       </Button>
                     )}

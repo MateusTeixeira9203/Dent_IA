@@ -24,6 +24,47 @@ export interface DentistaCache {
 }
 
 /**
+ * Identidade mínima usada por rotas que só precisam autorizar uma ação clínica.
+ * Mantém a clínica ativa como fonte de verdade e não carrega perfil, plano ou avatar.
+ */
+export interface DexActor {
+  dentistaId: string;
+  clinicaId: string;
+}
+
+export const getDexActorCached = cache(async (): Promise<DexActor | null> => {
+  const supabase = await createClient();
+
+  // getClaims valida a assinatura do JWT sem buscar o perfil completo no Auth a cada chamada.
+  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
+  const userId = claimsData?.claims.sub;
+  if (claimsError || typeof userId !== "string") return null;
+
+  const { data: userRecord, error: userError } = await supabase
+    .from("users")
+    .select("active_clinica_id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (userError || !userRecord?.active_clinica_id) return null;
+
+  const clinicaId = userRecord.active_clinica_id as string;
+  const { data, error } = await supabase
+    .from("dentistas")
+    .select("id, clinica_id")
+    .eq("user_id", userId)
+    .eq("clinica_id", clinicaId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  const row = data as unknown as { id: string; clinica_id: string };
+  if (row.clinica_id !== clinicaId) return null;
+
+  return { dentistaId: row.id, clinicaId: row.clinica_id };
+});
+
+/**
  * Busca o perfil clínico do usuário logado para a clínica ativa.
  *
  * Fluxo:

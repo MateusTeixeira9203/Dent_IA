@@ -31,7 +31,7 @@ import type { DentistaRole } from '@/types/database';
 import { motion, AnimatePresence } from 'motion/react';
 import { PageContainer } from '@/components/layout/page-container';
 import { DexLoader } from '@/components/ui/dex-loader';
-import { format, parseISO } from 'date-fns';
+import { addMonths, format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
 import {
@@ -72,7 +72,7 @@ import {
   editarOrcamento,
   excluirOrcamento,
   criarProcedimentoRapido,
-  gerarParcelas,
+  reorganizarParcelas,
   type FormaPagamento,
   type StatusOrcamento,
 } from '../actions';
@@ -468,16 +468,12 @@ export function OrcamentosClient({
     setPagError(null);
     setPagSaving(true);
 
-    const hoje = new Date().toISOString().split('T')[0];
-    const isAgendado = pagForm.dataVencimento && pagForm.dataVencimento > hoje;
-
     const result = await registrarPagamento({
       orcamentoId: selected.id,
       pacienteId: selected.paciente?.id ?? '',
       valor,
       formaPagamento: pagForm.formaPagamento,
       data: pagForm.data,
-      dataVencimento: pagForm.dataVencimento || undefined,
       dentistaId: selected.dentista?.id,
     });
 
@@ -488,10 +484,10 @@ export function OrcamentosClient({
         id: result.id ?? crypto.randomUUID(),
         orcamento_id: selected.id,
         valor,
-        status: isAgendado ? 'pendente' : 'pago',
-        forma_pagamento: isAgendado ? null : pagForm.formaPagamento,
-        data_pagamento: isAgendado ? null : pagForm.data,
-        data_vencimento: pagForm.dataVencimento || null,
+        status: 'pago',
+        forma_pagamento: pagForm.formaPagamento,
+        data_pagamento: pagForm.data,
+        data_vencimento: null,
         parcela_numero: null,
         total_parcelas: null,
         marcado_por: null,
@@ -521,15 +517,14 @@ export function OrcamentosClient({
     setPagSaving(false);
   };
 
-  // Gera N parcelas de uma vez no orçamento selecionado — mesma ideia do "Registrar
-  // Pagamento" único, mas em lote (evita repetir o formulário N vezes).
+  // Cobrança futura é previsão substituível; recebimentos confirmados ficam intactos.
   const handleGerarParcelas = async () => {
     if (!selected) return;
     const numero = parseInt(parcelasForm.numero, 10);
     // Aviso local só de UX — quem soma "já pago" de verdade agora é a RPC (server), pra não
     // confiar em saldo calculado no browser.
     const pago = selected.pagamentos.filter((p) => p.status === 'pago').reduce((s, p) => s + p.valor, 0);
-    const saldoAproximado = Math.max(0, (selected.total ?? 0) - pago);
+    const saldoAproximado = Math.max(0, (selected.valor_acordado ?? selected.total ?? 0) - pago);
     if (!numero || numero < 2 || numero > 24) {
       setParcelasError('Informe entre 2 e 24 parcelas.');
       return;
@@ -545,10 +540,17 @@ export function OrcamentosClient({
     setParcelasError(null);
     setParcelasSaving(true);
 
-    const result = await gerarParcelas({
+    const saldoEmCentavos = Math.round(saldoAproximado * 100);
+    const parcelaBase = Math.floor(saldoEmCentavos / numero);
+    const resto = saldoEmCentavos % numero;
+    const primeiroVencimento = new Date(`${parcelasForm.primeiroVencimento}T12:00:00`);
+    const result = await reorganizarParcelas({
       orcamentoId: selected.id,
-      numeroParcelas: numero,
-      primeiroVencimento: parcelasForm.primeiroVencimento,
+      valorAcordado: selected.valor_acordado ?? selected.total ?? 0,
+      parcelas: Array.from({ length: numero }, (_, indice) => ({
+        valor: (parcelaBase + (indice < resto ? 1 : 0)) / 100,
+        dataVencimento: format(addMonths(primeiroVencimento, indice), 'yyyy-MM-dd'),
+      })),
     });
 
     if (result.error || !result.parcelas) {
@@ -572,7 +574,7 @@ export function OrcamentosClient({
       setSelected((prev) => (prev ? { ...prev, pagamentos: [...prev.pagamentos, ...novasPag] } : prev));
       setParcelasMode(false);
       setParcelasForm({ numero: '3', primeiroVencimento: '' });
-      toast.success(`${numero} parcelas geradas.`);
+      toast.success(`${numero} previsões organizadas.`);
       router.refresh();
     }
     setParcelasSaving(false);
@@ -641,6 +643,7 @@ export function OrcamentosClient({
         created_at: new Date().toISOString(),
         status: 'rascunho',
         total: novoOrcTotal,
+        valor_acordado: null,
         desconto: novoOrcDesconto,
         validade_dias: 30,
         condicoes_pagamento: null,
@@ -1284,7 +1287,7 @@ export function OrcamentosClient({
                   const valorPago = selected.pagamentos
                     .filter((p) => p.status === 'pago')
                     .reduce((s, p) => s + p.valor, 0);
-                  const total = selected.total ?? 0;
+                  const total = selected.valor_acordado ?? selected.total ?? 0;
                   // Arredonda pra centavo antes de comparar — soma de floats (parcelas)
                   // raramente bate exato com o total, e "=== 0" cru deixava "Quitado" sem
                   // aparecer mesmo com o valor certo pago.
@@ -1585,7 +1588,7 @@ export function OrcamentosClient({
                 {/* Registrar pagamento */}
                 {(() => {
                   const pago = selected.pagamentos.filter(p => p.status === 'pago').reduce((s, p) => s + p.valor, 0);
-                  const restante = Math.max(0, (selected.total ?? 0) - pago);
+                  const restante = Math.max(0, (selected.valor_acordado ?? selected.total ?? 0) - pago);
                   return (
                 <div className="bg-surface-alt/40 border border-border rounded-2xl p-5 space-y-4">
                   {/* R-113 — faixa de contexto: deixa explícito que este painel está fechando
@@ -1610,10 +1613,10 @@ export function OrcamentosClient({
                     <label className="font-mono text-xs text-text-secondary uppercase tracking-widest flex items-center gap-2">
                       <CreditCard className="w-3 h-3" />{' '}
                       {closingPagamentoId
-                        ? 'Marcar parcela como paga'
+                        ? 'Confirmar previsão como recebida'
                         : parcelasMode
-                          ? 'Dividir em Parcelas'
-                          : 'Registrar Pagamento'}
+                          ? 'Organizar cobrança'
+                          : 'Registrar recebimento'}
                     </label>
                     {/* Atalhos de criação não fazem sentido enquanto se fecha uma parcela. */}
                     {!closingPagamentoId && (
@@ -1632,7 +1635,7 @@ export function OrcamentosClient({
                         onClick={() => setParcelasMode(!parcelasMode)}
                         className="text-xs font-bold text-text-secondary hover:text-teal transition-colors uppercase tracking-wider"
                       >
-                        {parcelasMode ? 'Pagamento único' : 'Dividir em parcelas'}
+                        {parcelasMode ? 'Registrar recebimento' : 'Organizar cobrança'}
                       </button>
                     </div>
                     )}
@@ -1665,7 +1668,7 @@ export function OrcamentosClient({
                         if (!n || n < 2 || !restante) return null;
                         return (
                           <p className="text-xs text-text-secondary bg-surface rounded-xl px-3 py-2">
-                            Saldo restante: {formatCurrency(restante)} — {n}x de {formatCurrency(restante / n)}, vencimentos no mesmo dia, mês a mês.
+                            Saldo restante: {formatCurrency(restante)} — {n} previsões mensais de {formatCurrency(restante / n)}.
                           </p>
                         );
                       })()}
@@ -1677,16 +1680,12 @@ export function OrcamentosClient({
                         disabled={parcelasSaving || !parcelasForm.primeiroVencimento}
                         className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl disabled:opacity-50"
                       >
-                        {parcelasSaving ? 'Gerando...' : 'Gerar Parcelas'}
+                        {parcelasSaving ? 'Salvando...' : 'Organizar cobrança'}
                       </Button>
                     </div>
-                  ) : (() => {
-                    const todayStr = new Date().toISOString().split('T')[0];
-                    const isAgendado = pagForm.dataVencimento && pagForm.dataVencimento > todayStr;
-                    return (
+                  ) : (
                       <>
-                        {/* R-113 — fechando parcela: o valor é o da linha (I2, não editável) e
-                            não há vencimento a agendar. Só forma e data ficam abertas. */}
+                        {/* Ao fechar previsão o valor é o da linha; recebimento livre usa valor próprio. */}
                         <div className={closingPagamentoId ? '' : 'grid grid-cols-2 gap-3'}>
                           <div className="space-y-1.5">
                             <Label className="text-text-primary text-xs">Valor (R$)</Label>
@@ -1704,26 +1703,11 @@ export function OrcamentosClient({
                               className="rounded-xl bg-surface-alt border-border text-text-primary disabled:opacity-70"
                             />
                           </div>
-                          {!closingPagamentoId && (
-                          <div className="space-y-1.5">
-                            <Label className="text-text-primary text-xs">
-                              Vencimento <span className="text-text-secondary font-normal">(parcela futura)</span>
-                            </Label>
-                            <Input
-                              type="date"
-                              value={pagForm.dataVencimento}
-                              min={todayStr}
-                              onChange={(e) => setPagForm((f) => ({ ...f, dataVencimento: e.target.value }))}
-                              className="rounded-xl bg-surface-alt border-border text-text-primary"
-                            />
-                          </div>
-                          )}
                         </div>
 
-                        {!isAgendado && (
-                          <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-1.5">
-                              <Label className="text-text-primary text-xs">Data do Pagamento</Label>
+                              <Label className="text-text-primary text-xs">Data do recebimento</Label>
                               <Input
                                 type="date"
                                 value={pagForm.data}
@@ -1732,7 +1716,7 @@ export function OrcamentosClient({
                               />
                             </div>
                             <div className="space-y-1.5">
-                              <Label className="text-text-primary text-xs">Forma de Pagamento</Label>
+                              <Label className="text-text-primary text-xs">Forma de pagamento</Label>
                               <Select
                                 value={pagForm.formaPagamento}
                                 onValueChange={(v) => v && setPagForm((f) => ({ ...f, formaPagamento: v as FormaPagamento }))}
@@ -1751,16 +1735,6 @@ export function OrcamentosClient({
                               </Select>
                             </div>
                           </div>
-                        )}
-
-                        {isAgendado && (
-                          <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded-xl px-3 py-2.5">
-                            <Calendar className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                            <p className="text-xs text-amber-700 dark:text-amber-400">
-                              Parcela futura — será registrada como <strong>pendente</strong>
-                            </p>
-                          </div>
-                        )}
 
                         {pagError && (
                           <p className="text-xs text-red-500 bg-red-500/10 rounded-lg px-3 py-2">
@@ -1776,14 +1750,11 @@ export function OrcamentosClient({
                           {pagSaving
                             ? 'Salvando...'
                             : closingPagamentoId
-                              ? 'Confirmar Parcela'
-                              : isAgendado
-                                ? 'Agendar Parcela'
-                                : 'Confirmar Pagamento'}
+                              ? 'Confirmar recebimento'
+                              : 'Registrar recebimento'}
                         </Button>
                       </>
-                    );
-                  })()}
+                  )}
                 </div>
                   );
                 })()}

@@ -24,6 +24,8 @@ const AUTH = process.env.EVAL_AUTH_FILE || path.join(__dirname, 'audit-auth.json
 const OUT = process.env.EVAL_OUT_DIR || path.join(__dirname, 'results');
 const GOLDEN = path.join(__dirname, 'golden.json');
 const PACE_MS = 3000;       // espaçamento entre chamadas (rate limit da rota = 20/60s)
+const WARM_UP = process.env.EVAL_WARM_UP === '1';
+const CASE_LIMIT = Number.parseInt(process.env.EVAL_CASE_LIMIT || '', 10);
 // R-50 (05/08) — os 4 `_inferior` entram aqui, senão `camposPreenchidos` não consegue exigir
 // `fio_inferior` e o caso `orto-ambas-arcadas` passaria sem provar nada.
 const ORTO_CAMPOS = [
@@ -33,6 +35,43 @@ const ORTO_CAMPOS = [
 
 const faceSet = (a) => (Array.isArray(a) ? a.slice().sort().join(',') : '');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function parseServerTiming(value) {
+  const values = {};
+  for (const metric of (value || '').split(',')) {
+    const [name, ...params] = metric.trim().split(';');
+    const duration = params.find((param) => param.startsWith('dur='));
+    const number = Number(duration?.slice(4));
+    if (name && Number.isFinite(number)) values[name] = number;
+  }
+  return {
+    preAiMs: values['pre-ai'] ?? null,
+    aiMs: values.ai ?? null,
+    postAiMs: values['post-ai'] ?? null,
+  };
+}
+
+function percentile(values, percentileValue) {
+  if (!values.length) return null;
+  const sorted = values.slice().sort((a, b) => a - b);
+  const index = Math.min(sorted.length - 1, Math.ceil((percentileValue / 100) * sorted.length) - 1);
+  return Math.round(sorted[index] * 10) / 10;
+}
+
+function resumirLatencia(resultados) {
+  const samples = resultados.map((resultado) => resultado.latencia).filter(Boolean);
+  const summary = (field) => {
+    const values = samples.map((sample) => sample[field]).filter((value) => typeof value === 'number');
+    return { p50: percentile(values, 50), p95: percentile(values, 95) };
+  };
+  return {
+    amostras: samples.length,
+    totalMs: summary('totalMs'),
+    preAiMs: summary('preAiMs'),
+    aiMs: summary('aiMs'),
+    postAiMs: summary('postAiMs'),
+  };
+}
 
 /** Um evento produzido casa com um spec do golden? Só confere os campos presentes no spec (match parcial). */
 function casa(ev, spec) {
@@ -120,26 +159,50 @@ function avaliar(caso, resp) {
   }
   fs.mkdirSync(OUT, { recursive: true });
   const golden = JSON.parse(fs.readFileSync(GOLDEN, 'utf8'));
-  const casos = golden.casos;
+  const casos = Number.isFinite(CASE_LIMIT) && CASE_LIMIT > 0
+    ? golden.casos.slice(0, CASE_LIMIT)
+    : golden.casos;
   const ctx = await request.newContext({ baseURL: BASE, storageState: AUTH });
   const resultados = [];
 
+  if (WARM_UP && casos[0]) {
+    console.log('AQUECENDO — esta chamada não entra nas métricas.');
+    await ctx.post('/api/dex/formatar-evolucao', {
+      data: { texto: casos[0].relato, modo: casos[0].modo || 'consulta' },
+      timeout: 70000,
+    });
+    await sleep(PACE_MS);
+  }
+
   for (const caso of casos) {
     let resp = null, tentativas = 0;
+    let latencia = null;
     while (tentativas < 3) {
       tentativas++;
+      const startedAt = Date.now();
       const res = await ctx.post('/api/dex/formatar-evolucao', {
         data: { texto: caso.relato, modo: caso.modo || 'consulta' },
         timeout: 70000,
       });
+      const totalMs = Date.now() - startedAt;
       const st = res.status();
       if (st === 401) { console.log('SESSAO_EXPIRADA (401) — refazer login headed'); await ctx.dispose(); process.exit(3); }
       if (st === 429) { console.log(`  rate limit em ${caso.id}, esperando 60s...`); await sleep(60000); continue; }
       if (st !== 200) { console.log(`  ERRO ${st} em ${caso.id}`); break; }
       resp = await res.json();
+      latencia = {
+        totalMs,
+        ...parseServerTiming(res.headers()['server-timing']),
+        model: res.headers()['x-dex-model'] ?? null,
+        promptVersion: res.headers()['x-dex-prompt-version'] ?? null,
+        inputChars: caso.relato.length,
+        promptChars: Number(res.headers()['x-dex-prompt-chars']) || null,
+        outputItems: Array.isArray(resp?.odontograma_eventos) ? resp.odontograma_eventos.length : 0,
+      };
       break;
     }
     const r = resp ? avaliar(caso, resp) : { id: caso.id, cat: caso.cat, ok: false, erro: true };
+    if (latencia) r.latencia = { ...latencia, ok: r.ok };
     resultados.push(r);
     const mark = r.erro ? 'ERRO' : r.ok ? 'PASS' : 'FALHA';
     const det = r.erro ? '' : `(casou ${r.casados}/${r.esperados}${r.proibidosHit.length ? ` · PROIBIDO x${r.proibidosHit.length}` : ''}${r.extras ? ` · extras ${r.extras}` : ''}${r.ortoOk === false ? ' · orto FALHA' : ''})`;
@@ -170,17 +233,19 @@ function avaliar(caso, resp) {
     negacaoViolations,
     ambiguousReviewRecall: ambiguosEsperados === 0 ? null : ambiguosCorretos / ambiguosEsperados,
   };
+  const latencia = resumirLatencia(resultados);
 
   console.log('\n============================================');
   console.log(`ATUAL (não pode regredir): ${atualOk}/${atual.length} casos OK`);
   console.log(`  eventos: ${evCasados}/${evEsperados} casados · ${evExtras} inventados (falso-positivo)`);
   console.log(`NOVO (alvo R-06/R-07, esperado 0 hoje): ${novoOk}/${novo.length} presentes`);
   console.log(`R-106: negação ${statusMetrics.negacaoViolations} violações · ambíguos ${ambiguosCorretos}/${ambiguosEsperados} com revisão`);
+  console.log(`LATÊNCIA: n=${latencia.amostras} · total p50/p95 ${latencia.totalMs.p50}/${latencia.totalMs.p95} ms · pre-AI ${latencia.preAiMs.p50}/${latencia.preAiMs.p95} ms`);
   console.log('============================================');
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const outFile = `${OUT}/eval-extracao-${stamp}.json`;
-  fs.writeFileSync(outFile, JSON.stringify({ stamp, resumo: { atualOk, atualTotal: atual.length, evCasados, evEsperados, evExtras, novoOk, novoTotal: novo.length, statusMetrics }, resultados }, null, 2));
+  fs.writeFileSync(outFile, JSON.stringify({ stamp, resumo: { atualOk, atualTotal: atual.length, evCasados, evEsperados, evExtras, novoOk, novoTotal: novo.length, statusMetrics, latencia }, resultados }, null, 2));
   console.log(`\nresultado completo: ${outFile}`);
   process.exit(0);
 })().catch((e) => { console.error('FALHOU', e); process.exit(1); });

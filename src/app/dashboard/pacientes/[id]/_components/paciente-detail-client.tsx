@@ -57,7 +57,7 @@ const TabSkeleton = () => (
 );
 
 const DocumentosTab   = dynamic(() => import('@/components/pacientes/DocumentosTab').then(m => m.DocumentosTab),     { ssr: false, loading: () => <TabSkeleton /> });
-const FichasTab       = dynamic(() => import('@/components/pacientes/FichasTab').then(m => m.FichasTab),             { ssr: false, loading: () => <TabSkeleton /> });
+const ProntuarioTab   = dynamic(() => import('@/components/pacientes/ProntuarioTab').then(m => m.ProntuarioTab),     { ssr: false, loading: () => <TabSkeleton /> });
 import { createClient } from '@/lib/supabase/client';
 import { saveRecentPatient } from '@/components/command-palette/command-palette';
 import { marcarFollowUp, limparFollowUp, snoozeFollowUp } from '../../followup-actions';
@@ -69,10 +69,11 @@ import {
   editarPagamento,
   marcarPagamentoPago,
   excluirPagamento,
-  editarValorAcordado,
+  estornarPagamento,
   editarOrcamento,
   excluirOrcamento,
   gerarParcelas,
+  reorganizarParcelas,
   atualizarMostrarValorPorItem,
   // R-114 — substituem atualizarStatusOrcamento nesta tela (o dentista/perfil do paciente).
   alternarAprovacaoItem,
@@ -82,7 +83,7 @@ import {
 import { deriveEstadoOrcamento, rotuloEstado } from '@/lib/orcamentos/estado';
 import type { Paciente } from '@/types/database';
 import type { TimelineEvent } from '@/server/patients/get-visible-timeline-events';
-import { format, parseISO, differenceInCalendarDays } from 'date-fns';
+import { addMonths, format, parseISO, differenceInCalendarDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { formatarDataFicha } from '@/lib/format-data-ficha';
 import { toast } from 'sonner';
@@ -103,6 +104,7 @@ import { useOrcamentoModal } from './use-orcamento-modal';
 import { ApresentarPaciente } from '@/components/pacientes/ApresentarPaciente';
 
 import type { FichaRecente } from '@/server/patients/get-patient-workspace-data';
+import type { ProntuarioLongitudinalData } from '@/server/patients/get-prontuario-longitudinal';
 
 type FichaParaPendencia = {
   id: string;
@@ -153,29 +155,33 @@ interface PacienteDetailClientProps {
   paciente: Paciente;
   agendamentoProximo: AgendamentoProximo | null;
   orcamentos: OrcamentoComItens[];
+  orcamentosAviso?: string | null;
   clinicaId: string;
   dentistaId: string;
   role: DentistaRole;
   plano: PlanoId;
   fichasRecentesSSR?: FichaRecente[];
   timeline?: TimelineEvent[];
+  prontuario?: ProntuarioLongitudinalData;
 }
 
 export function PacienteDetailClient({
   paciente,
   agendamentoProximo,
   orcamentos,
+  orcamentosAviso = null,
   clinicaId,
   dentistaId,
   role,
   plano,
   fichasRecentesSSR,
   timeline = [],
+  prontuario,
 }: PacienteDetailClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const canViewClinical  = true;
+  const canViewClinical  = role === 'admin' || role === 'dentista';
   const canWriteClinical = role === 'admin' || role === 'dentista';
 
   const [activeTab, setActiveTab] = useState('ficha-clinica');
@@ -251,6 +257,7 @@ export function PacienteDetailClient({
 
   const [detalheOrcId, setDetalheOrcId] = useState<string | null>(null);
   const [procedimentosClinica, setProcedimentosClinica] = useState<ProcedimentoClinica[]>([]);
+  const [erroCatalogoProcedimentos, setErroCatalogoProcedimentos] = useState<string | null>(null);
   const [pagForm, setPagForm] = useState({
     valor: '',
     formaPagamento: 'dinheiro' as FormaPagamento,
@@ -557,9 +564,11 @@ export function PacienteDetailClient({
     clinicaId,
     meuDentistaId: dentistaId,
     procedimentosClinica,
+    erroCatalogo: erroCatalogoProcedimentos,
     isSecretaria: role === 'secretaria',
     dentistasClinica,
     onOrcamentoCriado: (novoOrc) => setOrcamentosState((prev) => [novoOrc, ...prev]),
+    onContinuarConfiguracao: (orcamentoId) => setDetalheOrcId(orcamentoId),
   });
 
   // Catálogo de procedimentos é privado por dentista. Pra secretária, o dono relevante
@@ -576,7 +585,15 @@ export function PacienteDetailClient({
       .eq('dentista_id', procedimentosDonoId)
       .eq('ativo', true)
       .order('nome')
-      .then(({ data }) => setProcedimentosClinica(data ?? []));
+      .then(({ data, error }) => {
+        if (error) {
+          setProcedimentosClinica([]);
+          setErroCatalogoProcedimentos('Não foi possível carregar o catálogo de procedimentos. Recarregue a página antes de criar o orçamento.');
+          return;
+        }
+        setProcedimentosClinica(data ?? []);
+        setErroCatalogoProcedimentos(null);
+      });
   }, [clinicaId, procedimentosDonoId]);
 
   // Busca fichas recentes e pendências ao montar.
@@ -712,7 +729,7 @@ export function PacienteDetailClient({
   }, []);
 
   const handleRegistrarPagamento = async () => {
-    if (!detalheOrcId) return;
+    if (!detalheOrcId || !detalheOrc) return;
     const valor = parseValorBR(pagForm.valor);
     if (!valor || valor <= 0) {
       setPagError('Informe um valor válido.');
@@ -721,46 +738,25 @@ export function PacienteDetailClient({
     setPagError(null);
     setPagSaving(true);
 
-    const hoje = new Date().toISOString().split('T')[0];
-    const isAgendado = pagForm.dataVencimento && pagForm.dataVencimento > hoje;
-
     const result = await registrarPagamento({
       orcamentoId: detalheOrcId,
       pacienteId: paciente.id,
       valor,
       formaPagamento: pagForm.formaPagamento,
       data: pagForm.data,
-      dataVencimento: pagForm.dataVencimento || undefined,
       dentistaId: detalheOrc?.dentista_id ?? undefined,
     });
 
     if (result.error) {
       setPagError(result.error);
     } else {
-      const novoPag: Pagamento = {
-        id:              result.id ?? crypto.randomUUID(),
-        valor,
-        status:          isAgendado ? 'pendente' : 'pago',
-        forma_pagamento: isAgendado ? null : pagForm.formaPagamento,
-        data_pagamento:  isAgendado ? null : pagForm.data,
-        data_vencimento: pagForm.dataVencimento || null,
-        parcela_numero:  null,
-        total_parcelas:  null,
-        marcado_por:     null,
-      };
-      setOrcamentosState((prev) =>
-        prev.map((o) =>
-          o.id === detalheOrcId
-            ? { ...o, pagamentos: [...o.pagamentos, novoPag] }
-            : o
-        )
-      );
       setPagForm({
         valor: '',
         formaPagamento: 'dinheiro',
         data: new Date().toISOString().split('T')[0],
         dataVencimento: '',
       });
+      router.refresh();
     }
     setPagSaving(false);
   };
@@ -826,7 +822,7 @@ export function PacienteDetailClient({
   };
 
   const handleGerarParcelas = async () => {
-    if (!detalheOrcId) return;
+    if (!detalheOrcId || !detalheOrc) return;
     const numero = parseInt(parcelasForm.numero, 10);
     // Aviso local só de UX — quem soma "já pago" de verdade agora é a RPC (server).
     const derivado = detalheOrc
@@ -852,17 +848,36 @@ export function PacienteDetailClient({
     setParcelasError(null);
     setParcelasSaving(true);
 
-    const result = await gerarParcelas({
-      orcamentoId: detalheOrcId,
-      numeroParcelas: numero,
-      primeiroVencimento: parcelasForm.primeiroVencimento,
-    });
+    const temPrevisaoAtiva = detalheOrc.pagamentos.some((pagamento) => pagamento.status === 'pendente');
+    const temPlanoAtivo = Boolean(detalheOrc.plano_forma) || temPrevisaoAtiva;
+    const result = temPlanoAtivo
+      ? await reorganizarParcelas({
+          orcamentoId: detalheOrcId,
+          valorAcordado: detalheOrc.valor_acordado ?? (derivado?.valorDevido ?? 0),
+          parcelas: Array.from({ length: numero }, (_, indice) => {
+            const saldoCentavos = Math.round(saldoAproximado * 100);
+            const baseCentavos = Math.floor(saldoCentavos / numero);
+            const valorCentavos = indice === numero - 1
+              ? saldoCentavos - baseCentavos * (numero - 1)
+              : baseCentavos;
+            return {
+              valor: valorCentavos / 100,
+              dataVencimento: format(addMonths(parseISO(parcelasForm.primeiroVencimento), indice), 'yyyy-MM-dd'),
+            };
+          }),
+        })
+      : await gerarParcelas({
+          orcamentoId: detalheOrcId,
+          numeroParcelas: numero,
+          primeiroVencimento: parcelasForm.primeiroVencimento,
+        });
 
     if (result.error || !result.parcelas) {
       setParcelasError(result.error ?? 'Não foi possível gerar as parcelas.');
     } else {
       const novasPag: Pagamento[] = result.parcelas.map((p) => ({
         id:              p.id,
+        cobranca_id:     null,
         valor:           p.valor,
         status:          'pendente',
         forma_pagamento: null,
@@ -881,7 +896,8 @@ export function PacienteDetailClient({
       );
       setParcelasMode(false);
       setParcelasForm({ numero: '3', primeiroVencimento: '' });
-      toast.success(`${numero} parcelas geradas.`);
+      toast.success(temPlanoAtivo ? 'Previsão de cobrança reorganizada.' : `${numero} parcelas geradas.`);
+      router.refresh();
     }
     setParcelasSaving(false);
   };
@@ -931,11 +947,28 @@ export function PacienteDetailClient({
         )
       );
       setEditingPagId(null);
+      router.refresh();
     }
     setEditPagSaving(false);
   };
 
-  const handleExcluirPagamento = async (pagamentoId: string) => {
+  const handleExcluirPagamento = async (pagamentoId: string, motivoEstorno?: string) => {
+    const pagamento = detalheOrc?.pagamentos.find((item) => item.id === pagamentoId);
+    if (!pagamento) return;
+    if (pagamento.status === 'pago') {
+      const motivo = motivoEstorno?.trim();
+      if (!motivo) return;
+      setPagDeleteSaving(true);
+      const result = await estornarPagamento(pagamentoId, motivo);
+      if (result.error) toast.error(result.error);
+      else {
+        setConfirmDeletePagId(null);
+        toast.success('Recebimento estornado. O saldo foi reaberto.');
+        router.refresh();
+      }
+      setPagDeleteSaving(false);
+      return;
+    }
     setPagDeleteSaving(true);
     const result = await excluirPagamento(pagamentoId);
     if (result.error) {
@@ -949,7 +982,8 @@ export function PacienteDetailClient({
         )
       );
       setConfirmDeletePagId(null);
-      toast.success('Pagamento excluído.');
+      toast.success('Previsão removida.');
+      router.refresh();
     }
     setPagDeleteSaving(false);
   };
@@ -976,7 +1010,34 @@ export function PacienteDetailClient({
 
     setValorAcordadoError(null);
     setValorAcordadoSaving(true);
-    const result = await editarValorAcordado(detalheOrc.id, valor);
+    const previsoesAtivas = detalheOrc.pagamentos
+      .filter((pagamento) => pagamento.status === 'pendente')
+      .sort((a, b) => (a.parcela_numero ?? 0) - (b.parcela_numero ?? 0));
+    const resultadoDerivado = deriveEstadoOrcamento({
+      valorAcordado: detalheOrc.valor_acordado,
+      itens: detalheOrc.itens.map((item) => ({ precoTotal: item.preco_total, aprovado: item.aprovado })),
+      pagamentos: detalheOrc.pagamentos.map((pagamento) => ({ valor: pagamento.valor, status: pagamento.status })),
+    });
+    const saldoNovoCentavos = Math.round((valor - resultadoDerivado.valorPago) * 100);
+    if (saldoNovoCentavos < 0) {
+      setValorAcordadoError('O valor final não pode ser menor que o total já recebido.');
+      setValorAcordadoSaving(false);
+      return;
+    }
+    const result = await reorganizarParcelas({
+          orcamentoId: detalheOrc.id,
+          valorAcordado: valor,
+          parcelas: saldoNovoCentavos === 0 ? [] : previsoesAtivas.map((previsao, indice) => {
+            const baseCentavos = Math.floor(saldoNovoCentavos / previsoesAtivas.length);
+            const valorCentavos = indice === previsoesAtivas.length - 1
+              ? saldoNovoCentavos - baseCentavos * (previsoesAtivas.length - 1)
+              : baseCentavos;
+            return {
+              valor: valorCentavos / 100,
+              dataVencimento: previsao.data_vencimento ?? new Date().toISOString().split('T')[0],
+            };
+          }),
+        });
     if (result.error) {
       setValorAcordadoError(result.error);
     } else {
@@ -985,6 +1046,7 @@ export function PacienteDetailClient({
       ));
       setEditValorAcordadoAberto(false);
       toast.success('Valor final atualizado.');
+      router.refresh();
     }
     setValorAcordadoSaving(false);
   };
@@ -1418,14 +1480,14 @@ export function PacienteDetailClient({
                 {canViewClinical && (
                   <TabsContent value="ficha-clinica" className="mt-0">
                     {mountedTabs.has('ficha-clinica') && (
-                      <FichasTab
+                      <ProntuarioTab
                         patientId={paciente.id}
-                        clinicaId={clinicaId}
                         dentistaId={dentistaId}
-                        plano={plano}
                         patientName={displayNome}
                         canWrite={canWriteClinical}
-                        onGerarOrcamento={role !== 'secretaria' ? (fichaId) => void orcamentoModal.abrirOrcamentoParaFicha(fichaId) : undefined}
+                        dados={prontuario ?? { atendimentos: [], fichas: [], boca: [], profissionaisClinicos: [], errosParciais: [] }}
+                        onGerarOrcamento={(fichaId) => void orcamentoModal.abrirOrcamentoParaFicha(fichaId)}
+                        onAbrirArquivos={() => handleTabChange('arquivos')}
                         // R-107b — catálogo pro match local da busca livre do painel do dente.
                         // `categoria` não vem da query (`ProcedimentoClinica` é o contrato do
                         // fluxo de orçamento e tem outros produtores) e não é usada pelo
@@ -1439,21 +1501,22 @@ export function PacienteDetailClient({
 
                 {/* Orçamentos */}
                 <TabsContent value="orcamentos" className="mt-0 space-y-4">
+                  {orcamentosAviso && (
+                    <div role="status" className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning-ink">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <p>{orcamentosAviso}</p>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-text-secondary font-medium">
                       {orcamentosState.length} orçamento{orcamentosState.length !== 1 ? 's' : ''}
                     </span>
                     <button
-                      onClick={() => void orcamentoModal.abrirNovoOrcamento()}
-                      disabled={orcamentoModal.isLoadingFichaParaOrc}
+                      onClick={() => setActiveTab('ficha-clinica')}
                       className="bg-teal text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-teal-lt transition-all shadow-md disabled:opacity-60"
                     >
-                      {orcamentoModal.isLoadingFichaParaOrc ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Plus className="w-3.5 h-3.5" />
-                      )}
-                      Novo Orçamento
+                      <Plus className="w-3.5 h-3.5" />
+                      Gerar pela ficha
                     </button>
                   </div>
 
@@ -1464,7 +1527,7 @@ export function PacienteDetailClient({
                         Nenhum orçamento
                       </h3>
                       <p className="text-text-secondary text-sm max-w-md mx-auto">
-                        Nenhum orçamento ainda. Clique em + Novo Orçamento para criar.
+                        Nenhum orçamento ainda. Gere a proposta a partir de uma ficha clínica.
                       </p>
                     </div>
                   ) : (
@@ -1734,6 +1797,7 @@ export function PacienteDetailClient({
         detalheOrcId={detalheOrcId}
         pacienteTelefone={displayTelefone}
         pacienteNome={displayNome}
+        pacienteId={paciente.id}
         onClose={() => {
           setDetalheOrcId(null);
           setPagError(null);

@@ -22,6 +22,76 @@ export type FormaPagamento =
 
 export type StatusOrcamento = "rascunho" | "enviado" | "aprovado" | "recusado";
 
+const formaPagamentoSchema = z.enum([
+  'dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'boleto', 'outro',
+]);
+const recebimentoSchema = z.object({
+  orcamentoId: z.string().uuid(),
+  pacienteId: z.string().uuid(),
+  valor: z.number().finite().positive().multipleOf(0.01),
+  formaPagamento: formaPagamentoSchema,
+  data: z.string().date(),
+  dentistaId: z.string().uuid().optional(),
+});
+const reorganizarParcelasSchema = z.object({
+  orcamentoId: z.string().uuid(),
+  valorAcordado: z.number().finite().positive().multipleOf(0.01),
+  parcelas: z.array(z.object({
+    valor: z.number().finite().positive().multipleOf(0.01),
+    dataVencimento: z.string().date(),
+  })).min(0).max(24),
+});
+const planoAvistaSchema = z.object({
+  orcamentoId: z.string().uuid(),
+  valorAcordado: z.number().finite().positive().multipleOf(0.01),
+  entradaValor: z.number().finite().min(0).multipleOf(0.01).optional(),
+  entradaForma: formaPagamentoSchema.optional(),
+});
+const criarCobrancaEtapaSchema = z.object({
+  orcamentoId: z.string().uuid(),
+  pacienteId: z.string().uuid(),
+  itemIds: z.array(z.string().uuid()).min(1).max(100),
+  desconto: z.number().finite().min(0).multipleOf(0.01),
+  numeroParcelas: z.number().int().min(1).max(24),
+  primeiroVencimento: z.string().date(),
+});
+const recebimentoCobrancaSchema = z.object({
+  cobrancaId: z.string().uuid(),
+  pacienteId: z.string().uuid(),
+  valor: z.number().finite().positive().multipleOf(0.01),
+  formaPagamento: formaPagamentoSchema,
+  data: z.string().date(),
+});
+const cancelarCobrancaSchema = z.object({
+  cobrancaId: z.string().uuid(),
+  pacienteId: z.string().uuid(),
+  motivo: z.string().trim().min(1).max(500),
+});
+
+type RpcResult = { data: unknown; error: { message: string } | null };
+type RpcCall = (fn: string, args: Record<string, unknown>) => Promise<RpcResult>;
+
+function erroFinanceiro(message: string): string {
+  if (message.includes('orcamento_sem_aprovacao')) return ERRO_ORCAMENTO_SEM_APROVACAO;
+  if (message.includes('valor_acima_do_saldo')) return 'O recebimento não pode ultrapassar o saldo do orçamento.';
+  if (message.includes('valor_menor_que_recebido')) return 'O valor combinado não pode ser menor que o total já recebido.';
+  if (message.includes('parcelas_nao_fecham_saldo')) return 'A soma das parcelas precisa ser exatamente igual ao saldo.';
+  if (message.includes('numero_parcelas_invalido')) return 'Informe entre 2 e 24 parcelas.';
+  if (message.includes('forma_invalida')) return 'Selecione uma forma de pagamento válida.';
+  if (message.includes('recebimento_indisponivel')) return 'Somente um recebimento confirmado pode ser corrigido ou estornado.';
+  if (message.includes('previsao_indisponivel')) return 'Esta previsão não está mais disponível. Recarregue a página.';
+  if (message.includes('motivo_invalido')) return 'Informe o motivo do estorno (até 500 caracteres).';
+  if (message.includes('itens_invalidos')) return 'Selecione ao menos um procedimento para cobrar nesta etapa.';
+  if (message.includes('item_nao_aprovado')) return 'A etapa só pode cobrar procedimentos aprovados pelo paciente.';
+  if (message.includes('item_ja_cobrado')) return 'Um dos procedimentos já pertence a outra cobrança ativa.';
+  if (message.includes('desconto_acima_subtotal')) return 'O desconto não pode ser maior que os procedimentos selecionados.';
+  if (message.includes('desconto_invalido')) return 'Informe um desconto válido.';
+  if (message.includes('cobranca_indisponivel')) return 'Esta cobrança não está mais disponível. Recarregue a página.';
+  if (message.includes('cobranca_com_recebimento')) return 'Uma cobrança com recebimento não pode ser cancelada.';
+  if (message.includes('sem_permissao')) return 'Você não tem permissão para alterar este orçamento.';
+  return 'Não foi possível concluir a alteração financeira. Tente novamente.';
+}
+
 const FORMA_LABEL: Record<FormaPagamento, string> = {
   dinheiro: "dinheiro", pix: "PIX", cartao_credito: "cartão de crédito",
   cartao_debito: "cartão de débito", boleto: "boleto", outro: "outro",
@@ -84,7 +154,7 @@ async function notificarAceite(
     tipo:         'briefing',
     titulo:       `Orçamento aceito — ${pacNome}`,
     mensagem:     `${pacNome} aprovou procedimentos do orçamento. Já pode receber.`,
-    href:         '/dashboard/orcamentos',
+    href:         `/dashboard/pacientes/${orc.paciente_id}`,
   });
 }
 
@@ -262,7 +332,7 @@ export async function atualizarStatusOrcamento(
   orcamentoId: string,
   status: StatusOrcamento
 ): Promise<{ error?: string }> {
-  const { supabase, user, clinicId, dentistaId } = await requireClinicContext();
+  const { supabase, user, clinicId } = await requireClinicContext();
 
   const { data: dentistaPerfil } = await supabase
     .from("dentistas")
@@ -335,7 +405,7 @@ export async function atualizarStatusOrcamento(
       mensagem:     status === 'enviado'
         ? `Orçamento de ${pacNome} enviado. Acompanhe o retorno e faça o follow-up se necessário.`
         : `Orçamento de ${pacNome} foi aprovado pelo dentista.`,
-      href:         '/dashboard/orcamentos',
+      href:         orc?.paciente_id ? `/dashboard/pacientes/${orc.paciente_id}` : '/dashboard/pacientes',
     });
 
     // R-114 — a linha de pagamento pendente automática (nascia com o total cheio ao aprovar
@@ -376,6 +446,40 @@ export interface ParcelaGerada {
   data_vencimento: string;
   parcela_numero: number;
   total_parcelas: number;
+}
+
+export async function reorganizarParcelas(dados: {
+  orcamentoId: string;
+  valorAcordado: number;
+  parcelas: { valor: number; dataVencimento: string }[];
+}): Promise<{ error?: string; parcelas?: ParcelaGerada[] }> {
+  const parsed = reorganizarParcelasSchema.safeParse(dados);
+  if (!parsed.success) return { error: 'Revise o valor combinado e as parcelas da previsão.' };
+
+  const { supabase, clinicId } = await requireClinicContext();
+  const { data: orcamento } = await supabase
+    .from('orcamentos')
+    .select('paciente_id')
+    .eq('id', parsed.data.orcamentoId)
+    .eq('clinica_id', clinicId)
+    .maybeSingle();
+  if (!orcamento) return { error: 'Orçamento não encontrado.' };
+
+  const rpc = supabase.rpc.bind(supabase) as unknown as RpcCall;
+  const { data, error } = await rpc('reorganizar_parcelas_orcamento', {
+    p_orcamento_id: parsed.data.orcamentoId,
+    p_valor_acordado: parsed.data.valorAcordado,
+    p_parcelas: parsed.data.parcelas.map((parcela) => ({
+      valor: parcela.valor,
+      data_vencimento: parcela.dataVencimento,
+    })),
+  });
+  if (error) return { error: erroFinanceiro(error.message) };
+
+  revalidatePath(`/dashboard/pacientes/${orcamento.paciente_id}`);
+  revalidatePath('/dashboard/orcamentos');
+  revalidatePath('/dashboard/financeiro');
+  return { parcelas: (data ?? []) as ParcelaGerada[] };
 }
 
 /**
@@ -474,6 +578,9 @@ export async function definirPlanoAvista(dados: {
   entradaValor?: number;
   entradaForma?: FormaPagamento;
 }): Promise<{ error?: string }> {
+  const parsed = planoAvistaSchema.safeParse(dados);
+  if (!parsed.success) return { error: 'Revise o valor do acordo à vista.' };
+
   const { supabase, user, clinicId } = await requireClinicContext();
 
   const { data: dentistaPerfil } = await supabase
@@ -486,14 +593,15 @@ export async function definirPlanoAvista(dados: {
   if (!dentistaPerfil) redirect("/onboarding");
 
   const { error } = await supabase.rpc("definir_plano_avista", {
-    p_orcamento_id:   dados.orcamentoId,
-    p_valor_acordado: dados.valorAcordado,
-    p_entrada_valor:  dados.entradaValor ?? null,
-    p_entrada_forma:  dados.entradaForma ?? null,
+    p_orcamento_id:   parsed.data.orcamentoId,
+    p_valor_acordado: parsed.data.valorAcordado,
+    p_entrada_valor:  parsed.data.entradaValor ?? null,
+    p_entrada_forma:  parsed.data.entradaForma ?? null,
   });
 
   if (error) {
     if (error.message.includes("valor_invalido")) return { error: "Informe um valor válido." };
+    if (error.message.includes('valor_menor_que_recebido')) return { error: "O valor combinado não pode ser menor que o já recebido." };
     if (error.message.includes("plano_ja_definido")) return { error: "Este orçamento já tem forma de pagamento definida." };
     if (error.message.includes("sem_permissao")) return { error: "Orçamento não encontrado." };
     console.error("[definirPlanoAvista]", error.message);
@@ -501,16 +609,17 @@ export async function definirPlanoAvista(dados: {
   }
 
   const partes: string[] = [];
-  if (dados.entradaValor) {
-    partes.push(`Entrada de ${fmtReal(dados.entradaValor)}${dados.entradaForma ? ` (${FORMA_LABEL[dados.entradaForma]})` : ""}`);
-    partes.push(`Restante à vista — ${fmtReal(dados.valorAcordado - dados.entradaValor)}`);
+  if (parsed.data.entradaValor) {
+    partes.push(`Entrada de ${fmtReal(parsed.data.entradaValor)}${parsed.data.entradaForma ? ` (${FORMA_LABEL[parsed.data.entradaForma]})` : ""}`);
+    partes.push(`Restante à vista — ${fmtReal(parsed.data.valorAcordado - parsed.data.entradaValor)}`);
   } else {
-    partes.push(`À vista — ${fmtReal(dados.valorAcordado)}`);
+    partes.push(`À vista — ${fmtReal(parsed.data.valorAcordado)}`);
   }
   await supabase.from("orcamentos").update({ condicoes_pagamento: partes.join(" + ") })
-    .eq("id", dados.orcamentoId).eq("clinica_id", clinicId);
+    .eq("id", parsed.data.orcamentoId).eq("clinica_id", clinicId);
 
   revalidatePath("/dashboard/orcamentos");
+  revalidatePath("/dashboard/financeiro");
   return {};
 }
 
@@ -523,102 +632,23 @@ export async function marcarPagamentoPago(
   pagamentoId: string,
   dados: { formaPagamento: FormaPagamento; data: string },
 ): Promise<{ error?: string; autoAprovado?: boolean }> {
-  const { supabase, user, clinicId, role } = await requireClinicContext();
+  const parsed = z.object({
+    pagamentoId: z.string().uuid(), formaPagamento: formaPagamentoSchema, data: z.string().date(),
+  }).safeParse({ pagamentoId, ...dados });
+  if (!parsed.success) return { error: 'Revise a data e a forma de pagamento.' };
 
-  const { data: dentistaPerfil } = await supabase
-    .from("dentistas")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("clinica_id", clinicId)
-    .maybeSingle();
-
-  if (!dentistaPerfil) redirect("/onboarding");
-
-  const { data: pagAtual } = await supabase
-    .from("pagamentos")
-    .select("id, status, valor, orcamento_id, paciente_id, dentista_id")
-    .eq("id", pagamentoId)
-    .eq("clinica_id", clinicId)
-    .maybeSingle();
-
-  if (!pagAtual) {
-    return { error: "Pagamento não encontrado." };
-  }
-  if (pagAtual.status === "pago") {
-    return { error: "Este pagamento já está marcado como pago." };
-  }
-
-  // R-114 — estado derivado checado ANTES do update (guard) e reaproveitado depois (D6),
-  // em vez de 2 queries separadas como antes. Substitui o guard por `status` do R-65.
-  const { data: orcRow } = await supabase
-    .from("orcamentos")
-    .select(SELECT_ORC_PARA_ESTADO)
-    .eq("id", pagAtual.orcamento_id)
-    .eq("clinica_id", clinicId)
-    .single();
-
-  const orcTyped = orcRow as unknown as OrcParaEstado | null;
-  const estadoAntes = orcTyped ? derivarDoOrc(orcTyped) : null;
-
-  if (estadoAntes && !orcamentoAceitaPagamento(estadoAntes.estado)) {
-    return { error: ERRO_ORCAMENTO_SEM_APROVACAO };
-  }
-
-  const { error } = await supabase
-    .from("pagamentos")
-    .update({
-      status:          "pago",
-      forma_pagamento: dados.formaPagamento,
-      data_pagamento:  dados.data,
-      marcado_por_id:  dentistaPerfil.id,
-    })
-    .eq("id", pagamentoId)
-    .eq("clinica_id", clinicId);
-
-  if (error) {
-    console.error("Erro ao marcar pagamento como pago:", error);
-    return { error: 'Não foi possível registrar o pagamento. Tente novamente.' };
-  }
-
-  // R-114 — "aprovado" deixou de ser algo que se escreve: com o item já aprovado (é o
-  // que a guard acima exige) e o dinheiro contado, `estado` já calcula sozinho se isto
-  // agora está quitado. `autoAprovado` continua no retorno (a tela antiga da secretária
-  // ainda lê este campo) mas passa a significar "este pagamento fechou a conta".
-  const autoAprovado = !!(
-    estadoAntes && estadoAntes.estado !== 'quitado' &&
-    estadoAntes.valorPago + pagAtual.valor >= estadoAntes.valorDevido
-  );
-
-  if (role === 'secretaria' && pagAtual.dentista_id) {
-    const { data: pac } = await supabase
-      .from('pacientes').select('nome').eq('id', pagAtual.paciente_id).maybeSingle();
-    const pacNome = (pac as { nome: string } | null)?.nome ?? 'paciente';
-    const valorFmt = Number(pagAtual.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    await inserirNotificacao(supabase, {
-      clinicaId:      clinicId,
-      paraRole:       'dentista',
-      paraDentistaId: pagAtual.dentista_id,
-      deDentistaId:   dentistaPerfil.id,
-      tipo:           'pagamento_confirmado',
-      titulo:         `Pagamento recebido — ${pacNome}`,
-      mensagem:       `Secretária registrou ${valorFmt} (${dados.formaPagamento.replace(/_/g, ' ')}) do paciente ${pacNome}.`,
-      href:           '/dashboard/orcamentos',
-    });
-  }
-
-  registrarLog(supabase, {
-    clinicaId:   clinicId,
-    actorId:     dentistaPerfil.id,
-    pacienteId:  pagAtual.paciente_id,
-    entityType:  'pagamento',
-    entityId:    pagamentoId,
-    action:      'pagamento.registrado',
-    metadata:    { valor: pagAtual.valor, forma: dados.formaPagamento, orcamento_id: pagAtual.orcamento_id },
+  const { supabase } = await requireClinicContext();
+  const rpc = supabase.rpc.bind(supabase) as unknown as RpcCall;
+  const { error } = await rpc('confirmar_previsao_orcamento', {
+    p_pagamento_id: parsed.data.pagamentoId,
+    p_forma: parsed.data.formaPagamento,
+    p_data: parsed.data.data,
   });
+  if (error) return { error: erroFinanceiro(error.message) };
 
-  revalidatePath("/dashboard/orcamentos");
+  revalidatePath('/dashboard/orcamentos');
   revalidatePath('/dashboard/financeiro');
-  return { autoAprovado };
+  return {};
 }
 
 const criarOrcamentoSchema = z.object({
@@ -643,6 +673,9 @@ export async function criarOrcamento(dados: z.input<typeof criarOrcamentoSchema>
     return { error: 'Revise os itens e os valores do orçamento antes de salvar.' };
   }
   const entrada = parsed.data;
+  if (!entrada.fichaId || entrada.itens.some((item) => item.eventoIds.length === 0)) {
+    return { error: 'Crie o orçamento a partir de uma ficha com procedimentos estruturados.' };
+  }
 
   const { data: dentistaPerfil } = await supabase
     .from("dentistas")
@@ -695,6 +728,12 @@ export async function criarOrcamento(dados: z.input<typeof criarOrcamentoSchema>
     if (mensagem.includes('orcamento_evento_invalido')) {
       return { error: 'Um dos procedimentos não está mais disponível para este orçamento. Recarregue a lista.' };
     }
+    if (mensagem.includes('orcamento_evento_ficha_invalido')) {
+      return { error: 'Os procedimentos precisam pertencer à ficha selecionada. Reabra a ficha e tente novamente.' };
+    }
+    if (mensagem.includes('orcamento_procedimento_de_outro_dentista')) {
+      return { error: 'O procedimento escolhido pertence a outro dentista. Recarregue o catálogo antes de continuar.' };
+    }
     return { error: 'Não foi possível criar o orçamento. Nenhum item foi salvo.' };
   }
 
@@ -712,174 +751,186 @@ export async function registrarPagamento(dados: {
   dataVencimento?: string;
   dentistaId?: string;
 }): Promise<{ error?: string; id?: string; autoAprovado?: boolean }> {
-  const { supabase, user, clinicId, role } = await requireClinicContext();
-
-  const { data: dentistaPerfil } = await supabase
-    .from("dentistas")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("clinica_id", clinicId)
-    .maybeSingle();
-
-  if (!dentistaPerfil) redirect("/onboarding");
-
-  const dentistaId = dados.dentistaId ?? dentistaPerfil.id;
-  const hoje = new Date().toISOString().split('T')[0];
-  const isAgendado = dados.dataVencimento && dados.dataVencimento > hoje;
-
-  // R-114 — estado derivado checado ANTES do insert (guard) e reaproveitado depois (D6).
-  // Substitui o guard por `status` do R-65 — agora bloqueia por FATO (zero item aprovado).
-  const { data: orcRow } = await supabase
-    .from("orcamentos")
-    .select(SELECT_ORC_PARA_ESTADO)
-    .eq("id", dados.orcamentoId)
-    .eq("clinica_id", clinicId)
-    .single();
-
-  const orcTyped = orcRow as unknown as OrcParaEstado | null;
-  const estadoAntes = orcTyped ? derivarDoOrc(orcTyped) : null;
-
-  // I8 — sem item aprovado, nem dinheiro imediato nem agendamento futuro fazem sentido:
-  // não se agenda receber por um procedimento que o paciente ainda não aceitou.
-  if (estadoAntes && !orcamentoAceitaPagamento(estadoAntes.estado)) {
-    return { error: ERRO_ORCAMENTO_SEM_APROVACAO };
+  if (dados.dataVencimento) {
+    return { error: 'Para prever cobrança futura, use Organizar cobrança. Registrar recebimento é apenas dinheiro já recebido.' };
   }
+  const parsed = recebimentoSchema.safeParse(dados);
+  if (!parsed.success) return { error: 'Revise valor, data e forma de pagamento.' };
 
-  const { data, error } = await supabase
-    .from("pagamentos")
-    .insert({
-      orcamento_id:    dados.orcamentoId,
-      paciente_id:     dados.pacienteId,
-      dentista_id:     dentistaId,
-      clinica_id:      clinicId,
-      valor:           dados.valor,
-      status:          isAgendado ? 'pendente' : 'pago',
-      forma_pagamento: isAgendado ? null : dados.formaPagamento,
-      data_pagamento:  isAgendado ? null : dados.data,
-      data_vencimento: dados.dataVencimento ?? null,
-      marcado_por_id:  isAgendado ? null : dentistaPerfil.id,
-    })
-    .select("id")
-    .single();
+  const { supabase, clinicId, role, dentistaId: atorId } = await requireClinicContext();
+  const rpc = supabase.rpc.bind(supabase) as unknown as RpcCall;
+  const { data, error } = await rpc('registrar_recebimento_orcamento', {
+    p_orcamento_id: parsed.data.orcamentoId,
+    p_valor: parsed.data.valor,
+    p_forma: parsed.data.formaPagamento,
+    p_data: parsed.data.data,
+  });
+  if (error) return { error: erroFinanceiro(error.message) };
 
-  if (error) {
-    return { error: error.message };
-  }
-
-  // R-114 — "aprovado" não se escreve mais; `autoAprovado` passa a significar "este
-  // pagamento fechou a conta" (a tela antiga da secretária ainda lê este campo).
-  const autoAprovado = !!(
-    !isAgendado && estadoAntes && estadoAntes.estado !== 'quitado' &&
-    estadoAntes.valorPago + dados.valor >= estadoAntes.valorDevido
-  );
-
-  if (role === 'secretaria' && dados.dentistaId) {
-    const { data: pac } = await supabase
-      .from('pacientes').select('nome').eq('id', dados.pacienteId).maybeSingle();
-    const pacNome = (pac as { nome: string } | null)?.nome ?? 'paciente';
-    const valorFmt = dados.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const pagamento = data as { id?: string; dentista_id?: string } | null;
+  if (role === 'secretaria' && pagamento?.dentista_id && pagamento.dentista_id !== atorId) {
+    const { data: paciente } = await supabase
+      .from('pacientes')
+      .select('nome')
+      .eq('id', parsed.data.pacienteId)
+      .eq('clinica_id', clinicId)
+      .maybeSingle();
+    const pacienteNome = paciente?.nome ?? 'paciente';
     await inserirNotificacao(supabase, {
-      clinicaId:      clinicId,
-      paraRole:       'dentista',
-      paraDentistaId: dados.dentistaId,
-      deDentistaId:   dentistaPerfil.id,
-      tipo:           'pagamento_confirmado',
-      titulo:         `Pagamento recebido — ${pacNome}`,
-      mensagem:       `Secretária registrou ${valorFmt} (${dados.formaPagamento.replace(/_/g, ' ')}) do paciente ${pacNome}.`,
-      href:           '/dashboard/orcamentos',
+      clinicaId: clinicId,
+      paraRole: 'dentista',
+      paraDentistaId: pagamento.dentista_id,
+      deDentistaId: atorId,
+      tipo: 'pagamento_confirmado',
+      titulo: `Pagamento recebido — ${pacienteNome}`,
+      mensagem: `Secretária registrou ${fmtReal(parsed.data.valor)} (${FORMA_LABEL[parsed.data.formaPagamento]}) do paciente ${pacienteNome}.`,
+      href: `/dashboard/pacientes/${parsed.data.pacienteId}`,
     });
   }
-
-  registrarLog(supabase, {
-    clinicaId:   clinicId,
-    actorId:     dentistaPerfil.id,
-    pacienteId:  dados.pacienteId,
-    entityType:  'pagamento',
-    entityId:    data.id,
-    action:      'pagamento.registrado',
-    metadata:    { valor: dados.valor, forma: dados.formaPagamento, orcamento_id: dados.orcamentoId },
-  });
-
-  revalidatePath("/dashboard/orcamentos");
+  revalidatePath(`/dashboard/pacientes/${parsed.data.pacienteId}`);
+  revalidatePath('/dashboard/orcamentos');
   revalidatePath('/dashboard/financeiro');
-  return { id: data.id, autoAprovado };
+  return { id: pagamento?.id };
+}
+
+/**
+ * R-145 revisão 2 — transforma somente os procedimentos escolhidos em uma cobrança real.
+ * Proposta aprovada não vira dívida automaticamente; a RPC cria a previsão pendente da etapa.
+ */
+export async function criarCobrancaEtapa(dados: {
+  orcamentoId: string;
+  pacienteId: string;
+  itemIds: string[];
+  desconto: number;
+  numeroParcelas: number;
+  primeiroVencimento: string;
+}): Promise<{ error?: string; id?: string }> {
+  const parsed = criarCobrancaEtapaSchema.safeParse(dados);
+  if (!parsed.success) return { error: 'Revise os procedimentos, o desconto e as parcelas da etapa.' };
+
+  const { supabase } = await requireClinicContext();
+  const rpc = supabase.rpc.bind(supabase) as unknown as RpcCall;
+  const { data, error } = await rpc('criar_cobranca_orcamento', {
+    p_orcamento_id: parsed.data.orcamentoId,
+    p_item_ids: parsed.data.itemIds,
+    p_desconto: parsed.data.desconto,
+    p_numero_parcelas: parsed.data.numeroParcelas,
+    p_primeiro_vencimento: parsed.data.primeiroVencimento,
+  });
+  if (error) return { error: erroFinanceiro(error.message) };
+
+  const cobranca = data as { id?: string } | null;
+  revalidatePath(`/dashboard/pacientes/${parsed.data.pacienteId}`);
+  revalidatePath('/dashboard/orcamentos');
+  revalidatePath('/dashboard/financeiro');
+  return { id: cobranca?.id };
+}
+
+/** Registra dinheiro contra a etapa escolhida; a RPC recompõe apenas o saldo dela. */
+export async function registrarRecebimentoCobranca(dados: {
+  cobrancaId: string;
+  pacienteId: string;
+  valor: number;
+  formaPagamento: FormaPagamento;
+  data: string;
+}): Promise<{ error?: string; id?: string }> {
+  const parsed = recebimentoCobrancaSchema.safeParse(dados);
+  if (!parsed.success) return { error: 'Revise valor, data e forma de pagamento.' };
+
+  const { supabase } = await requireClinicContext();
+  const rpc = supabase.rpc.bind(supabase) as unknown as RpcCall;
+  const { data, error } = await rpc('registrar_recebimento_cobranca', {
+    p_cobranca_id: parsed.data.cobrancaId,
+    p_valor: parsed.data.valor,
+    p_forma: parsed.data.formaPagamento,
+    p_data: parsed.data.data,
+  });
+  if (error) return { error: erroFinanceiro(error.message) };
+
+  const pagamento = data as { id?: string } | null;
+  revalidatePath(`/dashboard/pacientes/${parsed.data.pacienteId}`);
+  revalidatePath('/dashboard/orcamentos');
+  revalidatePath('/dashboard/financeiro');
+  return { id: pagamento?.id };
+}
+
+/** Cancela apenas uma etapa sem dinheiro recebido e libera seus itens para nova negociação. */
+export async function cancelarCobrancaEtapa(dados: {
+  cobrancaId: string;
+  pacienteId: string;
+  motivo: string;
+}): Promise<{ error?: string }> {
+  const parsed = cancelarCobrancaSchema.safeParse(dados);
+  if (!parsed.success) return { error: 'Informe o motivo do cancelamento (até 500 caracteres).' };
+
+  const { supabase } = await requireClinicContext();
+  const rpc = supabase.rpc.bind(supabase) as unknown as RpcCall;
+  const { error } = await rpc('cancelar_cobranca_orcamento', {
+    p_cobranca_id: parsed.data.cobrancaId,
+    p_motivo: parsed.data.motivo,
+  });
+  if (error) return { error: erroFinanceiro(error.message) };
+
+  revalidatePath(`/dashboard/pacientes/${parsed.data.pacienteId}`);
+  revalidatePath('/dashboard/orcamentos');
+  revalidatePath('/dashboard/financeiro');
+  return {};
 }
 
 export async function editarPagamento(
   pagamentoId: string,
   dados: { valor: number; formaPagamento: FormaPagamento; data: string },
 ): Promise<{ error?: string }> {
-  if (!Number.isFinite(dados.valor) || dados.valor <= 0) {
-    return { error: "Informe um valor de recebimento maior que zero." };
-  }
-  const { supabase, user, clinicId } = await requireClinicContext();
+  const parsed = z.object({
+    pagamentoId: z.string().uuid(),
+    valor: z.number().finite().positive().multipleOf(0.01),
+    formaPagamento: formaPagamentoSchema,
+    data: z.string().date(),
+  }).safeParse({ pagamentoId, ...dados });
+  if (!parsed.success) return { error: 'Revise valor, data e forma de pagamento.' };
 
-  const { data: pagAtual } = await supabase
-    .from("pagamentos")
-    .select("id, paciente_id, valor, forma_pagamento, data_pagamento")
-    .eq("id", pagamentoId)
-    .eq("clinica_id", clinicId)
+  const { supabase, clinicId } = await requireClinicContext();
+  const { data: atual } = await supabase
+    .from('pagamentos')
+    .select('paciente_id')
+    .eq('id', parsed.data.pagamentoId)
+    .eq('clinica_id', clinicId)
     .maybeSingle();
+  if (!atual) return { error: 'Recebimento não encontrado.' };
 
-  if (!pagAtual) {
-    return { error: "Pagamento não encontrado." };
-  }
-
-  const { data: atualizados, error } = await supabase
-    .from("pagamentos")
-    .update({
-      valor:           dados.valor,
-      forma_pagamento: dados.formaPagamento,
-      data_pagamento:  dados.data,
-    })
-    .eq("id", pagamentoId)
-    .eq("clinica_id", clinicId)
-    .select("id");
-
-  if (error || !atualizados || atualizados.length !== 1) {
-    return { error: error?.message ?? "Não foi possível atualizar este recebimento." };
-  }
-
-  const { data: dentistaPerfil } = await supabase
-    .from("dentistas")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("clinica_id", clinicId)
-    .maybeSingle();
-
-  registrarLog(supabase, {
-    clinicaId:   clinicId,
-    actorId:     dentistaPerfil?.id ?? null,
-    pacienteId:  pagAtual.paciente_id,
-    entityType:  'pagamento',
-    entityId:    pagamentoId,
-    action:      'pagamento.editado',
-    metadata:    {
-      antes: { valor: pagAtual.valor, forma: pagAtual.forma_pagamento, data: pagAtual.data_pagamento },
-      depois: { valor: dados.valor, forma: dados.formaPagamento, data: dados.data },
-    },
+  const rpc = supabase.rpc.bind(supabase) as unknown as RpcCall;
+  const { error } = await rpc('corrigir_recebimento_orcamento', {
+    p_pagamento_id: parsed.data.pagamentoId,
+    p_valor: parsed.data.valor,
+    p_forma: parsed.data.formaPagamento,
+    p_data: parsed.data.data,
   });
+  if (error) return { error: erroFinanceiro(error.message) };
 
-  revalidatePath("/dashboard/orcamentos");
-  revalidatePath("/dashboard/financeiro");
-  revalidatePath(`/dashboard/pacientes/${pagAtual.paciente_id}`);
+  revalidatePath('/dashboard/orcamentos');
+  revalidatePath('/dashboard/financeiro');
+  revalidatePath(`/dashboard/pacientes/${atual.paciente_id}`);
   return {};
 }
 
 export async function excluirPagamento(
   pagamentoId: string,
 ): Promise<{ error?: string }> {
-  const { supabase, user, clinicId, dentistaId, role } = await requireClinicContext();
+  const { supabase, clinicId, dentistaId, role } = await requireClinicContext();
 
   const { data: pagAtual } = await supabase
     .from("pagamentos")
-    .select("id, paciente_id, valor, forma_pagamento, dentista_id")
+    .select("id, paciente_id, orcamento_id, valor, forma_pagamento, dentista_id, status")
     .eq("id", pagamentoId)
     .eq("clinica_id", clinicId)
     .maybeSingle();
 
   if (!pagAtual) {
     return { error: "Pagamento não encontrado." };
+  }
+
+  if (pagAtual.status === 'pago') {
+    return { error: 'Recebimento confirmado não pode ser excluído. Use Estornar e informe o motivo.' };
   }
 
   // Espelha a policy pagamentos_access (is_own_clinical_record): dono OU secretária.
@@ -903,19 +954,12 @@ export async function excluirPagamento(
     return { error: error?.message ?? 'Não foi possível excluir este pagamento.' };
   }
 
-  const { data: dentistaPerfil } = await supabase
-    .from("dentistas")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("clinica_id", clinicId)
-    .maybeSingle();
-
   registrarLog(supabase, {
     clinicaId:   clinicId,
-    actorId:     dentistaPerfil?.id ?? null,
+    actorId:     dentistaId,
     pacienteId:  pagAtual.paciente_id,
-    entityType:  'pagamento',
-    entityId:    pagamentoId,
+    entityType:  'orcamento',
+    entityId:    pagAtual.orcamento_id,
     action:      'pagamento.excluido',
     metadata:    { valor: pagAtual.valor, forma: pagAtual.forma_pagamento },
   });
@@ -923,6 +967,38 @@ export async function excluirPagamento(
   revalidatePath("/dashboard/orcamentos");
   revalidatePath("/dashboard/financeiro");
   revalidatePath(`/dashboard/pacientes/${pagAtual.paciente_id}`);
+  return {};
+}
+
+export async function estornarPagamento(
+  pagamentoId: string,
+  motivo: string,
+): Promise<{ error?: string }> {
+  const parsed = z.object({
+    pagamentoId: z.string().uuid(),
+    motivo: z.string().trim().min(1).max(500),
+  }).safeParse({ pagamentoId, motivo });
+  if (!parsed.success) return { error: 'Informe o motivo do estorno.' };
+
+  const { supabase, clinicId } = await requireClinicContext();
+  const { data: atual } = await supabase
+    .from('pagamentos')
+    .select('paciente_id')
+    .eq('id', parsed.data.pagamentoId)
+    .eq('clinica_id', clinicId)
+    .maybeSingle();
+  if (!atual) return { error: 'Recebimento não encontrado.' };
+
+  const rpc = supabase.rpc.bind(supabase) as unknown as RpcCall;
+  const { error } = await rpc('estornar_recebimento_orcamento', {
+    p_pagamento_id: parsed.data.pagamentoId,
+    p_motivo: parsed.data.motivo,
+  });
+  if (error) return { error: erroFinanceiro(error.message) };
+
+  revalidatePath('/dashboard/orcamentos');
+  revalidatePath('/dashboard/financeiro');
+  revalidatePath(`/dashboard/pacientes/${atual.paciente_id}`);
   return {};
 }
 
@@ -977,6 +1053,12 @@ export async function adicionarItensAoOrcamento(
     if (mensagem.includes('orcamento_evento_invalido')) {
       return { error: 'Um dos procedimentos não está mais disponível para este orçamento. Recarregue a ficha.' };
     }
+    if (mensagem.includes('orcamento_evento_ficha_invalido')) {
+      return { error: 'Os procedimentos adicionais precisam pertencer à mesma ficha do orçamento.' };
+    }
+    if (mensagem.includes('orcamento_procedimento_de_outro_dentista')) {
+      return { error: 'O procedimento escolhido pertence a outro dentista. Recarregue o catálogo antes de continuar.' };
+    }
     if (mensagem.includes('orcamento_sem_permissao')) {
       return { error: 'Você não tem permissão para alterar este orçamento.' };
     }
@@ -1000,82 +1082,19 @@ export async function adicionarItensAoOrcamento(
 }
 
 /**
- * R-130 — corrige somente o valor que foi negociado com o paciente. `total` continua sendo a
- * proposta (soma dos itens) e nunca é reescrito aqui. Planos/parcelas são uma fotografia do
- * acordo: mudar o valor por baixo deles deixaria o saldo financeiro inconsistente, então essa
- * ação recusa enquanto houver `plano_forma` ou parcela ainda agendada.
+ * Compatibilidade para chamadores antigos: toda alteração do acordo passa pela mesma RPC
+ * transacional usada pelo modal. Ela cancela somente previsões futuras, nunca recebimentos.
  */
 export async function editarValorAcordado(
   orcamentoId: string,
   valorAcordado: number,
 ): Promise<{ error?: string }> {
-  if (!Number.isFinite(valorAcordado) || valorAcordado <= 0) {
-    return { error: 'Informe um valor final maior que zero.' };
-  }
-
-  const { supabase, clinicId, dentistaId } = await requireClinicContext();
-  const { data: orcamento } = await supabase
-    .from('orcamentos')
-    .select('id, paciente_id, valor_acordado, plano_forma, pagamentos(valor, status)')
-    .eq('id', orcamentoId)
-    .eq('clinica_id', clinicId)
-    .maybeSingle();
-
-  if (!orcamento) return { error: 'Orçamento não encontrado.' };
-
-  if (orcamento.plano_forma) {
-    return {
-      error: 'Este orçamento já tem um plano de pagamento. Ajuste as parcelas antes de alterar o valor final.',
-    };
-  }
-
-  const temParcelaAgendada = (orcamento.pagamentos ?? []).some(
-    (pagamento) => pagamento.status === 'pendente',
-  );
-  if (temParcelaAgendada) {
-    return {
-      error: 'Este orçamento tem parcela agendada. Ajuste ou remova a parcela antes de alterar o valor final.',
-    };
-  }
-
-  const valorJaPago = (orcamento.pagamentos ?? [])
-    .filter((pagamento) => pagamento.status === 'pago')
-    .reduce((soma, pagamento) => soma + (pagamento.valor ?? 0), 0);
-
-  // Trabalha em centavos para não reprovar um valor igual por ruído de ponto flutuante.
-  if (Math.round(valorAcordado * 100) < Math.round(valorJaPago * 100)) {
-    return { error: 'O valor final não pode ser menor que o total já recebido.' };
-  }
-
-  const { data: atualizado, error } = await supabase
-    .from('orcamentos')
-    .update({ valor_acordado: valorAcordado })
-    .eq('id', orcamentoId)
-    .eq('clinica_id', clinicId)
-    .select('id');
-
-  if (error || atualizado?.length !== 1 || atualizado[0]?.id !== orcamentoId) {
-    return { error: error?.message ?? 'Não foi possível atualizar o valor final.' };
-  }
-
-  registrarLog(supabase, {
-    clinicaId: clinicId,
-    actorId: dentistaId,
-    pacienteId: orcamento.paciente_id,
-    entityType: 'orcamento',
-    entityId: orcamentoId,
-    action: 'orcamento.editado',
-    metadata: {
-      alteracao: 'valor_negociado',
-      antes: orcamento.valor_acordado,
-      depois: valorAcordado,
-    },
+  const result = await reorganizarParcelas({
+    orcamentoId,
+    valorAcordado,
+    parcelas: [],
   });
-
-  revalidatePath('/dashboard/orcamentos');
-  revalidatePath('/dashboard/financeiro');
-  revalidatePath(`/dashboard/pacientes/${orcamento.paciente_id}`);
-  return {};
+  return result.error ? { error: result.error } : {};
 }
 
 export async function editarOrcamento(
@@ -1197,16 +1216,7 @@ export async function registrarPagamentoRapido(dados: {
   pacienteId: string;
   formaPagamento: FormaPagamento;
 }): Promise<{ error?: string; id?: string; autoAprovado?: boolean }> {
-  const { supabase, user, clinicId, role } = await requireClinicContext();
-
-  const { data: dentistaPerfil } = await supabase
-    .from("dentistas")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("clinica_id", clinicId)
-    .maybeSingle();
-
-  if (!dentistaPerfil) redirect("/onboarding");
+  const { supabase, clinicId } = await requireClinicContext();
 
   // Regra 1 — lê o estado antes de decidir (hoje: zero leitura, insere às cegas).
   const { data: orcRaw } = await supabase
@@ -1261,62 +1271,17 @@ export async function registrarPagamentoRapido(dados: {
     return { error: "Este orçamento já está quitado." };
   }
 
-  const { data, error } = await supabase
-    .from("pagamentos")
-    .insert({
-      orcamento_id:    dados.orcamentoId,
-      paciente_id:     dados.pacienteId,
-      dentista_id:     orc.dentista_id, // regra 8 — do orçamento, não de um dentistaId vindo do client
-      clinica_id:      clinicId,
-      valor:           saldo,
-      status:          "pago",
-      forma_pagamento: dados.formaPagamento,
-      data_pagamento:  hoje,
-      marcado_por_id:  dentistaPerfil.id,
-    })
-    .select("id")
-    .single();
-
-  if (error) {
-    console.error("[registrarPagamentoRapido]", error.message); // regra 9 — sanitizado
-    return { error: "Não foi possível registrar o pagamento. Tente novamente." };
-  }
-
-  // R-114 — "aprovado" não se escreve mais (guard já exigiu item aprovado antes de
-  // chegar aqui); `autoAprovado` passa a significar "este pagamento fechou a conta".
-  const autoAprovado = totalPago + saldo >= valorDevido;
-
-  if (role === 'secretaria' && orc.dentista_id) {
-    const { data: pac } = await supabase
-      .from('pacientes').select('nome').eq('id', dados.pacienteId).maybeSingle();
-    const pacNome = (pac as { nome: string } | null)?.nome ?? 'paciente';
-    const valorFmt = fmtReal(saldo);
-    await inserirNotificacao(supabase, {
-      clinicaId:      clinicId,
-      paraRole:       'dentista',
-      paraDentistaId: orc.dentista_id,
-      deDentistaId:   dentistaPerfil.id,
-      tipo:           'pagamento_confirmado',
-      titulo:         `Pagamento recebido — ${pacNome}`,
-      mensagem:       `Secretária registrou ${valorFmt} (${dados.formaPagamento.replace(/_/g, ' ')}) de ${pacNome}.${autoAprovado ? ' Orçamento aprovado.' : ''}`,
-      href:           '/dashboard/orcamentos',
-    });
-  }
-
-  // Regra 6 — sempre loga (hoje: nunca loga).
-  registrarLog(supabase, {
-    clinicaId:   clinicId,
-    actorId:     dentistaPerfil.id,
-    pacienteId:  dados.pacienteId,
-    entityType:  'pagamento',
-    entityId:    data.id,
-    action:      'pagamento.registrado',
-    metadata:    { valor: saldo, forma: dados.formaPagamento, orcamento_id: dados.orcamentoId },
+  // Mesmo atalho da secretaria precisa obedecer ao saldo no instante da escrita. Delegar à
+  // action canônica preserva a trava transacional e o audit log, em vez de manter um INSERT
+  // paralelo que poderia ultrapassar o valor combinado em uma corrida.
+  return registrarPagamento({
+    orcamentoId: dados.orcamentoId,
+    pacienteId: dados.pacienteId,
+    valor: saldo,
+    formaPagamento: dados.formaPagamento,
+    data: hoje,
+    dentistaId: orc.dentista_id,
   });
-
-  revalidatePath("/dashboard/orcamentos");
-  revalidatePath('/dashboard/financeiro');
-  return { id: data.id, autoAprovado };
 }
 
 export async function excluirOrcamento(
@@ -1385,7 +1350,7 @@ export async function criarProcedimentoRapido(dados: {
   nome: string;
   precoPadrao: number | null;
   dentistaId?: string;
-}): Promise<{ error?: string; id?: string }> {
+}): Promise<{ error?: string; id?: string; precoPadrao?: number | null }> {
   const { supabase, user, clinicId } = await requireClinicContext();
 
   const nome = normalizarNomeProcedimento(dados.nome);
@@ -1426,7 +1391,7 @@ export async function criarProcedimentoRapido(dados: {
   // entrada do dentista ignorando diferença de maiúsculas/espaços, para não criar duplicata.
   const { data: existentes, error: existentesError } = await supabase
     .from('procedimentos')
-    .select('id, nome, ativo')
+    .select('id, nome, ativo, preco_padrao')
     .eq('clinica_id', clinicId)
     .eq('dentista_id', dentistaAlvoId);
   if (existentesError) {
@@ -1449,7 +1414,7 @@ export async function criarProcedimentoRapido(dados: {
       }
       revalidatePath('/dashboard/configuracoes');
     }
-    return { id: existente.id };
+    return { id: existente.id, precoPadrao: existente.ativo ? existente.preco_padrao : dados.precoPadrao };
   }
 
   const { data, error } = await supabase
@@ -1460,7 +1425,7 @@ export async function criarProcedimentoRapido(dados: {
       nome,
       preco_padrao: dados.precoPadrao,
     })
-    .select("id")
+    .select("id, preco_padrao")
     .single();
 
   if (error) {
@@ -1469,7 +1434,8 @@ export async function criarProcedimentoRapido(dados: {
   }
 
   revalidatePath("/dashboard/configuracoes");
-  return { id: (data as { id: string }).id };
+  const novo = data as { id: string; preco_padrao: number | null };
+  return { id: novo.id, precoPadrao: novo.preco_padrao };
 }
 
 // Não exportar o schema em si — arquivo "use server" só pode exportar funções async.

@@ -1,26 +1,20 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · atualizado em **30/08/2026** · mapa do produto atual.
-> Histórico de decisões, itens antigos e specs fechadas vivem em [`_arquivo/`](./_arquivo/).
+> **ROADMAP** · atualizado em **03/09/2026** · mapa do produto atual.
+> Histórico e specs fechadas vivem em [`_arquivo/`](./_arquivo/).
 
 ## Produto atual — fonte de decisão
 
 - O núcleo é a documentação clínica rápida: **Agenda → Meu Dia → Prontuário → Orçamento**.
-- **Prontuário** é a visão longitudinal do paciente; internamente cada **Ficha continua sendo um
-  tratamento** e cada **Atendimento** passa a representar uma visita. Não existe aba Tratamento.
-- No perfil do paciente existem **Ficha, Orçamentos, Agenda e Arquivos**. Não existe aba
-  **Tratamento**; referências antigas a ela são históricas e não guiam interface nova.
-- Pacientes e fichas são compartilhados pela clínica conforme a permissão clínica. Agenda,
+- **Prontuário** é a visão longitudinal; cada **Ficha** é um tratamento e cada **Atendimento** é
+  uma visita. Não existe aba Tratamento.
+- Pacientes e Fichas são compartilhados pela clínica conforme a permissão clínica. Agenda,
   orçamentos e financeiro permanecem no silo de cada dentista.
-- **Gestão da Clínica** concentra equipe, convites e integrações compartilhadas. WhatsApp fica
-  nessa área quando entrar; horários, agenda, orçamento e financeiro seguem individuais.
-- Solo/Consultório e Clínica entregam o mesmo produto. A diferença é comercial: o fundador paga
-  R$200/mês ou R$2.000/ano por dentista; no lançamento a Clínica tem de 2 a 8 dentistas.
-- Domínio canônico: `odontoia.app`. `dentia.app.br` deve sobreviver apenas como redirecionamento
-  permanente para não quebrar links antigos.
+- Solo/Consultório e Clínica entregam o mesmo produto; a diferença é comercial. O domínio
+  canônico é `odontoia.app`.
 
 **Status:** ⏳ fila · 🔵 ativo · 🟡 no ar, ainda sem o gate indicado · ✅ no ar e verificado ·
-🧊 congelado · ✂️ cortado.
+🧊 congelado · ✂️ cortado. Código local não é publicação.
 
 ---
 
@@ -28,38 +22,41 @@
 
 | ID | Item | Estado |
 |---|---|---|
-| [**R-140**](specs/R-140-prontuario-atendimento-rastreabilidade.md) | **Prontuário longitudinal, Atendimento e rastreabilidade** — reorganiza Meu Dia/Ficha sem quebrar tratamento, orçamento e assinatura; prepara etiquetas e estoque | 🔵 R-140a em validação local (schema/RLS e dual-write); produção continua bloqueada até R-139c/R-133/R-143 passarem o gate clínico do Dex. |
-| **R-138** | **Agenda com calendário mobile** — Dia e Semana preservam a grade de horários do desktop no celular | 🟡 enviada à `main`; falta validação manual em Android/iPhone e desktop. |
-| [**R-139a**](specs/R-139a-remover-procedimento-catalogo.md) | **Remover procedimento do catálogo** — o dentista tira o item das escolhas novas sem apagar histórico financeiro | 🟡 no ar; aprovado pelo usuário em produção em 29/08, pendente de auditoria completa para ✅. |
-| [**R-139b**](specs/R-139b-face-incisal-i.md) | **Face incisal como I** — dentes anteriores mostram a abreviação clínica correta sem migrar o código canônico `O` | 🟡 no ar; aprovado pelo usuário em produção em 29/08, pendente de auditoria completa para ✅. |
-| [**R-139c**](specs/R-139c-status-dex-preservado.md) | **Status clínico confiável na saída do Dex** — execução, indicação, negação, histórico e ambiguidade permanecem distintos | 🔵 revisão 2 em contrato; correção downstream está no ar, mas a classificação falhou. P0 atual, aguardando aprovação da spec e eval antes/depois. |
-| [**R-139d**](specs/R-139d-visualizador-clinico-arquivos.md) | **Motor do visualizador clínico + Arquivos** — zoom, pan, rotação e ajustes temporários no lightbox | 🟡 no ar; aprovado pelo usuário em produção em 29/08, pendente de auditoria completa para ✅. |
-| [**R-139e**](specs/R-139e-visualizador-apresentacao-anotacoes.md) | **Visualizador na Apresentação** — reutiliza o motor e mantém anotações alinhadas durante a manipulação | 🟡 no ar; aprovado pelo usuário em produção em 29/08, pendente de auditoria completa para ✅. |
-| **R-137** | **Retorno com protético e agenda mobile** — horários livres continuam visíveis no celular e o pedido ao laboratório entra sem expandir o modal | 🟡 enviada; falta validação manual completa nos dois pontos de entrada. |
-| **R-136** | **Financeiro do orçamento claro** — uma sequência de recebimento, sem atalhos e formulários concorrentes | 🟡 implementado e enviado à produção; falta validação manual do novo fluxo financeiro. |
-| **R-134** | **Apresentação comercial interativa** — pitch offline do Workspace Odontológico para uso presencial | 🧊 referência visual local removida da árvore do produto; só retoma com escopo comercial explícito. |
-| [**R-133**](specs/R-133-dex-clinico-sem-perda.md) | **Dex clínico sem perda** — procedimento fora do vocabulário vira card revisável e divergência nunca some silenciosamente | ⏳ P0 em contrato; executa depois de R-139c e antes do gate de revisão R-143. |
-| **R-129** | **Fluidez e estabilidade** — Dex sob demanda, histórico clínico com carga progressiva e revisão seletiva de refreshes | ⏳ preservado em commits locais; retoma depois do R-133. Paginação clínica exige fatia própria para não esconder prontuário. |
-| **R-131** | **Patches de segurança** — atualizar Next, parser de documentos e cadeia Gemini em commits isolados | ⏳ prioridade pré-lançamento; auditoria encontrou vulnerabilidades de dependência. |
-| **R-132** | **Gate automatizado** — testes com aliases, lint bloqueante e CI confiável | ⏳ `npm test` executa só 5 de 23 arquivos; precisa incluir o teste do R-139c e tornar o eval clínico reproduzível no CI. |
-| **R-92** | **Cobrança Stripe** — primeiro checkout real, webhook, retry e portal | 🟡 produto e chaves configurados; falta um ciclo real completo para validar cobrança e webhook. |
-| **R-105** | **Onboarding do primeiro valor** — apresentação Dex curta, Meu Dia guiado e missão opcional | 🟡 fluxo novo está no ar; falta repetir o caminho completo em uma conta nova, celular e convite. |
+| [**R-153**](specs/R-153-orcamento-ficha-fluxo-continuo.md) | **Orçamento da Ficha em fluxo contínuo** — uma Ficha por orçamento, catálogo confiável e continuidade no perfil do paciente | 🔵 execução local commitada; ainda não enviada ou publicada. |
+
+## Publicado, aguardando validação dirigida
+
+| ID | Item | Estado |
+|---|---|---|
+| **R-145** | **Orçamento financeiro flexível** — recebimento livre, previsão de cobrança reorganizável, à vista como conta a receber e orçamento estritamente por responsável | ✅ em produção e verificado pelo usuário em 03/09; spec e artefato arquivados. |
+| [**R-152**](specs/R-152-paridade-ficha-unificada.md) + [**R-152a**](specs/R-152a-cabecalho-ficha-redesign.md) | **Ficha unificada e cabeçalho** — ações clínicas na superfície nova, legado somente leitura e cabeçalho organizado | 🟡 publicado; falta gate consolidado de paridade antes de remover código legado. |
+| [**R-149**](specs/R-149-revisao-meu-dia-legivel.md) | **Revisão legível no Meu Dia** — cartões clínicos priorizam procedimento e status, sem esconder nenhuma ação | 🟡 publicada; aguarda conferência visual completa. |
+| **R-138** | **Agenda com calendário mobile** | 🟡 enviada; falta validação manual em Android/iPhone e desktop. |
+| **R-137** | **Retorno com protético e agenda mobile** | 🟡 publicada; restam os relatos mobile de protético/retorno. |
+| **R-136** | **Financeiro do orçamento claro** | 🟡 publicada; falta validação manual completa. |
+| [**R-139a**](specs/R-139a-remover-procedimento-catalogo.md), [**R-139b**](specs/R-139b-face-incisal-i.md), [**R-139d**](specs/R-139d-visualizador-clinico-arquivos.md) e [**R-139e**](specs/R-139e-visualizador-apresentacao-anotacoes.md) | Catálogo, face incisal e visualizador clínico | 🟡 no ar; aguardam auditoria completa. |
+| **R-92 / R-105** | Cobrança Stripe e onboarding do primeiro valor | 🟡 fluxo no ar; faltam ciclos reais controlados. |
+
+## Correções críticas antes de nova escrita clínica
+
+| ID | Item | Estado |
+|---|---|---|
+| **R-146** | **Contexto seguro da consulta** — `?ag=` resolve o agendamento futuro correto, sem fallback para outro paciente; retorno da Ficha usa o vínculo da Agenda | ⏳ P0/P1 da auditoria de 02/09; bloqueia novo teste de escrita nesse caminho. |
+| **R-147** | **DEX: transcrição autenticada e resiliente** — corrigir vínculo `user_id`/clínica ativa, expor erros acionáveis, alinhar MIME e provar Whisper no Preview | ⏳ P0 da auditoria `2026-09-02-dex-completo.md`; aguarda prova no Preview. |
 
 ## Próximos, por impacto no dentista
 
 | ID | Item | Estado |
 |---|---|---|
-| [**R-141**](specs/R-141-captura-dex-sem-perda.md) | **Captura Dex sem perda** — salvar aguarda áudio/arquivo/IA, transcrição repete sem novo ditado e corte por silêncio fica explícito | ⏳ contrato escrito; aguarda aprovação. |
-| [**R-142**](specs/R-142-contratos-hardening-dex.md) | **Contratos e hardening do Dex** — Zod runtime, limites, rate limit por identidade, timeout e observabilidade agregada | ⏳ contrato escrito; migration aditiva e teste com duas contas impedem publicação sem gate. |
-| [**R-143**](specs/R-143-revisao-clinica-segura-acessivel.md) | **Revisão clínica segura e acessível** — suspeitos bloqueiam save, lote tem confirmação/undo e controles atendem mobile/WCAG | ⏳ contrato escrito; gate de publicação de R-139c/R-133. |
-| **R-117** | Fotos clínicas no celular — câmera, múltiplas imagens, rotação e upload sem estourar memória | 🟡 precisa de rodada real em Android e iPhone. |
-| **R-116** | PWA instalável — ícone, abertura standalone e CTA na landing | 🟡 falta confirmação final em Android e Safari/iPhone. |
-| **R-120** | Documentos e aceites — termos, orçamento e aceites clínicos assinados, PDF congelado e download | 🟡 dados e UI existem; ativação jurídica depende da revisão final dos termos. |
-| **R-119** | Assinatura manuscrita em atestado e receita | 🟡 ponte provisória em uso; ICP-Brasil é uma atualização posterior. |
-| **R-95** | Limpeza gradual de código morto e dependências órfãs | ⏳ baixo impacto para o usuário; remover por cadeia, fora do lote clínico/performance. |
-| **R-25** | Efeitos/hidratação — reduzir estados espelhados e renders em cascata | ⏳ tratar por família e confirmar visualmente; não fazer substituição mecânica. |
-| **R-37** | Proteger fichas contra `ON DELETE CASCADE` ao excluir dentista | ⏳ risco de integridade; precisa entrar antes de qualquer fluxo que permita exclusão de profissionais. |
-| **R-43 / R-44** | Auditoria de funções RLS e embeds PostgREST ambíguos | ⏳ manutenção preventiva de isolamento multi-clínica. |
+| [**R-154**](specs/R-154-plano-tratamento-fluido.md) | **Plano de tratamento fluido no Meu Dia** — fila clínica completa, responsabilidade explícita e transição de status sem recarregar | ⏳ debate; não altera autoria clínica sem decisão explícita. |
+| [**R-151**](specs/R-151-dex-organizar-baixa-latencia.md) | **Dex organiza a ficha com baixa latência** — otimiza autenticação, esperas e infraestrutura mantendo a inteligência atual | 🧊 alteração local isolada; retoma após validar/fechar R-153. |
+| [**R-150**](specs/R-150-agenda-util-retorno-rapido.md) | **Agenda útil e retorno rápido** — atalhos de 7/15 dias, ponte fixa, expediente comprovado e Agenda de segunda a sábado | ⏳ fila; não concorre com as correções P0. |
+| [**R-139c**](specs/R-139c-status-dex-preservado.md) | **Status clínico confiável na saída do Dex** | ⏳ revisão 2 em contrato; classificação exige eval antes/depois. |
+| [**R-133**](specs/R-133-dex-clinico-sem-perda.md) | **Dex clínico sem perda** | ⏳ executa depois de R-139c e antes do gate R-143. |
+| [**R-141**](specs/R-141-captura-dex-sem-perda.md), [**R-142**](specs/R-142-contratos-hardening-dex.md) e [**R-143**](specs/R-143-revisao-clinica-segura-acessivel.md) | Captura, contratos e revisão clínica do Dex | ⏳ contratos aprovados; aguardam a ordem clínica acima. |
+| **R-131 / R-132** | Patches de segurança e gate automatizado | ⏳ manutenção pré-lançamento; não misturar com o fluxo clínico. |
+| **R-117 / R-116 / R-120 / R-119** | Fotos mobile, PWA, documentos e assinatura manuscrita | 🟡 no ar; validações de dispositivo, jurídica ou de uso real permanecem pendentes. |
+| **R-95 / R-25 / R-37 / R-43-R-44** | Limpeza, hidratação, integridade de dentista e auditoria RLS | ⏳ manutenção preventiva em recortes próprios. |
 
 ## Produto clínico e operacional — verificado em produção
 
@@ -78,17 +75,17 @@
 
 | ID | Item | Condição de retorno |
 |---|---|---|
-| **R-115** | Refino anatômico completo dos símbolos do odontograma | 🧊 retomar com referência clínica e artefato específico; não trocar símbolos em lote. |
-| **R-49b** | Registro ao vivo no odontograma enquanto o dentista dita | 🧊 somente depois de medir se reduz tempo sem aumentar distração. |
-| **R-100** | Transcrição recolhível na ficha | 🧊 volta junto da próxima reorganização documental; não criar log transitório. |
+| **R-140** | Prontuário/Atendimento remanescente | 🧊 retomada somente com build, prova transacional e RLS; materiais/etiquetas no R-140d. |
+| **R-134** | Apresentação comercial | 🧊 volta com escopo comercial explícito. |
+| **R-115** | Refino anatômico dos símbolos do odontograma | 🧊 referência clínica e artefato específico. |
+| **R-49b** | Registro ao vivo no odontograma enquanto dita | 🧊 medir benefício sem distração. |
 | **R-08** | Periodontia completa | ⏳ depois do lançamento e estabilização operacional. |
-| **R-45** | Recall automático por procedimento | 💡 depende de WhatsApp e de regra clínica definida. |
-| **R-88b** | Importação de pacientes | ⏳ avaliar com as primeiras clínicas pagantes; não construir por suposição. |
+| **R-45 / R-88b** | Recall automático / importação de pacientes | ⏳ dependem de WhatsApp ou de clínicas pagantes. |
 
 ## Cortado ou absorvido
 
-- **Aba Tratamento e modelos centrados nela:** ✂️ não fazem parte da navegação atual; a Ficha é a base clínica e o orçamento nasce dela.
-- **R-33:** ✂️ rota exclusiva de orçamentos para dentista não é direção do produto; orçamento é operado no perfil do paciente. A tela dedicada permanece, quando necessária, como operação da secretária.
-- **R-36 como “um login, uma clínica / admin que paga”:** ✂️ substituído pela gestão colaborativa e pela cobrança individual do R-92.
-- **R-09:** ✂️ absorvido por R-49; endodontia continua sendo a primeira especialidade de voz.
-- Demais entregas antigas e suas evidências: [`_arquivo/CONCLUIDOS.md`](./_arquivo/CONCLUIDOS.md).
+- **Aba Tratamento e modelos centrados nela:** ✂️ a Ficha é a base clínica.
+- **R-33:** ✂️ orçamento é operado no perfil do paciente; a tela dedicada atende somente a
+  operação necessária da secretária.
+- **R-36:** ✂️ substituído pela gestão colaborativa e cobrança individual.
+- **R-09:** ✂️ absorvido por R-49.

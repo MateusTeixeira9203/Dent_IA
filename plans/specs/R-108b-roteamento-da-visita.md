@@ -1,6 +1,6 @@
 # R-108b — Roteamento da visita: a que ficha o que eu fiz hoje pertence
 
-> **SPEC** · **R-108b** · 🔵 ativo
+> **SPEC** · **R-108b** · 🟡 fundação publicada; evolução no R-152/R-154
 > **Aberto:** 2026-08-13 · **Fechado:** — · **Fase:** **`aprovada`** (por ele, 13/08)
 > **Emenda:** §4 reescrito na sessão #41 (13/08), aprovada por ele antes do código — o desenho
 > original apagava evento e sobrescrevia ficha de paciente real.

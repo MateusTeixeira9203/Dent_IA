@@ -13,7 +13,9 @@ export function CheckoutRetornoClient() {
   const conferir = useCallback(async (): Promise<EstadoRetornoCheckout> => {
     const resultado = await conferirRetornoCheckout();
     if (resultado.estado === 'confirmado') {
-      window.location.assign('/onboarding?step=dex&checkout=confirmed');
+      window.location.assign(resultado.onboardingCompleto
+        ? '/dashboard'
+        : '/onboarding?step=dex&checkout=confirmed');
       return resultado;
     }
     if (resultado.estado === 'erro') {

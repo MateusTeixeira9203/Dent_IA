@@ -1,6 +1,6 @@
 # R-108 — Ficha = documento de tratamento
 
-> **SPEC** · **R-108** · 🔵 ativo
+> **SPEC** · **R-108** · 🟡 fundação publicada; evolução no R-152/R-154
 > **Aberto:** 2026-08-13 · **Fechado:** — · **Fase:** **`aprovada`** (por ele, 13/08)
 > **Modelo:** Opus pra decidir o modelo de dado (feito, nesta spec); a execução das 2 fatias
 > é aditiva e cabe em Sonnet.

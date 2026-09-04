@@ -30,6 +30,8 @@ const MIN_POR_SLOT = 15; // mesma granularidade de horaDoClique (week-view.tsx)
 const GUTTER_WIDTH = 36;
 
 const SALTOS = [
+  { label: '7 dias', alvo: (hoje: Date) => addDays(hoje, 7) },
+  { label: '15 dias', alvo: (hoje: Date) => addDays(hoje, 15) },
   { label: '30 dias', alvo: (hoje: Date) => addDays(hoje, 30) },
   { label: '60 dias', alvo: (hoje: Date) => addDays(hoje, 60) },
   { label: '90 dias', alvo: (hoje: Date) => addDays(hoje, 90) },

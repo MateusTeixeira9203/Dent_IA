@@ -1,6 +1,6 @@
 # R-123 — Meu Dia: bancada compacta orientada a teclado
 
-> **SPEC** · **R-123** · 🔵 ativo
+> **SPEC** · **R-123** · ✅ no ar e verificado; registro histórico
 > **Aberto:** 2026-08-20 · **Fechado:** — · **Fase:** aprovada
 > **Migration:** zero · **API nova:** zero · **Aprovação:** artefato e execução autorizados pelo usuário em 20/08.
 

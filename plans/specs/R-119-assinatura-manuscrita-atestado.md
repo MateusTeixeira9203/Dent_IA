@@ -1,6 +1,6 @@
 # R-119 — Assinatura manuscrita em atestado e receita
 
-> **SPEC** · **R-119** · 🔵 ativo
+> **SPEC** · **R-119** · 🟡 ponte no ar; revisão jurídica pendente
 > **Aberto:** 2026-08-18 · **Fechado:** — · **Fase:** aprovada · **Migration:** zero
 
 ## 1. Problema

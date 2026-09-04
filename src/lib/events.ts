@@ -44,6 +44,15 @@ export const EVENTS = {
   FICHA_EDITADA:       'ficha.editada',
   FICHA_EXCLUIDA:      'ficha.excluida',
 
+  // ── Procedimentos clínicos ─────────────────────────────────────────────────
+  // Auditoria clínica é separada da data `realizado_em`: esta é a identidade de
+  // quem alterou e o instante de servidor da alteração.
+  ODONTOGRAMA_EVENTO_ENCAMINHADO:               'odontograma_evento.encaminhado',
+  ODONTOGRAMA_EVENTO_ENCAMINHAMENTO_REMOVIDO:   'odontograma_evento.encaminhamento_removido',
+  ODONTOGRAMA_EVENTO_DETALHE_ALTERADO:          'odontograma_evento.detalhe_alterado',
+  ODONTOGRAMA_EVENTO_MARCADO_REALIZADO:         'odontograma_evento.marcado_realizado',
+  ODONTOGRAMA_EVENTO_REABERTO:                  'odontograma_evento.reaberto',
+
   // ── Planejamentos ──────────────────────────────────────────────────────────
   PLANEJAMENTO_CRIADO:  'planejamento.criado',
   PLANEJAMENTO_EDITADO: 'planejamento.editado',
@@ -74,6 +83,7 @@ export const ENTITY_TYPES = {
   AGENDAMENTO:   'agendamento',
   PACIENTE:      'paciente',
   FICHA:         'ficha',
+  ODONTOGRAMA_EVENTO: 'odontograma_evento',
   PLANEJAMENTO:  'planejamento',
   DESPESA:       'despesa',
   RECEITA:       'receita',

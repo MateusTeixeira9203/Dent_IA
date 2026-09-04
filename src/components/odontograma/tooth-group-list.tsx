@@ -33,7 +33,7 @@ const COR_TOKEN_INK = {
 } satisfies Record<CorClinica, string>;
 
 const ROTULO_ESTADO = {
-  coral: 'A fazer', teal: 'Feito', slate: 'Pré-exist.', warning: 'Próxima seção',
+  coral: 'A fazer', teal: 'Feito', slate: 'Pré-exist.', warning: 'Próxima sessão',
 } satisfies Record<CorClinica, string>;
 
 export interface ToothGroupListProps {

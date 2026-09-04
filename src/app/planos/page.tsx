@@ -19,8 +19,9 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
   const expired = params.expired === '1';
 
   // Valores padrão para usuário não autenticado
-  let trialUsed = false;
+  let trialDisponivel = true;
   let estadoComercial: EstadoComercial = 'inativo';
+  const billingAtivo = process.env.STRIPE_BILLING_ENABLED === 'true';
 
   if (user) {
     const service = createServiceClient();
@@ -32,7 +33,7 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
       .maybeSingle<{ active_clinica_id: string | null }>();
 
     if (perfil?.active_clinica_id) {
-      const [{ data: clinica }, { data: assinatura }] = await Promise.all([
+      const [{ data: clinica }, { data: assinatura }, { data: politicaTrial }] = await Promise.all([
         service
         .from('clinicas')
         .select('status_assinatura, trial_ends_at')
@@ -44,14 +45,21 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
           .eq('usuario_id', user.id)
           .eq('clinica_id', perfil.active_clinica_id)
           .maybeSingle<{ status: string }>(),
+        service
+          .from('politicas_trial_assinatura')
+          .select('dias_trial')
+          .eq('usuario_id', user.id)
+          .eq('clinica_id', perfil.active_clinica_id)
+          .maybeSingle<{ dias_trial: number }>(),
       ]);
 
       if (clinica) {
-        trialUsed = !!clinica.trial_ends_at;
+        trialDisponivel = politicaTrial?.dias_trial !== 0;
         estadoComercial = resolverEstadoComercial({
           isento: clinicaIsentaDeCobranca(perfil.active_clinica_id),
-          statusAssinatura: assinatura?.status ?? clinica.status_assinatura,
+          statusAssinatura: billingAtivo ? assinatura?.status : assinatura?.status ?? clinica.status_assinatura,
         });
+        if (!billingAtivo) trialDisponivel = !clinica.trial_ends_at;
         if (estadoComercial === 'isento') redirect('/dashboard/configuracoes?aba=plano');
       }
     }
@@ -60,7 +68,7 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
   return (
     <PlanosClient
       userId={user?.id ?? null}
-      trialUsed={trialUsed}
+      trialDisponivel={trialDisponivel}
       estadoComercial={estadoComercial}
       expired={expired}
       onboarding={params.onboarding === '1'}

@@ -1,6 +1,6 @@
 # R-46c — Colar do Word (nível 1, sem IA)
 
-> **SPEC** · sub-item do **R-46** · 🔵 ativo
+> **SPEC** · sub-item do **R-46** · ✅ no ar e verificado; registro histórico
 > **Aberto:** 2026-08-01 · **Fechado:** — · **Fase:** **aprovada** (03/08 — emendada pro
 > cockpit real, escopo confirmado: upload/colar sem IA, D7; organizar com Dex vira R-46d)
 > **Modelo:** Sonnet 5 (migration de 1 linha + wrapper fino + 2 pontos de exibição; sem IA,

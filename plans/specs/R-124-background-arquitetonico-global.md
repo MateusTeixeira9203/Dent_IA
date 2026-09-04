@@ -1,6 +1,6 @@
 # R-124 — Background arquitetônico global
 
-> **SPEC** · **R-124** · 🔵 ativo
+> **SPEC** · **R-124** · ✅ no ar e verificado; registro histórico
 > **Aberto:** 2026-08-20 · **Fechado:** — · **Fase:** aprovada
 
 ## 1. Problema

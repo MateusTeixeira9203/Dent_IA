@@ -13,18 +13,16 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'motion/react';
-import { History, Hourglass, Paperclip, ArrowRight, Stethoscope } from 'lucide-react';
+import { History, Paperclip, ArrowRight, Stethoscope } from 'lucide-react';
 
-export type GavetaId = 'historico' | 'afazer' | 'anexos';
+export type GavetaId = 'historico' | 'anexos';
 
 export interface FaixaGavetasProps {
   aberta: GavetaId | null;
   onAbertaChange: (gaveta: GavetaId | null) => void;
-  historicoCount: number;
-  aFazerCount: number;
+  planoHistoricoCount: number;
   pacienteId: string;
   historicoBody: ReactNode;
-  aFazerBody: ReactNode;
   anexosBody: ReactNode;
   /** R-123 — as mesmas gavetas entram como abas do painel clínico lateral. */
   contextual?: boolean;
@@ -32,8 +30,8 @@ export interface FaixaGavetasProps {
 }
 
 export function FaixaGavetas({
-  aberta, onAbertaChange, historicoCount, aFazerCount, pacienteId,
-  historicoBody, aFazerBody, anexosBody,
+  aberta, onAbertaChange, planoHistoricoCount, pacienteId,
+  historicoBody, anexosBody,
   contextual = false, onOdontograma,
 }: FaixaGavetasProps) {
   function toggle(gaveta: GavetaId) {
@@ -41,8 +39,7 @@ export function FaixaGavetas({
   }
 
   const gavetas: { id: GavetaId; label: string; icon: typeof History; count?: number }[] = [
-    { id: 'historico', label: 'Histórico', icon: History, count: historicoCount },
-    { id: 'afazer', label: 'Pendências', icon: Hourglass, count: aFazerCount },
+    { id: 'historico', label: 'Plano e histórico', icon: History, count: planoHistoricoCount },
     { id: 'anexos', label: 'Anexos', icon: Paperclip },
   ];
 
@@ -50,14 +47,20 @@ export function FaixaGavetas({
     <motion.div
       layout="position"
       transition={{ duration: 0.2, ease: 'easeOut' }}
-      className={contextual ? '' : 'rounded-2xl border border-border bg-surface'}
+      className={
+        contextual
+          ? aberta
+            ? 'flex h-full min-h-0 flex-col'
+            : 'shrink-0'
+          : 'rounded-2xl border border-border bg-surface'
+      }
     >
       {/* R-111 — `flex-wrap`: os 3 botões + o "Ficha completa" somavam 396px numa faixa de
           342px no celular, e os 54px de sobra sumiam cortados. Rolagem aqui seria pior que
           quebrar linha, porque o "Ficha completa" nasceria fora da tela e ele é ação, não
           enfeite. No desktop nada muda: cabendo tudo numa linha, o espaçador continua
           empurrando o link pra direita. */}
-      <div className={`flex flex-wrap items-center gap-1 ${contextual ? 'border-b border-border px-0 pb-2' : 'px-2 py-1.5'}`}>
+      <div className={`flex shrink-0 flex-wrap items-center gap-1 ${contextual ? 'border-b border-border px-0 pb-2' : 'px-2 py-1.5'}`}>
         {contextual && (
           <button
             type="button"
@@ -120,10 +123,10 @@ export function FaixaGavetas({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
+            className={contextual ? 'min-h-0 flex-1 overflow-hidden' : undefined}
           >
-            <div className={contextual ? 'pt-3' : 'border-t border-border px-3 py-3'}>
+            <div className={contextual ? 'h-full min-h-0 overflow-y-auto pb-1 pr-1 pt-3' : 'border-t border-border px-3 py-3'}>
               {aberta === 'historico' && historicoBody}
-              {aberta === 'afazer' && aFazerBody}
               {aberta === 'anexos' && anexosBody}
             </div>
           </motion.div>

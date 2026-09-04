@@ -74,7 +74,7 @@ type CorClinica = 'coral' | 'teal' | 'slate' | 'warning';
 
 const COR_TOKEN: Record<CorClinica, string> = {
   coral:   'var(--color-coral)',
-  teal:    'var(--color-teal)',
+  teal:    'var(--color-clinical-done)',
   slate:   'var(--color-slate)',
   warning: 'var(--color-warning)',
 };
@@ -83,7 +83,7 @@ const COR_TOKEN: Record<CorClinica, string> = {
 // em light mode — teal 3.38:1, coral 2.99:1; achado auditoria UX 19/07).
 const COR_TOKEN_INK: Record<CorClinica, string> = {
   coral:   'var(--color-coral-ink)',
-  teal:    'var(--color-teal-ink)',
+  teal:    'var(--color-clinical-done-ink)',
   slate:   'var(--color-slate-ink)',
   warning: 'var(--color-warning-ink)',
 };
@@ -91,7 +91,7 @@ const COR_TOKEN_INK: Record<CorClinica, string> = {
 /** Versão clara — tinge a RAIZ (canal/implante). Artefato usa o token -pale direto. */
 const COR_PALE: Record<CorClinica, string> = {
   coral:   'var(--color-coral-pale)',
-  teal:    'var(--color-teal-pale)',
+  teal:    'var(--color-clinical-done-pale)',
   slate:   'var(--color-slate-pale)',
   warning: 'var(--color-warning-pale)',
 };
@@ -110,7 +110,7 @@ const COR_PALE: Record<CorClinica, string> = {
  */
 const CROWN_FILL: Record<CorClinica, string> = {
   coral:   'var(--color-coral-pale)',
-  teal:    'color-mix(in srgb, var(--color-teal) 24%, var(--color-surface-alt))',
+  teal:    'color-mix(in srgb, var(--color-clinical-done) 24%, var(--color-surface-alt))',
   slate:   'var(--color-slate-pale)',
   warning: 'var(--color-warning-pale)',
 };
@@ -121,7 +121,7 @@ const STATUS_CLINICO_LABEL: Record<CorClinica, string> = {
   coral:   'a fazer',
   teal:    'feito aqui',
   slate:   'pré-existente',
-  warning: 'próxima seção',
+  warning: 'próxima sessão',
 };
 
 /**
@@ -275,16 +275,17 @@ export function buildResumos(
     }
     map.set(dente, r);
   }
-  // R-127 — ausência é um estado estrutural exclusivo. Um implante (ou qualquer registro
-  // posterior) precisa voltar a desenhar o dente; o evento antigo continua no histórico e
-  // segue contribuindo para os demais resumos compatíveis.
+  // R-127 — ausência é um estado estrutural exclusivo. Só uma intervenção JÁ realizada
+  // posterior pode devolver o desenho normal do dente. Uma indicação de implante ainda
+  // depende justamente de o dente permanecer ausente; não pode apagar esse estado visual.
   for (const [dente, principal] of principais) {
     const r = map.get(dente);
     if (!r) continue;
-    const ausenciaAtual = principal.status === 'realizado'
-      && (principal.tipo === 'exodontia' || principal.tipo === 'esfoliacao');
-    r.ausente = ausenciaAtual;
-    r.esfoliado = ausenciaAtual && principal.tipo === 'esfoliacao';
+    if (principal.status !== 'realizado') continue;
+
+    const confirmaAusencia = principal.tipo === 'exodontia' || principal.tipo === 'esfoliacao';
+    r.ausente = confirmaAusencia;
+    r.esfoliado = confirmaAusencia && principal.tipo === 'esfoliacao';
   }
   for (const dente of mexidos) {
     const r = map.get(dente);
@@ -1200,7 +1201,7 @@ export function Odontograma({
             )}
             {hoveredResumo?.cor === 'warning' && (
               <span className="text-[10px] font-semibold ml-0.5" style={{ color: COR_TOKEN_INK.warning }}>
-                · próxima seção
+                · próxima sessão
               </span>
             )}
             {hoveredResumo?.cor === 'teal' && (

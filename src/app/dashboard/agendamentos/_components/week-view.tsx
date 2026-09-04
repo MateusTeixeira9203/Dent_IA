@@ -4,8 +4,8 @@ import { useMemo } from 'react';
 import {
   format,
   startOfWeek,
-  endOfWeek,
   eachDayOfInterval,
+  addDays,
   addWeeks,
   subWeeks,
   isToday as isDateToday,
@@ -86,9 +86,16 @@ export function WeekView({
   onSlotVazioClick,
   onCargaClick,
 }: WeekViewProps) {
-  const weekStart = startOfWeek(selectedWeek, { weekStartsOn: 0 });
-  const weekEnd   = endOfWeek(selectedWeek, { weekStartsOn: 0 });
-  const days      = eachDayOfInterval({ start: weekStart, end: weekEnd });
+  const { weekStart, weekEnd, weekEndExclusive, days } = useMemo(() => {
+    const inicio = startOfWeek(selectedWeek, { weekStartsOn: 1 });
+    const fim = addDays(inicio, 5);
+    return {
+      weekStart: inicio,
+      weekEnd: fim,
+      weekEndExclusive: addDays(fim, 1),
+      days: eachDayOfInterval({ start: inicio, end: fim }),
+    };
+  }, [selectedWeek]);
 
   // "Todos" só vira mapa de carga quando há de fato mais de um dentista pra comparar —
   // com 0 ou 1, a indireção não ajuda ninguém, mostra a grade direto (mesma regra do Dia).
@@ -97,9 +104,9 @@ export function WeekView({
   const weekApts = useMemo(() => {
     return agendamentos.filter(apt => {
       const d = parseISO(apt.data_hora);
-      return d >= weekStart && d <= weekEnd;
+      return d >= weekStart && d < weekEndExclusive;
     });
-  }, [agendamentos, weekStart, weekEnd]);
+  }, [agendamentos, weekStart, weekEndExclusive]);
 
   // O que a GRADE (cabeçalho de dia + grade cheia) mostra: tudo, ou só o dentista filtrado.
   const aptsEfetivos = useMemo(() => {
@@ -120,9 +127,9 @@ export function WeekView({
   const weekBloqueios = useMemo(() => {
     return bloqueios.filter(bl => {
       const d = parseISO(bl.data_hora);
-      return d >= weekStart && d <= weekEnd;
+      return d >= weekStart && d < weekEndExclusive;
     });
-  }, [bloqueios, weekStart, weekEnd]);
+  }, [bloqueios, weekStart, weekEndExclusive]);
 
   const bloqueiosEfetivos = useMemo(() => {
     if (!isSecretaria || filtroDentistaId === 'todos') return weekBloqueios;

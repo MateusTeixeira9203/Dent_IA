@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Type, type Schema } from '@google/genai';
-import { getDentistaCached } from '@/lib/get-dentista';
+import { getDexActorCached } from '@/lib/get-dentista';
 import { withRateLimit } from '@/lib/rate-limit';
 import { generateStructuredGemini } from '@/lib/ai/provider';
 import { logAICall } from '@/lib/ai/logger';
@@ -9,6 +9,9 @@ import { isArch } from '@/lib/arcadas';
 import { classificarStatusDex } from '@/lib/dex/classificar-status';
 import { reconciliarProcedimentosDex } from '@/lib/dex/reconciliar-procedimentos';
 import { formatarEvolucaoRequestSchema } from '@/lib/dex/schemas';
+import { formatDexServerTiming } from '@/lib/dex/latencia';
+import { aplicarAusenciasExplicitamenteNarradas } from '@/lib/odontograma/estado-ausencia';
+import { normalizarBitolaOrto } from '@/lib/especialidades/normalizar-bitola-orto';
 import type {
   OdontogramaEventoInput,
   TipoRegistroOdontograma,
@@ -278,11 +281,15 @@ function parseOrto(wire: unknown): OrtoManutencaoInfo | null {
   // dita, não há manutenção estruturada — o relato cai no texto da visita.
   if (w.arcada !== 'superior' && w.arcada !== 'inferior' && w.arcada !== 'ambas') return null;
   const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const fio = (v: unknown): string | null => {
+    const valor = str(v);
+    return valor ? normalizarBitolaOrto(valor) : null;
+  };
   // R-50 (F1) — os `_inferior` só fazem sentido com 'ambas'; em arcada única ficam undefined
   // (o tipo os declara opcionais), não null, pra não gravar campo vazio à toa.
   const inferior = w.arcada === 'ambas'
     ? {
-        fio_inferior:                   str(w.fio_inferior),
+        fio_inferior:                   fio(w.fio_inferior),
         ativacao_inferior:              str(w.ativacao_inferior),
         elastico_corrente_inferior:     str(w.elastico_corrente_inferior),
         elastico_intermaxilar_inferior: str(w.elastico_intermaxilar_inferior),
@@ -290,7 +297,7 @@ function parseOrto(wire: unknown): OrtoManutencaoInfo | null {
     : {};
   return {
     arcada:                w.arcada,
-    fio:                   str(w.fio),
+    fio:                   fio(w.fio),
     ativacao:              str(w.ativacao),
     elastico_corrente:     str(w.elastico_corrente),
     elastico_intermaxilar: str(w.elastico_intermaxilar),
@@ -299,15 +306,18 @@ function parseOrto(wire: unknown): OrtoManutencaoInfo | null {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const limited = await withRateLimit(req, 'dex:formatar-evolucao', 60, 60_000);
-  if (limited) return limited;
-
+  const requestStartedAt = performance.now();
   try {
-    const dentista = await getDentistaCached();
-    if (!dentista) return NextResponse.json({ error: 'Não autenticado.', code: 'UNAUTHORIZED' }, { status: 401 });
+    const [limited, actor] = await Promise.all([
+      withRateLimit(req, 'dex:formatar-evolucao', 60, 60_000),
+      getDexActorCached(),
+    ]);
+    if (limited) return limited;
+
+    if (!actor) return NextResponse.json({ error: 'Não autenticado.', code: 'UNAUTHORIZED' }, { status: 401 });
 
     const limitedIdentity = await withRateLimit(
-      req, 'dex:formatar-evolucao', 20, 60_000, `${dentista.clinica_id}:${dentista.id}`,
+      req, 'dex:formatar-evolucao', 20, 60_000, `${actor.clinicaId}:${actor.dentistaId}`,
     );
     if (limitedIdentity) return limitedIdentity;
 
@@ -410,11 +420,13 @@ Se o relato for APENAS manutenção de aparelho (troca de arco, ativação, borr
 - ⛔⛔ ARCADA É OBRIGATÓRIA E NUNCA UM PALPITE — leia com atenção, é o erro mais comum aqui: "ambas" SÓ quando o relato NOMEIA as duas arcadas (ex: "superior… inferior…", "arco de cima e o de baixo", "as duas"). Relato genérico de manutenção SEM nomear nenhuma arcada — mesmo mencionando ativação, troca de ligadura, elástico — NÃO é "ambas": é arcada não dita, e a resposta é "orto_manutencao": null. "Ambas" NÃO é o valor seguro pra quando você não sabe — é o valor pra quando o dentista falou as DUAS explicitamente. Errado: "troquei as ligaduras" → arcada:"ambas" (chute — ligadura sozinha não diz arcada nenhuma). Certo: "troquei as ligaduras" (sem mais nada) → orto_manutencao: null. Certo: "troquei as ligaduras dos dois lados, de cima e de baixo" → arcada:"ambas".
 - DUAS ARCADAS (só depois de confirmar que arcada:"ambas" é legítima pela regra acima): os campos base (fio, ativacao, elastico_corrente, elastico_intermaxilar) descrevem a arcada SUPERIOR, e os campos fio_inferior, ativacao_inferior, elastico_corrente_inferior, elastico_intermaxilar_inferior descrevem a INFERIOR. Preencha os DOIS conjuntos só se o relato disse o que foi feito em CADA arcada separadamente — ex: "superior 0.018 de aço, inferior 0.016 NiTi" → fio:"0.018 aço" E fio_inferior:"0.016 NiTi". NUNCA copie o mesmo valor pros dois conjuntos — se você está prestes a repetir a mesma string em ativacao e ativacao_inferior, isso é sinal de que a arcada não foi dita duas vezes de verdade; reconsidere se não é o caso de "arcada não dita" acima. Em arcada única, deixe os campos _inferior null.`;
 
+    const aiStartedAt = performance.now();
     const result = await generateStructuredGemini<EvolucaoWire>({
       prompt,
       responseSchema: EVOLUCAO_SCHEMA,
       feature: 'formatar-evolucao',
     });
+    const aiFinishedAt = performance.now();
 
     const wire = result.data;
 
@@ -449,9 +461,13 @@ Se o relato for APENAS manutenção de aparelho (troca de arco, ativação, borr
     const procedimentos = Array.isArray(wire.procedimentos)
       ? (wire.procedimentos as unknown[]).filter((p): p is string => typeof p === 'string')
       : [];
+    const eventosComAusencias = aplicarAusenciasExplicitamenteNarradas(
+      entrada.data.texto,
+      parseEventos(wire.odontograma_eventos, modo),
+    );
     const odontogramaEventos = reconciliarProcedimentosDex({
       procedimentos,
-      eventos: parseEventos(wire.odontograma_eventos, modo),
+      eventos: eventosComAusencias,
       dentesObservacoes,
       modo,
     }).eventos;
@@ -474,8 +490,8 @@ Se o relato for APENAS manutenção de aparelho (troca de arco, ativação, borr
       model:      result.model,
       latencyMs:  result.latencyMs,
       success:    true,
-      dentistaId: dentista.id,
-      clinicaId:  dentista.clinica_id,
+      dentistaId: actor.dentistaId,
+      clinicaId:  actor.clinicaId,
       promptVersion: DEX_PROMPT_VERSION,
       inputSize: entrada.data.texto.length,
       outputItems: parsed.odontograma_eventos.length,
@@ -484,7 +500,18 @@ Se o relato for APENAS manutenção de aparelho (troca de arco, ativação, borr
       httpStatus: 200,
     });
 
-    return NextResponse.json(parsed satisfies EvolucaoFormatada);
+    return NextResponse.json(parsed satisfies EvolucaoFormatada, {
+      headers: {
+        'Server-Timing': formatDexServerTiming({
+          preAiMs: aiStartedAt - requestStartedAt,
+          aiMs: aiFinishedAt - aiStartedAt,
+          postAiMs: performance.now() - aiFinishedAt,
+        }),
+        'X-Dex-Model': result.model,
+        'X-Dex-Prompt-Version': DEX_PROMPT_VERSION,
+        'X-Dex-Prompt-Chars': String(prompt.length),
+      },
+    });
   } catch (err) {
     console.error('[dex/formatar-evolucao] Erro:', err);
     const timeout = err instanceof Error && err.message.includes('AI timeout');

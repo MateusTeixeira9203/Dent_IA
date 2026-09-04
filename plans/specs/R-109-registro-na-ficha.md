@@ -1,6 +1,6 @@
 # R-109 — Registro na ficha: as peças do Meu dia + trilho único
 
-> **SPEC** · **R-109** · 🔵 ativo
+> **SPEC** · **R-109** · 🟡 fluxo publicado; validações remanescentes no R-152
 > **Aberto:** 2026-08-13 · **Fechado:** — · **Fase:** **`aprovada`** (por ele, 13/08)
 > **Modelo:** Sonnet — porte de mecanismo que já existe e já foi testado ao vivo; o risco é
 > threading de prop e remoção de caminho morto, não ambiguidade de desenho.

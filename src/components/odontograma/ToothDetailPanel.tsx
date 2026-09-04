@@ -68,7 +68,7 @@ const COR_TOKEN_INK = {
  * acessível (achado auditoria UX 19/07, CRITICAL #3: faces eram inoperáveis
  * por teclado/leitor de tela). */
 const ROTULO_ESTADO_FACE = {
-  coral: 'a fazer', teal: 'feito', slate: 'pré-existente', warning: 'próxima seção',
+  coral: 'a fazer', teal: 'feito', slate: 'pré-existente', warning: 'próxima sessão',
 } satisfies Record<CorClinica, string>;
 
 /** Chips de ação a nível de dente inteiro — cada um cicla os `modos` e depois remove.
@@ -353,6 +353,7 @@ export function ToothDetailPanel({
     ancora,
     grupo_id: null,
     papel_no_grupo: null,
+    procedimentoNome: TIPO_LABEL[tipo],
     observacao: '',
     realizado_em: status === 'realizado' ? dataPadrao : null,
   });
@@ -407,7 +408,7 @@ export function ToothDetailPanel({
     const ev = {
       ...novo(tipo, modos[0], ancora),
       procedimentoId: procedimento?.id ?? null,
-      procedimentoNome: procedimento?.nome ?? null,
+      procedimentoNome: procedimento?.nome ?? TIPO_LABEL[tipo],
     };
     all.push(grupoId ? { ...ev, grupo_id: grupoId } : ev);
     // Endo/implante acabaram de ganhar tabela (migration 106) — abre sozinha na criação,
@@ -1177,7 +1178,7 @@ export function ToothDetailPanel({
                     <button
                       type="button"
                       onClick={() => toggleMomentoEvento(ev)}
-                      title={cor === 'warning' ? 'Marcar pra sessão atual' : 'Marcar pra próxima seção'}
+                      title={cor === 'warning' ? 'Marcar pra sessão atual' : 'Marcar pra próxima sessão'}
                       aria-pressed={cor === 'warning'}
                       className="p-1 rounded-md shrink-0 outline-none focus-visible:ring-1 focus-visible:ring-teal transition-colors"
                       style={{

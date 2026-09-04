@@ -12,6 +12,7 @@ import { z } from 'zod';
 import type { EspecialidadePlugin } from './plugin';
 import { OrtoCard } from '@/components/fichas/orto-card';
 import { OrtoForm } from '@/components/fichas/orto-form';
+import { normalizarBitolaEmRegistroOrto } from './normalizar-bitola-orto';
 
 /** Espelha OrtoManutencaoInfo (src/types/odontograma.ts §1.5). Contrato de forma na escrita e no form manual. */
 export const ortoManutencaoSchema = z.object({
@@ -46,8 +47,10 @@ export function normalizarOrtoManutencao(
 ): OrtoManutencaoDetalhe | null {
   if (!valor) return null;
 
-  const registroSuperior = textoOuNull(valor.registro_superior);
-  const registroInferior = textoOuNull(valor.registro_inferior);
+  const registroSuperiorOriginal = textoOuNull(valor.registro_superior);
+  const registroInferiorOriginal = textoOuNull(valor.registro_inferior);
+  const registroSuperior = registroSuperiorOriginal ? normalizarBitolaEmRegistroOrto(registroSuperiorOriginal) : null;
+  const registroInferior = registroInferiorOriginal ? normalizarBitolaEmRegistroOrto(registroInferiorOriginal) : null;
   const observacaoGeral = textoOuNull(valor.observacao_geral);
   const temRegistroLivre = registroSuperior != null || registroInferior != null;
   const temRegistroLegado = [

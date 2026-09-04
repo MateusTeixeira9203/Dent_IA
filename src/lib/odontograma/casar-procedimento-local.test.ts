@@ -120,3 +120,19 @@ test('plural não quebra agrupamento: "extrações no 12 e restaurações no 15"
   assert.deepEqual(r.find((x) => x.tipo === 'exodontia')?.dentes, [12]);
   assert.deepEqual(r.find((x) => x.tipo === 'carie_restauracao')?.dentes, [15]);
 });
+
+test('relato composto: não cruza extração, implante e ausência entre dentes diferentes', () => {
+  const relato = 'Encontrei um canal no dente 18, vou ter que usar extração no dente 44, o dente 23 está ausente e vou ter que usar implante nele também. E o dente 37 também é ausente.';
+  const r = casarProcedimentoLocal(relato, []);
+
+  assert.deepEqual(r.find((x) => x.tipo === 'endodontia' && x.origem === null)?.dentes, [18]);
+  assert.deepEqual(r.find((x) => x.tipo === 'exodontia' && x.origem === null)?.dentes, [44]);
+  assert.deepEqual(r.find((x) => x.tipo === 'implante')?.dentes, [23]);
+  assert.deepEqual(r.find((x) => x.origem === 'preexistente')?.dentes, [23, 37]);
+});
+
+test('procedimento sem referência inequívoca não recebe dentes globais de outro procedimento', () => {
+  const r = casarProcedimentoLocal('canal no 18, implante a definir', []);
+  assert.deepEqual(r.find((x) => x.tipo === 'endodontia')?.dentes, [18]);
+  assert.deepEqual(r.find((x) => x.tipo === 'implante')?.dentes, []);
+});

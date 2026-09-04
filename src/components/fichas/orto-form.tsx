@@ -11,6 +11,7 @@
 
 import type { PluginFormProps } from '@/lib/especialidades/plugin';
 import type { OrtoManutencaoDetalhe } from '@/lib/especialidades/orto';
+import { normalizarBitolaEmRegistroOrto } from '@/lib/especialidades/normalizar-bitola-orto';
 
 /** Estado inicial de uma manutenção — fonte única (voz e entrada manual R-05 reusam). */
 export const ORTO_VAZIO: OrtoManutencaoDetalhe = {
@@ -60,6 +61,10 @@ function DadosExtraidos({ valor }: { valor: OrtoManutencaoDetalhe }) {
 export function OrtoForm({ valor, onChange, readOnly }: PluginFormProps<OrtoManutencaoDetalhe>) {
   const v = valor ?? ORTO_VAZIO;
   const set = (patch: Partial<OrtoManutencaoDetalhe>) => onChange({ ...v, ...patch });
+  const normalizarRegistro = (campo: 'registro_superior' | 'registro_inferior', texto: string) => {
+    const normalizado = normalizarBitolaEmRegistroOrto(texto);
+    if (normalizado !== texto) set({ [campo]: limpar(normalizado) });
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -67,12 +72,14 @@ export function OrtoForm({ valor, onChange, readOnly }: PluginFormProps<OrtoManu
         <div>
           <label className={labelCls} htmlFor="orto-superior">Arcada superior</label>
           <textarea id="orto-superior" rows={4} className={inputCls} placeholder="Ex.: troca de fio 0.018 aço, ativação leve" disabled={readOnly}
-            value={v.registro_superior ?? ''} onChange={(e) => set({ registro_superior: limpar(e.target.value) })} />
+            value={v.registro_superior ?? ''} onChange={(e) => set({ registro_superior: limpar(e.target.value) })}
+            onBlur={(e) => normalizarRegistro('registro_superior', e.target.value)} />
         </div>
         <div>
           <label className={labelCls} htmlFor="orto-inferior">Arcada inferior</label>
           <textarea id="orto-inferior" rows={4} className={inputCls} placeholder="Ex.: troca de ligaduras; elástico Classe II" disabled={readOnly}
-            value={v.registro_inferior ?? ''} onChange={(e) => set({ registro_inferior: limpar(e.target.value) })} />
+            value={v.registro_inferior ?? ''} onChange={(e) => set({ registro_inferior: limpar(e.target.value) })}
+            onBlur={(e) => normalizarRegistro('registro_inferior', e.target.value)} />
         </div>
       </div>
       <div>

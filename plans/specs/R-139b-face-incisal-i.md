@@ -1,7 +1,7 @@
 # R-139b — Face incisal como `I`
 
-> SPEC · R-139b · 🟡 implementação local  
-> Aberto em 2026-08-28 · Fase: validação manual antes de publicação · Sem mudança de schema
+> SPEC · R-139b · 🟡 no ar; auditoria completa pendente
+> Aberto em 2026-08-28 · Fase: validação em produção · Sem mudança de schema
 
 ## 1. Problema
 
