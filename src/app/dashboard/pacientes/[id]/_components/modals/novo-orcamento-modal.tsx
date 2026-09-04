@@ -51,6 +51,8 @@ export interface NovoOrcamentoModalProps {
   setNovoOrcValorFinal: React.Dispatch<React.SetStateAction<number | null>>;
   orcSaving: boolean;
   modoPersistencia: 'novo' | 'adicionar';
+  /** Meu Dia sem evento inicial: a linha escolhida será registrada clinicamente antes da proposta. */
+  contextoClinicoPendente: boolean;
   resumoOrigemOrcamento: {
     disponiveis: number;
     deOutrosResponsaveis: number;
@@ -92,6 +94,7 @@ export function NovoOrcamentoModal({
   setNovoOrcValorFinal,
   orcSaving,
   modoPersistencia,
+  contextoClinicoPendente,
   resumoOrigemOrcamento,
   onCriarOrcamento,
   onSelecionarFicha,
@@ -246,7 +249,9 @@ export function NovoOrcamentoModal({
                   <p className="mt-1 text-sm text-text-muted">
                     {modoPersistencia === 'adicionar'
                       ? 'Novos procedimentos desta ficha. O orçamento atual não muda até você confirmar.'
-                      : 'Itens encontrados na ficha. Revise valores antes de criar.'}
+                      : contextoClinicoPendente
+                        ? 'Escolha os procedimentos. Eles serão registrados como planejados antes da proposta.'
+                        : 'Itens encontrados na ficha. Revise valores antes de criar.'}
                   </p>
                 </div>
                 <span className="shrink-0 rounded-full bg-teal/10 px-2.5 py-1 text-xs font-semibold text-teal-ink">

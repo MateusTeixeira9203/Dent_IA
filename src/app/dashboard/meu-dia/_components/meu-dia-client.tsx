@@ -90,11 +90,16 @@ function rotuloNovo(e: OdontogramaEventoDraft): string {
 import { DenteHistoricoCard } from './dente-historico-card';
 import { VisitaLeituraCard } from './visita-leitura-card';
 import { ToothDetailPanel } from '@/components/odontograma/ToothDetailPanel';
-import { useOrcamentoModal } from '@/app/dashboard/pacientes/[id]/_components/use-orcamento-modal';
+import {
+  useOrcamentoModal,
+  type ItemManualClinico,
+  type PrepararItensClinicosResult,
+} from '@/app/dashboard/pacientes/[id]/_components/use-orcamento-modal';
 import { NovoOrcamentoModal } from '@/app/dashboard/pacientes/[id]/_components/modals/novo-orcamento-modal';
 import { DicaZona } from './dica-zona';
 import { DexOnboardingController } from './dex-onboarding-controller';
 import { hojeBRT } from '@/lib/hora-brt';
+import { criarEventosContextuais } from '@/lib/odontograma/criar-eventos-contextuais';
 import { responsavelPassaFiltro, FILTRO_MEUS } from '@/lib/fichas/filtro-responsavel';
 import type { MeuDiaData, MeuDiaPendencia, MeuDiaVisita } from '@/server/dashboard/get-meu-dia';
 import { TIPO_LABEL, type OdontogramaEventoDraft } from '@/types/odontograma';
@@ -342,6 +347,53 @@ export function MeuDiaClient({
   // dentistasClinica sempre [], sem onOrcamentoCriado (não há lista de orçamentos aqui).
   // `pacienteId` segue o slot selecionado — os botões que abrem o modal só existem quando
   // há slotSelecionado, então o fallback '' nunca é de fato usado pra buscar nada.
+  const prepararItensClinicosDoOrcamento = async (
+    itens: ItemManualClinico[],
+  ): Promise<PrepararItensClinicosResult> => {
+    if (!slotSelecionado) return { ok: false, erro: 'Selecione um atendimento antes de gerar o orçamento.' };
+
+    const eventosPorIndice = itens.map((item) => {
+      const procedimentoNome = item.descricao.split(' — ')[0]?.trim() || item.descricao.trim();
+      const eventos = criarEventosContextuais({
+        tipo: 'outro',
+        procedimentoId: item.procedimentoId,
+        procedimentoNome,
+        ancoras: Array.from({ length: item.quantidade }, () => ({ nivel: 'geral' as const })),
+        contexto: { capturaId: crypto.randomUUID(), modo: 'a_fazer' },
+        dataPadrao: hojeBRT(),
+        observacao: procedimentoNome,
+      });
+      return { indice: item.indice, eventoIds: eventos.map((evento) => evento.id), eventos };
+    });
+    const eventosCompletos = [...eventosDraft, ...eventosPorIndice.flatMap((item) => item.eventos)];
+    let resultado: SalvarFichaResult;
+    try {
+      resultado = await salvarVisitaMeuDia({
+        visitaKey,
+        fichaId: fichaRascunhoId ?? undefined,
+        pacienteId: slotSelecionado.pacienteId,
+        agendamentoId: slotSelecionado.agendamentoId,
+        textoVisita,
+        eventosDraft: eventosCompletos,
+        finalizarAtendimento: false,
+      });
+    } catch {
+      return { ok: false, erro: 'Falha de conexão ao registrar os procedimentos. Tente novamente.' };
+    }
+    if (!resultado.ok) return { ok: false, erro: resultado.error };
+    if (resultado.eventosFalharam) {
+      return { ok: false, erro: 'A ficha foi salva, mas os procedimentos não puderam ser registrados. Tente novamente.' };
+    }
+
+    setEventosDraft(eventosCompletos);
+    setFichaRascunhoId(resultado.fichaId);
+    return {
+      ok: true,
+      fichaId: resultado.fichaId,
+      eventosPorIndice: eventosPorIndice.map(({ indice, eventoIds }) => ({ indice, eventoIds })),
+    };
+  };
+
   const orcamentoModal = useOrcamentoModal({
     pacienteId: slotSelecionado?.pacienteId ?? '',
     clinicaId,
@@ -349,6 +401,7 @@ export function MeuDiaClient({
     procedimentosClinica: catalogoProcedimentos,
     isSecretaria: false,
     dentistasClinica: [],
+    prepararItensClinicos: prepararItensClinicosDoOrcamento,
   });
 
   // R-78 F0 — hook (era componente `<RegistrarPainel key={agendamentoId}>`): mesma
@@ -402,7 +455,7 @@ export function MeuDiaClient({
         if (fichaRascunhoId) {
           void orcamentoModal.abrirOrcamentoParaFicha(fichaRascunhoId);
         } else {
-          void orcamentoModal.abrirPickerFichasAbertas(null);
+          orcamentoModal.abrirMontagemManualMeuDia();
         }
         return;
       }

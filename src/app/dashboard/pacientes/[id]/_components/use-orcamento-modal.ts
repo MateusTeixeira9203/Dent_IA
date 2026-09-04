@@ -53,7 +53,24 @@ export interface UseOrcamentoModalInput {
   onOrcamentoCriado?: (orcamento: OrcamentoComItens) => void;
   /** O perfil abre o detalhe persistido assim que a proposta nasce, sem exigir aba/card. */
   onContinuarConfiguracao?: (orcamentoId: string) => void;
+  /**
+   * No Meu Dia, uma linha escolhida manualmente no catálogo ainda não tem evento clínico.
+   * O chamador a transforma em procedimento planejado e persiste a ficha sem encerrar a visita
+   * antes desta hook criar a proposta financeira.
+   */
+  prepararItensClinicos?: (itens: ItemManualClinico[]) => Promise<PrepararItensClinicosResult>;
 }
+
+export interface ItemManualClinico {
+  indice: number;
+  procedimentoId: string;
+  descricao: string;
+  quantidade: number;
+}
+
+export type PrepararItensClinicosResult =
+  | { ok: true; fichaId: string; eventosPorIndice: Array<{ indice: number; eventoIds: string[] }> }
+  | { ok: false; erro: string };
 
 export interface UseOrcamentoModalResult {
   abrirNovoOrcamento: () => Promise<void>;
@@ -70,6 +87,9 @@ export interface UseOrcamentoModalResult {
    *  sem nenhum registro clínico por trás). `null` só no caminho antigo sem rascunho (agrega
    *  fichas já existentes — nenhuma delas se beneficia de um fichaId único aqui). */
   abrirPickerFichasAbertas: (fichaId: string | null, eventosRascunho?: EventoOdontogramaParaOrc[]) => Promise<void>;
+  /** Entrada do Meu Dia sem procedimento no odontograma: o item escolhido vira evento planejado
+   * no checkpoint de criação, mantendo a consulta aberta. */
+  abrirMontagemManualMeuDia: () => void;
   isLoadingFichaParaOrc: boolean;
   modalProps: NovoOrcamentoModalProps;
 }
@@ -99,7 +119,7 @@ const SELECT_FICHA_PARA_ORC_AGREGADO = `${CAMPOS_FICHA_ORC}, odontograma_eventos
 
 export function useOrcamentoModal({
   pacienteId, clinicaId, meuDentistaId, procedimentosClinica, erroCatalogo = null, isSecretaria, dentistasClinica,
-  onOrcamentoCriado, onContinuarConfiguracao,
+  onOrcamentoCriado, onContinuarConfiguracao, prepararItensClinicos,
 }: UseOrcamentoModalInput): UseOrcamentoModalResult {
   const router = useRouter();
 
@@ -118,6 +138,7 @@ export function useOrcamentoModal({
   const [eventoIdsJaOrcados, setEventoIdsJaOrcados] = useState<Set<string>>(() => new Set());
   const [resumoOrigemOrcamento, setResumoOrigemOrcamento] = useState<ResumoOrigemOrcamento | null>(null);
   const [bloqueioFicha, setBloqueioFicha] = useState<string | null>(null);
+  const [contextoClinicoPendente, setContextoClinicoPendente] = useState(false);
   // Pré-seleciona o 1º dentista da lista assim que ela chega — só quando ainda vazio, nunca
   // sobrescreve uma escolha manual já feita (o pai só popula `dentistasClinica` quando
   // isSecretaria; dentista comum nunca aciona isto, `dentistasClinica` fica sempre []).
@@ -498,6 +519,7 @@ export function useOrcamentoModal({
   // continua chamado: `fichasParaOrc` alimenta o `← Voltar` (§5.3), o caminho manual pro backlog.
   const abrirPickerFichasAbertas = async (fichaId: string | null, eventosRascunho: EventoOdontogramaParaOrc[] = []) => {
     setOrcError(null);
+    setContextoClinicoPendente(false);
     setIsLoadingFichaParaOrc(true);
     try {
       const fichas = await carregarFichasAgregado();
@@ -528,6 +550,19 @@ export function useOrcamentoModal({
     setIsNovoOrcOpen(true);
   };
 
+  const abrirMontagemManualMeuDia = () => {
+    setOrcError(null);
+    setFichaOrcId(null);
+    setFichasParaOrc([]);
+    setModoPersistencia({ tipo: 'novo' });
+    setNovoOrcItens([ITEM_VAZIO]);
+    setResumoOrigemOrcamento(null);
+    setBloqueioFicha(null);
+    setContextoClinicoPendente(true);
+    setEtapaNovoOrc('itens');
+    setIsNovoOrcOpen(true);
+  };
+
   const selecionarFichaParaOrc = async (fichaId: string | null) => {
     setFichaOrcId(fichaId);
     if (!fichaId) {
@@ -555,6 +590,7 @@ export function useOrcamentoModal({
   // ficha nem outro dentista. Quem quer ver várias fichas juntas usa o picker (agrega).
   const abrirOrcamentoParaFicha = async (fichaId: string) => {
     setOrcError(null);
+    setContextoClinicoPendente(false);
     setIsLoadingFichaParaOrc(true);
     try {
       const supabase = createClient();
@@ -686,13 +722,64 @@ export function useOrcamentoModal({
     const finalValido    = novoOrcValorFinal !== null ? Math.max(0, novoOrcValorFinal) : subtotalValido;
     const descontoValor  = Math.max(0, Math.round((subtotalValido - finalValido) * 100) / 100);
 
-    const itensParaSalvar = itensValidos.map((i) => ({
+    let fichaParaSalvar = fichaOrcId;
+    let itensParaSalvar = itensValidos.map((i) => ({
       procedimentoId: i.procedimentoId || null,
       descricao: i.descricao,
       quantidade: i.quantidade,
       precoUnitario: parseValorBR(i.preco),
       eventoIds: i.eventoIds ?? [],
     }));
+
+    const itensManuais = novoOrcItens.flatMap((item, indice) => (
+      item.selecionado !== false && item.descricao.trim() && (item.eventoIds?.length ?? 0) === 0
+        ? [{ indice, procedimentoId: item.procedimentoId, descricao: item.descricao, quantidade: item.quantidade }]
+        : []
+    ));
+
+    if (prepararItensClinicos && contextoClinicoPendente && itensManuais.length > 0) {
+      if (itensManuais.some((item) => !item.procedimentoId)) {
+        setOrcError('Escolha um procedimento do catálogo ou cadastre-o antes de gerar o orçamento.');
+        setOrcSaving(false);
+        return;
+      }
+
+      const checkpoint = await prepararItensClinicos(itensManuais);
+      if (!checkpoint.ok) {
+        setOrcError(checkpoint.erro);
+        setOrcSaving(false);
+        return;
+      }
+
+      const eventoIdsPorIndice = new Map(
+        checkpoint.eventosPorIndice.map((item) => [item.indice, item.eventoIds]),
+      );
+      fichaParaSalvar = checkpoint.fichaId;
+      setFichaOrcId(checkpoint.fichaId);
+      setContextoClinicoPendente(false);
+      setNovoOrcItens((prev) => prev.map((item, indice) => {
+        const eventoIds = eventoIdsPorIndice.get(indice);
+        return eventoIds ? { ...item, eventoIds, origem: 'evento' } : item;
+      }));
+      itensParaSalvar = novoOrcItens.flatMap((item, indice) => {
+        if (item.selecionado === false || !item.descricao.trim()) return [];
+        return [{
+          procedimentoId: item.procedimentoId || null,
+          descricao: item.descricao,
+          quantidade: item.quantidade,
+          precoUnitario: parseValorBR(item.preco),
+          eventoIds: item.eventoIds?.length
+            ? item.eventoIds
+            : eventoIdsPorIndice.get(indice) ?? [],
+        }];
+      });
+    }
+
+    if (contextoClinicoPendente && !fichaParaSalvar) {
+      setOrcError('Registre ao menos um procedimento clínico antes de criar o orçamento.');
+      setOrcSaving(false);
+      return;
+    }
 
     if (modoPersistencia.tipo === 'adicionar') {
       const result = await adicionarItensAoOrcamento({
@@ -714,7 +801,7 @@ export function useOrcamentoModal({
     const result = await criarOrcamento({
       pacienteId,
       desconto: descontoValor,
-      fichaId: fichaOrcId,
+      fichaId: fichaParaSalvar,
       dentistaId: isSecretaria ? novoOrcDentistaAlvoId : undefined,
       itens: itensParaSalvar,
     });
@@ -822,6 +909,7 @@ export function useOrcamentoModal({
         setEventoIdsJaOrcados(new Set());
         setResumoOrigemOrcamento(null);
         setBloqueioFicha(null);
+        setContextoClinicoPendente(false);
         setNovoOrcPlanoForma(null); setNovoOrcNumParcelas('3'); setNovoOrcPrimeiroVencimento(''); setNovoOrcParcelasForma('');
       }
     },
@@ -848,6 +936,7 @@ export function useOrcamentoModal({
     setNovoOrcValorFinal,
     orcSaving,
     modoPersistencia: modoPersistencia.tipo,
+    contextoClinicoPendente,
     resumoOrigemOrcamento,
     onCriarOrcamento: () => void handleCriarOrcamento(),
     onSelecionarFicha: selecionarFichaParaOrc,
@@ -867,5 +956,12 @@ export function useOrcamentoModal({
     setPlanoParcelasForma: setNovoOrcParcelasForma,
   };
 
-  return { abrirNovoOrcamento, abrirOrcamentoParaFicha, abrirPickerFichasAbertas, isLoadingFichaParaOrc, modalProps };
+  return {
+    abrirNovoOrcamento,
+    abrirOrcamentoParaFicha,
+    abrirPickerFichasAbertas,
+    abrirMontagemManualMeuDia,
+    isLoadingFichaParaOrc,
+    modalProps,
+  };
 }
