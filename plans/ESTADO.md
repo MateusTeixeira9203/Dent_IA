@@ -45,6 +45,6 @@ Você vai separar os novos pontos de trabalho. Cada um entra na fila com evidên
 dependência; nenhum item já publicado volta a `ativo` apenas por ainda faltar uma rodada de
 validação.
 
-**Fora da classificação atual:** o pacote jurídico, scripts auxiliares e alterações clínicas sem
-spec ativa ficam intocados no worktree até você apontar a qual item pertencem. Eles não entram em
-commit junto com R-153.
+**Fora da classificação atual:** alterações clínicas sem spec ativa ficam intocadas até você
+apontar a qual item pertencem. O pacote jurídico e seus scripts auxiliares já foram versionados
+em commits documentais próprios e não devem ser misturados com R-153.
