@@ -1856,7 +1856,7 @@ export function FichasTab({
 
   const handleDelete = async (id: string) => {
     try {
-      const result = await deletarFicha(id, patientId);
+      const result = await deletarFicha(id);
       if (!result.ok) {
         toast.error(result.error ?? "Erro ao apagar ficha.");
         return;

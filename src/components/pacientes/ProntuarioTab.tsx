@@ -4,14 +4,16 @@ import dynamic from 'next/dynamic';
 import { useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { AlertTriangle, ArrowLeft, CalendarPlus, Check, ChevronDown, ChevronRight, ClipboardCheck, FileText, FolderOpen, Forward, Loader2, PenLine, Plus, Star, Stethoscope } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CalendarPlus, Check, ChevronDown, ChevronRight, ClipboardCheck, Download, Ellipsis, FileText, FolderOpen, Forward, Loader2, PenLine, Plus, Star, Stethoscope, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import type SignaturePadLib from 'signature_pad';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ToothDetailPanel } from '@/components/odontograma/ToothDetailPanel';
 import { Odontograma } from '@/components/odontograma/Odontograma';
+import { ProcedimentoDetalheFicha } from '@/components/pacientes/procedimento-detalhe-ficha';
 import { NestaSessaoBloco } from '@/app/dashboard/meu-dia/_components/nesta-sessao-bloco';
 import {
   useRegistrarPainel,
@@ -19,9 +21,10 @@ import {
 } from '@/app/dashboard/meu-dia/_components/registrar-painel';
 import { salvarAtendimentoDoProntuario } from '@/app/dashboard/pacientes/[id]/prontuario-actions';
 import { MarcarRetornoModal } from '@/components/pacientes/marcar-retorno-modal';
+import { ColarDoWordDialog } from '@/components/pacientes/colar-do-word-dialog';
 import { useMarcarRetorno } from '@/hooks/use-marcar-retorno';
 import type { MeuDiaCatalogoProcedimento } from '@/server/dashboard/get-meu-dia';
-import type { ProntuarioAtendimento, ProntuarioLongitudinalData } from '@/server/patients/get-prontuario-longitudinal';
+import type { ProntuarioAtendimento, ProntuarioEvento, ProntuarioLongitudinalData } from '@/server/patients/get-prontuario-longitudinal';
 import type { OdontogramaEventoDraft } from '@/types/odontograma';
 import { TIPO_LABEL } from '@/types/odontograma';
 import {
@@ -34,16 +37,17 @@ import {
 import {
   CONTEXTO_TIMELINE_INICIAL,
   contextoDaSuperficie,
+  podeEditarProcedimentosDaSuperficie,
   voltarParaTimeline,
   type ContextoTimeline,
   type SuperficieProntuario,
 } from '@/lib/prontuario/superficie';
 import { destinosDoDente as resolverDestinosDoDente } from '@/lib/prontuario/destinos-do-dente';
-
-const FichasTab = dynamic(
-  () => import('@/components/pacientes/FichasTab').then((module) => module.FichasTab),
-  { ssr: false },
-);
+import {
+  deletarFicha,
+  prepararExclusaoFicha,
+  type ResumoExclusaoFicha,
+} from '@/server/patients/salvar-ficha';
 
 const SignaturePad = dynamic(
   () => import('@/components/fichas/SignaturePad').then((module) => module.SignaturePad),
@@ -53,7 +57,6 @@ const SignaturePad = dynamic(
 interface ProntuarioTabProps {
   patientId: string;
   patientName: string;
-  clinicaId: string;
   dentistaId: string;
   canWrite: boolean;
   catalogoProcedimentos: MeuDiaCatalogoProcedimento[];
@@ -133,15 +136,12 @@ type GrupoProcedimento = {
 };
 
 function agruparProcedimentos(atendimento: ProntuarioAtendimento): GrupoProcedimento[] {
-  const grupos = new Map<string, ProntuarioAtendimento['eventos']>();
-  for (const evento of atendimento.eventos) {
-    const chave = evento.grupo_id ?? evento.id;
-    grupos.set(chave, [...(grupos.get(chave) ?? []), evento]);
-  }
-  return [...grupos.entries()].map(([chave, eventos]) => ({
-    chave,
-    eventos,
-    eventoPrincipal: eventos[0]!,
+  // R-152 — agrupamento anatômico não pode virar ação em lote invisível. Cada card é um
+  // procedimento/evento, e ações de status, sessão e encaminhamento recebem só o seu id.
+  return atendimento.eventos.map((evento) => ({
+    chave: evento.id,
+    eventos: [evento],
+    eventoPrincipal: evento,
   }));
 }
 
@@ -150,7 +150,6 @@ const ODONTOGRAMA_RESPONSIVO = 'origin-top-left [zoom:0.46] min-[480px]:[zoom:0.
 export function ProntuarioTab({
   patientId,
   patientName,
-  clinicaId,
   dentistaId,
   canWrite,
   catalogoProcedimentos,
@@ -181,7 +180,7 @@ export function ProntuarioTab({
     atendimento: ProntuarioAtendimento;
     dente: number | null;
   } | null>(null);
-  const [edicaoPendente, setEdicaoPendente] = useState<ProntuarioAtendimento | null>(null);
+  const [eventoDetalheAbertoId, setEventoDetalheAbertoId] = useState<string | null>(null);
   const [acaoProcedimento, setAcaoProcedimento] = useState<string | null>(null);
   const [encaminhamentoEventoIds, setEncaminhamentoEventoIds] = useState<string[]>([]);
   const [destinoEncaminhamentoId, setDestinoEncaminhamentoId] = useState('');
@@ -191,12 +190,14 @@ export function ProntuarioTab({
   const [assinadoPor, setAssinadoPor] = useState(patientName);
   const [orientacoesAssinatura, setOrientacoesAssinatura] = useState('Orientações clínicas fornecidas e compreendidas pelo paciente.');
   const [salvandoAssinatura, setSalvandoAssinatura] = useState(false);
+  const [importacaoHistoricoAberta, setImportacaoHistoricoAberta] = useState(false);
+  const [exclusaoFichaId, setExclusaoFichaId] = useState<string | null>(null);
+  const [resumoExclusao, setResumoExclusao] = useState<ResumoExclusaoFicha | null>(null);
+  const [carregandoExclusao, setCarregandoExclusao] = useState(false);
+  const [apagandoFicha, setApagandoFicha] = useState(false);
   const assinaturaPadRef = useRef<SignaturePadLib | null>(null);
 
-  const fichaNoEditor = superficie.tipo === 'editor' && superficie.modo === 'editar'
-    ? superficie.fichaId
-    : null;
-  const novoRegistroAberto = superficie.tipo === 'editor' && superficie.modo !== 'editar';
+  const novoRegistroAberto = superficie.tipo === 'editor';
 
   function contextoAtual(): ContextoTimeline {
     return {
@@ -217,16 +218,6 @@ export function ProntuarioTab({
 
   function abrirLegado(atendimentoId: string): void {
     setSuperficie({ tipo: 'legado', atendimentoId, retorno: contextoParaDestino() });
-  }
-
-  function abrirEdicao(fichaId: string, atendimentoOrigemId: string | null): void {
-    setSuperficie({
-      tipo: 'editor',
-      modo: 'editar',
-      fichaId,
-      atendimentoOrigemId,
-      retorno: contextoParaDestino(),
-    });
   }
 
   function voltarAoContextoAnterior(): void {
@@ -392,21 +383,20 @@ export function ProntuarioTab({
     });
   }
 
-  function editarAtendimento(atendimento: ProntuarioAtendimento): void {
-    if (atendimento.fichas.length > 1) {
-      setEdicaoPendente(atendimento);
-      return;
-    }
-    const ficha = atendimento.fichas[0];
-    const eventosDaFicha = atendimento.eventos.filter((evento) => evento.fichaId === ficha?.id);
-    const fichaDoProfissionalAtual = eventosDaFicha.length > 0
-      ? eventosDaFicha.every((evento) => evento.dentistaId === dentistaId)
-      : atendimento.profissional.id === dentistaId;
-    if (ficha && ficha.assinadoEm == null && fichaDoProfissionalAtual) {
-      abrirEdicao(ficha.id, atendimento.id);
-      return;
-    }
-    complementarAtendimento(atendimento);
+  function abrirDetalhesDoEvento(evento: ProntuarioEvento): void {
+    setEventoDetalheAbertoId((idAtual) => idAtual === evento.id ? null : evento.id);
+  }
+
+  function abrirProcedimentoDoDente(atendimento: ProntuarioAtendimento, dente: number): void {
+    const evento = atendimento.eventos.find((item) => item.ancora.dente === dente);
+    // Um toque no odontograma é navegação, nunca abertura implícita de um novo atendimento.
+    if (!evento) return;
+    requestAnimationFrame(() => {
+      document.getElementById(`procedimento-${evento.id}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    });
   }
 
   async function atualizarStatusGrupo(grupo: GrupoProcedimento, novoStatus: 'indicado' | 'realizado'): Promise<void> {
@@ -455,6 +445,34 @@ export function ProntuarioTab({
     }
     setEncaminhamentoEventoIds([]);
     toast.success(destinoEncaminhamentoId ? 'Procedimento encaminhado.' : 'Encaminhamento removido.');
+    router.refresh();
+  }
+
+  async function abrirExclusaoFicha(fichaId: string): Promise<void> {
+    setCarregandoExclusao(true);
+    const resultado = await prepararExclusaoFicha(fichaId);
+    setCarregandoExclusao(false);
+    if (!resultado.ok) {
+      toast.error(resultado.error);
+      return;
+    }
+    setResumoExclusao(resultado.resumo);
+    setExclusaoFichaId(fichaId);
+  }
+
+  async function confirmarExclusaoFicha(): Promise<void> {
+    if (!exclusaoFichaId) return;
+    setApagandoFicha(true);
+    const resultado = await deletarFicha(exclusaoFichaId);
+    setApagandoFicha(false);
+    if (!resultado.ok) {
+      toast.error(resultado.error ?? 'Não foi possível apagar a ficha.');
+      return;
+    }
+    setExclusaoFichaId(null);
+    setResumoExclusao(null);
+    voltarAoContextoAnterior();
+    toast.success('Ficha apagada.');
     router.refresh();
   }
 
@@ -526,33 +544,6 @@ export function ProntuarioTab({
       voltarAoContextoAnterior();
     }
     setAtendimentoDeOrigemId(null);
-  }
-
-  if (fichaNoEditor) {
-    return (
-      <FichasTab
-        patientId={patientId}
-        clinicaId={clinicaId}
-        dentistaId={dentistaId}
-        patientName={patientName}
-        canWrite={canWrite}
-        initialFichaId={fichaNoEditor}
-        initialIntent="editar"
-        modoEditorEmbutido
-        onGerarOrcamento={onGerarOrcamento}
-        catalogoProcedimentos={catalogoProcedimentos}
-        onVoltarAoProntuario={() => {
-          const atendimentoId = superficie.tipo === 'editor' ? superficie.atendimentoOrigemId : null;
-          setSuperficie({
-            tipo: 'ficha',
-            fichaId: fichaNoEditor,
-            atendimentoId,
-            retorno: contextoDaSuperficie(superficie),
-          });
-          router.refresh();
-        }}
-      />
-    );
   }
 
   if (novoRegistroAberto) {
@@ -641,12 +632,14 @@ export function ProntuarioTab({
       && evento.fichaId != null
       && evento.dentistaId === dentistaId
     ));
-    const podeComplementar = canWrite && atendimentoAberto.fonte !== 'ficha_legada';
+    const podeEscreverFicha = podeEditarProcedimentosDaSuperficie(superficie, canWrite);
+    const podeComplementar = podeEscreverFicha;
 
     return (
       <section className="space-y-4" aria-label="Ficha aberta no prontuário">
-        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
-          <div>
+        <header className="border-b border-border pb-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+            <div className="min-w-0">
             <button type="button" onClick={voltarAoContextoAnterior} className="mb-1 inline-flex min-h-11 items-center gap-1 text-xs font-bold text-teal-ink hover:underline">
               <ArrowLeft className="h-3.5 w-3.5" /> Voltar ao prontuário
             </button>
@@ -671,25 +664,60 @@ export function ProntuarioTab({
                 </span>
               </div>
             )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {canWrite && fichaAtual && (
-              <Button variant="outline" onClick={() => abrirNovoRegistro({ fichaId: fichaAtual.id })}>
-                <Plus className="h-4 w-4" /> Novo atendimento
-              </Button>
-            )}
-            {podeComplementar && (
-              <Button onClick={() => editarAtendimento(atendimentoAberto)}>
-                <PenLine className="h-4 w-4" /> Editar ficha
-              </Button>
-            )}
+            </div>
+            <div className="flex w-full items-center gap-2 sm:w-auto sm:flex-none">
+              {podeEscreverFicha && fichaAtual && (
+                <Button className="min-h-11 flex-1 sm:min-h-8 sm:flex-none" onClick={() => abrirNovoRegistro({ fichaId: fichaAtual.id })}>
+                  <Plus className="h-4 w-4" /> Novo atendimento
+                </Button>
+              )}
+              {fichaAtual && (
+                <Button
+                  variant="outline"
+                  className="min-h-11 px-3 sm:min-h-8"
+                  aria-label="Baixar PDF da Ficha"
+                  onClick={() => window.open(`/api/fichas/${fichaAtual.id}/pdf`, '_blank', 'noopener,noreferrer')}
+                >
+                  <Download className="h-4 w-4" /> <span className="hidden min-[480px]:inline">Baixar PDF</span>
+                </Button>
+              )}
+              {podeEscreverFicha && fichaAtual && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="icon" className="min-h-11 sm:min-h-8" aria-label="Mais ações da Ficha">
+                      <Ellipsis className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-52">
+                    <DropdownMenuItem
+                      className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                      disabled={carregandoExclusao}
+                      onSelect={() => void abrirExclusaoFicha(fichaAtual.id)}
+                    >
+                      {carregandoExclusao ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                      Apagar Ficha
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
           </div>
         </header>
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,2.05fr)_minmax(300px,0.72fr)]">
           <div className="space-y-4">
             <article className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-text-secondary">Evolução clínica</p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-text-secondary">Evolução clínica</p>
+                  <p className="mt-1 text-xs text-text-secondary">Registro da consulta em exibição.</p>
+                </div>
+                {podeComplementar && (
+                  <Button className="min-h-11 w-full sm:min-h-8 sm:w-auto" variant="outline" onClick={() => complementarAtendimento(atendimentoAberto)}>
+                    <Plus className="h-4 w-4" /> Complementar consulta
+                  </Button>
+                )}
+              </div>
               <div className="mt-3 space-y-3">
                 {atendimentoAberto.evolucoes.length > 0 ? atendimentoAberto.evolucoes.map((evolucao) => (
                   <div key={evolucao.id} className="border-l-2 border-teal/40 pl-3">
@@ -704,22 +732,13 @@ export function ProntuarioTab({
                   <p className="text-sm italic text-text-secondary">Sem evolução textual registrada.</p>
                 )}
               </div>
-              {podeComplementar && (
-                <Button className="mt-4" variant="outline" onClick={() => complementarAtendimento(atendimentoAberto)}>
-                  <Plus className="h-4 w-4" /> Adicionar evolução manual
-                </Button>
-              )}
             </article>
 
             <article className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.14em] text-text-secondary">Odontograma do atendimento</p>
-                  <p className="mt-1 text-xs text-text-secondary">
-                    {podeComplementar
-                      ? 'Clique em um dente para complementar ou planejar sem alterar o registro anterior.'
-                      : 'Leitura do que foi registrado nesta visita.'}
-                  </p>
+                  <p className="mt-1 text-xs text-text-secondary">Clique em um dente para ir ao procedimento desta consulta. Dentes sem procedimento não abrem formulário.</p>
                 </div>
                 <Button variant="outline" size="sm" className="min-h-11" onClick={() => setOdontogramaCompletoAberto(true)}>
                   Ver odontograma completo
@@ -730,9 +749,7 @@ export function ProntuarioTab({
                   <Odontograma
                     selectedTeeth={[]}
                     eventos={atendimentoAberto.eventos}
-                    onToothToggle={(dente) => {
-                      if (podeComplementar) complementarAtendimento(atendimentoAberto, dente);
-                    }}
+                    onToothToggle={(dente) => abrirProcedimentoDoDente(atendimentoAberto, dente)}
                     presentationMode={!podeComplementar}
                   />
                 </div>
@@ -745,7 +762,7 @@ export function ProntuarioTab({
                   <p className="text-xs font-bold uppercase tracking-[0.14em] text-text-secondary">Procedimentos</p>
                   <p className="mt-1 text-xs text-text-secondary">Status clínico e organização da próxima sessão são controles separados.</p>
                 </div>
-                {canWrite && (
+                {podeEscreverFicha && (
                   <Button
                     variant="outline"
                     disabled={elegiveisParaAssinatura.length === 0}
@@ -776,12 +793,19 @@ export function ProntuarioTab({
                     const encaminhadoAoAtual = grupo.eventos.every((item) => item.encaminhadoParaId === dentistaId);
                     const ficha = evento.fichaId ? atendimentoAberto.fichas.find((item) => item.id === evento.fichaId) : null;
                     const fichaAssinada = ficha?.assinadoEm != null;
-                    const podeAlterarStatus = canWrite && !assinado && !fichaAssinada && (autorAtual || encaminhadoAoAtual);
+                    const podeAlterarStatus = podeEscreverFicha && !assinado && !fichaAssinada && (autorAtual || encaminhadoAoAtual);
                     const realizados = grupo.eventos.filter((item) => item.status === 'realizado').length;
                     const todosRealizados = realizados === grupo.eventos.length;
                     const todosAFazer = realizados === 0;
                     const podeOrganizar = podeAlterarStatus && autorAtual && todosAFazer;
                     const emProximaSessao = todosAFazer && grupo.eventos.every((item) => item.momento_planejado === 'proxima_sessao');
+                    const detalheTecnico = evento.tipo === 'endodontia' || evento.tipo === 'implante';
+                    const podeEditarDetalhes = podeEscreverFicha
+                      && !assinado
+                      && !fichaAssinada
+                      && grupo.eventos.length === 1
+                      && (autorAtual || (encaminhadoAoAtual && detalheTecnico));
+                    const detalheAberto = eventoDetalheAbertoId === evento.id;
                     const statusClasse = todosRealizados
                       ? 'bg-clinical-done-pale text-clinical-done-ink'
                       : !todosAFazer
@@ -791,7 +815,7 @@ export function ProntuarioTab({
                         : 'bg-coral-pale text-coral-ink';
                     const carregando = acaoProcedimento?.startsWith(`${grupo.chave}:`) ?? false;
                     return (
-                    <li key={grupo.chave} className="rounded-xl border border-border bg-surface-alt/40 p-3 text-sm">
+                    <li id={`procedimento-${evento.id}`} key={grupo.chave} className="rounded-xl border border-border bg-surface-alt/40 p-3 text-sm">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                         <p className="font-semibold text-text-primary">
@@ -859,7 +883,7 @@ export function ProntuarioTab({
                             {emProximaSessao ? 'Planejado para a próxima sessão' : 'Levar para próxima sessão'}
                           </button>
                         )}
-                        {canWrite && autorAtual && !assinado && !fichaAssinada && todosAFazer && (
+                        {podeEscreverFicha && autorAtual && !assinado && !fichaAssinada && todosAFazer && (
                           <button
                             type="button"
                             onClick={() => {
@@ -871,18 +895,45 @@ export function ProntuarioTab({
                             <Forward className="h-3.5 w-3.5" /> {evento.encaminhadoParaId ? 'Alterar encaminhamento' : 'Encaminhar'}
                           </button>
                         )}
-                        {ficha && canWrite && autorAtual && (
+                        {podeEditarDetalhes && (
                           <button
                             type="button"
-                            onClick={() => ficha.assinadoEm == null ? abrirEdicao(ficha.id, atendimentoAberto.id) : complementarAtendimento(atendimentoAberto, evento.ancora.dente ?? null)}
+                            onClick={() => abrirDetalhesDoEvento(evento)}
                             className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-bold text-text-secondary hover:bg-surface hover:text-text-primary"
                           >
-                            <PenLine className="h-3.5 w-3.5" /> {ficha.assinadoEm == null ? 'Editar procedimento' : 'Adicionar retificação'}
+                            <PenLine className="h-3.5 w-3.5" /> {detalheAberto ? 'Fechar detalhes' : detalheTecnico ? 'Ver/editar detalhes' : 'Editar procedimento'}
+                          </button>
+                        )}
+                        {ficha && podeEscreverFicha && autorAtual && (assinado || fichaAssinada) && (
+                          <button
+                            type="button"
+                            onClick={() => complementarAtendimento(atendimentoAberto, evento.ancora.dente ?? null)}
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-bold text-text-secondary hover:bg-surface hover:text-text-primary"
+                          >
+                            <PenLine className="h-3.5 w-3.5" /> Adicionar retificação
                           </button>
                         )}
                         {assinado && <span className="text-xs font-semibold text-text-secondary">Assinado · registro bloqueado</span>}
                         {carregando && <Loader2 className="h-4 w-4 animate-spin text-teal" aria-label="Salvando" />}
                       </div>
+                      {detalheAberto && (
+                        <ProcedimentoDetalheFicha
+                          key={evento.id}
+                          evento={evento}
+                          permitirObservacao={autorAtual}
+                          permitirDetalhe={detalheTecnico}
+                          permitirExclusao={podeEscreverFicha && autorAtual && !assinado && !fichaAssinada}
+                          onFechar={() => setEventoDetalheAbertoId(null)}
+                          onSalvo={() => {
+                            setEventoDetalheAbertoId(null);
+                            router.refresh();
+                          }}
+                          onExcluido={() => {
+                            setEventoDetalheAbertoId(null);
+                            router.refresh();
+                          }}
+                        />
+                      )}
                     </li>
                     );
                   })}
@@ -907,7 +958,7 @@ export function ProntuarioTab({
                   {atendimentoAberto.atendimentoId ? 'Nenhum retorno vinculado a esta visita.' : 'Próximo agendamento ainda não registrado.'}
                 </p>
               )}
-              {canWrite && !atendimentoAberto.retorno && (
+              {podeEscreverFicha && !atendimentoAberto.retorno && (
                 <Button className="mt-3 w-full" variant="outline" onClick={() => {
                   setRetornoAtendimentoId(atendimentoAberto.atendimentoId);
                   setRetornoAberto(true);
@@ -997,6 +1048,37 @@ export function ProntuarioTab({
           </aside>
         </div>
 
+        <Dialog open={exclusaoFichaId != null} onOpenChange={(open) => {
+          if (!open && !apagandoFicha) {
+            setExclusaoFichaId(null);
+            setResumoExclusao(null);
+          }
+        }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Apagar esta Ficha?</DialogTitle>
+              <DialogDescription>
+                Esta ação é permanente. A ficha só pode ser apagada porque não há assinatura, documento clínico, orçamento aceito ou pagamento vinculados.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="rounded-xl border border-border bg-surface-alt p-3 text-sm text-text-secondary">
+              Serão removidos {resumoExclusao?.eventos ?? 0} procedimento{(resumoExclusao?.eventos ?? 0) === 1 ? '' : 's'}, {resumoExclusao?.evolucoes ?? 0} {(resumoExclusao?.evolucoes ?? 0) === 1 ? 'evolução' : 'evoluções'} e {resumoExclusao?.orcamentosEditaveis ?? 0} orçamento{(resumoExclusao?.orcamentosEditaveis ?? 0) === 1 ? ' editável' : 's editáveis'}.
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" disabled={apagandoFicha} onClick={() => {
+                setExclusaoFichaId(null);
+                setResumoExclusao(null);
+              }}>
+                Cancelar
+              </Button>
+              <Button variant="destructive" disabled={apagandoFicha} onClick={() => void confirmarExclusaoFicha()}>
+                {apagandoFicha && <Loader2 className="h-4 w-4 animate-spin" />}
+                Apagar permanentemente
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={odontogramaCompletoAberto} onOpenChange={setOdontogramaCompletoAberto}>
           <DialogContent className="w-[calc(100vw-1rem)] max-w-[1180px] overflow-hidden p-3 sm:w-[calc(100vw-2rem)] sm:max-w-[1180px] sm:p-6">
             <DialogHeader>
@@ -1009,7 +1091,7 @@ export function ProntuarioTab({
                   eventos={atendimentoAberto.eventos}
                   onToothToggle={(dente) => {
                     setOdontogramaCompletoAberto(false);
-                    if (podeComplementar) complementarAtendimento(atendimentoAberto, dente);
+                    abrirProcedimentoDoDente(atendimentoAberto, dente);
                   }}
                   presentationMode={!podeComplementar}
                 />
@@ -1045,43 +1127,6 @@ export function ProntuarioTab({
                 >
                   <FolderOpen className="h-4 w-4" /> {ficha.nome}
                 </Button>
-              ))}
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={edicaoPendente != null} onOpenChange={(open) => { if (!open) setEdicaoPendente(null); }}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Qual ficha você quer editar?</DialogTitle>
-              <DialogDescription>O atendimento possui mais de uma Ficha vinculada.</DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-2">
-              {edicaoPendente?.fichas.map((ficha) => (
-                (() => {
-                  const eventosDaFicha = edicaoPendente.eventos.filter((evento) => evento.fichaId === ficha.id);
-                  const fichaDoProfissionalAtual = eventosDaFicha.length > 0
-                    ? eventosDaFicha.every((evento) => evento.dentistaId === dentistaId)
-                    : edicaoPendente.profissional.id === dentistaId;
-                  const podeEditarFicha = ficha.assinadoEm == null && fichaDoProfissionalAtual;
-                  return (
-                <Button
-                  key={ficha.id}
-                  variant="outline"
-                  className="h-auto justify-start py-3 text-left"
-                  onClick={() => {
-                    const atendimento = edicaoPendente;
-                    setEdicaoPendente(null);
-                    if (!atendimento) return;
-                    if (podeEditarFicha) abrirEdicao(ficha.id, atendimento.id);
-                    else abrirNovoRegistro({ fichaId: ficha.id, atendimentoOrigemId: atendimento.id });
-                  }}
-                >
-                  <FolderOpen className="h-4 w-4" />
-                  <span><span className="block">{ficha.nome}</span><span className="block text-[11px] font-normal text-text-secondary">{podeEditarFicha ? 'Editar ficha' : 'Adicionar complemento com sua autoria'}</span></span>
-                </Button>
-                  );
-                })()
               ))}
             </div>
           </DialogContent>
@@ -1221,9 +1266,14 @@ export function ProntuarioTab({
           <p className="mt-0.5 text-sm text-text-secondary">Fichas em curso, consultas e histórico clínico do paciente.</p>
         </div>
         {canWrite && (
-          <Button onClick={() => abrirNovoRegistro()} className="min-h-11">
-            <Plus className="h-4 w-4" /> Novo atendimento
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" onClick={() => setImportacaoHistoricoAberta(true)} className="min-h-11">
+              <FileText className="h-4 w-4" /> Importar histórico
+            </Button>
+            <Button onClick={() => abrirNovoRegistro()} className="min-h-11">
+              <Plus className="h-4 w-4" /> Novo atendimento
+            </Button>
+          </div>
         )}
       </div>
 
@@ -1573,6 +1623,14 @@ export function ProntuarioTab({
           </div>
         </DialogContent>
       </Dialog>
+
+      <ColarDoWordDialog
+        pacienteId={patientId}
+        pacienteNome={patientName}
+        open={importacaoHistoricoAberta}
+        onOpenChange={setImportacaoHistoricoAberta}
+        onImportado={() => router.refresh()}
+      />
     </section>
   );
 }

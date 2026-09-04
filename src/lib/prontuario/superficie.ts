@@ -11,7 +11,7 @@ export type SuperficieProntuario =
   | { tipo: 'legado'; atendimentoId: string; retorno: ContextoTimeline }
   | {
       tipo: 'editor';
-      modo: 'novo' | 'editar' | 'complementar';
+      modo: 'novo' | 'complementar';
       fichaId: string | null;
       atendimentoOrigemId: string | null;
       retorno: ContextoTimeline;
@@ -30,4 +30,12 @@ export function contextoDaSuperficie(superficie: SuperficieProntuario): Contexto
 
 export function voltarParaTimeline(superficie: SuperficieProntuario): SuperficieProntuario {
   return { tipo: 'resumo', contexto: contextoDaSuperficie(superficie) };
+}
+
+/** O legado é histórico: nenhuma ação clínica pode ser habilitada nessa superfície. */
+export function podeEditarProcedimentosDaSuperficie(
+  superficie: SuperficieProntuario,
+  canWrite: boolean,
+): boolean {
+  return canWrite && superficie.tipo === 'ficha';
 }

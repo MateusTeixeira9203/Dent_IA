@@ -1471,7 +1471,6 @@ export function PacienteDetailClient({
                     {mountedTabs.has('ficha-clinica') && (
                       <ProntuarioTab
                         patientId={paciente.id}
-                        clinicaId={clinicaId}
                         dentistaId={dentistaId}
                         patientName={displayNome}
                         canWrite={canWriteClinical}

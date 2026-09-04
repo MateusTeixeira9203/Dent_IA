@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   CONTEXTO_TIMELINE_INICIAL,
   contextoDaSuperficie,
+  podeEditarProcedimentosDaSuperficie,
   voltarParaTimeline,
   type SuperficieProntuario,
 } from './superficie';
@@ -13,7 +14,7 @@ test('cada destino clínico é uma única superfície com intenção explícita'
     { tipo: 'legado', atendimentoId: 'atendimento-legado', retorno: CONTEXTO_TIMELINE_INICIAL },
     {
       tipo: 'editor',
-      modo: 'editar',
+      modo: 'complementar',
       fichaId: 'ficha-1',
       atendimentoOrigemId: 'atendimento-1',
       retorno: CONTEXTO_TIMELINE_INICIAL,
@@ -21,7 +22,7 @@ test('cada destino clínico é uma única superfície com intenção explícita'
   ];
 
   assert.deepEqual(destinos.map((destino) => destino.tipo), ['ficha', 'legado', 'editor']);
-  assert.equal(destinos[2]?.tipo === 'editor' ? destinos[2].modo : null, 'editar');
+  assert.equal(destinos[2]?.tipo === 'editor' ? destinos[2].modo : null, 'complementar');
 });
 
 test('voltar restaura filtro, dente, concluídos e scroll do resumo', () => {
@@ -35,4 +36,22 @@ test('voltar restaura filtro, dente, concluídos e scroll do resumo', () => {
 
   assert.deepEqual(contextoDaSuperficie(registro), contexto);
   assert.deepEqual(voltarParaTimeline(registro), { tipo: 'resumo', contexto });
+});
+
+test('registro legado é estritamente somente leitura', () => {
+  const legado: SuperficieProntuario = {
+    tipo: 'legado',
+    atendimentoId: 'atendimento-legado',
+    retorno: CONTEXTO_TIMELINE_INICIAL,
+  };
+  const ficha: SuperficieProntuario = {
+    tipo: 'ficha',
+    fichaId: 'ficha-1',
+    atendimentoId: null,
+    retorno: CONTEXTO_TIMELINE_INICIAL,
+  };
+
+  assert.equal(podeEditarProcedimentosDaSuperficie(legado, true), false);
+  assert.equal(podeEditarProcedimentosDaSuperficie(ficha, true), true);
+  assert.equal(podeEditarProcedimentosDaSuperficie(ficha, false), false);
 });

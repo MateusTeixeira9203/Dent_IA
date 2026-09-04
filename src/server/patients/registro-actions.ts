@@ -13,6 +13,22 @@ import { implanteDetalheSchema } from '@/lib/especialidades/implante';
 import { criarDocumentoConclusaoAssinatura } from '@/server/legal/documentos-aceite';
 import { hojeBRT } from '@/lib/hora-brt';
 
+const editarDetalhesEventoSchema = z.object({
+  eventoId: z.string().uuid(),
+  detalhe: z.unknown().nullable(),
+  alterarDetalhe: z.boolean(),
+  observacao: z.string().trim().max(4_000).nullable(),
+  alterarObservacao: z.boolean(),
+}).superRefine((valor, contexto) => {
+  if (!valor.alterarDetalhe && !valor.alterarObservacao) {
+    contexto.addIssue({ code: z.ZodIssueCode.custom, message: 'Informe ao menos uma alteração.' });
+  }
+});
+
+const excluirProcedimentoSchema = z.object({
+  eventoId: z.string().uuid(),
+});
+
 /**
  * Salva o event-log do odontograma — retry do save inicial (fail-soft, ver
  * `salvarFicha` em `@/server/patients/salvar-ficha`) E caminho único de save da ficha
@@ -371,7 +387,10 @@ export async function encaminharProcedimento(params: {
   const ignorados = params.eventoIds.filter((id) => !idsElegiveis.includes(id));
 
   if (idsElegiveis.length === 0) {
-    return { ok: false, error: 'Nenhum registro elegível pra encaminhar.' };
+    return {
+      ok: false,
+      error: 'Só é possível encaminhar procedimento indicado, não assinado e registrado por você.',
+    };
   }
 
   let destino: { id: string; nome: string } | null = null;
@@ -403,6 +422,9 @@ export async function encaminharProcedimento(params: {
   });
 
   if (error) {
+    if (error.code === 'PGRST202' || error.message.includes('Could not find the function')) {
+      return { ok: false, error: 'O encaminhamento está indisponível porque a configuração clínica ainda não foi publicada.' };
+    }
     console.error('[encaminharProcedimento]', error.message);
     return { ok: false, error: 'Não foi possível encaminhar o registro.' };
   }
@@ -553,6 +575,116 @@ export async function preencherDetalheEncaminhado(params: {
     }
     console.error('[preencherDetalheEncaminhado]', error.message);
     return { ok: false, error: 'Não foi possível salvar a tabela.' };
+  }
+
+  revalidatePath(`/dashboard/pacientes/${evento.paciente_id}`);
+  return { ok: true };
+}
+
+/**
+ * R-140c — edição contextual do card no Prontuário unificado. A RPC mantém a
+ * autorização estreita e grava o log na mesma transação: autor pode atualizar
+ * observação e detalhe; destinatário encaminhado só atualiza detalhe técnico.
+ */
+export async function editarDetalhesEvento(params: {
+  eventoId: string;
+  detalhe: unknown | null;
+  alterarDetalhe: boolean;
+  observacao: string | null;
+  alterarObservacao: boolean;
+}): Promise<{ ok: boolean; error?: string }> {
+  const parsedParams = editarDetalhesEventoSchema.safeParse(params);
+  if (!parsedParams.success) return { ok: false, error: 'Revise os dados antes de salvar.' };
+
+  const { supabase, clinicId, role } = await requireClinicContext();
+  if (role === 'secretaria') return { ok: false, error: 'Sem permissão.' };
+
+  const { data: evento } = await supabase
+    .from('odontograma_eventos')
+    .select('tipo, paciente_id')
+    .eq('id', parsedParams.data.eventoId)
+    .eq('clinica_id', clinicId)
+    .maybeSingle<{ tipo: string; paciente_id: string }>();
+
+  if (!evento) return { ok: false, error: 'Registro não encontrado.' };
+
+  let detalheValidado: unknown | null = null;
+  if (parsedParams.data.alterarDetalhe) {
+    const schema = evento.tipo === 'endodontia'
+      ? endoDetalheSchema
+      : evento.tipo === 'implante'
+        ? implanteDetalheSchema
+        : null;
+    if (!schema) return { ok: false, error: 'Esse procedimento não possui detalhes técnicos editáveis.' };
+    const parsedDetalhe = schema.safeParse(parsedParams.data.detalhe);
+    if (!parsedDetalhe.success) return { ok: false, error: 'Alguns campos dos detalhes técnicos estão inválidos.' };
+    detalheValidado = parsedDetalhe.data;
+  }
+
+  const { error } = await supabase.rpc('editar_detalhes_evento_odontograma', {
+    p_evento_id: parsedParams.data.eventoId,
+    p_detalhe: detalheValidado,
+    p_alterar_detalhe: parsedParams.data.alterarDetalhe,
+    p_observacao: parsedParams.data.observacao,
+    p_alterar_observacao: parsedParams.data.alterarObservacao,
+  });
+
+  if (error) {
+    if (error.message.includes('registro_bloqueado') || error.message.includes('evento_assinado_imutavel')) {
+      return { ok: false, error: 'Este registro já foi assinado e não pode mais ser alterado.' };
+    }
+    if (error.message.includes('tipo_nao_suportado')) {
+      return { ok: false, error: 'Esse procedimento não possui detalhes técnicos editáveis.' };
+    }
+    if (error.message.includes('sem_permissao')) {
+      return { ok: false, error: 'Você só pode editar seus registros ou o detalhe técnico de um procedimento encaminhado.' };
+    }
+    console.error('[editarDetalhesEvento]', error.message);
+    return { ok: false, error: 'Não foi possível salvar os detalhes do procedimento.' };
+  }
+
+  revalidatePath(`/dashboard/pacientes/${evento.paciente_id}`);
+  return { ok: true };
+}
+
+/** Remove um único procedimento ainda editável, com guarda e auditoria na mesma RPC. */
+export async function excluirProcedimento(params: {
+  eventoId: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const parsedParams = excluirProcedimentoSchema.safeParse(params);
+  if (!parsedParams.success) return { ok: false, error: 'Registro inválido.' };
+
+  const { supabase, clinicId, role } = await requireClinicContext();
+  if (role === 'secretaria') return { ok: false, error: 'Sem permissão.' };
+
+  const { data: evento } = await supabase
+    .from('odontograma_eventos')
+    .select('paciente_id')
+    .eq('id', parsedParams.data.eventoId)
+    .eq('clinica_id', clinicId)
+    .maybeSingle<{ paciente_id: string }>();
+
+  if (!evento) return { ok: false, error: 'Registro não encontrado.' };
+
+  const { error } = await supabase.rpc('excluir_evento_odontograma', {
+    p_evento_id: parsedParams.data.eventoId,
+  });
+
+  if (error) {
+    if (error.message.includes('registro_bloqueado') || error.message.includes('evento_assinado_imutavel')) {
+      return { ok: false, error: 'Este procedimento já foi assinado e não pode ser apagado.' };
+    }
+    if (error.message.includes('registro_orcado')) {
+      return { ok: false, error: 'Este procedimento está vinculado a um orçamento e não pode ser apagado.' };
+    }
+    if (error.message.includes('sem_permissao')) {
+      return { ok: false, error: 'Você só pode apagar procedimentos registrados por você.' };
+    }
+    if (error.message.includes('registro_nao_encontrado')) {
+      return { ok: false, error: 'Registro não encontrado.' };
+    }
+    console.error('[excluirProcedimento]', error.message);
+    return { ok: false, error: 'Não foi possível apagar o procedimento.' };
   }
 
   revalidatePath(`/dashboard/pacientes/${evento.paciente_id}`);
