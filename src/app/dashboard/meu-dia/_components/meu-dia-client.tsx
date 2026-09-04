@@ -1032,7 +1032,7 @@ export function MeuDiaClient({
             <motion.div
               layout="size"
               transition={{ layout: { duration: 0.18, ease: 'easeOut' } }}
-              className={`h-full rounded-2xl border border-border bg-surface p-4 xl:h-[760px] xl:sticky xl:top-4 ${
+              className={`h-full rounded-2xl border border-border bg-surface p-4 xl:h-[min(760px,calc(100vh-13rem))] xl:min-h-[440px] xl:sticky xl:top-4 ${
                 gavetaAberta !== null || denteAberto == null
                   ? 'overflow-hidden'
                   : 'overflow-y-auto'
