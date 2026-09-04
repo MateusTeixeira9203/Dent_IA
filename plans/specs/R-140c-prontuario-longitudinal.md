@@ -1,7 +1,7 @@
 # R-140c — Redesign: Prontuário e Ficha longitudinal
 
-> **SPEC (redesign)** · **R-140c** · 🔵 filha do R-140
-> **Aberto:** 2026-08-30 · **Fase:** execução local — revisão 7 aprovada na conversa em 02/09/2026
+> **SPEC (redesign)** · **R-140c** · 🧊 filha do R-140; recorte operacional segue no R-152
+> **Aberto:** 2026-08-30 · **Fase:** congelado após a publicação parcial; não reserva item ativo
 > **Depende:** R-140a · **Preserva:** R-108 e R-120
 
 ## 0. Identificação
@@ -146,7 +146,7 @@ type SuperficieProntuario =
   | { tipo: 'ficha'; fichaId: string; atendimentoSelecionadoId: string|null;
       retorno: ContextoProntuario }
   | { tipo: 'legado'; atendimentoId: string; retorno: ContextoProntuario }
-  | { tipo: 'editor'; modo: 'novo'|'editar'|'complementar'; fichaId: string|null;
+  | { tipo: 'editor'; modo: 'novo'|'complementar'; fichaId: string|null;
       atendimentoOrigemId: string|null; retorno: ContextoProntuario };
 ```
 
@@ -210,6 +210,32 @@ foto/texto extraído/dados confirmados ficam ligados ao Atendimento; `used_at` �
 - Na Ficha, o Histórico é um índice: cada consulta mostra procedimentos/localizações e o clique
   atualiza o corpo inteiro da mesma Ficha, sem modal nem terceira superfície.
 
+### 4.6.1 Edição de procedimento na Ficha unificada
+
+`Editar procedimento` não navega para `FichasTab` nem para o editor legado. Ele expande o card
+do evento na própria Ficha unificada — ou abre o painel de detalhes já pertencente à mesma
+superfície — preservando consulta, odontograma, posição e histórico visíveis.
+
+`FichasTab` deixa de ser uma superfície operacional para registros do modelo novo. Toda ação que
+continua válida — editar procedimento, encaminhar, alterar situação, assinar, gerar orçamento,
+exportar e a exclusão permitida pelas guardas clínicas — precisa ter destino explícito na Ficha
+unificada antes de retirar a entrada antiga. O renderer legado pode permanecer somente em leitura
+para registros históricos incompatíveis; nunca recebe uma navegação de edição.
+
+- Para evento próprio, não assinado: a expansão permite editar observação e detalhe clínico,
+  usar os comandos já existentes de situação, próxima sessão e encaminhamento, e salvar o evento
+  sem abrir outra Ficha.
+- Canal, implante e demais procedimentos com campos técnicos exibem um CTA claro **Ver/editar
+  detalhes**. O painel começa preenchido com o `detalhe` persistido e reutiliza os campos
+  específicos já usados na Revisão do atendimento; ausência de dado continua explícita, nunca
+  presumida.
+- Evento assinado não expande para sobrescrever conteúdo: o CTA vira **Adicionar retificação**.
+- Evento encaminhado preserva a guard atual: o destinatário só completa situação e detalhe
+  permitido; autoria, texto-base, localização e responsável original não são reescritos.
+- Trocar procedimento, dente, face ou região não fica escondido na edição de detalhes. É uma
+  ação explícita **Alterar localização** que abre o odontograma no mesmo contexto e reaplica as
+  validações do evento, pois essa mudança afeta mapa clínico, orçamento e auditoria.
+
 ### 4.7 Meu Dia — plano e histórico unificados
 
 “Pendências” deixa de existir como gaveta. A única gaveta clínica passa a se chamar **Plano e
@@ -263,6 +289,7 @@ interface AcaoDoPlano {
 | Assinado | documento visível; correção cria complemento |
 | Material ausente | não bloqueia salvar; CTA contextual reservado ao R-140d |
 | Sem permissão | leitura permitida; escrita oculta/desabilitada com motivo |
+| Detalhe expandido | card/painel da Ficha unificada editável, sem navegação para `FichasTab` |
 | Erro parcial | bloco afetado com retry; restante permanece visível |
 
 ## 6. Referência visual
@@ -305,6 +332,17 @@ concluir silenciosamente o procedimento.
 
 ## 8. Gates de aceite
 
+**Falhas reproduzidas no teste manual de 03/09/2026:**
+
+- `Editar` abriu a superfície antiga da Ficha em vez da edição individual no card.
+- Não existe ação visível para apagar a Ficha. Regra ainda precisa separar rascunho não
+  consolidado de registro clínico salvo/assinado; não autoriza hard delete sem auditoria.
+- Encaminhamento deixa selecionar o dentista, mas falha ao confirmar com “impossível encaminhar
+  esse procedimento”.
+
+**Regressão proibida:** nenhuma conta de dentista pode chegar ao editor de `FichasTab` a partir da
+Ficha unificada. Testar os pontos de entrada do perfil do paciente, Meu Dia, Agenda e histórico.
+
 - [x] Prontuário → dente → Ficha abre uma interface, na consulta correta, e voltar restaura contexto.
 - [x] “Ver concluídos” alterna histórico azul sem ocultar acesso clínico ao dente.
 - [ ] Histórico da Ficha troca entre duas consultas e atualiza evolução, autor, procedimentos,
@@ -316,6 +354,8 @@ concluir silenciosamente o procedimento.
 - [ ] Consulta manual sem texto gera rascunho factual; editar, rejeitar ou falhar preserva o
       rascunho clínico e nunca impede salvar.
 - [ ] Editar, complementar, encaminhar e assinar respeitam autoria/permissão; assinado é imutável.
+- [ ] `Editar procedimento` abre detalhe no card/painel da Ficha unificada; canal e implante
+      mostram os campos persistidos e salvam sem abrir `FichasTab`.
 - [ ] Assinatura de duas Fichas gera um documento por Ficha e ambos chegam a Arquivos.
 - [ ] Retorno cria um agendamento ligado ao Atendimento; existente abre na Agenda.
 - [ ] Avulso, Ficha concluída, sem localização, arcada, quadrante, ortodontia e legado ficam acessíveis.
