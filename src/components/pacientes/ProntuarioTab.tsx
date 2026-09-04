@@ -61,6 +61,7 @@ interface ProntuarioTabProps {
   canWrite: boolean;
   catalogoProcedimentos: MeuDiaCatalogoProcedimento[];
   dados: ProntuarioLongitudinalData;
+  fichaInicialId?: string | null;
   onGerarOrcamento?: (fichaId: string) => void;
   onAbrirArquivos: () => void;
 }
@@ -154,6 +155,7 @@ export function ProntuarioTab({
   canWrite,
   catalogoProcedimentos,
   dados,
+  fichaInicialId = null,
   onGerarOrcamento,
   onAbrirArquivos,
 }: ProntuarioTabProps) {
@@ -196,6 +198,15 @@ export function ProntuarioTab({
   const [carregandoExclusao, setCarregandoExclusao] = useState(false);
   const [apagandoFicha, setApagandoFicha] = useState(false);
   const assinaturaPadRef = useRef<SignaturePadLib | null>(null);
+  const [fichaInicialAplicada, setFichaInicialAplicada] = useState<string | null>(null);
+  if (
+    fichaInicialId != null
+    && fichaInicialAplicada !== fichaInicialId
+    && dados.fichas.some((ficha) => ficha.id === fichaInicialId)
+  ) {
+    setFichaInicialAplicada(fichaInicialId);
+    setSuperficie({ tipo: 'ficha', fichaId: fichaInicialId, atendimentoId: null, retorno: CONTEXTO_TIMELINE_INICIAL });
+  }
 
   const novoRegistroAberto = superficie.tipo === 'editor';
 
