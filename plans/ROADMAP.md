@@ -1,6 +1,6 @@
 # Roadmap — Odonto.IA
 
-> **ROADMAP** · atualizado em **03/09/2026** · mapa do produto atual.
+> **ROADMAP** · atualizado em **04/09/2026** · mapa do produto atual.
 > Histórico e specs fechadas vivem em [`_arquivo/`](./_arquivo/).
 
 ## Produto atual — fonte de decisão
@@ -22,12 +22,13 @@
 
 | ID | Item | Estado |
 |---|---|---|
-| [**R-153**](specs/R-153-orcamento-ficha-fluxo-continuo.md) | **Orçamento da Ficha em fluxo contínuo** — uma Ficha por orçamento, catálogo confiável e continuidade no perfil do paciente | 🔵 integrada em `main`; aguarda confirmação do deploy e validação dirigida. |
+| [**R-154**](specs/R-154-plano-tratamento-fluido.md) | **Plano de tratamento fluido no Meu Dia** — fila clínica completa, responsabilidade explícita e transição de status sem recarregar | 🔵 implementação local concluída; aguarda validação manual autenticada e auditoria final. |
 
 ## Publicado, aguardando validação dirigida
 
 | ID | Item | Estado |
 |---|---|---|
+| [**R-153**](specs/R-153-orcamento-ficha-fluxo-continuo.md) | **Orçamento da Ficha em fluxo contínuo** — uma Ficha por orçamento, catálogo confiável e continuidade no perfil do paciente | 🟡 integrada em `main`; aguarda confirmação do deploy e validação dirigida. |
 | **R-145** | **Orçamento financeiro flexível** — recebimento livre, previsão de cobrança reorganizável, à vista como conta a receber e orçamento estritamente por responsável | ✅ em produção e verificado pelo usuário em 03/09; spec e artefato arquivados. |
 | [**R-152**](specs/R-152-paridade-ficha-unificada.md) + [**R-152a**](specs/R-152a-cabecalho-ficha-redesign.md) | **Ficha unificada e cabeçalho** — ações clínicas na superfície nova, legado somente leitura e cabeçalho organizado | 🟡 publicado; falta gate consolidado de paridade antes de remover código legado. |
 | [**R-149**](specs/R-149-revisao-meu-dia-legivel.md) | **Revisão legível no Meu Dia** — cartões clínicos priorizam procedimento e status, sem esconder nenhuma ação | 🟡 publicada; aguarda conferência visual completa. |
@@ -48,7 +49,6 @@
 
 | ID | Item | Estado |
 |---|---|---|
-| [**R-154**](specs/R-154-plano-tratamento-fluido.md) | **Plano de tratamento fluido no Meu Dia** — fila clínica completa, responsabilidade explícita e transição de status sem recarregar | ⏳ debate; não altera autoria clínica sem decisão explícita. |
 | [**R-151**](specs/R-151-dex-organizar-baixa-latencia.md) | **Dex organiza a ficha com baixa latência** — otimiza autenticação, esperas e infraestrutura mantendo a inteligência atual | 🟡 integrada com a baseline; aguarda validação dirigida própria. |
 | [**R-150**](specs/R-150-agenda-util-retorno-rapido.md) | **Agenda útil e retorno rápido** — atalhos de 7/15 dias, ponte fixa, expediente comprovado e Agenda de segunda a sábado | ⏳ fila; não concorre com as correções P0. |
 | [**R-139c**](specs/R-139c-status-dex-preservado.md) | **Status clínico confiável na saída do Dex** | ⏳ revisão 2 em contrato; classificação exige eval antes/depois. |

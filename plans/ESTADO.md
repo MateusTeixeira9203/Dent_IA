@@ -4,13 +4,18 @@
 
 ## Agora
 
-🔵 **R-153 — Orçamento da Ficha em fluxo contínuo.** A implementação em `main` isola o orçamento
-clínico por Ficha e impede que o dentista precise fechar/abandonar o paciente para montar uma
-proposta. Aguarda confirmação do deploy e validação dirigida. O recorte está em
-`use-orcamento-modal`, `novo-orcamento-modal` e `meu-dia-client`.
+🔵 **R-154 — Plano de tratamento fluido no Meu Dia.** Implementar a projeção automática de todas
+as indicações, agrupada por responsabilidade; a mesma pendência é acionável no plano e no histórico
+da ficha de origem. Alterações de momento e conclusão recebida são otimistas por evento.
 
-**Trava:** antes de qualquer push, validar o fluxo com eventos de uma única Ficha e confirmar que
-nenhum item solto financeiro é criado. Mudança de banco/RLS não entra neste recorte sem novo gate.
+**Implementado localmente:** helper puro e testes, remoção da redução por âncora no servidor,
+gaveta e histórico com a mesma projeção, abertura da ficha de origem pelo prontuário, ações
+otimistas por evento e scroll responsivo da revisão. `npm test` (207), typecheck e build passaram.
+
+**Falta agora:** validação manual autenticada com autor, destinatário e terceiro observador —
+inclusive rollback, duas ações simultâneas, voltar do prontuário, teclado/leitor de tela e
+claro/escuro/movimento reduzido. O localhost redireciona para login, então esse gate exige conta
+de teste ou sessão autenticada. Sem migration, RLS, status novo ou transferência de autoria.
 
 **Integração com `main` (04/09):** a baseline `release/2026-09-03-r140c` foi integrada sem
 conflito no commit `a3a5c19`; a suíte passou com 200 testes. O lint global ainda registra 14 erros
@@ -36,8 +41,8 @@ da validação clínica.
 - **R-137:** confirmar no celular o protético de `Novo agendamento` e o retorno clicável na Ficha.
 - **R-151:** a otimização de baixa latência do Dex foi integrada com a baseline; exige validação
   dirigida separada antes de ser tratada como concluída.
-- **R-154:** debate registrado para fila clínica completa, autoria explícita e mudanças de status
-  sem recarregar; não altera autoria de colega sem decisão clínica explícita.
+- **R-153:** 🟡 integrada em `main`; aguarda confirmação de deploy e validação dirigida do fluxo
+  de orçamento por Ficha. Não bloqueia a implementação local do R-154.
 
 ## Próxima decisão
 

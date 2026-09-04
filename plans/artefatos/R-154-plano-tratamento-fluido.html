@@ -1,0 +1,741 @@
+<!-- ARTEFATO · R-154 · rota: /dashboard/meu-dia · componente: src/app/dashboard/meu-dia/_components/historico-bloco.tsx · 2026-09-04 · status: aprovado -->
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>R-154 — Plano de tratamento fluido</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --background: #f6f7f7;
+        --surface: #ffffff;
+        --surface-alt: #dadade;
+        --border: #c2c2c6;
+        --text-primary: #09090b;
+        --text-secondary: #4b5563;
+        --teal: #2f9c85;
+        --teal-pale: #e4f4f1;
+        --teal-ink: #1e7060;
+        --coral: #e57373;
+        --coral-pale: #fce8e8;
+        --coral-ink: #b3261e;
+        --warning: #f59e0b;
+        --warning-pale: #fef3c7;
+        --warning-ink: #92400e;
+        --shadow: 0 24px 70px rgb(9 9 11 / 14%);
+      }
+
+      [data-theme='dark'] {
+        color-scheme: dark;
+        --background: #0d0d0d;
+        --surface: #111112;
+        --surface-alt: #1c1c1e;
+        --border: #27272a;
+        --text-primary: #fafafa;
+        --text-secondary: #a1a1aa;
+        --teal: #5dbeb0;
+        --teal-pale: #1e3a35;
+        --teal-ink: #5dbeb0;
+        --coral: #ef9a9a;
+        --coral-pale: #3d1f1f;
+        --coral-ink: #ef9a9a;
+        --warning: #fbbf24;
+        --warning-pale: #451a03;
+        --warning-ink: #fbbf24;
+        --shadow: 0 24px 70px rgb(0 0 0 / 40%);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--background);
+        color: var(--text-primary);
+        font-family: Outfit, ui-sans-serif, system-ui, sans-serif;
+      }
+
+      button { font: inherit; }
+
+      .shell {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: minmax(280px, 1fr) minmax(460px, 580px);
+      }
+
+      .context {
+        padding: 42px clamp(24px, 5vw, 76px);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        border-right: 1px solid var(--border);
+      }
+
+      .eyebrow,
+      .section-title,
+      .metadata,
+      .counter {
+        font-family: "DM Mono", ui-monospace, monospace;
+      }
+
+      .eyebrow {
+        color: var(--teal-ink);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+      }
+
+      .context h1,
+      .drawer h2,
+      .review h2 {
+        font-family: "DM Serif Display", Georgia, serif;
+        font-weight: 400;
+        letter-spacing: -.02em;
+      }
+
+      .context h1 {
+        max-width: 620px;
+        margin: 14px 0 16px;
+        font-size: clamp(38px, 5.5vw, 72px);
+        line-height: .98;
+      }
+
+      .context-copy {
+        max-width: 570px;
+        color: var(--text-secondary);
+        font-size: 16px;
+        line-height: 1.65;
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 32px;
+      }
+
+      .legend span,
+      .counter,
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        border-radius: 999px;
+      }
+
+      .legend span {
+        padding: 7px 10px;
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
+        font-size: 12px;
+      }
+
+      .theme-toggle {
+        width: fit-content;
+        padding: 9px 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface);
+        color: var(--text-primary);
+        cursor: pointer;
+      }
+
+      .workspace {
+        min-height: 100vh;
+        padding: 16px;
+        background: var(--surface-alt);
+      }
+
+      .drawer {
+        min-height: calc(100vh - 32px);
+        padding: 22px 18px 26px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: var(--background);
+        box-shadow: var(--shadow);
+      }
+
+      .drawer-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 2px 2px 20px;
+      }
+
+      .drawer h2,
+      .review h2 {
+        margin: 0;
+        font-size: 25px;
+        line-height: 1.12;
+      }
+
+      .drawer-subtitle {
+        margin: 6px 0 0;
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+
+      .counter {
+        flex: 0 0 auto;
+        padding: 6px 9px;
+        background: var(--teal-pale);
+        color: var(--teal-ink);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .plan-section + .plan-section { margin-top: 22px; }
+
+      .section-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 0 2px 8px;
+      }
+
+      .section-title {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+      }
+
+      .section-count {
+        color: var(--text-secondary);
+        font-size: 11px;
+      }
+
+      .cards { display: grid; gap: 8px; }
+
+      .card {
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--surface);
+        transition: opacity 160ms ease, transform 160ms ease, border-color 160ms ease;
+      }
+
+      .card.is-leaving {
+        opacity: 0;
+        transform: translateY(-4px);
+      }
+
+      .card.secondary { background: color-mix(in srgb, var(--surface) 72%, var(--background)); }
+
+      .card-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .procedure { min-width: 0; }
+
+      .procedure strong {
+        display: block;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .metadata {
+        margin-top: 3px;
+        color: var(--text-secondary);
+        font-size: 10px;
+        line-height: 1.45;
+      }
+
+      .badge {
+        flex: 0 0 auto;
+        padding: 5px 8px;
+        background: var(--surface-alt);
+        color: var(--text-secondary);
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .badge.next {
+        background: var(--warning-pale);
+        color: var(--warning-ink);
+      }
+
+      .responsible {
+        margin: 10px 0 0;
+        color: var(--text-secondary);
+        font-size: 12px;
+      }
+
+      .responsible strong { color: var(--text-primary); font-weight: 600; }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        margin-top: 12px;
+      }
+
+      .action {
+        min-height: 34px;
+        padding: 7px 10px;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: transparent;
+        color: var(--text-primary);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .action:hover { border-color: var(--teal); }
+      .action:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+      .action.primary {
+        border-color: var(--teal);
+        background: var(--teal);
+        color: #071713;
+      }
+
+      [data-theme='light'] .action.primary { color: #ffffff; }
+
+      .action.quiet { color: var(--text-secondary); }
+
+      .review {
+        margin-top: 26px;
+        padding-top: 22px;
+        border-top: 1px solid var(--border);
+      }
+
+      .review-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 10px;
+      }
+
+      .review h2 { font-size: 21px; }
+
+      .review-empty {
+        margin: 0;
+        padding: 14px;
+        border: 1px dashed var(--border);
+        border-radius: 14px;
+        color: var(--text-secondary);
+        font-size: 13px;
+        text-align: center;
+      }
+
+      .review-card {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        animation: enter 160ms ease both;
+      }
+
+      .review-card.is-visible { display: flex; }
+
+      .save-caption {
+        display: block;
+        margin-top: 4px;
+        color: var(--teal-ink);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .history {
+        margin-top: 26px;
+        padding-top: 22px;
+        border-top: 1px solid var(--border);
+      }
+
+      .history-row {
+        display: grid;
+        grid-template-columns: 70px 1fr;
+        gap: 12px;
+        margin-top: 10px;
+        color: var(--text-secondary);
+        font-size: 12px;
+      }
+
+      .history-row time {
+        font-family: "DM Mono", ui-monospace, monospace;
+        font-size: 10px;
+      }
+
+      .history-heading { align-items: flex-end; }
+
+      .history-caption {
+        margin: 5px 0 0;
+        color: var(--text-secondary);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .history-cards { margin-top: 10px; }
+
+      .visit-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .visit-head strong {
+        display: block;
+        margin-top: 5px;
+        font-size: 14px;
+        line-height: 1.4;
+      }
+
+      .visit-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+      }
+
+      .visit-tags span {
+        padding: 5px 7px;
+        border-radius: 7px;
+        background: var(--surface-alt);
+        color: var(--text-primary);
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .visit-copy {
+        margin: 12px 0 0;
+        color: var(--text-secondary);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .visit-card.compact .action { flex: 0 0 auto; }
+
+      .historical-pendencies {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+      }
+
+      .historical-pendency {
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+        border-radius: 10px;
+        background: var(--surface-alt);
+      }
+
+      .historical-pendency > div:first-child {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .historical-pendency strong { font-size: 12px; }
+
+      .historical-pendency .actions { margin-top: 0; }
+
+      @keyframes enter {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      @media (max-width: 900px) {
+        .shell { grid-template-columns: 1fr; }
+        .context { min-height: auto; gap: 32px; border-right: 0; border-bottom: 1px solid var(--border); }
+        .workspace { min-height: auto; }
+        .drawer { min-height: auto; }
+      }
+
+      @media (max-width: 560px) {
+        .context { padding: 28px 20px; }
+        .workspace { padding: 0; }
+        .drawer { border-width: 0; border-radius: 0; min-height: 100vh; padding: 20px 14px 28px; }
+        .card-top { gap: 8px; }
+        .actions { display: grid; grid-template-columns: 1fr 1fr; }
+        .action.primary { grid-column: 1 / -1; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: .01ms !important;
+          animation-iteration-count: 1 !important;
+          scroll-behavior: auto !important;
+          transition-duration: .01ms !important;
+        }
+        .card.is-leaving { transform: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="context" aria-labelledby="artifact-title">
+        <div>
+          <span class="eyebrow">R-154 · contrato visual</span>
+          <h1 id="artifact-title">Plano fluido, autoria preservada.</h1>
+          <p class="context-copy">
+            A gaveta reúne o plano de tratamento montado automaticamente pelas indicações e a
+            trajetória clínica do paciente. O dentista usa “Próxima sessão” para organizar o que
+            vem depois sem perder o acesso ao histórico completo.
+          </p>
+          <div class="legend" aria-label="Princípios da proposta">
+            <span>3 grupos explícitos</span>
+            <span>ações por responsabilidade</span>
+            <span>histórico cronológico</span>
+          </div>
+        </div>
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-pressed="true">
+          Alternar claro/escuro
+        </button>
+      </section>
+
+      <section class="workspace" aria-label="Prévia da gaveta Plano e histórico">
+        <aside class="drawer">
+          <header class="drawer-header">
+            <div>
+              <h2>Plano e histórico</h2>
+              <p class="drawer-subtitle">Marina Oliveira · consulta de hoje</p>
+            </div>
+            <span class="counter" id="drawer-count" aria-live="polite">5 pendências</span>
+          </header>
+
+          <div id="plan">
+            <section class="plan-section" id="my-queue" aria-labelledby="my-queue-title">
+              <div class="section-heading">
+                <h3 class="section-title" id="my-queue-title">Minha fila</h3>
+                <span class="section-count">2</span>
+              </div>
+              <div class="cards" id="my-cards">
+                <article class="card" data-id="canal-18" data-moment="proxima">
+                  <div class="card-top">
+                    <div class="procedure">
+                      <strong>Tratamento endodôntico</strong>
+                      <div class="metadata">DENTE 18 · INDICADO EM 04 SET</div>
+                    </div>
+                    <span class="badge next">Próxima sessão</span>
+                  </div>
+                  <div class="actions" aria-label="Ações para tratamento endodôntico">
+                    <button class="action moment" type="button">A fazer</button>
+                    <button class="action primary register" type="button">Registrar hoje</button>
+                    <button class="action quiet" type="button">Encaminhar</button>
+                  </div>
+                </article>
+
+                <article class="card" data-id="restauracao-36" data-moment="afazer">
+                  <div class="card-top">
+                    <div class="procedure">
+                      <strong>Restauração em resina</strong>
+                      <div class="metadata">DENTE 36 · INDICADO EM 29 AGO</div>
+                    </div>
+                    <span class="badge">A fazer</span>
+                  </div>
+                  <div class="actions" aria-label="Ações para restauração em resina">
+                    <button class="action moment" type="button">Próxima sessão</button>
+                    <button class="action primary register" type="button">Registrar hoje</button>
+                    <button class="action quiet" type="button">Encaminhar</button>
+                  </div>
+                </article>
+              </div>
+            </section>
+
+            <section class="plan-section" aria-labelledby="received-title">
+              <div class="section-heading">
+                <h3 class="section-title" id="received-title">Recebidos por encaminhamento</h3>
+                <span class="section-count">1</span>
+              </div>
+              <div class="cards">
+                <article class="card">
+                  <div class="card-top">
+                    <div class="procedure">
+                      <strong>Avaliação periodontal</strong>
+                      <div class="metadata">REGIÃO 31–41 · DE DR. RUI MATOS</div>
+                    </div>
+                    <span class="badge next">Próxima sessão</span>
+                  </div>
+                  <div class="actions">
+                    <button class="action primary" type="button">Concluir encaminhado</button>
+                  </div>
+                </article>
+              </div>
+            </section>
+
+            <section class="plan-section" aria-labelledby="followed-title">
+              <div class="section-heading">
+                <h3 class="section-title" id="followed-title">Acompanhados por outro dentista</h3>
+                <span class="section-count">2</span>
+              </div>
+              <div class="cards">
+                <article class="card secondary">
+                  <div class="card-top">
+                    <div class="procedure">
+                      <strong>Extração de terceiro molar</strong>
+                      <div class="metadata">DENTE 28 · ENCAMINHADO EM 03 SET</div>
+                    </div>
+                    <span class="badge next">Próxima sessão</span>
+                  </div>
+                  <p class="responsible">Responsável: <strong>Dra. Ana Ribeiro</strong></p>
+                </article>
+
+                <article class="card secondary">
+                  <div class="card-top">
+                    <div class="procedure">
+                      <strong>Clareamento supervisionado</strong>
+                      <div class="metadata">ARCADA · INDICADO EM 27 AGO</div>
+                    </div>
+                    <span class="badge">A fazer</span>
+                  </div>
+                  <p class="responsible">Responsável: <strong>Dr. Paulo Nunes</strong></p>
+                </article>
+              </div>
+            </section>
+          </div>
+
+          <section class="history" aria-labelledby="history-title">
+            <div class="section-heading history-heading">
+              <div>
+                <h3 class="section-title" id="history-title">Histórico clínico</h3>
+                <p class="history-caption">Visitas mais recentes primeiro, com o contexto completo do tratamento.</p>
+              </div>
+              <span class="section-count">3 visitas</span>
+            </div>
+            <div class="cards history-cards">
+              <article class="card visit-card">
+                <div class="visit-head">
+                  <div>
+                    <span class="metadata">04 SET 2026 · DRA. CAMILA ROCHA</span>
+                    <strong>Consulta de avaliação e planejamento</strong>
+                  </div>
+                  <span class="badge">2 em aberto</span>
+                </div>
+                <div class="visit-tags">
+                  <span>Tratamento endodôntico · dente 18</span>
+                  <span>Restauração em resina · dente 36</span>
+                </div>
+                <p class="visit-copy">Paciente relata sensibilidade ao frio no lado superior direito. Avaliação clínica e radiográfica realizada.</p>
+                <div class="actions">
+                  <button class="action quiet" type="button">Ocultar detalhes</button>
+                  <button class="action quiet" type="button">Ler tudo na ficha ↗</button>
+                  <button class="action" type="button">Gerar orçamento</button>
+                </div>
+                <div class="historical-pendencies" aria-label="Pendências desta ficha">
+                  <span class="section-title">Pendências desta ficha</span>
+                  <div class="historical-pendency">
+                    <div>
+                      <div>
+                        <strong>Tratamento endodôntico</strong>
+                        <div class="metadata">DENTE 18 · MESMO ITEM DO PLANO</div>
+                      </div>
+                      <span class="badge next">Próxima sessão</span>
+                    </div>
+                    <div class="actions">
+                      <button class="action moment" type="button">A fazer</button>
+                      <button class="action primary register" type="button">Registrar hoje</button>
+                      <button class="action quiet" type="button">Encaminhar</button>
+                    </div>
+                  </div>
+                  <div class="historical-pendency">
+                    <div>
+                      <div>
+                        <strong>Restauração em resina</strong>
+                        <div class="metadata">DENTE 36 · MESMO ITEM DO PLANO</div>
+                      </div>
+                      <span class="badge">A fazer</span>
+                    </div>
+                    <div class="actions">
+                      <button class="action moment" type="button">Próxima sessão</button>
+                      <button class="action primary register" type="button">Registrar hoje</button>
+                      <button class="action quiet" type="button">Encaminhar</button>
+                    </div>
+                  </div>
+                </div>
+              </article>
+
+              <article class="card visit-card compact">
+                <div class="visit-head">
+                  <div>
+                    <span class="metadata">21 AGO 2026 · DRA. CAMILA ROCHA</span>
+                    <strong>Profilaxia e orientação de higiene</strong>
+                  </div>
+                  <button class="action quiet" type="button">Ver detalhes</button>
+                </div>
+                <div class="visit-tags"><span>Profilaxia · boca toda</span></div>
+              </article>
+
+              <article class="card visit-card compact">
+                <div class="visit-head">
+                  <div>
+                    <span class="metadata">09 JUL 2026 · DR. RUI MATOS</span>
+                    <strong>Avaliação periodontal</strong>
+                  </div>
+                  <button class="action quiet" type="button">Ver detalhes</button>
+                </div>
+                <div class="visit-tags"><span>Avaliação periodontal · região 31–41</span></div>
+              </article>
+            </div>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <script>
+      const root = document.documentElement;
+      const themeToggle = document.getElementById('theme-toggle');
+      const drawerCount = document.getElementById('drawer-count');
+      const myCards = document.getElementById('my-cards');
+
+      const updateDrawerCount = () => {
+        const total = document.querySelectorAll('#plan .card:not(.is-leaving)').length;
+        drawerCount.textContent = `${total} ${total === 1 ? 'pendência' : 'pendências'}`;
+      };
+
+      const orderMyQueue = () => {
+        const cards = [...myCards.querySelectorAll('.card')];
+        cards.sort((a, b) => Number(a.dataset.moment !== 'proxima') - Number(b.dataset.moment !== 'proxima'));
+        cards.forEach((card) => myCards.append(card));
+      };
+
+      themeToggle.addEventListener('click', () => {
+        const nextTheme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+        root.dataset.theme = nextTheme;
+        themeToggle.setAttribute('aria-pressed', String(nextTheme === 'dark'));
+      });
+
+      document.querySelectorAll('.card[data-moment] .moment').forEach((button) => {
+        button.addEventListener('click', () => {
+          const card = button.closest('.card');
+          const badge = card.querySelector('.badge');
+          const becomesNext = card.dataset.moment !== 'proxima';
+          card.dataset.moment = becomesNext ? 'proxima' : 'afazer';
+          badge.textContent = becomesNext ? 'Próxima sessão' : 'A fazer';
+          badge.classList.toggle('next', becomesNext);
+          button.textContent = becomesNext ? 'A fazer' : 'Próxima sessão';
+          orderMyQueue();
+        });
+      });
+
+      document.querySelectorAll('.card[data-id] .register').forEach((button) => {
+        button.addEventListener('click', () => {
+          const card = button.closest('.card');
+          card.classList.add('is-leaving');
+          setTimeout(() => {
+            card.hidden = true;
+            card.classList.remove('is-leaving');
+            updateDrawerCount();
+          }, 160);
+        });
+      });
+    </script>
+  </body>
+</html>
