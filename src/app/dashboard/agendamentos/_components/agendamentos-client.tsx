@@ -93,7 +93,9 @@ import {
   cancelarComMotivo,
   criarEncaixe,
   criarPedidoProtetico,
+  listarProteticosAtivos,
   type StatusAgendamento,
+  type ProteticoOption,
 } from '../actions';
 import type { MotivoForaDoExpediente } from '@/lib/agenda/expediente';
 import { criarPacienteRapido } from '@/app/dashboard/pacientes/[id]/actions';
@@ -182,6 +184,9 @@ export function AgendamentosClient({
 }: Props) {
   const router = useRouter();
   const isSecretaria = role === 'secretaria';
+  // A lista inicial vem do Server Component, mas a PWA pode ficar aberta enquanto a
+  // equipe muda. Rebusca no cliente para a ação não desaparecer por uma prop defasada.
+  const [proteticosAtivos, setProteticosAtivos] = useState<ProteticoOption[]>(proteticos);
 
   /**
    * A semana é a visão inicial em qualquer dispositivo. A página já aplica
@@ -237,9 +242,14 @@ export function AgendamentosClient({
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Modo do modal de detalhe: visualização / edição / confirmação de exclusão
-  const [detailMode, setDetailMode] = useState<'view' | 'edit' | 'confirm-delete'>('view');
+  // Modo do modal de detalhe: visualização / edição / pedido ao protético / exclusão
+  const [detailMode, setDetailMode] = useState<'view' | 'edit' | 'send-protetico' | 'confirm-delete'>('view');
   const [editForm, setEditForm] = useState({ data: '', hora: '', duracao: '30', observacoes: '' });
+  const [pedidoProteticoForm, setPedidoProteticoForm] = useState({
+    proteticoId: proteticosAtivos[0]?.id ?? '',
+    dataEntrega: '',
+    observacao: '',
+  });
 
   // Assinatura do paciente na recepção
   const [assinadosLocal, setAssinadosLocal] = useState<Set<string>>(new Set());
@@ -278,6 +288,16 @@ export function AgendamentosClient({
   useEffect(() => {
     setBloqueios(bloqueiosIniciais);
   }, [bloqueiosIniciais]);
+
+  useEffect(() => {
+    let cancelado = false;
+    void listarProteticosAtivos().then((resultado) => {
+      if (!cancelado && resultado.ok) setProteticosAtivos(resultado.data);
+    }).catch(() => {
+      // A lista inicial continua disponível caso a atualização em segundo plano falhe.
+    });
+    return () => { cancelado = true; };
+  }, []);
 
   // Multi-user: recarrega os agendamentos do mês.
   //
@@ -383,7 +403,7 @@ export function AgendamentosClient({
     dentistaId: dentistasOrdenados[0]?.id ?? '',
     // R-94 — pedido pro protético, opcional
     enviarProtetico: false,
-    proteticoId: proteticos[0]?.id ?? '',
+    proteticoId: proteticosAtivos[0]?.id ?? '',
     dataEntregaProtetico: '',
     observacaoProtetico: '',
   });
@@ -712,7 +732,7 @@ export function AgendamentosClient({
       observacoes: '',
       dentistaId: dentistaPadraoForm(),
       enviarProtetico: false,
-      proteticoId: proteticos[0]?.id ?? '',
+      proteticoId: proteticosAtivos[0]?.id ?? '',
       dataEntregaProtetico: '',
       observacaoProtetico: '',
     });
@@ -896,6 +916,52 @@ export function AgendamentosClient({
     setSaveError(null);
     setAvisoEdicao(null);
     setDetailMode('edit');
+  };
+
+  const enterEnviarProteticoMode = () => {
+    setPedidoProteticoForm({
+      proteticoId: proteticosAtivos[0]?.id ?? '',
+      dataEntrega: '',
+      observacao: '',
+    });
+    setSaveError(null);
+    setDetailMode('send-protetico');
+  };
+
+  const handleEnviarProtetico = async () => {
+    if (!selectedApt?.paciente) return;
+    if (!pedidoProteticoForm.proteticoId) {
+      setSaveError('Selecione o protético.');
+      return;
+    }
+    if (!pedidoProteticoForm.dataEntrega) {
+      setSaveError('Escolha a data de entrega do protético.');
+      return;
+    }
+    if (!pedidoProteticoForm.observacao.trim()) {
+      setSaveError('Descreva o que o protético precisa saber.');
+      return;
+    }
+
+    setSaveError(null);
+    setIsSaving(true);
+    const result = await criarPedidoProtetico({
+      pacienteId: selectedApt.paciente.id,
+      proteticoId: pedidoProteticoForm.proteticoId,
+      observacao: pedidoProteticoForm.observacao.trim(),
+      dataEntrega: pedidoProteticoForm.dataEntrega,
+      agendamentoId: selectedApt.id,
+      ...(isSecretaria ? { dentistaId: selectedApt.dentista_id } : {}),
+    });
+    setIsSaving(false);
+
+    if (result.error) {
+      setSaveError(result.error);
+      return;
+    }
+
+    toast.success('Enviado pro protético!');
+    setDetailMode('view');
   };
 
   const handleSalvarEdicao = async (forcar = false) => {
@@ -1565,7 +1631,7 @@ export function AgendamentosClient({
 
               {/* R-94 — pedido pro protético, opcional. Some se a clínica não tem
                   protético cadastrado: sem isso o dentista veria caixa morta (spec §5). */}
-              {proteticos.length > 0 && (
+              {proteticosAtivos.length > 0 && (
                 <div className="order-4 mx-4 mb-4 overflow-hidden rounded-2xl border border-teal/30 md:mx-0 md:mb-0">
                   <div className="flex items-center justify-between gap-3.5 p-3.5 bg-teal/5">
                     <div>
@@ -1591,13 +1657,13 @@ export function AgendamentosClient({
                             <SelectValue>
                               {(v: string | null) =>
                                 v
-                                  ? (proteticos.find((p) => p.id === v)?.nome ?? 'Protético indisponível')
+                                  ? (proteticosAtivos.find((p) => p.id === v)?.nome ?? 'Protético indisponível')
                                   : 'Selecione o protético...'
                               }
                             </SelectValue>
                           </SelectTrigger>
                           <SelectContent className="bg-surface border-border">
-                            {proteticos.map((p) => (
+                            {proteticosAtivos.map((p) => (
                               <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
                             ))}
                           </SelectContent>
@@ -2250,6 +2316,17 @@ export function AgendamentosClient({
                         )
                       )}
 
+                      {proteticosAtivos.length > 0 && selectedApt.paciente && !['cancelled', 'no_show'].includes(selectedApt.status) && (
+                        <Button
+                          variant="outline"
+                          onClick={enterEnviarProteticoMode}
+                          className="w-full rounded-xl border-teal/30 text-teal-ink hover:bg-teal/5 hover:text-teal-ink"
+                        >
+                          <Stethoscope className="mr-2 h-4 w-4" />
+                          Enviar ao protético
+                        </Button>
+                      )}
+
                       {!['cancelled', 'no_show'].includes(selectedApt.status) && selectedApt.paciente && (
                         <BotaoMensagemIA
                           variant="full"
@@ -2301,6 +2378,104 @@ export function AgendamentosClient({
                         Editar
                       </Button>
                     </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* ── MODO: ENVIAR AO PROTÉTICO ─────────────────────── */}
+              {detailMode === 'send-protetico' && (
+                <motion.div
+                  key="send-protetico"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.15 }}
+                  className="flex min-h-0 flex-1 flex-col"
+                >
+                  <div className="px-6 pt-6 pb-4">
+                    <button
+                      onClick={() => setDetailMode('view')}
+                      className="mb-3 flex w-fit items-center gap-1 text-sm text-text-secondary transition-colors hover:text-text-primary"
+                    >
+                      <ArrowLeft className="h-4 w-4" /> Voltar
+                    </button>
+                    <DialogTitle className="font-heading text-xl font-semibold text-text-primary">
+                      Enviar ao protético
+                    </DialogTitle>
+                    <DialogDescription className="mt-0.5 text-sm text-text-secondary">
+                      Pedido para {selectedApt.paciente?.nome ?? 'o paciente'}
+                    </DialogDescription>
+                  </div>
+
+                  <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pb-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="pedido-protetico" className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+                        Protético
+                      </Label>
+                      <Select
+                        value={pedidoProteticoForm.proteticoId}
+                        onValueChange={(proteticoId) => proteticoId && setPedidoProteticoForm((form) => ({ ...form, proteticoId }))}
+                      >
+                        <SelectTrigger id="pedido-protetico" className="rounded-xl border-border bg-surface-alt text-text-primary">
+                          <SelectValue placeholder="Selecione o protético" />
+                        </SelectTrigger>
+                        <SelectContent className="border-border bg-surface">
+                          {proteticosAtivos.map((protetico) => (
+                            <SelectItem key={protetico.id} value={protetico.id}>{protetico.nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="pedido-protetico-data" className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+                        Data de entrega
+                      </Label>
+                      <Input
+                        id="pedido-protetico-data"
+                        type="date"
+                        min={format(new Date(), 'yyyy-MM-dd')}
+                        value={pedidoProteticoForm.dataEntrega}
+                        onChange={(event) => setPedidoProteticoForm((form) => ({ ...form, dataEntrega: event.target.value }))}
+                        className="rounded-xl border-border bg-surface-alt text-text-primary"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="pedido-protetico-observacao" className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+                        O que o protético precisa saber
+                      </Label>
+                      <textarea
+                        id="pedido-protetico-observacao"
+                        value={pedidoProteticoForm.observacao}
+                        onChange={(event) => setPedidoProteticoForm((form) => ({ ...form, observacao: event.target.value }))}
+                        className="min-h-[112px] w-full resize-none rounded-xl border border-border bg-surface-alt p-3 text-sm text-text-primary placeholder:text-text-secondary/50 transition-all focus:ring-2 focus:ring-teal/20"
+                        placeholder="Ex.: cor, material, dentes envolvidos e observações do caso."
+                      />
+                    </div>
+
+                    {saveError && (
+                      <p className="rounded-lg bg-red-500/10 p-3 text-sm text-red-500">{saveError}</p>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end gap-2 border-t border-border px-6 py-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => setDetailMode('view')}
+                      disabled={isSaving}
+                      className="rounded-xl border-border text-text-primary hover:bg-surface-alt"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={() => void handleEnviarProtetico()}
+                      disabled={isSaving}
+                      className="rounded-xl bg-teal text-white hover:bg-teal-lt disabled:opacity-50"
+                    >
+                      {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Stethoscope className="mr-2 h-4 w-4" />}
+                      Enviar pedido
+                    </Button>
                   </div>
                 </motion.div>
               )}
