@@ -577,10 +577,6 @@ export function useRegistrarPainel({
         : 'A captura do Dex ainda está em andamento. Aguarde antes de salvar.');
       return;
     }
-    if (eventosDraft.some((evento) => evento.revisar_status)) {
-      toast.error('Revise os procedimentos marcados com “Confira o status” antes de salvar.');
-      return;
-    }
     setIsSaving(true);
     // R-86 — achado pela auditoria de 08/08: sem o try/catch (mesmo padrão que
     // `handleRegravarEventos`, logo abaixo, já usa), uma falha de rede/servidor (503 visto ao
