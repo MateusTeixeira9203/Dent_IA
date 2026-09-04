@@ -12,6 +12,10 @@ o eval. Bate no endpoint HTTP real com a sessão logada — não duplica o promp
 3. `NODE_PATH="<repo>/node_modules" node evals/extracao-clinica/run.cjs`. O resultado vai para
    `evals/extracao-clinica/results/` (também ignorado pelo Git); `EVAL_OUT_DIR` troca o destino.
 
+Para o baseline de latência, aqueça uma vez e rode ao menos 20 casos sintéticos:
+`EVAL_WARM_UP=1 EVAL_CASE_LIMIT=20 NODE_PATH="<repo>/node_modules" node evals/extracao-clinica/run.cjs`.
+O resultado inclui p50/p95 de total, pré-IA, IA e pós-IA; o arquivo não guarda relatos nem respostas.
+
 ## Como ler
 
 - **ATUAL** — tipos que a extração já suporta. É a linha que **não pode regredir**: rode o baseline
