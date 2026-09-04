@@ -2,6 +2,7 @@
 
 > **SPEC** · **R-143** · ⏳ fila
 > **Aberto:** 2026-08-30 · **Fechado:** — · **Fase:** aprovada para execução
+> **Decisão revista em 2026-09-03:** `revisar_status` é aviso opcional e não bloqueia o save no Meu Dia.
 
 ## 1. Problema
 
@@ -17,7 +18,7 @@ precisão de toque incompatível com o ambiente de consulta.
 
 | Decisão | Alternativa descartada | Motivo |
 |---|---|---|
-| Pendência bloqueia save até decisão | aviso passivo | aviso pode passar despercebido |
+| Pendência avisa sem bloquear o save no Meu Dia | exigir alteração para limpar a flag | o status visível pode já estar certo; um gesto artificial não torna o dado mais confiável |
 | Dois comandos explícitos no card suspeito | pill que alterna sem dizer destino | decisão fica inequívoca |
 | “Tudo feito” confirma quantidade + undo | conversão imediata | falso realizado tem maior consequência |
 | “Tudo indicado” imediato + undo | modal para toda ação segura | reduz atrito mantendo reversão |
@@ -28,11 +29,12 @@ precisão de toque incompatível com o ambiente de consulta.
 
 ## 3. Objetivo e como funciona
 
-**Objetivo:** nenhum evento ambíguo ou de fallback é salvo sem uma decisão explícita, e todos os
-controles de revisão funcionam com toque, teclado e leitor de tela.
+**Objetivo:** eventos ambíguos ou de fallback ficam claramente sinalizados para revisão opcional,
+e todos os controles de revisão funcionam com toque, teclado e leitor de tela.
 
-Cards suspeitos oferecem “Confirmar indicado” e “Confirmar realizado”. O save aponta a primeira
-pendência. Ações em lote mostram quantos itens mudarão e podem ser desfeitas antes do salvamento.
+Cards suspeitos oferecem “Confirmar indicado” e “Confirmar realizado”. No Meu Dia, o save mantém
+o estado sugerido pelo Dex quando o dentista decide não alterar o card. Ações em lote mostram
+quantos itens mudarão e podem ser desfeitas antes do salvamento.
 
 ## 4. Contrato técnico
 
@@ -55,8 +57,8 @@ function resolverStatusDraft(
 
 - “Confirmar indicado” define indicado, `realizado_em: null` e limpa `revisar_status`.
 - “Confirmar realizado” define realizado, origem clínica, sessão atual, data padrão e limpa flag.
-- Save em Ficha/Meu Dia chama a função de pendências antes da Action. Havendo qualquer uma, não
-  envia request, abre/rola até o primeiro card e anuncia a quantidade.
+- No Meu Dia, `revisar_status` nunca impede a Action. O aviso e os controles permanecem visíveis,
+  mas o dentista pode salvar sem fazer uma alteração artificial no status sugerido pelo Dex.
 - Remover o evento também resolve a pendência por decisão explícita.
 - Reextração não reabre evento que já foi corrigido e preservado pelo dedup atual.
 
@@ -126,8 +128,8 @@ interface RegistroCardData {
 |---|---|---|
 | Sem eventos | vazio atual | permitido conforme fluxo atual |
 | Todos revisados | resumo realizados/indicados | permitido |
-| Uma pendência | card destacado + duas confirmações | bloqueado |
-| Fallback `outro` | nome real + precisa revisar | bloqueado |
+| Uma pendência | card destacado + duas confirmações | permitido no Meu Dia |
+| Fallback `outro` | nome real + precisa revisar | permitido no Meu Dia |
 | Grupo misto | contagens dos dois estados | permitido se sem flag |
 | Tudo indicado | mudança + undo 10s | permitido após resolução |
 | Tudo feito | confirmação com N + undo | permitido após resolução |
@@ -142,8 +144,8 @@ existentes. Auditoria visual final compara light/dark e desktop/mobile com as re
 
 ## 7. Invariantes
 
-- [ ] Evento com `revisar_status` não é enviado à Action.
-- [ ] Só gesto humano explícito limpa a pendência.
+- [ ] Evento com `revisar_status` pode ser enviado à Action no Meu Dia sem exigir gesto artificial.
+- [ ] O aviso permanece visível enquanto o rascunho está aberto e só uma decisão explícita limpa a flag.
 - [ ] Ações em lote nunca mudam silenciosamente um grupo sem contagem/undo.
 - [ ] Grupo misto nunca se apresenta como inteiramente realizado.
 - [ ] Estado persistido continua por evento; `misto` é apenas view-model.
@@ -153,7 +155,7 @@ existentes. Auditoria visual final compara light/dark e desktop/mobile com as re
 ## 8. Gates de aceite
 
 - [ ] **G1:** teste puro cobre confirmar indicado/realizado, remover e restauração por undo.
-- [ ] **G2:** save com 1+ pendências faz zero request, foca o primeiro card e anuncia quantidade.
+- [ ] **G2:** no Meu Dia, save com 1+ pendências envia o request normalmente e não exige alternar status.
 - [ ] **G3:** `Tudo feito` exige confirmação; ambas as ações restauram snapshot completo em undo.
 - [ ] **G4:** grupo 1 realizado + 1 indicado mostra “Misto” e contagens corretas em rascunho e
   ficha salva.
