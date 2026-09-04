@@ -40,6 +40,8 @@ export interface NovoOrcamentoModalProps {
    *  por-ficha fica fechado mesmo com `fichasParaOrc.length === 1` (decisão 07/08). */
   podeTrocarFicha: boolean;
   orcError: string | null;
+  /** Catálogo ausente por erro não pode parecer uma lista legítima vazia. */
+  bloqueioCriacao: string | null;
   novoOrcItens: NovoOrcItem[];
   setNovoOrcItens: React.Dispatch<React.SetStateAction<NovoOrcItem[]>>;
   procedimentosClinica: ProcedimentoClinica[];
@@ -80,6 +82,7 @@ export function NovoOrcamentoModal({
   fichasParaOrc,
   podeTrocarFicha,
   orcError,
+  bloqueioCriacao,
   novoOrcItens,
   setNovoOrcItens,
   procedimentosClinica,
@@ -208,13 +211,6 @@ export function NovoOrcamentoModal({
                 </button>
               );
             })}
-            <button
-              onClick={() => void onSelecionarFicha(null)}
-              className="min-h-11 w-full py-3 border border-dashed border-border rounded-xl text-sm text-text-secondary hover:bg-surface-alt hover:text-text-primary transition-colors flex items-center justify-center gap-2"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Criar orçamento em branco
-            </button>
           </div>
         )}
 
@@ -449,15 +445,18 @@ export function NovoOrcamentoModal({
 
               {/* ── Ação fixa no pé da coluna (R-39a) ── */}
               <div className="shrink-0 space-y-2 border-t border-border p-4">
+                {bloqueioCriacao && (
+                  <p role="alert" className="text-xs text-coral-ink bg-coral-pale rounded-xl px-3 py-2">{bloqueioCriacao}</p>
+                )}
                 {orcError && (
                   <p className="text-xs text-coral-ink bg-coral-pale rounded-xl px-3 py-2">{orcError}</p>
                 )}
                 <Button
                   onClick={onCriarOrcamento}
-                  disabled={orcSaving || novoOrcItens.every((item) => item.selecionado === false || !item.descricao.trim())}
+                  disabled={Boolean(bloqueioCriacao) || orcSaving || novoOrcItens.every((item) => item.selecionado === false || !item.descricao.trim())}
                   className="w-full bg-teal text-white hover:bg-teal-lt rounded-xl disabled:opacity-50 font-bold"
                 >
-                  {orcSaving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</> : modoPersistencia === 'adicionar' ? `Adicionar ${novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length} procedimento${novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length === 1 ? '' : 's'}` : 'Criar orçamento'}
+                  {orcSaving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</> : modoPersistencia === 'adicionar' ? `Adicionar ${novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length} procedimento${novoOrcItens.filter((item) => item.selecionado !== false && item.descricao.trim()).length === 1 ? '' : 's'}` : 'Criar e continuar'}
                 </Button>
                 {podeTrocarFicha && (
                   <Button

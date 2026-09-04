@@ -43,11 +43,16 @@ export interface UseOrcamentoModalInput {
   clinicaId: string;
   meuDentistaId: string;
   procedimentosClinica: ProcedimentoClinica[];
+  /** Falha ao buscar o catálogo não pode parecer uma lista vazia: sem catálogo, não há preço
+   * canônico confiável para montar uma proposta. */
+  erroCatalogo?: string | null;
   isSecretaria: boolean;
   dentistasClinica: { id: string; nome: string }[];
   /** Só quem mantém uma lista local de orçamentos (tela do paciente) precisa disto — chamado
    *  com o orçamento otimista recém-criado. Meu dia não passa nada. */
   onOrcamentoCriado?: (orcamento: OrcamentoComItens) => void;
+  /** O perfil abre o detalhe persistido assim que a proposta nasce, sem exigir aba/card. */
+  onContinuarConfiguracao?: (orcamentoId: string) => void;
 }
 
 export interface UseOrcamentoModalResult {
@@ -93,8 +98,8 @@ const SELECT_FICHA_PARA_ORC = `${CAMPOS_FICHA_ORC}, odontograma_eventos(${CAMPOS
 const SELECT_FICHA_PARA_ORC_AGREGADO = `${CAMPOS_FICHA_ORC}, odontograma_eventos!inner(${CAMPOS_EVENTO_ORC})`;
 
 export function useOrcamentoModal({
-  pacienteId, clinicaId, meuDentistaId, procedimentosClinica, isSecretaria, dentistasClinica,
-  onOrcamentoCriado,
+  pacienteId, clinicaId, meuDentistaId, procedimentosClinica, erroCatalogo = null, isSecretaria, dentistasClinica,
+  onOrcamentoCriado, onContinuarConfiguracao,
 }: UseOrcamentoModalInput): UseOrcamentoModalResult {
   const router = useRouter();
 
@@ -112,6 +117,7 @@ export function useOrcamentoModal({
   const [modoPersistencia, setModoPersistencia] = useState<ModoPersistenciaOrcamento>({ tipo: 'novo' });
   const [eventoIdsJaOrcados, setEventoIdsJaOrcados] = useState<Set<string>>(() => new Set());
   const [resumoOrigemOrcamento, setResumoOrigemOrcamento] = useState<ResumoOrigemOrcamento | null>(null);
+  const [bloqueioFicha, setBloqueioFicha] = useState<string | null>(null);
   // Pré-seleciona o 1º dentista da lista assim que ela chega — só quando ainda vazio, nunca
   // sobrescreve uma escolha manual já feita (o pai só popula `dentistasClinica` quando
   // isSecretaria; dentista comum nunca aciona isto, `dentistasClinica` fica sempre []).
@@ -180,45 +186,6 @@ export function useOrcamentoModal({
     return procedimentosClinicaCompleto.find(
       (procedimento) => normalizarNomeProcedimento(procedimento.nome) === normalizado,
     );
-  };
-
-  /**
-   * R-30 Parte 4 — FALLBACK de texto: o evento ganha quando existe, o texto entra só quando
-   * não há nenhum evento elegível. Lógica idêntica à que está em produção, código preservado
-   * como rede (82 de 87 fichas medidas tinham só texto, sem evento).
-   */
-  const itensDoTexto = (ficha: FichaParaOrc): NovoOrcItem[] => {
-    const dentes = ficha.dentes_afetados ?? [];
-    const obs = ficha.dentes_observacoes ?? {};
-    if (dentes.length === 0) return [ITEM_VAZIO];
-
-    const procToTeeth = new Map<string, number[]>();
-    for (const tooth of dentes) {
-      const procs = (obs[String(tooth)] ?? '').split('\n').filter(Boolean);
-      for (const proc of procs) {
-        procToTeeth.set(proc, [...(procToTeeth.get(proc) ?? []), tooth]);
-      }
-    }
-
-    if (procToTeeth.size === 0) {
-      return dentes.map((t) => ({ procedimentoId: '', descricao: `Dente ${t}`, quantidade: 1, preco: '' }));
-    }
-
-    return Array.from(procToTeeth.entries()).map(([proc, teeth]) => {
-      const match = matchProcedimentoPorNomeExato(proc);
-      const descricao =
-        teeth.length > 1
-          ? `${match?.nome ?? proc} (D${teeth.join(', D')})`
-          : match?.nome ?? `D${teeth[0]} — ${proc}`;
-      return {
-        procedimentoId: match?.id ?? '',
-        descricao,
-        quantidade: teeth.length,
-        preco: match?.preco_padrao != null ? formatValorBR(match.preco_padrao) : '',
-        eventoIds: [],
-        origem: 'legado',
-      };
-    });
   };
 
   // R-130 — fonte única da elegibilidade: evento clínico pode ser cobrado tenha sido ele
@@ -323,9 +290,17 @@ export function useOrcamentoModal({
       alvoDentistaId,
     );
     const itens = eventosParaItens(visiveis, idsJaOrcados);
-    // Texto legado só é fonte quando não há evento algum. Nunca troca uma lista de eventos
-    // invisíveis/indisponíveis por descrição antiga como se fosse procedimento cobravel.
-    return itens.length > 0 ? itens : eventos.length === 0 ? itensDoTexto(ficha) : [];
+    // Texto legado é histórico, não identidade financeira. Uma Ficha sem evento estruturado
+    // não cria item cobravel: sem `evento_id` não há como provar origem nem não duplicidade.
+    return itens;
+  };
+
+  const bloqueioParaFichaSemItens = (ficha: FichaParaOrc | null, itens: NovoOrcItem[]) => {
+    if (!ficha || itens.length > 0) return null;
+    if ((ficha.odontograma_eventos ?? []).length === 0) {
+      return 'Esta ficha não possui procedimentos estruturados. Registre o procedimento na ficha antes de gerar o orçamento.';
+    }
+    return 'Esta ficha não possui procedimentos clínicos disponíveis para este orçamento.';
   };
 
   /** O banco já barra evento de outro responsável. Este resumo apenas deixa a regra visível
@@ -406,6 +381,7 @@ export function useOrcamentoModal({
         const itens = fichaParaItens(ficha, id, eventoIdsJaOrcados);
         setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
         setResumoOrigemOrcamento(resumoDaFichaParaOrcamento(ficha, id, eventoIdsJaOrcados));
+        setBloqueioFicha(bloqueioParaFichaSemItens(ficha, itens));
       }
       void carregarModoDaFicha(fichaOrcId, id)
         .then(setModoPersistencia)
@@ -537,8 +513,10 @@ export function useOrcamentoModal({
         const itens = eventosParaItens(eventosRascunho, idsJaOrcados);
         setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
         setResumoOrigemOrcamento(null);
+        setBloqueioFicha(itens.length > 0 ? null : 'Não há procedimentos clínicos disponíveis para este orçamento.');
         setEtapaNovoOrc('itens');
       } else {
+        setBloqueioFicha(null);
         setEtapaNovoOrc('selecionar');
       }
     } catch {
@@ -568,6 +546,7 @@ export function useOrcamentoModal({
       const itens = ficha ? fichaParaItens(ficha, alvoAtual(), eventoIdsJaOrcados) : [];
       setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
       setResumoOrigemOrcamento(ficha ? resumoDaFichaParaOrcamento(ficha, alvoAtual(), eventoIdsJaOrcados) : null);
+      setBloqueioFicha(bloqueioParaFichaSemItens(ficha ?? null, itens));
     }
     setEtapaNovoOrc('itens');
   };
@@ -583,7 +562,8 @@ export function useOrcamentoModal({
         .from('fichas')
         .select(SELECT_FICHA_PARA_ORC)
         .eq('id', fichaId)
-        .eq('clinica_id', clinicaId);
+        .eq('clinica_id', clinicaId)
+        .eq('paciente_id', pacienteId);
       const { data, error } = await query.single();
       if (error) throw new Error(error.message);
       const ficha = data as unknown as FichaParaOrc | null;
@@ -595,12 +575,14 @@ export function useOrcamentoModal({
       const itens = ficha ? fichaParaItens(ficha, alvoAtual(), idsJaOrcados) : [];
       setNovoOrcItens(itens.length > 0 ? itens : [ITEM_VAZIO]);
       setResumoOrigemOrcamento(ficha ? resumoDaFichaParaOrcamento(ficha, alvoAtual(), idsJaOrcados) : null);
+      setBloqueioFicha(bloqueioParaFichaSemItens(ficha, itens));
     } catch (error: unknown) {
       setFichaOrcId(fichaId);
       setFichasParaOrc([]);
       setModoPersistencia({ tipo: 'novo' });
       setNovoOrcItens([ITEM_VAZIO]);
       setResumoOrigemOrcamento(null);
+      setBloqueioFicha(null);
       setOrcError(error instanceof Error ? error.message : 'Não foi possível localizar o orçamento desta ficha.');
     } finally {
       setEtapaNovoOrc('itens');
@@ -625,14 +607,55 @@ export function useOrcamentoModal({
       toast.error(result.error ?? 'Não foi possível cadastrar o procedimento.');
     } else {
       const novoId = result.id;
-      setProcedimentosCadastradosAgora((prev) => [...prev, { id: novoId, nome, preco_padrao: precoNum > 0 ? precoNum : null }]);
-      setNovoOrcItens((prev) => prev.map((it, i) => (i === idx ? { ...it, procedimentoId: novoId } : it)));
+      const canonico = normalizarNomeProcedimento(nome);
+      const precoCanonico = result.precoPadrao != null ? formatValorBR(result.precoPadrao) : '';
+      setProcedimentosCadastradosAgora((prev) => [...prev, { id: novoId, nome, preco_padrao: result.precoPadrao ?? null }]);
+      // Linhas iguais ainda estão apenas na montagem. Sincronizar aqui evita que o mesmo
+      // procedimento siga com preço/ID divergente, sem tocar em orçamento já persistido.
+      setNovoOrcItens((prev) => prev.map((it) => (
+        normalizarNomeProcedimento(stripDenteDoNome(it.descricao)) === canonico
+          ? { ...it, procedimentoId: novoId, preco: precoCanonico || it.preco }
+          : it
+      )));
       toast.success('Procedimento cadastrado no catálogo.');
     }
     setRegisteringProcIdx(null);
   };
 
+  const carregarOrcamentoPersistido = async (orcamentoId: string): Promise<OrcamentoComItens> => {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('orcamentos')
+      .select('id, status, total, valor_acordado, plano_forma, desconto, created_at, validade_dias, condicoes_pagamento, mostrar_valor_por_item, dentista_id, orcamento_itens(id, descricao, preco_total, quantidade, aprovado)')
+      .eq('id', orcamentoId)
+      .eq('paciente_id', pacienteId)
+      .eq('clinica_id', clinicaId)
+      .single();
+    if (error || !data) throw new Error(error?.message ?? 'Orçamento não localizado após salvar.');
+
+    const orcamento = data as unknown as Omit<OrcamentoComItens, 'itens' | 'pagamentos' | 'cobrancas' | 'aprovado_por' | 'aprovado_em' | 'aceite'> & {
+      orcamento_itens: OrcamentoComItens['itens'] | null;
+    };
+    return {
+      ...orcamento,
+      itens: orcamento.orcamento_itens ?? [],
+      pagamentos: [],
+      cobrancas: [],
+      aprovado_por: null,
+      aprovado_em: null,
+      aceite: null,
+    };
+  };
+
   const handleCriarOrcamento = async () => {
+    if (erroCatalogo) {
+      setOrcError(erroCatalogo);
+      return;
+    }
+    if (bloqueioFicha) {
+      setOrcError(bloqueioFicha);
+      return;
+    }
     const itensValidos = novoOrcItens.filter((i) => i.selecionado !== false && i.descricao.trim());
     if (itensValidos.length === 0) {
       setOrcError('Adicione ao menos um procedimento com descrição.');
@@ -700,7 +723,7 @@ export function useOrcamentoModal({
       setOrcError(result.error);
     } else {
       const novoTotal = Math.max(0, subtotalValido - descontoValor);
-      const novoOrc: OrcamentoComItens = {
+      let novoOrc: OrcamentoComItens = {
         id: result.id ?? crypto.randomUUID(),
         status: 'rascunho',
         total: novoTotal,
@@ -728,7 +751,18 @@ export function useOrcamentoModal({
         aprovado_em: null,
         aceite: null,
       };
-      onOrcamentoCriado?.(novoOrc);
+      let podeAbrirConfiguracao = false;
+      if (result.id) {
+        try {
+          novoOrc = await carregarOrcamentoPersistido(result.id);
+          podeAbrirConfiguracao = true;
+        } catch {
+          // A proposta já está no banco; não inventamos ids temporários para ações de aceite.
+          // O refresh permite retomá-la pelo perfil sem risco de duplicação.
+          router.refresh();
+          toast.error('Proposta criada, mas não foi possível abrir a configuração agora. Recarregue o perfil para continuar.');
+        }
+      }
       setIsNovoOrcOpen(false);
       setNovoOrcItens([ITEM_VAZIO]);
 
@@ -760,12 +794,20 @@ export function useOrcamentoModal({
       setNovoOrcNumParcelas('3');
       setNovoOrcPrimeiroVencimento('');
       setNovoOrcParcelasForma('');
-      if (precisaAtualizar) router.refresh(); // pega condicoes_pagamento/parcelas reais do server
+      if (precisaAtualizar && result.id) {
+        try {
+          novoOrc = await carregarOrcamentoPersistido(result.id);
+        } catch {
+          router.refresh();
+        }
+      }
+      onOrcamentoCriado?.(novoOrc);
 
       toast.success('Orçamento criado como rascunho', {
         description: 'Revise os itens e envie para o paciente quando estiver pronto.',
         duration: 4000,
       });
+      if (result.id && podeAbrirConfiguracao) onContinuarConfiguracao?.(result.id);
     }
     setOrcSaving(false);
   };
@@ -779,6 +821,7 @@ export function useOrcamentoModal({
         setModoPersistencia({ tipo: 'novo' });
         setEventoIdsJaOrcados(new Set());
         setResumoOrigemOrcamento(null);
+        setBloqueioFicha(null);
         setNovoOrcPlanoForma(null); setNovoOrcNumParcelas('3'); setNovoOrcPrimeiroVencimento(''); setNovoOrcParcelasForma('');
       }
     },
@@ -795,6 +838,7 @@ export function useOrcamentoModal({
     // de 1 ficha no array, então o primeiro termo nunca o alcança).
     podeTrocarFicha: fichasParaOrc.length > 1 || (fichaOrcId == null && fichasParaOrc.length > 0),
     orcError,
+    bloqueioCriacao: erroCatalogo ?? bloqueioFicha,
     novoOrcItens,
     setNovoOrcItens,
     procedimentosClinica: procedimentosClinicaCompleto,

@@ -154,7 +154,7 @@ async function notificarAceite(
     tipo:         'briefing',
     titulo:       `Orçamento aceito — ${pacNome}`,
     mensagem:     `${pacNome} aprovou procedimentos do orçamento. Já pode receber.`,
-    href:         '/dashboard/orcamentos',
+    href:         `/dashboard/pacientes/${orc.paciente_id}`,
   });
 }
 
@@ -405,7 +405,7 @@ export async function atualizarStatusOrcamento(
       mensagem:     status === 'enviado'
         ? `Orçamento de ${pacNome} enviado. Acompanhe o retorno e faça o follow-up se necessário.`
         : `Orçamento de ${pacNome} foi aprovado pelo dentista.`,
-      href:         '/dashboard/orcamentos',
+      href:         orc?.paciente_id ? `/dashboard/pacientes/${orc.paciente_id}` : '/dashboard/pacientes',
     });
 
     // R-114 — a linha de pagamento pendente automática (nascia com o total cheio ao aprovar
@@ -673,6 +673,9 @@ export async function criarOrcamento(dados: z.input<typeof criarOrcamentoSchema>
     return { error: 'Revise os itens e os valores do orçamento antes de salvar.' };
   }
   const entrada = parsed.data;
+  if (!entrada.fichaId || entrada.itens.some((item) => item.eventoIds.length === 0)) {
+    return { error: 'Crie o orçamento a partir de uma ficha com procedimentos estruturados.' };
+  }
 
   const { data: dentistaPerfil } = await supabase
     .from("dentistas")
@@ -725,6 +728,12 @@ export async function criarOrcamento(dados: z.input<typeof criarOrcamentoSchema>
     if (mensagem.includes('orcamento_evento_invalido')) {
       return { error: 'Um dos procedimentos não está mais disponível para este orçamento. Recarregue a lista.' };
     }
+    if (mensagem.includes('orcamento_evento_ficha_invalido')) {
+      return { error: 'Os procedimentos precisam pertencer à ficha selecionada. Reabra a ficha e tente novamente.' };
+    }
+    if (mensagem.includes('orcamento_procedimento_de_outro_dentista')) {
+      return { error: 'O procedimento escolhido pertence a outro dentista. Recarregue o catálogo antes de continuar.' };
+    }
     return { error: 'Não foi possível criar o orçamento. Nenhum item foi salvo.' };
   }
 
@@ -775,7 +784,7 @@ export async function registrarPagamento(dados: {
       tipo: 'pagamento_confirmado',
       titulo: `Pagamento recebido — ${pacienteNome}`,
       mensagem: `Secretária registrou ${fmtReal(parsed.data.valor)} (${FORMA_LABEL[parsed.data.formaPagamento]}) do paciente ${pacienteNome}.`,
-      href: '/dashboard/orcamentos',
+      href: `/dashboard/pacientes/${parsed.data.pacienteId}`,
     });
   }
   revalidatePath(`/dashboard/pacientes/${parsed.data.pacienteId}`);
@@ -1043,6 +1052,12 @@ export async function adicionarItensAoOrcamento(
     }
     if (mensagem.includes('orcamento_evento_invalido')) {
       return { error: 'Um dos procedimentos não está mais disponível para este orçamento. Recarregue a ficha.' };
+    }
+    if (mensagem.includes('orcamento_evento_ficha_invalido')) {
+      return { error: 'Os procedimentos adicionais precisam pertencer à mesma ficha do orçamento.' };
+    }
+    if (mensagem.includes('orcamento_procedimento_de_outro_dentista')) {
+      return { error: 'O procedimento escolhido pertence a outro dentista. Recarregue o catálogo antes de continuar.' };
     }
     if (mensagem.includes('orcamento_sem_permissao')) {
       return { error: 'Você não tem permissão para alterar este orçamento.' };
@@ -1335,7 +1350,7 @@ export async function criarProcedimentoRapido(dados: {
   nome: string;
   precoPadrao: number | null;
   dentistaId?: string;
-}): Promise<{ error?: string; id?: string }> {
+}): Promise<{ error?: string; id?: string; precoPadrao?: number | null }> {
   const { supabase, user, clinicId } = await requireClinicContext();
 
   const nome = normalizarNomeProcedimento(dados.nome);
@@ -1376,7 +1391,7 @@ export async function criarProcedimentoRapido(dados: {
   // entrada do dentista ignorando diferença de maiúsculas/espaços, para não criar duplicata.
   const { data: existentes, error: existentesError } = await supabase
     .from('procedimentos')
-    .select('id, nome, ativo')
+    .select('id, nome, ativo, preco_padrao')
     .eq('clinica_id', clinicId)
     .eq('dentista_id', dentistaAlvoId);
   if (existentesError) {
@@ -1399,7 +1414,7 @@ export async function criarProcedimentoRapido(dados: {
       }
       revalidatePath('/dashboard/configuracoes');
     }
-    return { id: existente.id };
+    return { id: existente.id, precoPadrao: existente.ativo ? existente.preco_padrao : dados.precoPadrao };
   }
 
   const { data, error } = await supabase
@@ -1410,7 +1425,7 @@ export async function criarProcedimentoRapido(dados: {
       nome,
       preco_padrao: dados.precoPadrao,
     })
-    .select("id")
+    .select("id, preco_padrao")
     .single();
 
   if (error) {
@@ -1419,7 +1434,8 @@ export async function criarProcedimentoRapido(dados: {
   }
 
   revalidatePath("/dashboard/configuracoes");
-  return { id: (data as { id: string }).id };
+  const novo = data as { id: string; preco_padrao: number | null };
+  return { id: novo.id, precoPadrao: novo.preco_padrao };
 }
 
 // Não exportar o schema em si — arquivo "use server" só pode exportar funções async.

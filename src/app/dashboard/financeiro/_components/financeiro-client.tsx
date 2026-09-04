@@ -12,7 +12,7 @@ import {
   Wallet, TrendingUp, TrendingDown, ChevronLeft, ChevronRight,
   Plus, Trash2, Loader2, CircleDollarSign, UserRound,
   Eye, EyeOff, Clock, ArrowDownLeft, ArrowUpRight,
-  CreditCard, AlertCircle, ExternalLink, Download,
+  CreditCard, AlertCircle, Download,
   X, CheckCircle2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -787,13 +787,6 @@ export function FinanceiroClient({
                     </div>
                   );
                 })}
-                {pagamentosPendentes.length > 8 && (
-                  <div className="px-6 py-3 text-center">
-                    <a href="/dashboard/orcamentos" className="text-xs text-teal font-semibold flex items-center justify-center gap-1.5 hover:text-teal-lt transition-colors">
-                      Ver todos os orçamentos <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </div>
-                )}
               </div>
             </div>
           )}

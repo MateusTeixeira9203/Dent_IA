@@ -1,9 +1,7 @@
 import { redirect } from 'next/navigation';
-import { getDentistaCached } from '@/lib/get-dentista';
-import { createClient } from '@/lib/supabase/server';
-import { OrcamentosClient } from './_components/orcamentos-client';
-import { PageTransition } from '@/components/layout/page-transition';
 
+// O cliente legado ainda referencia estes contratos durante a fase de isolamento. A rota não o
+// renderiza mais; os tipos permanecem até a remoção definitiva do cliente, sem tocar em dados.
 export type OrcamentoItemRow = {
   id: string;
   orcamento_id: string;
@@ -41,92 +39,11 @@ export type OrcamentoRow = {
   pagamentos: PagamentoRow[];
 };
 
-export default async function OrcamentosPage() {
-  const dentista = await getDentistaCached();
-  if (!dentista) redirect('/login');
-  if (dentista.role !== 'secretaria') redirect('/dashboard/pacientes');
-
-  // Override para usuário específico ter acesso a features de plano superior
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  const isUserOverride = !!process.env.PLAN_OVERRIDE_EMAIL && user?.email === process.env.PLAN_OVERRIDE_EMAIL;
-
-  // Verifica se há secretária na clínica
-  const { count: secretariaCount } = await supabase
-    .from('dentistas')
-    .select('id', { count: 'exact', head: true })
-    .eq('clinica_id', dentista.clinica_id)
-    .eq('role', 'secretaria');
-  const temSecretaria = (secretariaCount ?? 0) > 0;
-
-  // Busca orçamentos com joins de paciente e dentista
-  // orcamentos tem 3 FKs pra dentistas (dentista_id, aprovado_por_id, plano_definido_por_id
-  // — R-34) — sem desambiguar, o Postgrest devolve 300 (Multiple Choices) em vez do erro
-  // real, e `data` vem null. Mesmo bug (e mesmo fix) da rota do PDF, achado 30/07 — R-44.
-  const { data: orcamentosRaw, error: orcamentosError } = await supabase
-    .from('orcamentos')
-    .select(
-      'id, created_at, status, total, valor_acordado, desconto, validade_dias, condicoes_pagamento, paciente:pacientes(id, nome, telefone), dentista:dentistas!orcamentos_dentista_id_fkey(id, nome)'
-    )
-    .eq('clinica_id', dentista.clinica_id)
-    .order('created_at', { ascending: false });
-
-  if (orcamentosError) {
-    throw new Error(`Erro ao carregar orçamentos: ${orcamentosError.message}`);
-  }
-
-  // Busca dentistas da clínica para as abas da secretária
-  let dentistasClinica: { id: string; nome: string }[] = [];
-  if (dentista.role === 'secretaria') {
-    const { data } = await supabase
-      .from('dentistas')
-      .select('id, nome')
-      .eq('clinica_id', dentista.clinica_id)
-      // R-94 — .neq('role','secretaria') sozinho deixaria 'protetico' entrar nas
-      // abas de orçamento por dentista.
-      .in('role', ['admin', 'dentista'])
-      .eq('ativo', true)
-      .order('nome', { ascending: true });
-    dentistasClinica = data ?? [];
-  }
-
-  // Busca itens e pagamentos em paralelo
-  const [{ data: itensRaw }, { data: pagamentosRaw }] = await Promise.all([
-    supabase
-      .from('orcamento_itens')
-      .select('id, orcamento_id, descricao, quantidade, preco_unitario, preco_total')
-      .eq('clinica_id', dentista.clinica_id),
-    supabase
-      .from('pagamentos')
-      .select('id, orcamento_id, valor, status, forma_pagamento, data_pagamento, data_vencimento, parcela_numero, total_parcelas, marcado_por:dentistas!pagamentos_marcado_por_id_fkey(nome)')
-      .eq('clinica_id', dentista.clinica_id),
-  ]);
-
-  const itens = (itensRaw ?? []) as unknown as OrcamentoItemRow[];
-  const pagamentos = (pagamentosRaw ?? []) as unknown as PagamentoRow[];
-
-  // Associa itens e pagamentos a cada orçamento
-  const orcamentos: OrcamentoRow[] = (orcamentosRaw ?? []).map((o) => ({
-    ...(o as unknown as Omit<OrcamentoRow, 'itens' | 'pagamentos'>),
-    itens: itens.filter((i) => i.orcamento_id === o.id),
-    pagamentos: pagamentos.filter((p) => p.orcamento_id === o.id),
-  }));
-
-  // Solo: dentista cria orçamentos manualmente. BASICO/CLINICA: cria via perfil do paciente.
-  // Secretária sempre pode criar orçamentos independente do plano.
-  const canEdit = !isUserOverride && (dentista.plano === 'SOLO' || dentista.role === 'secretaria');
-
-  return (
-    <PageTransition>
-      <OrcamentosClient
-        orcamentos={orcamentos}
-        clinicaId={dentista.clinica_id}
-        dentistaId={dentista.id}
-        role={dentista.role}
-        temSecretaria={temSecretaria}
-        canEdit={canEdit}
-        dentistas={dentistasClinica}
-      />
-    </PageTransition>
-  );
+/**
+ * R-153 — o orçamento clínico nasce na Ficha do paciente. A tela geral antiga fica isolada
+ * nesta fase para não criar propostas sem Ficha; dados e cliente legado permanecem preservados
+ * até a remoção posterior, depois dos gates de produção.
+ */
+export default function OrcamentosPage() {
+  redirect('/dashboard/pacientes');
 }

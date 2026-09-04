@@ -362,10 +362,10 @@ export function SecretariaDashboard({
               </div>
             </div>
             <Link
-              href="/dashboard/orcamentos"
+              href="/dashboard/pacientes"
               className="shrink-0 text-xs font-bold text-amber-700 dark:text-amber-400 hover:underline whitespace-nowrap"
             >
-              Ver orçamentos →
+              Abrir pacientes →
             </Link>
           </div>
         </motion.div>

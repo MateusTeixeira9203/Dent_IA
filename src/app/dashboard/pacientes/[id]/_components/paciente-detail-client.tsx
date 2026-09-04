@@ -257,6 +257,7 @@ export function PacienteDetailClient({
 
   const [detalheOrcId, setDetalheOrcId] = useState<string | null>(null);
   const [procedimentosClinica, setProcedimentosClinica] = useState<ProcedimentoClinica[]>([]);
+  const [erroCatalogoProcedimentos, setErroCatalogoProcedimentos] = useState<string | null>(null);
   const [pagForm, setPagForm] = useState({
     valor: '',
     formaPagamento: 'dinheiro' as FormaPagamento,
@@ -563,9 +564,11 @@ export function PacienteDetailClient({
     clinicaId,
     meuDentistaId: dentistaId,
     procedimentosClinica,
+    erroCatalogo: erroCatalogoProcedimentos,
     isSecretaria: role === 'secretaria',
     dentistasClinica,
     onOrcamentoCriado: (novoOrc) => setOrcamentosState((prev) => [novoOrc, ...prev]),
+    onContinuarConfiguracao: (orcamentoId) => setDetalheOrcId(orcamentoId),
   });
 
   // Catálogo de procedimentos é privado por dentista. Pra secretária, o dono relevante
@@ -582,7 +585,15 @@ export function PacienteDetailClient({
       .eq('dentista_id', procedimentosDonoId)
       .eq('ativo', true)
       .order('nome')
-      .then(({ data }) => setProcedimentosClinica(data ?? []));
+      .then(({ data, error }) => {
+        if (error) {
+          setProcedimentosClinica([]);
+          setErroCatalogoProcedimentos('Não foi possível carregar o catálogo de procedimentos. Recarregue a página antes de criar o orçamento.');
+          return;
+        }
+        setProcedimentosClinica(data ?? []);
+        setErroCatalogoProcedimentos(null);
+      });
   }, [clinicaId, procedimentosDonoId]);
 
   // Busca fichas recentes e pendências ao montar.
@@ -1501,16 +1512,11 @@ export function PacienteDetailClient({
                       {orcamentosState.length} orçamento{orcamentosState.length !== 1 ? 's' : ''}
                     </span>
                     <button
-                      onClick={() => void orcamentoModal.abrirNovoOrcamento()}
-                      disabled={orcamentoModal.isLoadingFichaParaOrc}
+                      onClick={() => setActiveTab('ficha-clinica')}
                       className="bg-teal text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-teal-lt transition-all shadow-md disabled:opacity-60"
                     >
-                      {orcamentoModal.isLoadingFichaParaOrc ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Plus className="w-3.5 h-3.5" />
-                      )}
-                      Novo Orçamento
+                      <Plus className="w-3.5 h-3.5" />
+                      Gerar pela ficha
                     </button>
                   </div>
 
@@ -1521,7 +1527,7 @@ export function PacienteDetailClient({
                         Nenhum orçamento
                       </h3>
                       <p className="text-text-secondary text-sm max-w-md mx-auto">
-                        Nenhum orçamento ainda. Clique em + Novo Orçamento para criar.
+                        Nenhum orçamento ainda. Gere a proposta a partir de uma ficha clínica.
                       </p>
                     </div>
                   ) : (

@@ -56,7 +56,7 @@ export function derivarPendencias(
       descricao: 'Risco de perder o tratamento.',
       valorParado: total > 0 ? total : null,
       chips: ctx.orcamentosAtrasados30dList.slice(0, 4).map((o) => o.paciente),
-      cta: { label: n > 1 ? 'Ver orçamentos' : 'Ver orçamento', href: '/dashboard/orcamentos' },
+      cta: { label: 'Abrir pacientes', href: '/dashboard/pacientes' },
     });
   }
 
@@ -71,7 +71,7 @@ export function derivarPendencias(
       descricao: 'Enviado há mais de 3 dias sem resposta.',
       valorParado: total > 0 ? total : null,
       chips: ctx.followUpPendentesList.slice(0, 4).map((o) => o.paciente),
-      cta: { label: n > 1 ? 'Ver orçamentos' : 'Ver orçamento', href: '/dashboard/orcamentos' },
+      cta: { label: 'Abrir pacientes', href: '/dashboard/pacientes' },
     });
   }
 
