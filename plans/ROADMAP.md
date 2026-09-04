@@ -22,7 +22,7 @@
 
 | ID | Item | Estado |
 |---|---|---|
-| [**R-153**](specs/R-153-orcamento-ficha-fluxo-continuo.md) | **Orçamento da Ficha em fluxo contínuo** — uma Ficha por orçamento, catálogo confiável e continuidade no perfil do paciente | 🔵 execução local; ainda não commitado, enviado ou publicado. |
+| [**R-153**](specs/R-153-orcamento-ficha-fluxo-continuo.md) | **Orçamento da Ficha em fluxo contínuo** — uma Ficha por orçamento, catálogo confiável e continuidade no perfil do paciente | 🔵 execução local commitada; ainda não enviada ou publicada. |
 
 ## Publicado, aguardando validação dirigida
 

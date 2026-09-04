@@ -6,7 +6,7 @@
 
 🔵 **R-153 — Orçamento da Ficha em fluxo contínuo.** A implementação local isola o orçamento
 clínico por Ficha e impede que o dentista precise fechar/abandonar o paciente para montar uma
-proposta. Ainda não foi commitada, enviada ou publicada. O recorte local está em
+proposta. Está commitada localmente, mas ainda não foi enviada ou publicada. O recorte está em
 `use-orcamento-modal`, `novo-orcamento-modal` e `meu-dia-client`.
 
 **Trava:** antes de qualquer push, validar o fluxo com eventos de uma única Ficha e confirmar que
@@ -34,7 +34,8 @@ Nenhuma alteração chegou à `main`.
 - **R-147 (P0):** a transcrição Dex precisa ser provada no Preview após corrigir o vínculo do
   dentista; o 401 anterior acontecia antes do provider.
 - **R-137:** confirmar no celular o protético de `Novo agendamento` e o retorno clicável na Ficha.
-- **R-151:** há alteração local de baixa latência do Dex, pausada para não misturar com R-153.
+- **R-151:** há alteração local já commitada de baixa latência do Dex, pausada para não misturar
+  sua publicação com R-153.
 - **R-154:** debate registrado para fila clínica completa, autoria explícita e mudanças de status
   sem recarregar; não altera autoria de colega sem decisão clínica explícita.
 
