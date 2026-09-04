@@ -1,7 +1,7 @@
 # R-152a — Redesign do cabeçalho da Ficha unificada
 
-> **SPEC (redesign)** · **R-152a** · 🔵 ativo
-> **Aberto:** 2026-09-03 · **Fechado:** — · **Fase:** debate
+> **SPEC (redesign)** · **R-152a** · 🟡 publicado; validação visual pendente
+> **Aberto:** 2026-09-03 · **Fechado:** — · **Fase:** validação visual em produção
 > **Filha de:** R-152
 
 ## 0. Identificação

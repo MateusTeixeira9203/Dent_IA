@@ -1,9 +1,8 @@
 # R-130 — Compromisso da secretária, orçamento completo e ponte fixa
 
-> **Fase:** implementação local · **Migration:** 1 (RPC de orçamento) · **RLS:** não muda.
+> **Status:** ✅ no ar e verificado; registro histórico · **Migration:** 1 (RPC de orçamento) · **RLS:** não muda.
 
-> **Complemento pendente de execução (2026-08-25):** corrigir o falso erro ao excluir
-> recebimento e permitir editar o valor final negociado de orçamento já salvo.
+> Ajustes posteriores de recebimento/orçamento foram absorvidos pelo R-145.
 
 ## Problema confirmado
 

@@ -1,6 +1,6 @@
 # R-134 — Apresentação comercial interativa
 
-**Fase:** contrato aprovado pelo briefing do usuário · **Status:** 🔵 ativo · **Data:** 26/08/2026
+**Fase:** 🧊 congelado · **Status:** aguarda escopo comercial explícito · **Data:** 26/08/2026
 
 ## 1. Intenção e limite
 

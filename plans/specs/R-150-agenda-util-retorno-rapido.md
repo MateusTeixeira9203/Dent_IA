@@ -1,7 +1,7 @@
 # R-150 — Agenda útil e retorno rápido
 
-> **SPEC** · **R-150** · 🔵 ativo
-> **Aberto:** 2026-09-03 · **Fechado:** — · **Fase:** aprovada pelo pedido de execução
+> **SPEC** · **R-150** · ⏳ fila
+> **Aberto:** 2026-09-03 · **Fechado:** — · **Fase:** aprovada; aguarda prioridade após P0
 
 ## 1. Problema
 

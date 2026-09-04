@@ -1,6 +1,6 @@
 # R-94 — Agenda do protético
 
-> **SPEC** · **R-94** · 🔵 ativo
+> **SPEC** · **R-94** · 🟡 base no ar; validação segue o R-137
 > **Aberto:** 2026-08-09 · **Fechado:** — · **Fase:** aprovada (artefato aprovado por ele 09/08)
 > **Modelo:** Sonnet (execução) · Opus se abrir decisão de RLS
 

@@ -1,7 +1,7 @@
 # R-153 — Orçamento da Ficha em fluxo contínuo
 
 > **SPEC** · **R-153** · 🔵 ativo
-> **Aberto:** 2026-09-03 · **Fechado:** — · **Fase:** aprovada pelo usuário em 03/09/2026
+> **Aberto:** 2026-09-03 · **Fechado:** — · **Fase:** execução local; ainda não publicado
 > **Predecessor:** R-145, concluído e arquivado · **Migration:** validação de dono do catálogo na RPC
 
 ## 1. Problema

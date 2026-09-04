@@ -1,79 +1,49 @@
 # Estado — Odonto.IA
 
-> **ESTADO** · atualizado em 02/09/2026
+> **ESTADO** · atualizado em 03/09/2026 · retrato da branch, não histórico de sessão.
 
 ## Agora
 
-🔵 **R-145 — Orçamento financeiro flexível.** Revisão 2 implementada localmente: uma proposta
-só vira dívida quando o dentista cria uma cobrança por etapa com os procedimentos escolhidos. A
-decisão desta sessão permanece fluxo leve: Next.js no localhost, sem Supabase local/Docker.
+🔵 **R-153 — Orçamento da Ficha em fluxo contínuo.** A implementação local isola o orçamento
+clínico por Ficha e impede que o dentista precise fechar/abandonar o paciente para montar uma
+proposta. Ainda não foi commitada, enviada ou publicada. O recorte local está em
+`use-orcamento-modal`, `novo-orcamento-modal` e `meu-dia-client`.
 
-**Complemento aprovado em 02/09:** orçamento por Ficha respeita o responsável de cada evento
-(`encaminhado_para ?? autor`), explica os itens de colegas sem permitir cobrá-los e o plano à
-vista passa a criar uma única cobrança `pendente` para hoje — nunca receita automática.
+**Trava:** antes de qualquer push, validar o fluxo com eventos de uma única Ficha e confirmar que
+nenhum item solto financeiro é criado. Mudança de banco/RLS não entra neste recorte sem novo gate.
 
-**Achado de regra no orçamento (02/09):** em orçamento com vários itens, a cobrança precisa
-derivar somente dos procedimentos aceitos pelo paciente, menos o desconto negociado aplicável.
-Exemplo obrigatório: itens de R$ 5.000, aceito só procedimento de R$ 1.000 e desconto de R$ 100
-resulta em R$ 900 para cobrar. A revisão 2 cria subtotal, desconto e final próprios por etapa;
-R$ 500 recebido deixa R$ 400 pendentes naquela mesma etapa, sem afetar os demais itens. Para
-“pagar conforme realiza”, os outros procedimentos continuam proposta, sem dívida antecipada.
+**Integração com `main` (03/09):** a baseline `release/2026-09-03-r140c` mesclou sem conflito em
+worktree isolado e 196 testes passaram. A promoção está bloqueada: lint tem 14 erros já espalhados
+fora do recorte, typecheck excedeu a memória do ambiente e build não concluiu por DNS de fontes.
+Nenhuma alteração chegou à `main`.
 
-**Publicado em produção (02/09):** migration `20260902050000_r145_avista_cobranca_pendente.sql`
-foi executada pontualmente e o deployment Vercel `dpl_8LHnKppEhYU5g7xXbsBinEifGaF8` está Ready.
-O histórico de migrations remoto diverge do diretório local; não usar `supabase db push` para uma
-correção isolada sem reconciliar esse histórico primeiro.
+## Em produção, ainda em validação dirigida
 
-**Correção clínica em curso:** R-148 corrige a associação do campo mágico em relato composto e
-normaliza “dente N está ausente” como estado pré-existente no odontograma. Regressão registrada:
-canal 18, extração 44, ausência 23 + implante 23 e ausência 37 não podem trocar dentes nem virar
-extração a fazer.
+- **R-152 / R-152a — Ficha unificada:** a publicação já levou edição e exclusão por procedimento,
+  encaminhamento, navegação do dente até o procedimento e o cabeçalho organizado. O legado é
+  somente leitura para histórico incompatível. Falta consolidar os testes de paridade clínica;
+  não é item ativo nem autorização para remover `FichasTab`.
+- **R-149 — Revisão legível no Meu Dia:** está publicada; aguarda confirmação visual completa.
+- **R-145 — Orçamento financeiro flexível:** concluído e verificado pelo usuário; spec e artefato
+  já foram para `_arquivo/`.
 
-**Observação visual pendente:** no painel “Revisão do atendimento” do Meu Dia, os cartões
-misturam título truncado, alerta “Confira o status”, seletor de três estados e ações em uma única
-faixa. O dentista perde a leitura do procedimento; discutir uma hierarquia mais curta antes de
-redesenhar.
+## Bloqueios e fila técnica
 
-**Feito**
+- **R-146 (P0/P1):** `Agenda → Iniciar consulta` não pode resolver outro paciente; retorno criado
+  na Agenda precisa reaparecer na Ficha. Não repetir escrita naquele caminho até corrigir.
+- **R-147 (P0):** a transcrição Dex precisa ser provada no Preview após corrigir o vínculo do
+  dentista; o 401 anterior acontecia antes do provider.
+- **R-137:** confirmar no celular o protético de `Novo agendamento` e o retorno clicável na Ficha.
+- **R-151:** há alteração local de baixa latência do Dex, pausada para não misturar com R-153.
+- **R-154:** debate registrado para fila clínica completa, autoria explícita e mudanças de status
+  sem recarregar; não altera autoria de colega sem decisão clínica explícita.
 
-- RPCs e actions para recebimento livre, reorganização de previsões, correção e estorno auditável.
-- Modal do paciente e tela Financeiro usam o mesmo caminho transacional.
-- 171/171 testes, TypeScript e `git diff --check` passaram; lint do recorte sem erros.
-- Auditoria browser somente leitura percorreu Dashboard, Meu Dia, Prontuário, Ficha, Orçamentos,
-  Financeiro, Pacientes, Agenda e Configurações sem erros de console.
-- Next.js está ativo em `http://localhost:3200`, sem Docker.
+## Próxima decisão
 
-**Falta**
+Você vai separar os novos pontos de trabalho. Cada um entra na fila com evidência, escopo e
+dependência; nenhum item já publicado volta a `ativo` apenas por ainda faltar uma rodada de
+validação.
 
-- Provar as operações financeiras e demais gravações em um banco de homologação isolado.
-- Repetir RLS com duas contas, assinatura/Storage, retorno, encaminhamento e fluxo Meu Dia → Ficha.
-- Validar build com rede disponível; a tentativa anterior parou na resolução do Google Fonts.
-- Decidir e executar commits separados de migration, feature e documentação; nenhum push foi feito.
-- Auditoria funcional de 02/09 encontrou P0: `Agenda → Iniciar consulta` em agendamento futuro
-  abriu o paciente errado no Meu Dia. O fluxo foi interrompido e não deve ser repetido em escrita
-  até corrigir a resolução de `?ag=`.
-- O retorno criado na Agenda não aparece na seção de retorno da Ficha; precisa corrigir o vínculo ou
-  a revalidação antes do gate clínico.
-- O orçamento de teste foi criado e aprovado. O recebimento de R$ 500 e a organização de parcelas
-  ficaram presos em “Salvando…” por `supabase.rpc` chamado sem contexto (`reading 'rest'`). A correção
-  (`bind(supabase)`) está no commit `b791a54`, mas a revalidação manual ainda precisa ser feita.
-- Auditoria do DEX em 02/09 encontrou P0: `/api/transcrever` consultava `dentistas.usuario_id`, mas o
-  schema usa `dentistas.user_id`; o Preview devolveu 401 antes da Groq. A correção local usa o helper
-  canônico, classifica erros, alinha MIME e registra métricas; falta provar no Preview após deploy.
-  Relatório: `plans/auditorias/2026-09-02-dex-completo.md`.
-
-## Travado
-
-- O `.env.local` aponta para o Supabase remoto `zenfemoxvwerplrjgfqz`; não executar gravações,
-  pagamentos, estornos ou exclusões nesse ambiente sem confirmar que é homologação.
-- Supabase local via Docker é inviável neste PC por consumo de RAM e não será usado no ciclo diário.
-
-## Esperando você
-
-- Disponibilizar/confirmar um projeto Supabase de homologação separado da produção antes do teste
-  transacional completo.
-
-## Próximo da fila
-
-Corrigir os achados P0/P1 da auditoria (`plans/auditorias/2026-09-02-sistema-completo.md`), repetir
-o fluxo clínico sem cruzamento de paciente e então concluir o gate transacional do R-145.
+**Fora da classificação atual:** o pacote jurídico, scripts auxiliares e alterações clínicas sem
+spec ativa ficam intocados no worktree até você apontar a qual item pertencem. Eles não entram em
+commit junto com R-153.

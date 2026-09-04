@@ -2,7 +2,7 @@
 
 > **SPEC** · **R-115** · 🧊 congelado
 > **Aberto:** 2026-08-17 · **Fechado:** — · **Fase:** congelado em 18/08
-> **Depende de:** R-106 continua como único item ativo. Este item só entra em execução após
+> **Depende de:** R-106/R-139c serem retomados. Este item só entra em execução após
 > aprovação visual do catálogo.
 
 > **Retomada:** voltar somente numa revisão clínica completa do odontograma. O rascunho

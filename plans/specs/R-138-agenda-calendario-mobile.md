@@ -1,6 +1,6 @@
 # R-138 — Agenda calendário no celular
 
-> **SPEC (redesign)** · **R-138** · 🔵 ativo
+> **SPEC (redesign)** · **R-138** · 🟡 publicada; validação em dispositivos pendente
 > **Aberto:** 2026-08-27 · **Fechado:** — · **Fase:** aprovada pela direção registrada nesta conversa
 
 ## 0. Identificação

@@ -1,6 +1,6 @@
 # R-116 — PWA instalável
 
-> **SPEC** · **R-116** · 🔵 ativo
+> **SPEC** · **R-116** · 🟡 no ar; aguarda teste em Android e Safari/iPhone
 > **Aberto:** 2026-08-20 · **Fechado:** — · **Fase:** execução (aprovada em 2026-08-20)
 > **Migration:** zero · **Dependência:** domínio HTTPS em produção
 

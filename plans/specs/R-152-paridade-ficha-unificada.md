@@ -1,8 +1,8 @@
 # R-152 — Paridade operacional da Ficha unificada
 
-> **SPEC** · **R-152** · 🔵 ativo
-> **Aberto:** 2026-09-03 · **Fechado:** — · **Fase:** contrato
-> **Filha de:** R-140c · **Migrations:** RPCs R-140c e exclusão unitária R-152 pendentes no banco remoto.
+> **SPEC** · **R-152** · 🟡 publicada; aguarda gate de paridade
+> **Aberto:** 2026-09-03 · **Fechado:** — · **Fase:** validação dirigida em produção
+> **Filha de:** R-140c · **Limite:** não remover o renderer legado antes do gate de paridade.
 
 ## 1. Problema
 

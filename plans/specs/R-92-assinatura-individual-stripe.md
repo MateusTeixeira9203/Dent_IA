@@ -1,6 +1,6 @@
 # R-92 — Assinatura individual Stripe
 
-> **SPEC** · **R-92** · 🔵 revisão de ativação em execução
+> **SPEC** · **R-92** · 🟡 fluxo no ar; ciclo real controlado pendente
 > **Aberto:** 2026-08-18 · **Replanejado:** 2026-08-20 · **Revisado:** 2026-09-03
 
 ## Emenda de ativação — 2026-09-03

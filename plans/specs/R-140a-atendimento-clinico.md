@@ -1,7 +1,7 @@
 # R-140a — Atendimento clínico: a visita como âncora
 
-> **SPEC** · **R-140a** · ⏳ filha do R-140
-> **Aberto:** 2026-08-30 · **Fase:** implementação local — fundação, dual-write e backfill de evoluções escritos; nada aplicado remotamente
+> **SPEC** · **R-140a** · 🧊 filha do R-140
+> **Aberto:** 2026-08-30 · **Fase:** congelada; fundação local não integrada remotamente
 > **Migration:** aditiva · **Depende:** R-108/R-108b em produção
 
 ## 1. Problema

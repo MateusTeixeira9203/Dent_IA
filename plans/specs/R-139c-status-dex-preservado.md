@@ -1,6 +1,6 @@
 # R-139c — Status clínico confiável na saída do Dex
 
-> **SPEC** · **R-139c** · 🔵 ativo
+> **SPEC** · **R-139c** · ⏳ fila
 > **Aberto:** 2026-08-28 · **Fechado:** — · **Fase:** aprovada para execução · **Revisão:** 2
 
 ## 1. Problema

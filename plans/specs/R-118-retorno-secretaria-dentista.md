@@ -1,6 +1,6 @@
 # R-118 — Retorno da secretária na agenda do dentista
 
-> **SPEC** · **R-118** · 🔵 ativo
+> **SPEC** · **R-118** · ✅ no ar e verificado; registro histórico
 > **Aberto:** 2026-08-18 · **Fechado:** — · **Fase:** aprovada · **Migration:** zero
 
 ## 1. Problema

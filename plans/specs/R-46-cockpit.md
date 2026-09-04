@@ -1,6 +1,6 @@
 # R-46 — Redesign: Meu dia vira cockpit em tela cheia
 
-> **SPEC (redesign)** · sub-item do **R-46** · 🔵 ativo
+> **SPEC (redesign)** · sub-item do **R-46** · ✅ no ar e verificado; registro histórico
 > **Aberto:** 2026-08-02 · **Fechado:** — · **Fase:** **aprovada** (02/08 — *"assim fechamos
 > tudo"*, depois de 6 rodadas de ajuste sobre o artefato)
 > **Modelo:** Opus 5 (decisão de layout ambígua, sem contrato de dados novo)

@@ -1,7 +1,7 @@
 # R-139e — Visualizador clínico na Apresentação com anotações alinhadas
 
-> SPEC · R-139e · ⏳ fila  
-> Aberto em 2026-08-28 · Fase: implementação local concluída · Validação segue o item ativo R-139d/e
+> SPEC · R-139e · 🟡 no ar; aguarda auditoria completa
+> Aberto em 2026-08-28 · Fase: validação em produção · Validação conjunta com R-139d
 
 ## 1. Problema
 

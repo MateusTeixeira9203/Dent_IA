@@ -1,6 +1,6 @@
 # R-120 — Documentos e aceites assinados
 
-> **Status:** implementação local — migration em produção, QA pendente · **aberto:** 2026-08-19
+> **Status:** 🟡 fluxo no ar; QA jurídico e de uso pendente · **aberto:** 2026-08-19
 > **Escopo:** termos de uso da Odonto.IA + aceite de orçamento + TCLE pré-procedimento +
 > conclusão de procedimento. **ICP-Brasil não entra nesta entrega.**
 
