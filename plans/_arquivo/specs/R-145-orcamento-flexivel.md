@@ -1,7 +1,7 @@
 # R-145 — Orçamento financeiro flexível
 
-> **SPEC** · **R-145** · 🔵 ativo
-> **Aberto:** 2026-09-02 · **Fechado:** — · **Fase:** revisão 3 aprovada pelo usuário na conversa
+> **SPEC** · **R-145** · ✅ concluído
+> **Aberto:** 2026-09-02 · **Fechado:** 2026-09-03 · **Fase:** verificado em produção pelo usuário
 
 ## 1. Problema
 
@@ -50,6 +50,15 @@ real de pagar procedimento por procedimento conforme o tratamento acontece.
   etapa em centavos.
 - **Sem rateio invisível:** um item não entra em duas etapas ativas. Para cobrar vários
   procedimentos em um único PIX, o dentista os seleciona juntos e cria uma única etapa.
+- **Perfil é a fonte clínica do orçamento:** para admin/dentista, criar e consultar orçamento
+  acontece dentro do perfil do paciente. A rota geral permanece somente para a operação da
+  secretária.
+- **Leitura tolerante a detalhes financeiros:** falhar a leitura de cobranças por etapa não pode
+  apagar os orçamentos da tela. O orçamento-base aparece e a interface informa que os detalhes
+  financeiros precisam ser recarregados; falhar a leitura-base é erro explícito, nunca lista vazia.
+- **Nome e catálogo sem chute:** todo evento clínico novo preserva um nome de procedimento. Só o
+  `procedimento_id` ou uma igualdade exata de nome pode preencher preço e vínculo do catálogo; não
+  há correspondência por trecho de texto.
 
 ## 3. Objetivo
 
@@ -198,6 +207,15 @@ o estado efêmero dos formulários; após qualquer escrita faz `router.refresh()
 saldo local. A página dedicada de Orçamentos recebe `valor_acordado` para não calcular o saldo pelo
 `total` original e usa as mesmas actions protegidas.
 
+O carregamento do perfil busca o orçamento-base e suas cobranças por etapa em consultas separadas,
+ambas filtradas por `clinica_id`. Assim, uma relação nova/indisponível no PostgREST não transforma
+um orçamento existente em uma lista vazia. O dentista não recebe link de navegação para
+`/dashboard/orcamentos`; acesso direto redireciona para Pacientes.
+
+Implementação desta correção: commit `9a74405`, enviado para
+`codex/r140c-prontuario-vm-20260831`; testes automatizados passaram, mas a prova pós-deploy com
+duas contas continua obrigatória.
+
 Com ao menos uma etapa, a coluna financeira troca o resumo global pela lista de etapas. Cada card
 mostra itens, subtotal, desconto, recebido e saldo; o formulário de recebimento fica ligado ao card
 escolhido. Orçamentos legados, sem etapa, preservam a interface atual até o primeiro uso do fluxo
@@ -224,8 +242,9 @@ novo — sem migração silenciosa de negociação ou dinheiro histórico.
 
 Exemplos:
 
-- Acordo de R$ 1.800, pagamento de R$ 250 PIX: cria um recebido de R$ 250 e saldo de R$ 1.550.
-- Se havia 6 previsões, elas não são “quitadas” à força; o dentista pode redistribuir R$ 1.550.
+- Parcela prevista de R$ 300, mas paciente só consegue pagar R$ 250: registra R$ 250 como
+  recebimento real, sem rejeitar nem fingir que R$ 300 foram pagos; os R$ 50 continuam no saldo.
+- As previsões não são “quitadas” à força pelo valor parcial; o saldo futuro pode ser redistribuído.
 - Se R$ 250 foi digitado como R$ 350, `Corrigir` grava o antes/depois e o saldo passa a refletir
   R$ 350. Se o dinheiro foi devolvido, `Estornar` cancela R$ 250 e registra o motivo.
 - A Ficha de A tem dois eventos próprios e um encaminhado para B: A recebe os dois próprios no
@@ -263,7 +282,8 @@ Exemplos:
 
 ## 8. Gates de aceite
 
-- [ ] Registrar três recebimentos parciais em um mesmo orçamento sem criar outra proposta.
+- [ ] Em parcela prevista de R$ 300, registrar só R$ 250 sem criar outra proposta, sem marcar
+  R$ 300 como pago e mantendo os R$ 50 restantes no saldo reorganizável.
 - [ ] Reorganizar 3 previsões para 4 após um recebimento, mantendo as linhas pagas intactas.
 - [ ] Alterar valor combinado e plano no mesmo salvamento; tentar valor abaixo de pago falha.
 - [ ] Corrigir recebimento e verificar saldo/histórico; estornar com motivo e verificar reabertura.
@@ -282,6 +302,12 @@ Exemplos:
   imediatamente para `Paga`, sem mexer nos outros itens.
 - [ ] Cancelar etapa sem recebido libera seus itens; tentativa de duplicar item em etapa aberta ou
   paga falha na RPC.
+- [ ] Com cobrança por etapa presente, o perfil do paciente continua exibindo seu orçamento; se a
+  leitura da cobrança falhar, mostra aviso sem esconder a proposta.
+- [ ] Evento criado pela faixa regional e pelos chips do dente mantém `procedimento_nome`; catálogo
+  semelhante, mas não idêntico, não recebe preço ou vínculo automaticamente.
+- [ ] Dentista não vê o item Orçamentos na navegação e `/dashboard/orcamentos` redireciona para
+  Pacientes; a secretária conserva sua tela operacional.
 - [ ] TypeScript, testes, lint do recorte, build com rede e teste manual no perfil passam.
 
 ## 9. Fora de escopo
