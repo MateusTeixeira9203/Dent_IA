@@ -295,6 +295,28 @@ export function ProntuarioTab({
     },
   });
 
+  const modalRetorno = (
+    <MarcarRetornoModal
+      open={retornoAberto}
+      onOpenChange={(open) => {
+        setRetornoAberto(open);
+        if (!open) setRetornoAtendimentoId(null);
+      }}
+      pacienteNome={patientName}
+      role="dentista"
+      dentistasClinica={[]}
+      dentistaAlvoId={dentistaId}
+      onDentistaAlvoChange={() => undefined}
+      form={retorno.form}
+      setForm={retorno.setForm}
+      error={retorno.error}
+      saving={retorno.saving}
+      pedidoPendente={retorno.pedidoPendente}
+      onMarcarRetorno={() => void retorno.marcarRetorno(dentistaId)}
+      onTentarEnviarPedido={() => void retorno.tentarEnviarPedido(dentistaId)}
+    />
+  );
+
   const atendimentos = useMemo(() => dados.atendimentos, [dados.atendimentos]);
   const fichaAberta = superficie.tipo === 'ficha'
     ? dados.fichas.find((ficha) => ficha.id === superficie.fichaId) ?? null
@@ -1265,6 +1287,8 @@ export function ProntuarioTab({
             )}
           </DialogContent>
         </Dialog>
+
+        {modalRetorno}
       </section>
     );
   }
@@ -1602,25 +1626,7 @@ export function ProntuarioTab({
         </ol>
       )}
 
-      <MarcarRetornoModal
-        open={retornoAberto}
-        onOpenChange={(open) => {
-          setRetornoAberto(open);
-          if (!open) setRetornoAtendimentoId(null);
-        }}
-        pacienteNome={patientName}
-        role="dentista"
-        dentistasClinica={[]}
-        dentistaAlvoId={dentistaId}
-        onDentistaAlvoChange={() => undefined}
-        form={retorno.form}
-        setForm={retorno.setForm}
-        error={retorno.error}
-        saving={retorno.saving}
-        pedidoPendente={retorno.pedidoPendente}
-        onMarcarRetorno={() => void retorno.marcarRetorno(dentistaId)}
-        onTentarEnviarPedido={() => void retorno.tentarEnviarPedido(dentistaId)}
-      />
+      {modalRetorno}
 
       <Dialog open={odontogramaCompletoAberto} onOpenChange={setOdontogramaCompletoAberto}>
         <DialogContent className="w-[calc(100vw-1rem)] max-w-[1180px] overflow-hidden p-3 sm:w-[calc(100vw-2rem)] sm:max-w-[1180px] sm:p-6">
