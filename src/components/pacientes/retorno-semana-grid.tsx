@@ -40,16 +40,22 @@ const SALTOS = [
   { label: '1 ano', alvo: (hoje: Date) => addYears(hoje, 1) },
 ] as const;
 
-/** Janela de horas a mostrar — min/max de `livres` entre os 7 dias carregados, arredondado
- *  pra hora cheia, expandida se precisar pra caber o horário selecionado (ex.: digitado no
- *  campo Hora fora do expediente — D10 permite; sem isso a barra de seleção renderiza fora
- *  da área visível, sem scroll que a alcance). Só dimensiona a grade; não limita o clique —
- *  pedido dele ao vivo é liberdade total de dia/hora. */
+/** Janela de horas a mostrar — une expediente e ocupações da semana, arredondada para a hora
+ * cheia. Um retorno/agendamento pode existir em dia sem grade ou fora do expediente; esconder
+ * esse bloco faria o profissional acreditar que a faixa está livre. A janela também expande para
+ * caber o horário selecionado (ex.: digitado no campo Hora fora do expediente). Só dimensiona a
+ * grade; não limita o clique — a decisão final continua no servidor. */
 function janelaHoras(
   dias: DisponibilidadeDia[] | null,
   selecionado: { minutoDoDia: number; duracaoMin: number } | null,
 ): { inicio: number; fim: number } {
-  const blocos = dias?.flatMap((d) => d.livres) ?? [];
+  const blocos = dias?.flatMap((dia) => [
+    ...dia.livres,
+    ...dia.ocupados.map((ocupado) => ({
+      inicioMin: ocupado.inicioMin,
+      fimMin: ocupado.inicioMin + ocupado.duracaoMin,
+    })),
+  ]) ?? [];
   const base = blocos.length === 0
     ? { inicio: HOUR_FALLBACK_START, fim: HOUR_FALLBACK_END }
     : {
