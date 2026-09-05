@@ -213,6 +213,27 @@ Regras visuais:
 - Nome/localização quebram linha; não usar elipse no conteúdo clínico.
 - A legenda “Será salvo como realizado” é metadado derivado do ID pré-existente, nunca status novo.
 
+### Feedback do preview — 04/09
+
+- No card de `Próxima sessão`, a pílula de estado e o botão de mesmo nome usam o mesmo amarelo e
+  parecem duas marcações do mesmo fato. Manter a pílula como estado; o controle ativo perde o
+  preenchimento amarelo ou muda para uma ação neutra, preservando contraste e leitura de seleção.
+- Histórico compartilhado: qualquer profissional clínico que já pode ler a anotação pode abrir o
+  detalhe de procedimentos estruturados (canal, implante e especialidades), mas em **modo leitura**.
+  Não expor campos editáveis, salvar, registrar hoje, alterar momento, encaminhar ou assumir em
+  registro de outro responsável. Este acesso é à informação clínica existente; não transfere
+  autoria nem permissão.
+- **Bancada do odontograma (05/09):** a altura de `920px` não é referência; ela fez os dois
+  cards deixarem de caber como bancada. No desktop, o card do odontograma/ficha rápida define a
+  altura natural da linha. A Revisão estica até a mesma altura e é a única superfície com scroll
+  interno. Conteúdo clínico de implante, canal e demais especialidades expande o card direito e
+  segue pela rolagem da página, sem recortar controles ou criar um segundo scroll.
+- A aba `Regiões` sai. A faixa de boca, arcadas, quadrantes e manutenção ortodôntica aparece por
+  padrão logo abaixo do odontograma; escolher uma região abre o controle regional existente no
+  mesmo lugar. O clique num dente abre diretamente a ficha rápida (`ToothDetailPanel`); o cartão
+  intermediário de histórico por dente deixa esse fluxo, pois o histórico longitudinal já vive em
+  Plano e histórico. Dados e histórico existentes não são apagados.
+
 ## 7. Invariantes
 
 1. Nenhum ID indicado é descartado por equivalência semântica com outro ID.

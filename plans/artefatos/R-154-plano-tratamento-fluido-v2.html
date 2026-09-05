@@ -1,0 +1,71 @@
+<!-- ARTEFATO · R-154 · rota: /dashboard/meu-dia · componente: meu-dia-client.tsx + registrar-painel.tsx · 2026-09-05 · status: rascunho para preview -->
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>R-154 · Bancada do Meu Dia</title>
+  <style>
+    :root { --surface:#171717; --surface-alt:#222222; --border:#343434; --text:#f2f2f2; --muted:#a7a4ad; --teal:#43c6b6; --teal-ink:#62d4c7; --warning:#efb84f; --canvas:#111; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:var(--canvas); color:var(--text); font-family:Outfit, Arial, sans-serif; }
+    main { width:min(1420px, calc(100% - 48px)); margin:32px auto; }
+    .capture { border:1px solid color-mix(in srgb, var(--teal) 40%, var(--border)); border-radius:16px; padding:14px 16px; color:var(--muted); }
+    .bench { display:grid; grid-template-columns:minmax(0, 1fr) minmax(590px, .95fr); gap:14px; align-items:stretch; margin-top:14px; }
+    .card { border:1px solid var(--border); border-radius:18px; background:var(--surface); padding:18px; }
+    .review { display:flex; flex-direction:column; min-height:600px; }
+    .review-list { flex:1; min-height:0; overflow:auto; padding-right:4px; }
+    .header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+    h1,h2,p { margin:0; } h1 { font:28px/1.15 Georgia, serif; } h2 { font:20px/1.2 Georgia, serif; }
+    .count,.pill { border-radius:999px; padding:4px 8px; font-size:12px; font-weight:700; }
+    .count { background:var(--surface-alt); color:var(--muted); } .pill { background:color-mix(in srgb,var(--warning) 18%, transparent); color:#ffd56d; }
+    .event { border:1px solid var(--border); border-radius:12px; padding:12px; margin:0 0 8px; }
+    .event strong { display:block; font-size:14px; } .event span { display:block; color:var(--muted); font-size:12px; margin-top:4px; }
+    .context { display:flex; flex-direction:column; gap:12px; }
+    .drawer { display:flex; gap:8px; color:var(--muted); font-size:12px; border-bottom:1px solid var(--border); padding-bottom:11px; }
+    .drawer b { color:var(--teal-ink); }
+    .map { border:1px solid var(--border); border-radius:14px; min-height:260px; padding:24px 28px; display:grid; place-items:center; color:var(--muted); }
+    .teeth { display:grid; grid-template-columns:repeat(8, 38px); gap:13px; }
+    .tooth { width:38px; height:76px; border-radius:48% 48% 38% 38%; border:1px solid #555; background:#272727; }
+    .tooth.active { outline:2px solid var(--teal); background:#234841; }
+    .regions { border-top:1px solid var(--border); padding-top:12px; }
+    .regions p { color:var(--muted); font-size:12px; margin-bottom:8px; }
+    .chips { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; }
+    .chip { border:1px solid var(--border); border-radius:999px; padding:8px 9px; text-align:center; color:var(--muted); font-size:12px; }
+    .quick { border:1px solid color-mix(in srgb,var(--teal) 45%,var(--border)); border-radius:14px; padding:15px; }
+    .quick h2 { font-size:18px; } .quick p { color:var(--muted); font-size:12px; margin-top:5px; }
+    .faces { display:flex; gap:7px; margin-top:13px; } .face { height:32px; width:32px; display:grid; place-items:center; border-radius:7px; border:1px solid var(--border); color:var(--teal-ink); font-size:12px; font-weight:700; }
+    .note { margin-top:12px; font-size:12px; color:var(--muted); }
+    @media (max-width:1100px) { main{width:min(100% - 28px,800px)} .bench{grid-template-columns:1fr}.review{min-height:0}.review-list{overflow:visible}.chips{grid-template-columns:repeat(2,1fr)} }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Meu Dia · registrar atendimento</h1>
+    <div class="capture">Conte o que aconteceu nesta consulta…</div>
+    <section class="bench" aria-label="Bancada de atendimento">
+      <article class="card review">
+        <div class="header"><h2>Revisão do atendimento</h2><span class="count">4</span></div>
+        <div class="review-list">
+          <div class="event"><strong>Implante · dente 13</strong><span><span class="pill">Próxima sessão</span> · será salvo como realizado</span></div>
+          <div class="event"><strong>Restauração · dente 26</strong><span>A fazer · observação clínica</span></div>
+          <div class="event"><strong>Profilaxia · boca toda</strong><span>Realizado hoje</span></div>
+          <div class="event"><strong>Observação da consulta</strong><span>Conteúdo longo mantém a revisão rolável dentro do card.</span></div>
+          <div class="event"><strong>Mais procedimentos</strong><span>O cabeçalho e o botão Salvar não se deslocam.</span></div>
+        </div>
+      </article>
+      <article class="card context">
+        <div class="drawer"><b>Odontograma</b><span>Plano e histórico</span><span>Anexos</span></div>
+        <div class="quick">
+          <div class="header"><h2>Implante · dente 13</h2><span>Fechar</span></div>
+          <p>Ficha rápida do dente, aberta diretamente ao tocar o odontograma.</p>
+          <div class="faces"><span class="face">V</span><span class="face">M</span><span class="face">O</span><span class="face">D</span><span class="face">L</span></div>
+        </div>
+        <div class="map"><div class="teeth"><i class="tooth"></i><i class="tooth"></i><i class="tooth active"></i><i class="tooth"></i><i class="tooth"></i><i class="tooth"></i><i class="tooth"></i><i class="tooth"></i><i class="tooth"></i><i class="tooth"></i><i class="tooth"></i><i class="tooth"></i><i class="tooth"></i><i class="tooth"></i><i class="tooth"></i><i class="tooth"></i></div></div>
+        <div class="regions"><p>Registrar por região</p><div class="chips"><span class="chip">Boca toda</span><span class="chip">Arcada superior</span><span class="chip">Arcada inferior</span><span class="chip">Quadrante 1</span><span class="chip">Quadrante 2</span><span class="chip">Quadrante 3</span><span class="chip">Quadrante 4</span><span class="chip">Manutenção ortodôntica</span></div></div>
+        <p class="note">O card do odontograma cresce com a ficha rápida. A página rola; apenas a Revisão tem rolagem interna.</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
