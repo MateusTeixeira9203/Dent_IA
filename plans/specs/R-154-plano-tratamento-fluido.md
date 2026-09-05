@@ -224,13 +224,15 @@ Regras visuais:
   registro de outro responsável. Este acesso é à informação clínica existente; não transfere
   autoria nem permissão.
 - **Bancada do odontograma (05/09):** a altura de `920px` não é referência; ela fez os dois
-  cards deixarem de caber como bancada. No desktop, o card do odontograma/ficha rápida define a
-  altura natural da linha. A Revisão estica até a mesma altura e é a única superfície com scroll
-  interno. Conteúdo clínico de implante, canal e demais especialidades expande o card direito e
-  segue pela rolagem da página, sem recortar controles ou criar um segundo scroll.
+  cards deixarem de caber como bancada. No desktop, o card do odontograma e do atalho rápido
+  define a altura natural da linha, com base mínima maior. A Revisão estica até a mesma altura e
+  é a única superfície com scroll interno. Conteúdo de implante, canal e demais controles expande
+  o card direito e segue pela rolagem da página, sem recortar controles ou criar um segundo scroll.
 - A aba `Regiões` sai. A faixa de boca, arcadas, quadrantes e manutenção ortodôntica aparece por
   padrão logo abaixo do odontograma; escolher uma região abre o controle regional existente no
-  mesmo lugar. O clique num dente abre diretamente a ficha rápida (`ToothDetailPanel`); o cartão
+  mesmo lugar. O clique no odontograma mantém o atalho rápido padrão: adiciona/remove dentes da
+  seleção e a mesma faixa atende um dente ou vários. O perfil do dente não entra nesse caminho;
+  permanece somente para gesto explícito de detalhe na revisão ou no fluxo de ponte. O cartão
   intermediário de histórico por dente deixa esse fluxo, pois o histórico longitudinal já vive em
   Plano e histórico. Dados e histórico existentes não são apagados.
 
