@@ -173,7 +173,9 @@ interface RegistrarPainelProps {
    *  separada (não precisa ter rascunho pra gerar orçamento de uma ficha antiga). */
   onAbrirPickerOrcamento: () => void;
   /** R-122 — detalhe é sempre um gesto explícito da faixa de ações rápidas. */
-  onAbrirDetalheDental: (dente: number) => void;
+  onAbrirDetalheDental?: (dente: number) => void;
+  /** Marca o primeiro uso do mapa sem transformar o atalho rápido em perfil do dente. */
+  onOdontogramaInteragido?: () => void;
   /** R-130 — variante explícita que abre o fluxo de ponte no pilar selecionado. */
   onIniciarPonte: (dente: number) => void;
   /** R-49 F1 — o campo mágico extraiu detalhe de endo; abre o editor já expandido. */
@@ -252,6 +254,7 @@ export function useRegistrarPainel({
   detalheEspecialidadeAberto,
   onAbrirPickerOrcamento,
   onAbrirDetalheDental,
+  onOdontogramaInteragido,
   onIniciarPonte,
   onAbrirDetalheEndo,
   realceCampoMagico,
@@ -519,13 +522,25 @@ export function useRegistrarPainel({
   // C5 (contrato §5.5) — toque no odontograma escreve no MESMO "onde" que o resto do painel lê
   // (fonte única, nenhum estado novo).
   //
-  // R-154 — o mapa é a entrada direta da ficha rápida. A região continua sendo o caminho
-  // padrão logo abaixo do mapa; um procedimento pendente do campo mágico ainda consome este
-  // dente antes de abrir o detalhe.
+  // R-154 — o mapa preserva o atalho rápido padrão: cada toque soma/remove um dente da
+  // seleção, para que a mesma faixa atenda um dente ou vários. Região continua sendo o
+  // caminho padrão logo abaixo do mapa enquanto não há seleção dental.
   function onToothToggle(dente: number) {
+    onOdontogramaInteragido?.();
     setEscopoRegional(null);
-    if (tipoPendente) handleOndeChange({ dentes: [dente] });
-    setDenteAberto(dente);
+    if (tipoPendente) {
+      handleOndeChange({ dentes: [dente] });
+      return;
+    }
+
+    const dentesSelecionados = onde?.dentes ?? [];
+    if (dentesSelecionados.includes(dente)) {
+      const restantes = dentesSelecionados.filter((item) => item !== dente);
+      handleOndeChange(restantes.length > 0 ? { dentes: restantes } : null);
+      return;
+    }
+
+    handleOndeChange({ dentes: [...dentesSelecionados, dente] });
   }
 
   /** Item do catálogo escolhido — só o nome comercial, nunca o tipo estrutural (§A3: sem

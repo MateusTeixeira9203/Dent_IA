@@ -480,7 +480,7 @@ export function MeuDiaClient({
       })();
     },
     onAbrirDetalheEndo: abrirDenteGrande,
-    onAbrirDetalheDental: abrirDetalheDental,
+    onOdontogramaInteragido: () => setJaTocouDente(true),
     onIniciarPonte: iniciarPonte,
   });
 
@@ -917,13 +917,13 @@ export function MeuDiaClient({
             {registrarPainel.campoMagico}
           </div>
 
-          {/* R-154 — a altura da linha vem do odontograma/ficha rápida. A Revisão se estica
-              para acompanhar e é a única coluna com rolagem interna. */}
+          {/* R-154 — a bancada cresce pela área de registro. A Revisão acompanha sua altura
+              e é a única coluna com rolagem interna. */}
           <div className="grid w-full grid-cols-1 items-stretch gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(720px,0.95fr)]">
             <motion.div
               layout="size"
               transition={{ layout: { duration: 0.18, ease: 'easeOut' } }}
-              className="flex min-h-[560px] min-w-0 self-stretch flex-col overflow-hidden rounded-2xl border border-border bg-surface p-4"
+              className="flex min-h-[620px] min-w-0 self-stretch flex-col overflow-hidden rounded-2xl border border-border bg-surface p-4 xl:min-h-[720px]"
             >
               {dicas.nestaFicha && (
                 <DicaZona titulo="Revisão da consulta">
@@ -1012,12 +1012,12 @@ export function MeuDiaClient({
               </div>
             </motion.div>
 
-            {/* Contexto clínico: nunca corta odontograma, regiões ou ficha rápida. Conteúdo
+            {/* Contexto clínico: nunca corta odontograma, região ou atalho rápido. Conteúdo
                 longo segue pela página; só a Revisão tem scroll interno. */}
             <motion.div
               layout="size"
               transition={{ layout: { duration: 0.18, ease: 'easeOut' } }}
-              className="flex min-h-[560px] min-w-0 self-stretch flex-col rounded-2xl border border-border bg-surface p-4"
+              className="flex min-h-[620px] min-w-0 self-stretch flex-col rounded-2xl border border-border bg-surface p-4 xl:min-h-[720px]"
             >
               <FaixaGavetas
                 aberta={gavetaAberta}
@@ -1061,14 +1061,14 @@ export function MeuDiaClient({
               />
               {gavetaAberta === null && (
                 <div className="flex-1">
-                  {!denteAberto && (
+                  {denteAberto == null && (
                     <div className="mb-3 mt-3 flex items-center justify-between gap-3">
-                      <span className="text-[11px] text-text-secondary">Toque um dente para abrir a ficha rápida</span>
+                      <span className="text-[11px] text-text-secondary">Selecione um ou mais dentes para usar o atalho rápido</span>
                       <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Registrar</span>
                     </div>
                   )}
                   <AnimatePresence mode="wait" initial={false}>
-                    {denteAberto != null ? (
+                    {denteAberto != null && (detalheAlvoId != null || iniciarPonteDente === denteAberto) ? (
                   <motion.div
                     key="editor-dente"
                     initial={{ opacity: 0, y: -8 }}
@@ -1101,11 +1101,11 @@ export function MeuDiaClient({
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.15, ease: 'easeOut' }}
                   >
-                    {/* Só no espelho: quando há dente aberto a dica já foi dispensada
-                        (`jaTocouDente`), então nunca aparece sobre o perfil do dente. */}
+                    {/* No atalho rápido o mapa continua sempre visível; o perfil só abre por
+                        gesto explícito da revisão ou pelo fluxo de ponte. */}
                     {dicas.odontograma && (
                       <DicaZona titulo="O odontograma">
-                        A boca do paciente. Toque um dente para abrir a ficha rápida.
+                        A boca do paciente. Selecione um ou mais dentes para registrar.
                       </DicaZona>
                     )}
                     {registrarPainel.slotCentral}
