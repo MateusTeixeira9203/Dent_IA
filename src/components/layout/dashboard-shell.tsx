@@ -10,6 +10,7 @@ import { DexWidget } from "@/components/layout/dex-widget";
 // import { DexGuide } from "@/components/onboarding/dex-guide";
 import { BrandBackground } from "@/components/layout/brand-background";
 import { CommandPalette } from "@/components/command-palette/command-palette";
+import { PaymentBlockOverlay } from "@/app/dashboard/_components/payment-block-overlay";
 import { useSessionGuard } from "@/hooks/use-session-guard";
 import type { DentistaRole } from "@/types/database";
 import type { PlanoId } from "@/lib/planos";
@@ -23,9 +24,10 @@ interface DashboardShellProps {
   avatarUrl?: string | null;
   plano?: PlanoId;
   dentistaId: string;
+  bloqueioPagamento?: boolean;
 }
 
-export function DashboardShell({ children, nome, clinicaNome, activeClinicId, role, avatarUrl, plano }: DashboardShellProps) {
+export function DashboardShell({ children, nome, clinicaNome, activeClinicId, role, avatarUrl, plano, bloqueioPagamento = false }: DashboardShellProps) {
   const router = useRouter();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -113,6 +115,8 @@ export function DashboardShell({ children, nome, clinicaNome, activeClinicId, ro
           clinicaId={activeClinicId}
         />
       )}
+
+      {bloqueioPagamento && <PaymentBlockOverlay />}
     </div>
   );
 }

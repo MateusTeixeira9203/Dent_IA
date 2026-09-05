@@ -1,6 +1,11 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from '@/lib/supabase/service';
+import { clinicaIsentaDeCobranca } from '@/lib/billing/exemptions';
+import { estadoComercialBloqueiaOperacao, resolverEstadoComercial } from '@/lib/billing/estado-comercial';
+import { obterAcessoFormacaoClinica } from '@/server/services/formacao-clinica';
 
 export type ClinicRole = "dentista" | "secretaria" | "admin" | "protetico";
 
@@ -17,6 +22,46 @@ export type ClinicContext = {
   role: ClinicRole;
 };
 
+type ClinicContextOptions = {
+  /** Checkout e reconciliação precisam continuar acessíveis mesmo com operação clínica bloqueada. */
+  allowBlockedBilling?: boolean;
+};
+
+async function bloquearServerActionSemPagamento(input: {
+  userId: string;
+  clinicId: string;
+  role: ClinicRole;
+  allowBlockedBilling: boolean;
+}): Promise<void> {
+  const requestHeaders = await headers();
+  if (
+    input.allowBlockedBilling
+    || !requestHeaders.has('next-action')
+    || process.env.STRIPE_BILLING_ENABLED !== 'true'
+    || !['admin', 'dentista'].includes(input.role)
+    || clinicaIsentaDeCobranca(input.clinicId)
+  ) {
+    return;
+  }
+
+  const db = createServiceClient();
+  const [{ data: assinatura, error }, acessoFormacao] = await Promise.all([
+    db.from('assinaturas_dentista').select('status')
+      .eq('usuario_id', input.userId).eq('clinica_id', input.clinicId)
+      .maybeSingle<{ status: string }>(),
+    obterAcessoFormacaoClinica({ userId: input.userId, clinicId: input.clinicId }),
+  ]);
+  if (error) throw new Error('Não foi possível verificar a situação de pagamento.');
+  const estado = resolverEstadoComercial({
+    isento: false,
+    statusAssinatura: assinatura?.status,
+    formacaoAtiva: acessoFormacao.liberado,
+  });
+  if (estadoComercialBloqueiaOperacao(estado) && !acessoFormacao.liberado) {
+    throw new Error('A operação está travada até a regularização do pagamento.');
+  }
+}
+
 /**
  * Resolve o contexto autenticado de clínica a partir das fontes canônicas:
  *
@@ -25,7 +70,7 @@ export type ClinicContext = {
  *
  * Usa React.cache() para deduplicar chamadas dentro do mesmo render (layout + page).
  */
-export const requireClinicContext = cache(async (): Promise<ClinicContext> => {
+export const requireClinicContext = cache(async (options: ClinicContextOptions = {}): Promise<ClinicContext> => {
   const supabase = await createClient();
 
   const {
@@ -69,6 +114,13 @@ export const requireClinicContext = cache(async (): Promise<ClinicContext> => {
     redirect('/onboarding');
   }
   if (!dentista) redirect("/onboarding");
+
+  await bloquearServerActionSemPagamento({
+    userId: user.id,
+    clinicId,
+    role: membership.role as ClinicRole,
+    allowBlockedBilling: options.allowBlockedBilling ?? false,
+  });
 
   return {
     supabase,

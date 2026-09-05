@@ -12,6 +12,7 @@ import {
 import { avaliarMinimoClinica } from './elegibilidade-clinica';
 import { clinicaIsentaDeCobranca } from '@/lib/billing/exemptions';
 import { dadosTrialStripe, resolverDiasTrial, type DiasTrial } from '@/lib/billing/trial-policy';
+import { statusStripeParaInterno } from '@/lib/billing/stripe-state';
 
 type AssinaturaRow = {
   id: string;
@@ -46,6 +47,16 @@ type MembershipRow = {
 type PoliticaTrialRow = {
   dias_trial: number;
 };
+
+type AssinaturaParaReconciliacao = Pick<AssinaturaRow,
+  'id' | 'clinica_id' | 'usuario_id' | 'dentista_id' | 'plano' | 'stripe_checkout_session_id' | 'status'
+>;
+
+export type ResultadoRegularizacaoPagamento =
+  | { estado: 'liberado' }
+  | { estado: 'checkout'; url: string }
+  | { estado: 'planos'; url: string }
+  | { estado: 'erro'; mensagem: string };
 
 function billingAtivo(): boolean {
   return process.env.STRIPE_BILLING_ENABLED === 'true';
@@ -178,6 +189,91 @@ async function consultarSessaoExistente(sessionId: string | null): Promise<{
   };
 }
 
+function isoFromUnix(seconds: number | null | undefined): string | null {
+  return typeof seconds === 'number' ? new Date(seconds * 1_000).toISOString() : null;
+}
+
+async function ativarAcessoIndividual(assinatura: AssinaturaParaReconciliacao): Promise<void> {
+  const db = createServiceClient();
+  const resultados = await Promise.all([
+    db.from('clinica_usuarios').update({ status: 'ativo', removed_at: null })
+      .eq('usuario_id', assinatura.usuario_id).eq('clinica_id', assinatura.clinica_id),
+    db.from('dentistas').update({ ativo: true })
+      .eq('id', assinatura.dentista_id).eq('clinica_id', assinatura.clinica_id),
+    db.from('users').update({ active_clinica_id: assinatura.clinica_id }).eq('id', assinatura.usuario_id),
+  ]);
+  const falha = resultados.find((resultado) => resultado.error)?.error;
+  if (falha) throw falha;
+}
+
+/**
+ * Recupera exclusivamente um checkout já salvo para a clínica ativa. A URL de retorno nunca é
+ * prova de pagamento: a Subscription atual é lida da Stripe e a metadata precisa bater com o DB.
+ */
+export async function reconciliarAcessoCobranca(input: {
+  userId: string;
+  clinicId: string;
+}): Promise<ResultadoRegularizacaoPagamento> {
+  if (!billingAtivo()) return { estado: 'erro', mensagem: 'A cobrança ainda não está disponível.' };
+  if (clinicaIsentaDeCobranca(input.clinicId)) return { estado: 'liberado' };
+
+  try {
+    const db = createServiceClient();
+    const { data: assinatura, error } = await db.from('assinaturas_dentista')
+      .select('id, clinica_id, usuario_id, dentista_id, plano, stripe_checkout_session_id, status')
+      .eq('usuario_id', input.userId).eq('clinica_id', input.clinicId)
+      .maybeSingle<AssinaturaParaReconciliacao>();
+    if (error) throw error;
+    if (!assinatura) return { estado: 'planos', url: '/planos?billing=required' };
+    if (['trialing', 'active'].includes(assinatura.status)) return { estado: 'liberado' };
+    if (!assinatura.stripe_checkout_session_id) return { estado: 'planos', url: '/planos?billing=required' };
+
+    const session = await getStripeClient().checkout.sessions.retrieve(assinatura.stripe_checkout_session_id);
+    if (
+      session.metadata?.assinaturaDentistaId !== assinatura.id
+      || session.metadata?.usuarioId !== input.userId
+      || session.metadata?.clinicaId !== input.clinicId
+    ) {
+      return { estado: 'erro', mensagem: 'A cobrança encontrada não pertence à clínica ativa.' };
+    }
+    if (session.status === 'open' && session.url) return { estado: 'checkout', url: session.url };
+    if (session.status !== 'complete') return { estado: 'planos', url: '/planos?billing=required' };
+
+    const subscriptionId = typeof session.subscription === 'string'
+      ? session.subscription
+      : session.subscription?.id ?? null;
+    if (!subscriptionId) {
+      return { estado: 'erro', mensagem: 'O pagamento ainda não gerou uma assinatura. Tente novamente em instantes.' };
+    }
+
+    const subscription = await getStripeClient().subscriptions.retrieve(subscriptionId);
+    if (subscription.metadata.assinaturaDentistaId !== assinatura.id) {
+      return { estado: 'erro', mensagem: 'A assinatura encontrada não pertence à clínica ativa.' };
+    }
+    const status = statusStripeParaInterno(subscription.status);
+    const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id;
+    const { error: updateError } = await db.from('assinaturas_dentista').update({
+      stripe_customer_id: customerId,
+      stripe_subscription_id: subscription.id,
+      stripe_checkout_session_id: session.id,
+      status,
+      trial_ends_at: isoFromUnix(subscription.trial_end),
+      current_period_ends_at: isoFromUnix(subscription.items.data[0]?.current_period_end),
+      grace_ends_at: status === 'past_due' ? undefined : null,
+    }).eq('id', assinatura.id).eq('usuario_id', input.userId).eq('clinica_id', input.clinicId);
+    if (updateError) throw updateError;
+
+    if (status === 'trialing' || status === 'active') {
+      await ativarAcessoIndividual(assinatura);
+      return { estado: 'liberado' };
+    }
+    return { estado: 'erro', mensagem: 'O pagamento ainda não foi confirmado. Tente novamente ou retome o pagamento.' };
+  } catch (error) {
+    console.error('[assinatura-dentista] reconciliação de cobrança falhou:', error);
+    return { estado: 'erro', mensagem: 'Não foi possível verificar o pagamento agora. Tente novamente.' };
+  }
+}
+
 export async function criarCheckoutAssinaturaDentista(
   userId: string,
   ciclo: CicloCobranca,
@@ -211,6 +307,11 @@ export async function criarCheckoutAssinaturaDentista(
     const existente = await consultarSessaoExistente(sessionId);
     if (existente.url) return { url: existente.url };
     if (existente.concluida) {
+      const reconciliacao = await reconciliarAcessoCobranca({
+        userId,
+        clinicId: assinatura.clinica_id,
+      });
+      if (reconciliacao.estado === 'liberado') return { error: 'Pagamento confirmado. Atualize a página para continuar.' };
       return { error: 'Seu pagamento já foi confirmado e está sendo processado. Atualize a página em instantes.' };
     }
 
@@ -397,12 +498,9 @@ export async function suspenderGracasVencidas(): Promise<{ suspensas: number }> 
       .lte('grace_ends_at', agora).select('id');
     if (updateError) throw updateError;
     if (!atualizada?.length) continue;
-    await Promise.all([
-      db.from('clinica_usuarios').update({ status: 'suspenso' })
-        .eq('usuario_id', assinatura.usuario_id).eq('clinica_id', assinatura.clinica_id),
-      db.from('dentistas').update({ ativo: false })
-        .eq('id', assinatura.dentista_id).eq('clinica_id', assinatura.clinica_id),
-    ]);
+    // A cobrança bloqueia a operação no Dashboard, mas não retira a sessão nem os dados da
+    // clínica. Isso mantém RLS de leitura funcionando para a regularização e evita o ciclo de
+    // onboarding que antes fazia um pagamento pendente parecer falha de login.
     if (assinatura.plano === 'CLINICA') await avaliarMinimoClinica(assinatura.clinica_id as string);
     suspensas += 1;
   }

@@ -6,6 +6,7 @@ const AUTH_ROUTES = ["/login", "/cadastro", "/esqueci-senha"];
 const ALWAYS_ALLOWED_AUTH_ROUTES = ["/redefinir-senha"];
 const CANONICAL_ORIGIN = 'https://odontoia.app';
 const LEGACY_HOSTS = new Set(['dentia.app.br']);
+const NON_CANONICAL_HOSTS = new Set(['www.odontoia.app', ...LEGACY_HOSTS]);
 
 function isPublicRoute(pathname: string): boolean {
   return PUBLIC_ROUTES.includes(pathname);
@@ -37,13 +38,13 @@ function createRedirectResponse(sourceResponse: NextResponse, url: URL): NextRes
 }
 
 export async function proxy(request: NextRequest) {
-  // R-129c — o host antigo aponta para o domínio atual. A Vercel controla a canonicalização
-  // entre apex e www; redirecionar www aqui criaria um loop se a plataforma apontar apex → www.
+  // O apex recebe o webhook Stripe sem uma cadeia de redirects. A Vercel deve servir o apex
+  // diretamente; www e o host legado só chegam aqui para serem canônicos em uma única resposta.
   // Isso acontece antes de renovar token para não fazer trabalho de autenticação no host errado.
   const host = (request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? '')
     .toLowerCase()
     .replace(/:\d+$/, '');
-  if (LEGACY_HOSTS.has(host)) {
+  if (NON_CANONICAL_HOSTS.has(host)) {
     const destination = new URL(`${request.nextUrl.pathname}${request.nextUrl.search}`, CANONICAL_ORIGIN);
     return NextResponse.redirect(destination, 308);
   }

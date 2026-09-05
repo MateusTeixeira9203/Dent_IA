@@ -6,7 +6,7 @@ import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { WelcomeModal } from "./_components/welcome-modal";
 import { createServiceClient } from '@/lib/supabase/service';
 import { clinicaIsentaDeCobranca } from '@/lib/billing/exemptions';
-import { resolverEstadoComercial } from '@/lib/billing/estado-comercial';
+import { estadoComercialBloqueiaOperacao, resolverEstadoComercial } from '@/lib/billing/estado-comercial';
 import { obterAcessoFormacaoClinica } from '@/server/services/formacao-clinica';
 
 const ROTA_PROTETICO = "/dashboard/protetico";
@@ -20,6 +20,7 @@ export default async function DashboardLayout({
   const pathname = (await headers()).get('x-pathname') ?? '/dashboard';
 
   const dentista = await getDentistaCached();
+  let bloqueioPagamento = false;
 
   if (!dentista) {
     redirect("/onboarding");
@@ -58,14 +59,8 @@ export default async function DashboardLayout({
         statusAssinatura: statusIndividual,
         formacaoAtiva: acessoFormacao.liberado,
       });
-      const assinaturaLiberada = ['isento', 'trial', 'ativo', 'past_due'].includes(estadoComercial)
-        || acessoFormacao.liberado;
-
-      if (!assinaturaLiberada) {
-        const aguardandoCheckout = statusIndividual
-          && ['aguardando_formacao', 'checkout_pendente', 'cartao_pronto'].includes(statusIndividual);
-        redirect(aguardandoCheckout ? '/bem-vindo-agregado' : '/planos?billing=required');
-      }
+      bloqueioPagamento = estadoComercialBloqueiaOperacao(estadoComercial)
+        && !acessoFormacao.liberado;
     }
 
     if (clinicaBilling && ['decisao_pendente', 'bloqueada'].includes(clinicaBilling.status_elegibilidade)) {
@@ -123,6 +118,7 @@ export default async function DashboardLayout({
       avatarUrl={dentista.avatar_url}
       plano={dentista.plano}
       dentistaId={dentista.id}
+      bloqueioPagamento={bloqueioPagamento}
     >
       {children}
       <WelcomeModal clinicaNome={dentista.clinica} />

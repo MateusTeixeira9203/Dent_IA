@@ -54,12 +54,16 @@ async function ativarAcesso(assinatura: AssinaturaStripeRow): Promise<void> {
   if (falha) throw falha;
 }
 
-async function suspenderAcesso(assinatura: AssinaturaStripeRow): Promise<void> {
+/**
+ * A inadimplência é bloqueio comercial, não remoção de vínculo. Mantemos a sessão e a leitura
+ * pela RLS para que o Dashboard possa exibir os dados preservados e a ação de regularização.
+ */
+async function manterAcessoParaRegularizacao(assinatura: AssinaturaStripeRow): Promise<void> {
   const db = createServiceClient();
   const resultados = await Promise.all([
-    db.from('clinica_usuarios').update({ status: 'suspenso' })
+    db.from('clinica_usuarios').update({ status: 'ativo', removed_at: null })
       .eq('usuario_id', assinatura.usuario_id).eq('clinica_id', assinatura.clinica_id),
-    db.from('dentistas').update({ ativo: false })
+    db.from('dentistas').update({ ativo: true })
       .eq('id', assinatura.dentista_id).eq('clinica_id', assinatura.clinica_id),
   ]);
   const falha = resultados.find((item) => item.error)?.error;
@@ -118,7 +122,7 @@ async function sincronizarSubscription(subscription: Stripe.Subscription): Promi
     if (assinatura.plano === 'CLINICA') await avaliarMinimoClinica(assinatura.clinica_id);
   }
   if (status === 'canceled' || status === 'unpaid' || status === 'suspended') {
-    await suspenderAcesso(assinatura);
+    await manterAcessoParaRegularizacao(assinatura);
     if (assinatura.plano === 'CLINICA') await avaliarMinimoClinica(assinatura.clinica_id);
   }
 }
@@ -227,7 +231,7 @@ async function registrarPagamento(invoice: Stripe.Invoice): Promise<void> {
     if (assinatura.formacao_id) await ativarFormacaoConfirmada(assinatura.formacao_id);
     else await ativarAcesso(assinatura);
   } else if (status === 'canceled' || status === 'unpaid' || status === 'suspended') {
-    await suspenderAcesso(assinatura);
+    await manterAcessoParaRegularizacao(assinatura);
   }
   if (assinatura.plano === 'CLINICA') await avaliarMinimoClinica(assinatura.clinica_id);
 }
