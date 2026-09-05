@@ -94,6 +94,10 @@ export function RetornoMobileAgenda({
       return opcoes;
     });
   }, [diaAtivo, duracaoMin]);
+  const ocupados = useMemo(
+    () => [...(diaAtivo?.ocupados ?? [])].sort((a, b) => a.inicioMin - b.inicioMin),
+    [diaAtivo?.ocupados],
+  );
 
   useEffect(() => {
     if (!selecionado || selecionado.data !== diaAtivo?.data) return;
@@ -159,6 +163,19 @@ export function RetornoMobileAgenda({
           </div>
           <div>
             <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-teal-ink">{diaAtivo?.temGrade === false ? 'Agenda livre' : 'Horários livres'}</p>
+            {ocupados.length > 0 && (
+              <div className="mb-3 rounded-xl border border-border bg-surface-alt/50 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Já agendados</p>
+                <ul className="mt-2 space-y-1.5" aria-label="Horários já agendados">
+                  {ocupados.map((ocupado) => (
+                    <li key={`${ocupado.inicioMin}-${ocupado.duracaoMin}-${ocupado.pacienteNome ?? 'bloqueio'}`} className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-surface px-2.5 py-2">
+                      <span className="font-mono text-xs font-semibold text-text-primary">{formatHora(ocupado.inicioMin)}</span>
+                      <span className="min-w-0 truncate text-xs text-text-secondary">{ocupado.bloqueio ? 'Horário bloqueado' : ocupado.pacienteNome ?? 'Paciente agendado'}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {diaAtivo?.temGrade === false ? (
               <div className="rounded-xl border border-teal/25 bg-teal/5 p-3">
                 <p className="text-sm font-semibold text-teal-ink">Agenda livre neste dia.</p>
