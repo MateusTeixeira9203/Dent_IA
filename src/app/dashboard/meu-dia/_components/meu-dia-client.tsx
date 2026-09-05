@@ -933,12 +933,13 @@ export function MeuDiaClient({
           </div>
 
           {/* R-140b — a bancada acompanha a largura da régua do dia. Revisão e contexto
-              preservam a mesma altura; a aba Boca inteira cabe sem rolagem interna. */}
+              preservam a mesma altura; a aba Boca ganha espaço para os controles completos e
+              rola por dentro quando ainda houver conteúdo abaixo. */}
           <div className="grid w-full grid-cols-1 items-stretch gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(720px,0.95fr)]">
             <motion.div
               layout="size"
               transition={{ layout: { duration: 0.18, ease: 'easeOut' } }}
-              className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface p-4 xl:h-[min(760px,calc(100vh-13rem))] xl:min-h-[440px]"
+              className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface p-4 xl:h-[min(920px,calc(100vh-6rem))] xl:min-h-[560px]"
             >
               {dicas.nestaFicha && (
                 <DicaZona titulo="Revisão da consulta">
@@ -1027,16 +1028,12 @@ export function MeuDiaClient({
               </div>
             </motion.div>
 
-            {/* R-140b — contexto clínico lateral. Boca não rola; gavetas e formulários longos
-                podem rolar dentro da altura fixa sem deslocar o restante da página. */}
+            {/* R-140b — contexto clínico lateral. A boca compartilha a altura maior da revisão;
+                mapa, Regiões e multidente podem rolar dentro do card sem deslocar a página. */}
             <motion.div
               layout="size"
               transition={{ layout: { duration: 0.18, ease: 'easeOut' } }}
-              className={`h-full rounded-2xl border border-border bg-surface p-4 xl:h-[min(760px,calc(100vh-13rem))] xl:min-h-[440px] xl:sticky xl:top-4 ${
-                gavetaAberta !== null || denteAberto == null
-                  ? 'overflow-hidden'
-                  : 'overflow-y-auto'
-              }`}
+              className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface p-4 xl:h-[min(920px,calc(100vh-6rem))] xl:min-h-[560px] xl:sticky xl:top-4"
             >
               <FaixaGavetas
                 aberta={gavetaAberta}
@@ -1078,14 +1075,16 @@ export function MeuDiaClient({
                   />
                 }
               />
-              {gavetaAberta === null && !denteAberto && (
-                <div className="mb-3 mt-3 flex items-center justify-between gap-3">
-                  <span className="text-[11px] text-text-secondary">Selecione sem abrir o histórico</span>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Registrar</span>
-                </div>
-              )}
-              {gavetaAberta === null && <AnimatePresence mode="wait" initial={false}>
-                {denteAberto != null && registrandoDenteAberto ? (
+              {gavetaAberta === null && (
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                  {!denteAberto && (
+                    <div className="mb-3 mt-3 flex items-center justify-between gap-3">
+                      <span className="text-[11px] text-text-secondary">Selecione sem abrir o histórico</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Registrar</span>
+                    </div>
+                  )}
+                  <AnimatePresence mode="wait" initial={false}>
+                    {denteAberto != null && registrandoDenteAberto ? (
                   <motion.div
                     key="editor-dente"
                     initial={{ opacity: 0, y: -8 }}
@@ -1111,7 +1110,7 @@ export function MeuDiaClient({
                       className="border-0 p-0"
                     />
                   </motion.div>
-                ) : denteAberto != null ? (
+                    ) : denteAberto != null ? (
                   <motion.div
                     key="historico-dente"
                     initial={{ opacity: 0, y: -8 }}
@@ -1128,7 +1127,7 @@ export function MeuDiaClient({
                       onRegistrar={() => setRegistrandoDenteAberto(true)}
                     />
                   </motion.div>
-                ) : (
+                    ) : (
                   <motion.div
                     key="espelho"
                     initial={{ opacity: 0 }}
@@ -1148,8 +1147,10 @@ export function MeuDiaClient({
                       {registrarPainel.controlesOdontograma}
                     </div>
                   </motion.div>
-                )}
-              </AnimatePresence>}
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
             </motion.div>
           </div>
 
