@@ -66,6 +66,21 @@ function horaParaMin(hhmmss: string): number {
   return h * 60 + m;
 }
 
+/** A grade de retorno sempre começa no domingo para conseguir indexar domingo–sábado, mas
+ * a agenda operacional é segunda–sábado. `janelaDaVisao('semana')` interpreta um domingo
+ * como encerramento da semana anterior; por isso a consulta precisa usar a segunda seguinte
+ * como âncora, enquanto o array de dias continua começando no domingo. */
+export function janelaDaSemanaDisponibilidade(semanaInicioISO: string): { de: string; ate: string } {
+  const [ano, mes, dia] = semanaInicioISO.split('-').map(Number);
+  const segunda = new Date(Date.UTC(ano, mes - 1, dia + 1, 12));
+  const ancora = [
+    segunda.getUTCFullYear(),
+    String(segunda.getUTCMonth() + 1).padStart(2, '0'),
+    String(segunda.getUTCDate()).padStart(2, '0'),
+  ].join('-');
+  return janelaDaVisao('semana', ancora);
+}
+
 /** Minuto do dia → "HH:mm". Usado pelo `RetornoSemanaGrid` (resumo/render) e pelo
  *  `sendHoraList` (label + rowId da lista do WhatsApp) — mesma conta, um lugar só. */
 export function formatHora(minutoDoDia: number): string {
@@ -114,7 +129,7 @@ export async function getDisponibilidadeSemana(params: {
 }): Promise<DisponibilidadeDia[]> {
   const { dentistaId, clinicaId, semanaInicioISO } = params;
   const db = createServiceClient();
-  const { de, ate } = janelaDaVisao('semana', semanaInicioISO);
+  const { de, ate } = janelaDaSemanaDisponibilidade(semanaInicioISO);
 
   const [
     { data: gradeRaw, error: gradeError },
