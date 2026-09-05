@@ -39,9 +39,8 @@
 // Anexos, 1 aberta por vez), depois rodapé. `RegistrarPainel` virou hook
 // (`useRegistrarPainel`) — mesmo estado/lógica, só devolve as peças posicionáveis.
 //
-// Direita é 1 ocupante só, 3 níveis: espelho (default) → `DenteHistoricoCard` (tocar o
-// dente — leitura antes de escrita, F2) → `ToothDetailPanel` (editor de faces/chips,
-// "+ registrar neste dente"). `tabelaContainer`/portal SAÍRAM (achado dele 08/08: a tabela
+// Direita é 1 ocupante por vez: espelho (default) ou `ToothDetailPanel` direto ao tocar o
+// dente. O histórico longitudinal permanece em Plano e histórico. `tabelaContainer`/portal SAÍRAM (achado dele 08/08: a tabela
 // de especialidade full-width abaixo da linha ficava sem fundo, "flutuando" — ele queria
 // DENTRO do card do perfil) — `ToothDetailPanel` sem esse prop já renderiza a seção inline,
 // dentro do próprio card (555px é bem mais que os 312px que motivaram o portal originalmente).
@@ -87,7 +86,6 @@ function rotuloNovo(e: OdontogramaEventoDraft): string {
   }
   return label;
 }
-import { DenteHistoricoCard } from './dente-historico-card';
 import { ToothDetailPanel } from '@/components/odontograma/ToothDetailPanel';
 import {
   useOrcamentoModal,
@@ -198,10 +196,6 @@ export function MeuDiaClient({
   const [fichaRascunhoId, setFichaRascunhoId] = useState<string | null>(null);
   const [denteAberto, setDenteAberto] = useState<number | null>(null);
   const [iniciarPonteDente, setIniciarPonteDente] = useState<number | null>(null);
-  /** R-78 F2 — dente aberto mostra o HISTÓRICO por padrão (§3.2 da spec: leitura antes de
-   *  escrita); isto revela o editor de faces/chips (`ToothDetailPanel`, reusado tal qual)
-   *  por cima, via "+ registrar neste dente" ou "continuar aqui" do aviso de grupo aberto. */
-  const [registrandoDenteAberto, setRegistrandoDenteAberto] = useState(false);
   /** R-78 — id do evento cuja tabela de especialidade deve nascer já aberta no editor
    *  (⤢ de um card de "Nesta ficha"). `null` = editor nasce fechado, comportamento normal. */
   const [detalheAlvoId, setDetalheAlvoId] = useState<string | null>(null);
@@ -261,7 +255,6 @@ export function MeuDiaClient({
     setFichaRascunhoId(null); // R-85 — ficha do orçamento antecipado é do paciente anterior
     setDenteAberto(null);
     setDetalheEspecialidadeAberto(false); // R-63 — paciente novo não herda tabela aberta do anterior
-    setRegistrandoDenteAberto(false); // R-78 F2 — idem, nunca herda o editor aberto
     setDetalheAlvoId(null);
     setGavetaAberta(null); // G13 — troca de paciente reseta a gaveta pro default (fechada)
     setTextoVisita('');
@@ -524,7 +517,6 @@ export function MeuDiaClient({
     setFichaRascunhoId(null);
     setDenteAberto(null);
     setDetalheEspecialidadeAberto(false);
-    setRegistrandoDenteAberto(false);
     setDetalheAlvoId(null);
     setTextoVisita('');
     avancarProximo();
@@ -557,25 +549,18 @@ export function MeuDiaClient({
     // R-63 — nova seleção (ou fechar via ✕) nunca herda a tabela aberta do dente anterior;
     // o próprio ToothDetailPanel também reseta o índice local pro mesmo efeito (§4.2/I3).
     setDetalheEspecialidadeAberto(false);
-    // R-78 F2 — trocar de dente (ou fechar) sempre volta pro histórico; nunca herda o
-    // editor aberto do dente anterior.
-    setRegistrandoDenteAberto(false);
     setDetalheAlvoId(null);
   }
 
-  /** R-78 — ⤢ de um card de "Nesta ficha": vai direto pro editor do dente (pula o
-   *  histórico, o dentista já sabe o que quer editar) com a tabela já expandida. */
+  /** R-154 — ⤢ da revisão abre a mesma ficha rápida do clique no odontograma. */
   function abrirDenteGrande(dente: number, eventoId: string) {
     handleDenteAbertoChange(dente);
-    setRegistrandoDenteAberto(true);
     setDetalheAlvoId(eventoId);
   }
 
-  /** R-122 — seleção no mapa não abre nada. Este é o gesto explícito que leva às faces,
-   * histórico e tabelas do dente escolhido. */
+  /** Ação auxiliar da faixa multidente: abre a mesma ficha rápida. */
   function abrirDetalheDental(dente: number) {
     handleDenteAbertoChange(dente);
-    setRegistrandoDenteAberto(true);
     setDetalheAlvoId(null);
   }
 
@@ -588,7 +573,7 @@ export function MeuDiaClient({
   // devolve para o odontograma; campos internos que já usam Esc (ex.: busca livre)
   // chamam preventDefault e preservam seu próprio comportamento.
   useEffect(() => {
-    if (denteAberto == null || !registrandoDenteAberto) return;
+    if (denteAberto == null) return;
 
     function voltarAoOdontograma(event: KeyboardEvent) {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
@@ -598,7 +583,7 @@ export function MeuDiaClient({
 
     window.addEventListener('keydown', voltarAoOdontograma);
     return () => window.removeEventListener('keydown', voltarAoOdontograma);
-  }, [denteAberto, handleDenteAbertoChange, registrandoDenteAberto]);
+  }, [denteAberto, handleDenteAbertoChange]);
 
   /** Registro próprio entra na revisão da consulta como rascunho com o MESMO id. Assim o
    * dentista informa detalhe de implante/canal antes do save, sem criar evento fantasma. */
@@ -932,14 +917,13 @@ export function MeuDiaClient({
             {registrarPainel.campoMagico}
           </div>
 
-          {/* R-140b — a bancada acompanha a largura da régua do dia. Revisão e contexto
-              preservam a mesma altura; a aba Boca ganha espaço para os controles completos e
-              rola por dentro quando ainda houver conteúdo abaixo. */}
+          {/* R-154 — a altura da linha vem do odontograma/ficha rápida. A Revisão se estica
+              para acompanhar e é a única coluna com rolagem interna. */}
           <div className="grid w-full grid-cols-1 items-stretch gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(720px,0.95fr)]">
             <motion.div
               layout="size"
               transition={{ layout: { duration: 0.18, ease: 'easeOut' } }}
-              className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface p-4 xl:h-[min(920px,calc(100vh-6rem))] xl:min-h-[560px]"
+              className="flex min-h-[560px] min-w-0 self-stretch flex-col overflow-hidden rounded-2xl border border-border bg-surface p-4"
             >
               {dicas.nestaFicha && (
                 <DicaZona titulo="Revisão da consulta">
@@ -1028,12 +1012,12 @@ export function MeuDiaClient({
               </div>
             </motion.div>
 
-            {/* R-140b — contexto clínico lateral. A boca compartilha a altura maior da revisão;
-                mapa, Regiões e multidente podem rolar dentro do card sem deslocar a página. */}
+            {/* Contexto clínico: nunca corta odontograma, regiões ou ficha rápida. Conteúdo
+                longo segue pela página; só a Revisão tem scroll interno. */}
             <motion.div
               layout="size"
               transition={{ layout: { duration: 0.18, ease: 'easeOut' } }}
-              className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface p-4 xl:h-[min(920px,calc(100vh-6rem))] xl:min-h-[560px] xl:sticky xl:top-4"
+              className="flex min-h-[560px] min-w-0 self-stretch flex-col rounded-2xl border border-border bg-surface p-4"
             >
               <FaixaGavetas
                 aberta={gavetaAberta}
@@ -1076,15 +1060,15 @@ export function MeuDiaClient({
                 }
               />
               {gavetaAberta === null && (
-                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                <div className="flex-1">
                   {!denteAberto && (
                     <div className="mb-3 mt-3 flex items-center justify-between gap-3">
-                      <span className="text-[11px] text-text-secondary">Selecione sem abrir o histórico</span>
+                      <span className="text-[11px] text-text-secondary">Toque um dente para abrir a ficha rápida</span>
                       <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Registrar</span>
                     </div>
                   )}
                   <AnimatePresence mode="wait" initial={false}>
-                    {denteAberto != null && registrandoDenteAberto ? (
+                    {denteAberto != null ? (
                   <motion.div
                     key="editor-dente"
                     initial={{ opacity: 0, y: -8 }}
@@ -1096,8 +1080,7 @@ export function MeuDiaClient({
                       dente={denteAberto}
                       eventos={eventosDraft}
                       onChange={setEventosDraft}
-                      // R-123 — fechar o editor de faces volta ao mapa; o histórico
-                      // continua acessível pelo gesto explícito "Ver histórico".
+                      // Fechar o editor volta ao mapa e aos controles regionais.
                       onClose={() => handleDenteAbertoChange(null)}
                       dataPadrao={hojeBRT()}
                       iniciarPonte={iniciarPonteDente === denteAberto}
@@ -1108,23 +1091,6 @@ export function MeuDiaClient({
                       // R-107b — catálogo do dentista pro match local da busca livre.
                       catalogoProcedimentos={catalogoProcedimentos}
                       className="border-0 p-0"
-                    />
-                  </motion.div>
-                    ) : denteAberto != null ? (
-                  <motion.div
-                    key="historico-dente"
-                    initial={{ opacity: 0, y: -8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.2, ease: 'easeOut' }}
-                  >
-                    <DenteHistoricoCard
-                      dente={denteAberto}
-                      eventosDraft={eventosDraft}
-                      visitas={contexto.visitas}
-                      gruposAbertos={gruposAbertos}
-                      onFechar={() => handleDenteAbertoChange(null)}
-                      onRegistrar={() => setRegistrandoDenteAberto(true)}
                     />
                   </motion.div>
                     ) : (
@@ -1139,7 +1105,7 @@ export function MeuDiaClient({
                         (`jaTocouDente`), então nunca aparece sobre o perfil do dente. */}
                     {dicas.odontograma && (
                       <DicaZona titulo="O odontograma">
-                        A boca do paciente. Toque um dente pra ver o histórico dele.
+                        A boca do paciente. Toque um dente para abrir a ficha rápida.
                       </DicaZona>
                     )}
                     {registrarPainel.slotCentral}
