@@ -611,7 +611,7 @@ export function ProntuarioTab({
         </div>
 
         <div className="grid grid-cols-1 items-stretch gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(720px,0.95fr)]">
-          <section className="flex min-h-[720px] min-w-0 self-stretch flex-col overflow-hidden rounded-2xl border border-border bg-surface p-4">
+          <section className="flex h-[720px] min-w-0 self-start flex-col overflow-hidden rounded-2xl border border-border bg-surface p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="font-heading text-lg text-text-primary">Revisão do atendimento</p>

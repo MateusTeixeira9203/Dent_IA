@@ -917,13 +917,14 @@ export function MeuDiaClient({
             {registrarPainel.campoMagico}
           </div>
 
-          {/* R-154 — a bancada cresce pela área de registro. A Revisão acompanha sua altura
-              e é a única coluna com rolagem interna. */}
+          {/* R-154 — a Revisão tem altura fixa para que muitos procedimentos não empurrem o
+              rodapé da consulta. Só sua lista rola; o contexto clínico continua livre para
+              exibir odontograma e controles completos. */}
           <div className="grid w-full grid-cols-1 items-stretch gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(720px,0.95fr)]">
             <motion.div
               layout="size"
               transition={{ layout: { duration: 0.18, ease: 'easeOut' } }}
-              className="flex min-h-[620px] min-w-0 self-stretch flex-col overflow-hidden rounded-2xl border border-border bg-surface p-4 xl:min-h-[720px]"
+              className="flex h-[620px] min-w-0 self-start flex-col overflow-hidden rounded-2xl border border-border bg-surface p-4 xl:h-[720px]"
             >
               {dicas.nestaFicha && (
                 <DicaZona titulo="Revisão da consulta">
