@@ -582,13 +582,13 @@ export function ProntuarioTab({
   if (novoRegistroAberto) {
     const tratamentoDestino = todasFichas.find((ficha) => ficha.id === destinoNovoRegistroId) ?? null;
     return (
-      <section className="space-y-3" aria-label="Novo atendimento no prontuário">
+      <section className="space-y-3" aria-label="Nova evolução no prontuário">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-4 py-3">
           <div className="flex items-center gap-2">
             <Stethoscope className="h-4 w-4 text-teal-ink" aria-hidden />
             <div>
                 <p className="text-sm font-bold text-text-primary">
-                  {tratamentoDestino ? `Novo atendimento em ${tratamentoDestino.nome}` : 'Novo atendimento'}
+                  {tratamentoDestino ? `Nova evolução em ${tratamentoDestino.nome}` : 'Nova evolução'}
                 </p>
                 <p className="text-xs text-text-secondary">
                   Nova entrada com autoria e data próprias — o registro anterior não é reescrito.
@@ -701,7 +701,7 @@ export function ProntuarioTab({
             <div className="flex w-full items-center gap-2 sm:w-auto sm:flex-none">
               {podeEscreverFicha && fichaAtual && (
                 <Button className="min-h-11 flex-1 sm:min-h-8 sm:flex-none" onClick={() => abrirNovoRegistro({ fichaId: fichaAtual.id })}>
-                  <Plus className="h-4 w-4" /> Novo atendimento
+                  <Plus className="h-4 w-4" /> Nova evolução
                 </Button>
               )}
               {fichaAtual && (
@@ -1306,7 +1306,7 @@ export function ProntuarioTab({
               <FileText className="h-4 w-4" /> Importar histórico
             </Button>
             <Button onClick={() => abrirNovoRegistro()} className="min-h-11">
-              <Plus className="h-4 w-4" /> Novo atendimento
+              <Plus className="h-4 w-4" /> Nova evolução
             </Button>
           </div>
         )}
