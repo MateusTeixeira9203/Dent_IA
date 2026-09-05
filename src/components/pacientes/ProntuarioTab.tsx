@@ -173,6 +173,7 @@ export function ProntuarioTab({
   const [textoVisita, setTextoVisita] = useState('');
   const [visitaKey, setVisitaKey] = useState(() => crypto.randomUUID());
   const [denteAberto, setDenteAberto] = useState<number | null>(null);
+  const [iniciarPonteDente, setIniciarPonteDente] = useState<number | null>(null);
   const [detalheEspecialidadeAberto, setDetalheEspecialidadeAberto] = useState(false);
   const [resumoAberto, setResumoAberto] = useState<ResumoAberto | null>(null);
   const [resumoDenteSelecionado, setResumoDenteSelecionado] = useState<number | null>(null);
@@ -264,13 +265,17 @@ export function ProntuarioTab({
       toast.info('Salve o atendimento antes de gerar o orçamento. Assim o orçamento fica ligado à ficha correta.');
     },
     onAbrirDetalheDental: (dente) => setDenteAberto(dente),
-    onIniciarPonte: (dente) => setDenteAberto(dente),
+    onIniciarPonte: (dente) => {
+      setDenteAberto(dente);
+      setIniciarPonteDente(dente);
+    },
     onAbrirDetalheEndo: (dente) => setDenteAberto(dente),
     onSalvarVisita: salvarRegistro,
     onSalvo: (resultado) => {
       setEventosDraft([]);
       setTextoVisita('');
       setDenteAberto(null);
+      setIniciarPonteDente(null);
       setDetalheEspecialidadeAberto(false);
       setDestinoNovoRegistroId(null);
       setAtendimentoDeOrigemId(null);
@@ -564,6 +569,7 @@ export function ProntuarioTab({
     setEventosDraft([]);
     setTextoVisita('');
     setDenteAberto(null);
+    setIniciarPonteDente(null);
     setDetalheEspecialidadeAberto(false);
     setDestinoNovoRegistroId(null);
     if (atendimentoDeOrigemId && destinoNovoRegistroId) {
@@ -605,7 +611,7 @@ export function ProntuarioTab({
         </div>
 
         <div className="grid grid-cols-1 items-stretch gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(720px,0.95fr)]">
-          <section className="flex min-h-[720px] flex-col rounded-2xl border border-border bg-surface p-4">
+          <section className="flex min-h-[720px] min-w-0 self-stretch flex-col overflow-hidden rounded-2xl border border-border bg-surface p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="font-heading text-lg text-text-primary">Revisão do atendimento</p>
@@ -613,7 +619,7 @@ export function ProntuarioTab({
               </div>
               {painel.acoesSecundarias}
             </div>
-            <div className="min-h-0 flex-1 pr-1">
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
               <NestaSessaoBloco
                 vazio="Ainda não há registros nesta consulta. Use o Dex ou selecione uma região da boca."
                 eventosDraft={eventosDraft}
@@ -636,8 +642,14 @@ export function ProntuarioTab({
                 dente={denteAberto}
                 eventos={eventosDraft}
                 onChange={setEventosDraft}
-                onClose={() => { setDenteAberto(null); setDetalheEspecialidadeAberto(false); }}
+                onClose={() => {
+                  setDenteAberto(null);
+                  setIniciarPonteDente(null);
+                  setDetalheEspecialidadeAberto(false);
+                }}
                 dataPadrao={new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })}
+                iniciarPonte={iniciarPonteDente === denteAberto}
+                onPonteIniciada={() => setIniciarPonteDente(null)}
                 onDetalheAbertoChange={setDetalheEspecialidadeAberto}
                 catalogoProcedimentos={catalogoProcedimentos}
               />
