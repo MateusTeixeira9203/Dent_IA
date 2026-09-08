@@ -1,84 +1,95 @@
-# R-150 — Agenda útil e retorno rápido
+# R-150 — Retorno com agenda completa do dentista
 
 > **SPEC** · **R-150** · ⏳ fila
-> **Aberto:** 2026-09-03 · **Fechado:** — · **Fase:** aprovada; aguarda prioridade após P0
+> **Aberto:** 2026-09-03 · **Revisado:** 2026-09-08 · **Fase:** correção incremental verificada localmente; concorrência pendente
 
 ## 1. Problema
 
-O retorno não oferece atalhos de 7 e 15 dias. A Agenda principal ainda desenha domingo, embora
-a rotina solicitada seja de segunda a sábado. A regra de expediente já existe no servidor, mas
-não possui teste de unidade. Por fim, um dente ausente precisa continuar elegível para iniciar a
-ponte fixa no fluxo de seleção única.
+O desktop permite escolher 09:15, mas a validação do mobile oculto apaga a seleção quando a grade
+usa passos de 30 minutos. Reproduzido no componente do commit publicado `a2236a6` e corrigido no
+mesmo cenário. Ficha, Meu Dia e perfil compartilham este modal; consultas e bloqueios já publicados
+continuam visíveis, inclusive em +30 dias.
 
-## 2. Decisão
+## 2. Escopo desta correção
 
-- Retorno desktop ganha chips `7 dias` e `15 dias`, ao lado dos saltos já existentes; todos partem
-  de hoje.
-- A grade semanal e o calendário mensal da Agenda exibem somente segunda a sábado. Dia domingo não
-  pode ser escolhido pelos controles normais da Agenda; registros antigos não são apagados nem
-  alterados por esta mudança.
-- O fluxo de ponte fixa deve estar disponível com exatamente um dente permanente selecionado,
-  inclusive quando aquele dente tem o estado `ausente`. A escolha de papéis continua explícita no
-  mini-fluxo; esta fatia não inventa nova validação protética.
-- O expediente permanece um **aviso com confirmação**, não bloqueio: sem grade não há restrição;
-  antes/depois/intervalo de almoço/dia sem grade retornam motivo tipado.
+Reusar `MarcarRetornoModal`, `RetornoSemanaGrid`, `RetornoMobileAgenda`, `useMarcarRetorno`,
+`buscarDisponibilidadeSemana` e `slotEstaLivre`. Não há redesign, schema, RLS, rota, API, mudança de
+direito ou banco remoto. Preservar a correção já publicada que busca a semana domingo–sábado do retorno
+sem perder os seis dias operacionais da Agenda.
 
-## 3. Objetivo
+| Entrada | Alvo e vínculo preservados |
+|---|---|
+| Ficha (`ProntuarioTab`) | Dentista da visita e `atendimentoOrigemId` existente |
+| Meu Dia (`registrar-painel`) | Próprio dentista; não inventa visita ainda não salva |
+| Perfil (`paciente-detail-client`) | Próprio dentista ou seleção permitida da secretária; sem origem |
 
-Reduzir escolhas repetitivas no retorno e limitar a navegação operacional ao calendário de
-segunda a sábado, sem remover dados históricos ou endurecer a flexibilidade da recepção.
-
-## 4. Contrato técnico
+## 3. Contrato técnico
 
 ```ts
-// src/components/pacientes/retorno-semana-grid.tsx
-type SaltoRetorno = { label: '7 dias' | '15 dias' | string; alvo: (hoje: Date) => Date };
-
-// src/lib/agenda/expediente.ts
-type ForaDoExpediente =
-  | { fora: false }
-  | { fora: true; motivo: 'antes_de_abrir' | 'depois_de_fechar' | 'no_almoco' | 'dia_sem_grade' };
+type Selecionavel = (inicioMin: number, duracaoMin: number, dia: DisponibilidadeDia, agora: Date) => boolean;
 ```
 
-`WeekView`, o cálculo de `calendarDays` e `MonthView` recebem/produzem somente dias cujo
-`getDay()` é de 1 a 6. `janelaDaVisao('semana')` inicia na segunda-feira e termina na segunda
-seguinte, preservando a janela BRT e a assinatura existente.
+`slotEstaLivre` continua gerando os slots dentro da grade. A seleção do retorno usa
+`slotPodeSerSelecionadoParaRetorno`: recusa passado e interseção com `ocupados`, permite adjacência
+`[início, fim)` e preserva fora do expediente como aviso recuperável do servidor. Dia sem grade mantém
+hora manual sem choque, com `agendaLivre: true`. Desktop e mobile jamais tratam falha de leitura como
+livre. Trocar semana, dentista ou duração limpa uma seleção incompatível; resposta cancelada/atrasada
+não substitui a chave atual. Abrir o modal começa uma nova chave de leitura; retry de pedido protético
+usa seu agendamento já persistido e não depende mais da disponibilidade atual.
+Enquanto há pedido protético pendente, data, hora e seleção ficam imutáveis até o retry concluir.
+Troca de dentista e fechamento também ficam bloqueados durante envio/pendência: o callback do
+perfil da secretária limpa o responsável ao fechar e não pode ser chamado nesse estado.
 
-## 5. Comportamento
+## 4. Comportamento
 
 | Cenário | Resultado |
 |---|---|
-| Clicar `7 dias` ou `15 dias` | Navega a grade do retorno para a semana correspondente, sem selecionar horário automaticamente. |
-| Semana/Mês da Agenda | Mostram segunda a sábado; domingo não aparece como coluna, cabeçalho ou célula selecionável. |
-| Dente ausente selecionado | A faixa de ação única mostra `Ponte fixa`; o clique abre o mesmo fluxo de pilares/pônticos. |
-| Horário 12:00 em almoço 11:00–13:30 | Action devolve `foraDoExpediente: 'no_almoco'`; a UI oferece confirmar mesmo assim. |
-| Dentista sem qualquer grade | Action não devolve aviso nem bloqueio. |
+| Navegar até +30 dias | Busca agenda inteira do profissional alvo, com consultas e bloqueios visíveis. |
+| Clicar/tentar digitar ocupado | Não seleciona nem habilita confirmação; o ocupado continua visível. |
+| Mudar duração/semana/dentista | Invalida seleção incompatível com a resposta atual. |
+| Erro da agenda | Mostra erro, não preserva seleção anterior e não permite confirmar. |
+| Dia sem grade | Permite hora sem choque marcada como `agendaLivre`; servidor ainda revalida. |
+| Conflito depois de abrir | Servidor recusa e preserva formulário para nova escolha. |
 
-## 6. Referência visual
+## 5. Referência visual
 
-Sem tela nova. Reutiliza os tokens e componentes atuais: chips do retorno com `border-teal`,
-`text-teal-ink`, `bg-surface`; Agenda com `bg-surface`, `bg-surface-alt`, `border-border` e os
-alvos de toque existentes. Não há artefato visual para esta correção incremental.
+Sem tela nova. Reutiliza a grade e tokens atuais; ocupados seguem visíveis e inativos, sem depender
+apenas de cor. Não há artefato visual para esta correção incremental.
 
-## 7. Invariantes
+## 6. Invariantes
 
-1. Nenhum agendamento, bloqueio ou horário configurado de domingo é apagado ou migrado.
-2. Agenda livre continua sem restrição quando o dentista não configurou expediente.
-3. Só o servidor decide conflito e expediente; a grade de retorno é auxiliar de seleção.
-4. Ponte em dente ausente não altera o estado de ausência nem cria evento antes de `Confirmar ponte`.
+1. Tenant, guard de dentista, server action e vínculo já existente não mudam.
+2. Nunca expor agenda de outro profissional fora de `buscarDisponibilidadeSemana`.
+3. Falha de consulta nunca é disponibilidade; ocupado nunca recebe seleção local.
+4. Só o servidor decide conflito final e expediente; o modal não envia override de conflito.
+
+## 7. Dependência pendente de R-156
+
+`criarAgendamento` consulta conflitos e depois insere em operações separadas. Esta correção não envia
+override, mas duas sessões ainda podem passar na leitura antes de uma inserir. I2 exige criação atômica,
+o que pede contrato de RPC/migration e teste com duas contas; não é alterado nem anunciado como resolvido.
 
 ## 8. Gates de aceite
 
-- [ ] O retorno desktop mostra e navega por `7 dias` e `15 dias`.
-- [ ] Agenda semanal e mensal não exibem domingo; segunda a sábado continuam navegáveis.
-- [ ] Selecionar um dente ausente permanente mantém o CTA `Ponte fixa` disponível e abre o fluxo.
-- [ ] Testes unitários cobrem expediente dentro, antes, almoço, após fechar, dia sem grade e sem
-  grade configurada.
-- [ ] Criar e editar continuam recebendo o mesmo aviso recuperável de expediente.
-- [ ] TypeScript, testes do recorte e `git diff --check` passam.
+- [x] 208 testes de código, typecheck completo, lint do recorte e diff-check passaram.
+- [x] Browser isolado: baseline apaga 09:15; patch mantém 555 e envia esse horário.
+- [x] Browser: ocupado, adjacência, duração, limpeza da hora, troca de dentista, erro/reabertura,
+  mobile, agenda sem grade, +30 dias e retry protético sem perder contexto passaram.
+- [x] Perfil em localhost autenticado na clínica de teste: um retorno em 09/09/2026 09:15 BRT,
+  30 minutos; SQL confirmou uma única linha (`d0f7fe67-7683-4ab2-b3c8-3989d91a859f`, 12:15 UTC).
+  Observação: `QA retorno 09:15 - 2026-09-08`. Sem WhatsApp/e-mail; fixture mantida identificável.
+- [x] Review TypeScript: HIGH sobre troca de dentista/fechamento na pendência corrigido e revalidado.
+- [x] Review UX do recorte aprovado: mobile light/dark, teclado, alvos e CTA; build de produção passou.
+- [x] Callers de Ficha/Meu Dia/perfil, alvo, vínculo e server actions não foram alterados.
+- [ ] Smoke das entradas Ficha e Meu Dia com atendimento real de teste após publicação.
+- [ ] CI e smoke do deployment com o commit publicado.
+
+Não declarar R-150 inteiro concluído: concorrência de duas sessões (R-156) permanece pendente.
 
 ## 9. Fora de escopo
 
-- Alterar expediente configurado pelo dentista, criar bloqueio permanente de domingo ou apagar
-  agendamentos legados.
-- Redesenhar a Agenda, a grade do retorno ou a semântica clínica da ponte fixa.
+- Atalhos, domingo, ponte fixa, redesign, expediente, schema, RLS, migration, RPC, banco remoto,
+  deploy e dados reais.
+
+Os atalhos, domingo, ponte fixa e aviso de expediente do escopo original continuam adiados; esta
+atualização não os aprova, cancela ou implementa.
